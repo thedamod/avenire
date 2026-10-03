@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
-import * as Schema from "effect/Schema";
 import { CaptureId } from "@avenire/contracts";
 import type { CaptureSnapshot } from "@avenire/contracts";
 import { applyPolicy } from "./policy.ts";
 
 const snapshot: CaptureSnapshot = {
-  id: Schema.decodeUnknownSync(CaptureId)("capture-test"),
+  id: CaptureId.make("capture-test"),
   capturedAt: "2026-01-01T00:00:00.000Z",
   deviceId: "device",
   platform: "linux",

@@ -1,10 +1,15 @@
 import * as Http from "node:http";
-import * as Schema from "effect/Schema";
+
 import { CapturedTab } from "@avenire/contracts";
-import type { CapturedTab as CapturedTabType } from "@avenire/contracts";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { extensionReceiverPort } from "../config.ts";
 
-let report: { readonly tabs: readonly CapturedTabType[]; readonly at: number } | undefined;
+let report: { readonly tabs: readonly CapturedTab[]; readonly at: number } | undefined;
+
+const decodeTabsReport = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Array(CapturedTab)),
+);
 let server: Http.Server | undefined;
 
 const LOOPBACK_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
@@ -44,21 +49,19 @@ export function startTabsReceiver(): void {
       else chunks.push(chunk);
     });
     request.on("end", () => {
-      try {
-        const decoded = Schema.decodeUnknownSync(Schema.Array(CapturedTab))(
-          JSON.parse(Buffer.concat(chunks).toString("utf8")),
-        );
-        report = { tabs: decoded, at: Date.now() };
-        response.writeHead(204).end();
-      } catch {
+      const decoded = decodeTabsReport(Buffer.concat(chunks).toString("utf8"));
+      if (Option.isNone(decoded)) {
         response.writeHead(400).end();
+        return;
       }
+      report = { tabs: decoded.value, at: Date.now() };
+      response.writeHead(204).end();
     });
   });
   server.listen(extensionReceiverPort, "127.0.0.1");
 }
 
-export function latestTabs(): readonly CapturedTabType[] {
+export function latestTabs(): readonly CapturedTab[] {
   if (!report || Date.now() - report.at > 10_000) return [];
   return report.tabs.filter(
     (tab) =>

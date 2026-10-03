@@ -1,6 +1,5 @@
 import * as Crypto from "node:crypto";
 import * as OS from "node:os";
-import * as Schema from "effect/Schema";
 import { CaptureId } from "@avenire/contracts";
 import type {
   CaptureSnapshot,
@@ -67,7 +66,7 @@ export async function collectSnapshot(
       ? process.platform
       : "linux";
   return {
-    id: Schema.decodeUnknownSync(CaptureId)(Crypto.randomUUID()),
+    id: CaptureId.make(Crypto.randomUUID()),
     capturedAt,
     deviceId: Crypto.createHash("sha256")
       .update(`${OS.hostname()}\0${OS.userInfo().username}`)
