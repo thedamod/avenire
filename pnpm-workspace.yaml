@@ -39,5 +39,18 @@ minimumReleaseAgeExclude:
   - lucide-react@1.51.0
 
 overrides:
+  # vite-plus bundles its own Vitest; the patched @effect/vitest imports it instead.
+  "@effect/vitest>vitest": "-"
   effect: "catalog:"
   "@types/node": "catalog:"
+
+packageExtensions:
+  "@effect/vitest@*":
+    dependencies:
+      vite-plus: 1.0.0
+    peerDependenciesMeta:
+      vitest:
+        optional: true
+
+patchedDependencies:
+  '@effect/vitest@4.0.0': patches/@effect__vitest@4.0.0.patch
