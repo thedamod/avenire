@@ -6,17 +6,27 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { Files } from "files-sdk";
-import type { StorageKey } from "@avenire/contracts";
+
+import { StorageKey } from "@avenire/contracts";
 
 export class StorageError extends Schema.TaggedError<StorageError>()("StorageError", {
   operation: Schema.String,
   key: Schema.optional(Schema.String),
   cause: Schema.Defect(),
-}) {}
+}) {
+  override get message(): string {
+    const target = this.key === undefined ? "" : ` ${this.key}`;
+    return `Storage ${this.operation}${target} failed`;
+  }
+}
 
 export class ObjectNotFound extends Schema.TaggedError<ObjectNotFound>()("ObjectNotFound", {
   key: Schema.String,
-}) {}
+}) {
+  override get message(): string {
+    return `Object ${this.key} does not exist`;
+  }
+}
 
 export type StoredObject = {
   readonly size: number;
@@ -68,8 +78,22 @@ export const StorageConfig = Config.all({
   awsRegion: Config.String("AWS_REGION").pipe(Config.withDefault("us-east-1")),
 });
 
+type FilesAdapter = ConstructorParameters<typeof Files>[0]["adapter"];
+
+/** Wrap a files-sdk call in a span, attributing failures to `operation` and `key`. */
 const attempt = <A>(operation: string, key: string, run: () => Promise<A>) =>
-  Effect.tryPromise({ try: run, catch: (cause) => new StorageError({ operation, key, cause }) });
+  Effect.tryPromise({
+    try: run,
+    catch: (cause) => new StorageError({ operation, key, cause }),
+  }).pipe(Effect.withSpan(`Storage.${operation}`, { attributes: { key } }));
+
+const readAll = async (files: Files, prefix: StorageKey) => {
+  const objects: Array<{ readonly key: StorageKey; readonly size: number }> = [];
+  for await (const file of files.listAll({ prefix })) {
+    objects.push({ key: StorageKey.make(file.key), size: file.size });
+  }
+  return objects;
+};
 
 const makeStorage = (files: Files): Storage["Service"] => {
   const ensureExists = (key: StorageKey) =>
@@ -87,11 +111,10 @@ const makeStorage = (files: Files): Storage["Service"] => {
     get: (key) =>
       ensureExists(key).pipe(
         Effect.andThen(
-          attempt(
-            "get",
-            key,
-            async () => new Uint8Array(await (await files.download(key)).arrayBuffer()),
-          ),
+          attempt("get", key, async () => {
+            const file = await files.download(key);
+            return new Uint8Array(await file.arrayBuffer());
+          }),
         ),
       ),
     head: (key) =>
@@ -104,14 +127,7 @@ const makeStorage = (files: Files): Storage["Service"] => {
         })),
       ),
     remove: (key) => attempt("remove", key, () => files.delete(key)).pipe(Effect.asVoid),
-    list: (prefix) =>
-      attempt("list", prefix, async () => {
-        const objects: Array<{ readonly key: StorageKey; readonly size: number }> = [];
-        for await (const file of files.listAll({ prefix })) {
-          objects.push({ key: file.key as StorageKey, size: file.size });
-        }
-        return objects;
-      }),
+    list: (prefix) => attempt("list", prefix, () => readAll(files, prefix)),
     signedDownloadUrl: (key, expiresInSeconds) =>
       attempt("signedDownloadUrl", key, () => files.url(key, { expiresIn: expiresInSeconds })),
     signedUploadUrl: (key, options) =>
@@ -124,38 +140,53 @@ const makeStorage = (files: Files): Storage["Service"] => {
   });
 };
 
+type StorageConfig = Config.Success<typeof StorageConfig>;
+
+const r2Credentials = (config: StorageConfig) => ({
+  ...Option.match(config.r2AccountId, {
+    onNone: () => ({}),
+    onSome: (accountId) => ({ accountId }),
+  }),
+  ...Option.match(config.r2AccessKeyId, {
+    onNone: () => ({}),
+    onSome: (accessKeyId) => ({ accessKeyId: Redacted.value(accessKeyId) }),
+  }),
+  ...Option.match(config.r2SecretAccessKey, {
+    onNone: () => ({}),
+    onSome: (secretAccessKey) => ({ secretAccessKey: Redacted.value(secretAccessKey) }),
+  }),
+});
+
+// Drivers are imported lazily so a deployment only loads the SDK it actually uses.
+const makeAdapter = (config: StorageConfig): Effect.Effect<FilesAdapter> => {
+  switch (config.driver) {
+    case "fs":
+      return Effect.promise(() => import("files-sdk/fs")).pipe(
+        Effect.map(({ fs }) => fs({ root: config.fsRoot })),
+      );
+    case "r2":
+      return Effect.promise(() => import("files-sdk/r2")).pipe(
+        Effect.map(({ r2 }) => r2({ bucket: config.bucket, ...r2Credentials(config) })),
+      );
+    case "s3":
+      return Effect.promise(() => import("files-sdk/s3")).pipe(
+        Effect.map(({ s3 }) => s3({ bucket: config.bucket, region: config.awsRegion })),
+      );
+  }
+};
+
 export const StorageLive = Layer.effect(
   Storage,
   Effect.gen(function* () {
     const config = yield* StorageConfig;
-    let adapter: ConstructorParameters<typeof Files>[0]["adapter"];
-    if (config.driver === "fs") {
-      const { fs } = yield* Effect.promise(() => import("files-sdk/fs"));
-      adapter = fs({ root: config.fsRoot });
-    } else if (config.driver === "r2") {
-      const { r2 } = yield* Effect.promise(() => import("files-sdk/r2"));
-      adapter = r2({
-        bucket: config.bucket,
-        ...(Option.isSome(config.r2AccountId) ? { accountId: config.r2AccountId.value } : {}),
-        ...(Option.isSome(config.r2AccessKeyId)
-          ? { accessKeyId: Redacted.value(config.r2AccessKeyId.value) }
-          : {}),
-        ...(Option.isSome(config.r2SecretAccessKey)
-          ? { secretAccessKey: Redacted.value(config.r2SecretAccessKey.value) }
-          : {}),
-      });
-    } else {
-      const { s3 } = yield* Effect.promise(() => import("files-sdk/s3"));
-      adapter = s3({ bucket: config.bucket, region: config.awsRegion });
-    }
+    const adapter = yield* makeAdapter(config);
     return makeStorage(new Files({ adapter }));
   }),
 );
 
 export const StorageMemory = Layer.effect(
   Storage,
-  Effect.gen(function* () {
-    const { memory } = yield* Effect.promise(() => import("files-sdk/memory"));
-    return makeStorage(new Files({ adapter: memory() }));
-  }),
+  Effect.promise(() => import("files-sdk/memory")).pipe(
+    Effect.map(({ memory }) => makeStorage(new Files({ adapter: memory() }))),
+  ),
 );
