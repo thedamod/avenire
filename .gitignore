@@ -1,0 +1,32 @@
+# Reference material (t3code, legacy v1, research). Never committed.
+context/
+
+node_modules/
+.pnpm-store/
+.DS_Store
+*.log
+*.tsbuildinfo
+.env
+.env*
+!.env.example
+
+# build output
+dist/
+dist-electron/
+build/
+release/
+.next/
+out/
+.turbo/
+.vite-plus/
+.expo/
+apps/mobile/ios/
+apps/mobile/android/
+next-env.d.ts
+
+# tooling
+.idea/
+.vscode/
+.t3/
+.claude/
+drizzle/meta/_journal.local.json

@@ -1,0 +1,44 @@
+{
+  "name": "@avenire/ai",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./models": {
+      "types": "./src/models.ts",
+      "import": "./src/models.ts"
+    },
+    "./ruth": {
+      "types": "./src/ruth/agent.ts",
+      "import": "./src/ruth/agent.ts"
+    },
+    "./ruth-cloud": {
+      "types": "./src/ruthCloud/run.ts",
+      "import": "./src/ruthCloud/run.ts"
+    },
+    "./scheduler": {
+      "types": "./src/ruthCloud/scheduler.ts",
+      "import": "./src/ruthCloud/scheduler.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
+  },
+  "dependencies": {
+    "effect": "catalog:",
+    "@avenire/cloud": "workspace:*",
+    "@avenire/contracts": "workspace:*",
+    "@avenire/database": "workspace:*",
+    "@avenire/ingestion": "workspace:*",
+    "@avenire/shared": "workspace:*",
+    "@avenire/storage": "workspace:*",
+    "@effect/ai-anthropic": "4.0.0",
+    "@effect/ai-openai": "4.0.0",
+    "drizzle-orm": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

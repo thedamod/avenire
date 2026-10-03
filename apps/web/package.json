@@ -1,0 +1,42 @@
+{
+  "name": "@avenire/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "worker": "tsx src/server/worker.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
+  },
+  "dependencies": {
+    "@avenire/ai": "workspace:*",
+    "@avenire/auth": "workspace:*",
+    "@avenire/client-runtime": "workspace:*",
+    "@avenire/cloud": "workspace:*",
+    "@avenire/contracts": "workspace:*",
+    "@avenire/database": "workspace:*",
+    "@avenire/emailer": "workspace:*",
+    "@avenire/ingestion": "workspace:*",
+    "@avenire/shared": "workspace:*",
+    "@avenire/storage": "workspace:*",
+    "@avenire/ui": "workspace:*",
+    "@effect/platform-node": "catalog:",
+    "effect": "catalog:",
+    "lucide-react": "1.51.0",
+    "next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "tailwindcss": "catalog:",
+    "tsx": "4.23.15",
+    "vite-plus": "catalog:"
+  }
+}

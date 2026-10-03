@@ -1,0 +1,34 @@
+{
+  "name": "@avenire/database",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./schema": {
+      "types": "./src/schema.ts",
+      "import": "./src/schema.ts"
+    },
+    "./client": {
+      "types": "./src/client.ts",
+      "import": "./src/client.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "effect": "catalog:",
+    "@avenire/contracts": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:",
+    "drizzle-kit": "catalog:"
+  }
+}

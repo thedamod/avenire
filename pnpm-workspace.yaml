@@ -1,0 +1,43 @@
+packages:
+  - apps/*
+  - packages/*
+
+allowBuilds:
+  electron: true
+  esbuild: true
+  sharp: true
+  "@tailwindcss/oxide": true
+  unrs-resolver: true
+  core-js: false
+  electron-winstaller: false
+  protobufjs: false
+  tesseract.js: false
+
+catalog:
+  "@effect/platform-node": 4.0.0
+  "@effect/sql-pg": 4.0.0
+  "@effect/tsgo": 0.48.0
+  "@effect/vitest": 4.0.0
+  "@types/node": 24.12.4
+  "@types/react": ~19.3.0
+  "@types/react-dom": ~19.2.3
+  better-auth: 1.7.7
+  drizzle-kit: 0.31.11
+  drizzle-orm: 0.45.3
+  effect: 4.0.0
+  files-sdk: 2.6.2
+  next: 16.3.8
+  posthog-js: 1.435.8
+  posthog-node: 5.55.0
+  react: 19.3.0
+  react-dom: 19.3.0
+  tailwindcss: 4.3.3
+  typescript: 7.0.2
+  vite-plus: 1.0.0
+
+minimumReleaseAgeExclude:
+  - lucide-react@1.51.0
+
+overrides:
+  effect: "catalog:"
+  "@types/node": "catalog:"

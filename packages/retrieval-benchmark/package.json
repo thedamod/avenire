@@ -1,0 +1,29 @@
+{
+  "name": "@avenire/retrieval-benchmark",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./metrics": {
+      "types": "./src/metrics.ts",
+      "import": "./src/metrics.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests",
+    "bench": "tsx src/bin.ts"
+  },
+  "dependencies": {
+    "effect": "catalog:",
+    "@avenire/contracts": "workspace:*",
+    "@avenire/database": "workspace:*",
+    "@avenire/ingestion": "workspace:*",
+    "@effect/platform-node": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:",
+    "tsx": "4.23.15"
+  }
+}

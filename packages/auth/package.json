@@ -1,0 +1,45 @@
+{
+  "name": "@avenire/auth",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./server": {
+      "types": "./src/server.ts",
+      "import": "./src/server.ts"
+    },
+    "./client": {
+      "types": "./src/client.ts",
+      "import": "./src/client.ts"
+    },
+    "./expo": {
+      "types": "./src/expo.ts",
+      "import": "./src/expo.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
+  },
+  "dependencies": {
+    "effect": "catalog:",
+    "@avenire/contracts": "workspace:*",
+    "@avenire/database": "workspace:*",
+    "@avenire/emailer": "workspace:*",
+    "better-auth": "catalog:",
+    "@better-auth/expo": "1.7.7",
+    "drizzle-orm": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "*"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  }
+}

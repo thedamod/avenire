@@ -1,0 +1,36 @@
+{
+  "name": "@avenire/emailer",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./mailer": {
+      "types": "./src/mailer.ts",
+      "import": "./src/mailer.ts"
+    },
+    "./templates": {
+      "types": "./src/templates/index.ts",
+      "import": "./src/templates/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests",
+    "preview": "email dev --dir src/templates --port 3030"
+  },
+  "dependencies": {
+    "effect": "catalog:",
+    "@avenire/contracts": "workspace:*",
+    "@react-email/components": "1.0.12",
+    "@react-email/render": "2.1.0",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "resend": "6.32.0"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:",
+    "@types/react": "catalog:",
+    "react-email": "6.11.0"
+  }
+}

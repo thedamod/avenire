@@ -1,0 +1,32 @@
+{
+  "name": "@avenire/storage",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./storage": {
+      "types": "./src/storage.ts",
+      "import": "./src/storage.ts"
+    },
+    "./keys": {
+      "types": "./src/keys.ts",
+      "import": "./src/keys.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
+  },
+  "dependencies": {
+    "effect": "catalog:",
+    "@avenire/contracts": "workspace:*",
+    "files-sdk": "catalog:",
+    "@aws-sdk/client-s3": "^3.913.0",
+    "@aws-sdk/s3-request-presigner": "^3.913.0",
+    "@aws-sdk/s3-presigned-post": "^3.913.0"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

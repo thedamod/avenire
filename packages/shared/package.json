@@ -1,0 +1,35 @@
+{
+  "name": "@avenire/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./id": {
+      "types": "./src/id.ts",
+      "import": "./src/id.ts"
+    },
+    "./observability": {
+      "types": "./src/observability.ts",
+      "import": "./src/observability.ts"
+    },
+    "./observability-browser": {
+      "types": "./src/observabilityBrowser.ts",
+      "import": "./src/observabilityBrowser.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
+  },
+  "dependencies": {
+    "@avenire/contracts": "workspace:*",
+    "effect": "catalog:",
+    "posthog-js": "catalog:",
+    "posthog-node": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}
