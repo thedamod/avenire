@@ -6,11 +6,17 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+
 import * as schema from "./schema.ts";
 
 export class DatabaseError extends Schema.TaggedError<DatabaseError>()("DatabaseError", {
   cause: Schema.Defect(),
-}) {}
+}) {
+  override get message(): string {
+    const detail = this.cause instanceof Error ? this.cause.message : String(this.cause);
+    return `Database query failed: ${detail}`;
+  }
+}
 
 export type DatabaseClient = PostgresJsDatabase<typeof schema>;
 export type DatabaseTransaction = Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0];
@@ -41,17 +47,16 @@ export const DatabaseLive = Layer.effect(
     const url = yield* DatabaseConfig;
     const { db } = yield* Effect.acquireRelease(
       Effect.sync(() => makeDatabase(Redacted.value(url))),
-      ({ sql }) => Effect.promise(() => sql.end({ timeout: 5 })).pipe(Effect.ignore),
+      ({ sql }) =>
+        Effect.tryPromise(() => sql.end({ timeout: 5 })).pipe(
+          Effect.ignore({ log: "Warn", message: "Failed to close the database pool" }),
+        ),
     );
-    const mapError = (cause: unknown) => new DatabaseError({ cause });
+    const toError = (cause: unknown) => new DatabaseError({ cause });
     return Database.of({
       db,
-      use: (fn) => Effect.tryPromise({ try: () => fn(db), catch: mapError }),
-      useTransaction: (fn) =>
-        Effect.tryPromise({
-          try: () => db.transaction(fn),
-          catch: mapError,
-        }),
+      use: (fn) => Effect.tryPromise({ try: () => fn(db), catch: toError }),
+      useTransaction: (fn) => Effect.tryPromise({ try: () => db.transaction(fn), catch: toError }),
     });
   }),
 );
