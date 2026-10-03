@@ -3,20 +3,23 @@
  * `FOR UPDATE SKIP LOCKED` and hold a lease (`locked_until`), so several worker
  * processes can run side by side and a crashed worker's jobs are picked up again.
  */
-import { IngestionJobId, type ItemId, NotFound, type UserId } from "@avenire/contracts";
+import { IngestionJobId, ItemId, NotFound, UserId } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import { type IngestionJobRow, ingestionJob, item } from "@avenire/database/schema";
+import { ingestionJob, item } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
 import { and, eq, sql } from "drizzle-orm";
+import * as Cause from "effect/Cause";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema";
 
 import { IngestionPipeline } from "./pipeline.ts";
 
 const MAX_ATTEMPTS = 3;
-const IN_PROGRESS = sql`('extracting', 'chunking', 'embedding', 'clustering')`;
+const IDLE_DELAY = "2 seconds";
+const OUTAGE_DELAY = "10 seconds";
 
 /** Minutes to wait before retrying a job that failed on its `attempts`-th try. */
 export const retryDelayMinutes = (attempts: number): number => 2 ** attempts;
@@ -47,11 +50,26 @@ export const enqueueIngestion = Effect.fn("Ingestion.enqueue")(function* (
   );
 });
 
+/** A job as returned by the claim query (raw SQL, so columns are aliased to camelCase). */
+const ClaimedJob = Schema.Struct({
+  id: IngestionJobId,
+  userId: UserId,
+  itemId: ItemId,
+  attempts: Schema.Number,
+});
+type ClaimedJob = typeof ClaimedJob.Type;
+const decodeClaimed = Schema.decodeUnknownEffect(Schema.Array(ClaimedJob));
+
+/**
+ * Leases up to `limit` jobs: queued ones whose retry delay has passed, plus
+ * in-progress ones whose lease expired (their worker died).
+ */
 const claimJobs = (limit: number) => sql`
   WITH candidates AS (
     SELECT id FROM ingestion_job
     WHERE (status = 'queued' AND (locked_until IS NULL OR locked_until < now()))
-       OR (status IN ${IN_PROGRESS} AND locked_until < now())
+       OR (status IN ('extracting', 'chunking', 'embedding', 'clustering')
+           AND locked_until < now())
     ORDER BY created_at
     FOR UPDATE SKIP LOCKED
     LIMIT ${limit}
@@ -60,8 +78,13 @@ const claimJobs = (limit: number) => sql`
   SET status = 'extracting', locked_until = now() + interval '10 minutes',
       attempts = job.attempts + 1, updated_at = now()
   FROM candidates WHERE job.id = candidates.id
-  RETURNING job.*
+  RETURNING job.id, job.user_id AS "userId", job.item_id AS "itemId", job.attempts
 `;
+
+const failureReason = (cause: Cause.Cause<unknown>): string => {
+  const error = Cause.squash(cause);
+  return error instanceof Error ? error.message : Cause.pretty(cause);
+};
 
 export const IngestionWorkerLive = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -72,23 +95,12 @@ export const IngestionWorkerLive = Layer.effectDiscard(
       yield* Config.Int("INGESTION_CONCURRENCY").pipe(Config.withDefault(2)),
     );
 
-    const claim = database.use(async (db) => {
-      const rows = await db.execute(claimJobs(concurrency));
-      // postgres-js returns snake_case columns for raw SQL; map them onto the drizzle row type.
-      return rows.map((row): IngestionJobRow => ({
-        id: String(row.id),
-        userId: String(row.user_id),
-        itemId: String(row.item_id),
-        status: "extracting",
-        attempts: Number(row.attempts),
-        error: null,
-        lockedUntil: null,
-        createdAt: new Date(String(row.created_at)),
-        updatedAt: new Date(String(row.updated_at)),
-      }));
-    });
+    const claim = database
+      .use((db) => db.execute(claimJobs(concurrency)))
+      .pipe(Effect.flatMap(decodeClaimed), Effect.withSpan("IngestionWorker.claim"));
 
-    const recordFailure = (job: IngestionJobRow, message: string) => {
+    /** Re-queue with exponential backoff, or fail the job once it is out of attempts. */
+    const recordFailure = (job: ClaimedJob, message: string) => {
       const exhausted = job.attempts >= MAX_ATTEMPTS;
       return database.use((db) =>
         db
@@ -105,29 +117,42 @@ export const IngestionWorkerLive = Layer.effectDiscard(
       );
     };
 
-    const runJob = (job: IngestionJobRow) =>
+    const handleFailure = (job: ClaimedJob, cause: Cause.Cause<unknown>) => {
+      const reason = failureReason(cause);
+      return Effect.logWarning("Ingestion failed", {
+        jobId: job.id,
+        attempts: job.attempts,
+        error: reason,
+      }).pipe(
+        Effect.andThen(recordFailure(job, reason)),
+        Effect.catchTag("DatabaseError", (error) =>
+          Effect.logError("Could not record the ingestion failure", { jobId: job.id, error }),
+        ),
+      );
+    };
+
+    // Any failure, including a defect, counts as an attempt; otherwise a job that
+    // crashes the pipeline would be re-claimed forever. Interruption (shutdown)
+    // is left to the lease.
+    const runJob = (job: ClaimedJob) =>
       pipeline
         .run(job)
         .pipe(
-          Effect.catchTag("IngestionError", (error) =>
-            Effect.logWarning("Ingestion failed", {
-              jobId: job.id,
-              attempts: job.attempts,
-              error: error.message,
-            }).pipe(Effect.andThen(recordFailure(job, error.message))),
+          Effect.catchCause((cause) =>
+            Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : handleFailure(job, cause),
           ),
         );
 
     const pollOnce = claim.pipe(
       Effect.flatMap((jobs) =>
         jobs.length === 0
-          ? Effect.sleep("2 seconds")
+          ? Effect.sleep(IDLE_DELAY)
           : Effect.forEach(jobs, runJob, { concurrency, discard: true }),
       ),
       // Infrastructure failures (database down, ...) must not stop the worker.
       Effect.catchCause((cause) =>
         Effect.logError("Ingestion poll failed", cause).pipe(
-          Effect.andThen(Effect.sleep("10 seconds")),
+          Effect.andThen(Effect.sleep(OUTAGE_DELAY)),
         ),
       ),
     );

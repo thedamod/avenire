@@ -1,19 +1,19 @@
-import {
-  ClusterId as ClusterIdSchema,
-  type ClusterId,
-  type ItemId,
-  type UserId,
-} from "@avenire/contracts";
-import { Database } from "@avenire/database/client";
+import { ClusterId, type ItemId, type UserId } from "@avenire/contracts";
+import { Database, type DatabaseTransaction } from "@avenire/database/client";
 import { cluster, itemCluster } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
+import { and, eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { and, eq, sql } from "drizzle-orm";
 
 export class ClusterError extends Schema.TaggedError<ClusterError>()("ClusterError", {
   cause: Schema.Defect(),
-}) {}
+}) {
+  override get message(): string {
+    const detail = this.cause instanceof Error ? this.cause.message : String(this.cause);
+    return `Clustering failed: ${detail}`;
+  }
+}
 
 export const meanVector = (
   vectors: ReadonlyArray<ReadonlyArray<number>>,
@@ -40,68 +40,80 @@ export const runningMean = (
   next: ReadonlyArray<number>,
 ) => next.map((value, index) => ((current[index] ?? 0) * count + value) / (count + 1));
 
-export const assignClusters = (
+/** Items at least this similar to a cluster's centroid join it instead of starting a new one. */
+const JOIN_THRESHOLD = 0.8;
+const CLUSTER_NAME_LENGTH = 48;
+
+const toVectorLiteral = (vector: ReadonlyArray<number>) => `[${vector.join(",")}]`;
+
+const nearestCluster = (tx: DatabaseTransaction, userId: UserId, vector: ReadonlyArray<number>) =>
+  tx
+    .select({ id: cluster.id, centroid: cluster.centroid })
+    .from(cluster)
+    .where(and(eq(cluster.userId, userId), sql`${cluster.centroid} IS NOT NULL`))
+    .orderBy(sql`${cluster.centroid} <=> ${toVectorLiteral(vector)}::vector`)
+    .limit(1)
+    .then(([nearest]) => nearest);
+
+/** Folds the item into the centroid, unless it was already a member (re-ingestion). */
+const updateCentroid = async (
+  tx: DatabaseTransaction,
+  userId: UserId,
+  itemId: ItemId,
+  clusterId: string,
+  centroid: ReadonlyArray<number>,
+  vector: ReadonlyArray<number>,
+) => {
+  const inCluster = and(eq(itemCluster.userId, userId), eq(itemCluster.clusterId, clusterId));
+  const [membership] = await tx
+    .select({ itemId: itemCluster.itemId })
+    .from(itemCluster)
+    .where(and(inCluster, eq(itemCluster.itemId, itemId)))
+    .limit(1);
+  if (membership !== undefined) return;
+  const [members] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(itemCluster)
+    .where(inCluster);
+  await tx
+    .update(cluster)
+    .set({
+      centroid: [...runningMean(centroid, members?.count ?? 0, vector)],
+      updatedAt: sql`now()`,
+    })
+    .where(and(eq(cluster.id, clusterId), eq(cluster.userId, userId)));
+};
+
+/**
+ * Files an item into its nearest suggested cluster, or starts a new cluster named
+ * after the item. Runs in one transaction so the centroid and membership agree.
+ */
+export const assignClusters = Effect.fn("Clustering.assign")(function* (
   userId: UserId,
   itemId: ItemId,
   itemVector: ReadonlyArray<number>,
   title: string,
-) =>
-  Effect.gen(function* () {
-    const database = yield* Database;
-    const clusterId = yield* newId(ClusterIdSchema);
-    return yield* database
-      .useTransaction(async (tx) => {
-        const vectorText = `[${itemVector.join(",")}]`;
-        const nearest = await tx
-          .select({ id: cluster.id, centroid: cluster.centroid })
-          .from(cluster)
-          .where(and(eq(cluster.userId, userId), sql`${cluster.centroid} IS NOT NULL`))
-          .orderBy(sql`${cluster.centroid} <=> ${vectorText}::vector`)
-          .limit(1);
-        let targetId: string;
-        if (nearest[0]?.centroid && cosineSimilarity(nearest[0].centroid, itemVector) >= 0.8) {
-          targetId = nearest[0].id;
-          const membership = await tx
-            .select({ itemId: itemCluster.itemId })
-            .from(itemCluster)
-            .where(
-              and(
-                eq(itemCluster.userId, userId),
-                eq(itemCluster.clusterId, targetId),
-                eq(itemCluster.itemId, itemId),
-              ),
-            )
-            .limit(1);
-          const members = await tx
-            .select({ count: sql<number>`count(*)::int` })
-            .from(itemCluster)
-            .where(and(eq(itemCluster.userId, userId), eq(itemCluster.clusterId, targetId)));
-          if (!membership.length) {
-            await tx
-              .update(cluster)
-              .set({
-                centroid: [...runningMean(nearest[0].centroid, members[0]?.count ?? 1, itemVector)],
-                updatedAt: sql`now()`,
-              })
-              .where(and(eq(cluster.id, targetId), eq(cluster.userId, userId)));
-          }
-        } else {
-          targetId = clusterId;
-          await tx
-            .insert(cluster)
-            .values({
-              id: targetId,
-              userId,
-              name: title.slice(0, 48) || "Untitled",
-              suggested: true,
-              centroid: [...itemVector],
-            });
-        }
-        await tx
-          .insert(itemCluster)
-          .values({ itemId, clusterId: targetId, userId })
-          .onConflictDoNothing();
-        return targetId as ClusterId;
-      })
-      .pipe(Effect.mapError((cause) => new ClusterError({ cause })));
-  });
+) {
+  const database = yield* Database;
+  const newClusterId = yield* newId(ClusterId);
+  return yield* database
+    .useTransaction(async (tx) => {
+      const nearest = await nearestCluster(tx, userId, itemVector);
+      let clusterId: ClusterId = newClusterId;
+      if (nearest?.centroid && cosineSimilarity(nearest.centroid, itemVector) >= JOIN_THRESHOLD) {
+        clusterId = ClusterId.make(nearest.id);
+        await updateCentroid(tx, userId, itemId, clusterId, nearest.centroid, itemVector);
+      } else {
+        await tx.insert(cluster).values({
+          id: clusterId,
+          userId,
+          name: title.slice(0, CLUSTER_NAME_LENGTH) || "Untitled",
+          suggested: true,
+          centroid: [...itemVector],
+        });
+      }
+      await tx.insert(itemCluster).values({ itemId, clusterId, userId }).onConflictDoNothing();
+      return clusterId;
+    })
+    .pipe(Effect.mapError((cause) => new ClusterError({ cause })));
+});

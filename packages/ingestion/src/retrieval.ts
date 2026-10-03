@@ -4,8 +4,10 @@
  * two very different score scales never have to be calibrated against each other.
  */
 import {
+  ChunkId,
   ChunkKind,
   ChunkLocation,
+  ItemId,
   ItemKind,
   type SearchHit,
   type SearchQuery,
@@ -22,7 +24,12 @@ import { Embedder } from "./embed.ts";
 
 export class RetrievalError extends Schema.TaggedError<RetrievalError>()("RetrievalError", {
   cause: Schema.Defect(),
-}) {}
+}) {
+  override get message(): string {
+    const detail = this.cause instanceof Error ? this.cause.message : String(this.cause);
+    return `Search failed: ${detail}`;
+  }
+}
 
 const CANDIDATES_PER_RANKER = 50;
 const DEFAULT_LIMIT = 8;
@@ -46,9 +53,10 @@ export const reciprocalRankFusion = (
   return [...scores].map(([id, score]) => ({ id, score })).sort((a, b) => b.score - a.score);
 };
 
+/** A raw SQL row from SELECT_CANDIDATE (columns are aliased to camelCase). */
 const CandidateRow = Schema.Struct({
-  chunkId: Schema.String,
-  itemId: Schema.String,
+  chunkId: ChunkId,
+  itemId: ItemId,
   itemTitle: Schema.String,
   itemKind: ItemKind,
   chunkKind: ChunkKind,
@@ -66,7 +74,10 @@ const list = (values: ReadonlyArray<string>) =>
 const filters = (userId: UserId, query: SearchQuery): SQL => {
   const kinds = query.kinds?.length ? sql` AND i.kind IN (${list(query.kinds)})` : sql``;
   const clusters = query.clusterIds?.length
-    ? sql` AND EXISTS (SELECT 1 FROM item_cluster ic WHERE ic.item_id = i.id AND ic.user_id = ${userId} AND ic.cluster_id IN (${list(query.clusterIds)}))`
+    ? sql` AND EXISTS (
+        SELECT 1 FROM item_cluster ic
+        WHERE ic.item_id = i.id AND ic.user_id = ${userId}
+          AND ic.cluster_id IN (${list(query.clusterIds)}))`
     : sql``;
   return sql`c.user_id = ${userId}${kinds}${clusters}`;
 };
@@ -92,62 +103,51 @@ export const RetrievalLive = Layer.effect(
     const database = yield* Database;
     const embedder = yield* Embedder;
 
-    const search = Effect.fn("Retrieval.search")(function* (userId: UserId, query: SearchQuery) {
-      const [queryVector = []] = yield* embedder.embedMany([query.text]);
-      const vector = `[${queryVector.join(",")}]`;
-      const where = filters(userId, query);
-      const tsQuery = sql`websearch_to_tsquery('english', ${query.text})`;
+    const semanticCandidates = (where: SQL, vector: ReadonlyArray<number>) =>
+      database
+        .use((db) =>
+          db.execute(sql`${SELECT_CANDIDATE}
+            WHERE ${where} AND c.embedding IS NOT NULL
+            ORDER BY c.embedding <=> ${`[${vector.join(",")}]`}::vector
+            LIMIT ${CANDIDATES_PER_RANKER}`),
+        )
+        .pipe(Effect.flatMap(decodeCandidates));
 
-      const [semantic, lexical] = yield* Effect.all(
-        [
-          database.use((db) =>
-            db.execute(sql`${SELECT_CANDIDATE}
-              WHERE ${where} AND c.embedding IS NOT NULL
-              ORDER BY c.embedding <=> ${vector}::vector
-              LIMIT ${CANDIDATES_PER_RANKER}`),
-          ),
-          database.use((db) =>
-            db.execute(sql`${SELECT_CANDIDATE}
-              WHERE ${where} AND c.search @@ ${tsQuery}
-              ORDER BY ts_rank_cd(c.search, ${tsQuery}) DESC
-              LIMIT ${CANDIDATES_PER_RANKER}`),
-          ),
-        ],
-        { concurrency: 2 },
-      ).pipe(
-        Effect.flatMap(([semanticRows, lexicalRows]) =>
-          Effect.all([decodeCandidates(semanticRows), decodeCandidates(lexicalRows)]),
-        ),
-      );
+    const lexicalCandidates = (where: SQL, text: string) => {
+      const tsQuery = sql`websearch_to_tsquery('english', ${text})`;
+      return database
+        .use((db) =>
+          db.execute(sql`${SELECT_CANDIDATE}
+            WHERE ${where} AND c.search @@ ${tsQuery}
+            ORDER BY ts_rank_cd(c.search, ${tsQuery}) DESC
+            LIMIT ${CANDIDATES_PER_RANKER}`),
+        )
+        .pipe(Effect.flatMap(decodeCandidates));
+    };
 
-      const byId = new Map([...semantic, ...lexical].map((row) => [row.chunkId, row]));
-      const limit = Math.min(MAX_LIMIT, Math.max(1, query.limit ?? DEFAULT_LIMIT));
-      const fused = reciprocalRankFusion([
-        semantic.map((row) => row.chunkId),
-        lexical.map((row) => row.chunkId),
-      ]);
+    const search = Effect.fn("Retrieval.search")(
+      function* (userId: UserId, query: SearchQuery) {
+        const [queryVector = []] = yield* embedder.embedMany([query.text]);
+        const where = filters(userId, query);
+        const [semantic, lexical] = yield* Effect.all(
+          [semanticCandidates(where, queryVector), lexicalCandidates(where, query.text)],
+          { concurrency: 2 },
+        );
 
-      return fused.slice(0, limit).flatMap(({ id, score }): ReadonlyArray<SearchHit> => {
-        const row = byId.get(id);
-        if (row === undefined) return [];
-        return [
-          {
-            chunkId: row.chunkId as SearchHit["chunkId"],
-            itemId: row.itemId as SearchHit["itemId"],
-            itemTitle: row.itemTitle,
-            itemKind: row.itemKind,
-            chunkKind: row.chunkKind,
-            content: row.content,
-            location: row.location,
-            score,
-          },
-        ];
-      });
-    });
+        const byId = new Map([...semantic, ...lexical].map((row) => [row.chunkId, row]));
+        const limit = Math.min(MAX_LIMIT, Math.max(1, query.limit ?? DEFAULT_LIMIT));
+        const fused = reciprocalRankFusion([
+          semantic.map((row) => row.chunkId),
+          lexical.map((row) => row.chunkId),
+        ]);
+        return fused.slice(0, limit).flatMap(({ id, score }): ReadonlyArray<SearchHit> => {
+          const row = byId.get(ChunkId.make(id));
+          return row === undefined ? [] : [{ ...row, score }];
+        });
+      },
+      Effect.mapError((cause) => new RetrievalError({ cause })),
+    );
 
-    return Retrieval.of({
-      search: (userId, query) =>
-        search(userId, query).pipe(Effect.mapError((cause) => new RetrievalError({ cause }))),
-    });
+    return Retrieval.of({ search });
   }),
 );

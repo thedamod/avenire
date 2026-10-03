@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import { extractText } from "unpdf";
-import type { ExtractedDocument } from "./types.ts";
-import { ExtractionError } from "./types.ts";
+
+import { type ExtractedDocument, ExtractionError } from "./types.ts";
 
 export const extractPdf = (source: Uint8Array): Effect.Effect<ExtractedDocument, ExtractionError> =>
   Effect.tryPromise({
@@ -9,6 +9,6 @@ export const extractPdf = (source: Uint8Array): Effect.Effect<ExtractedDocument,
     catch: (cause) => new ExtractionError({ source: "pdf", cause }),
   }).pipe(
     Effect.map(({ text }) => ({
-      sections: text.map((text, index) => ({ text, location: { page: index + 1 } })),
+      sections: text.map((page, index) => ({ text: page, location: { page: index + 1 } })),
     })),
   );
