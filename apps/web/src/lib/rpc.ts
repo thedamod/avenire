@@ -7,6 +7,7 @@ import {
   type AvenireRpcClient,
   type ClientRuntime,
 } from "@avenire/client-runtime/rpc";
+import * as Cause from "effect/Cause";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 
@@ -74,8 +75,10 @@ export function useStream<T, E>(
       onEvent: (event) => {
         if (active) eventRef.current(event);
       },
+      // Hand callers the failure itself (a tagged error or defect), not the Cause,
+      // so errorMessage() can read it.
       onError: (cause) => {
-        if (active) errorRef.current?.(cause);
+        if (active) errorRef.current?.(Cause.squash(cause));
       },
     });
     return () => {
