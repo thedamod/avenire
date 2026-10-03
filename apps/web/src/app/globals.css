@@ -1,0 +1,26 @@
+@import "@avenire/ui/globals.css";
+@import "@xyflow/react/dist/style.css";
+@source "../**/*.{ts,tsx}";
+
+@layer base {
+  html,
+  body {
+    min-height: 100%;
+  }
+}
+
+.react-flow__attribution {
+  display: none;
+}
+.react-flow__controls {
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+.react-flow__controls-button {
+  background: var(--background);
+  fill: var(--foreground);
+  border-bottom-color: var(--border);
+}
+.react-flow__controls-button:hover {
+  background: var(--accent);
+}
