@@ -36,10 +36,10 @@ export class Analytics extends Context.Service<
   }
 >()("avenire/observability/Analytics") {}
 
-const noop: Analytics["Service"] = {
+const noop = Analytics.of({
   capture: () => Effect.void,
   captureException: () => Effect.void,
-};
+});
 
 export const AnalyticsConfig = Config.all({
   key: Config.option(Config.Redacted("POSTHOG_KEY")),
@@ -58,9 +58,12 @@ export const AnalyticsLive = Layer.effect(
     const apiKey = Redacted.value(config.key.value);
     const client = yield* Effect.acquireRelease(
       Effect.sync(() => new PostHog(apiKey, { host: config.host, flushAt: 20 })),
-      (client) => Effect.promise(() => client.shutdown()).pipe(Effect.ignore),
+      (client) =>
+        Effect.tryPromise(() => client.shutdown()).pipe(
+          Effect.ignore({ log: "Warn", message: "Failed to flush PostHog on shutdown" }),
+        ),
     );
-    return {
+    return Analytics.of({
       capture: (event) =>
         Effect.sync(() =>
           client.capture({
@@ -77,7 +80,7 @@ export const AnalyticsLive = Layer.effect(
             context.properties ? { ...context.properties } : undefined,
           ),
         ),
-    };
+    });
   }),
 );
 
