@@ -5,6 +5,7 @@
  */
 import {
   Approval,
+  ApprovalId,
   ArtifactId,
   type ArtifactKind,
   ChunkId,
@@ -171,101 +172,98 @@ const storeArtifact = Effect.fn("RuthTools.storeArtifact")(function* (input: {
   return { artifactId: id, title: input.title };
 });
 
+const MAX_READ_CHUNKS = 40;
+const DEFAULT_READ_CHUNKS = 12;
+
 export const RuthToolsLive = RuthToolkit.toLayer({
-  search_materials: ({ query, limit }) =>
-    Effect.gen(function* () {
-      const turn = yield* RuthTurn;
-      const retrieval = yield* Retrieval;
-      const hits = yield* retrieval.search(turn.userId, {
-        text: query,
-        ...(limit === undefined ? {} : { limit }),
-      });
-      return hits.map((hit) => ({
-        chunkId: hit.chunkId,
-        itemId: hit.itemId,
-        title: hit.itemTitle,
-        location: hit.location,
-        content: hit.content,
-      }));
-    }).pipe(asToolFailure),
+  search_materials: Effect.fn("RuthTools.searchMaterials")(function* ({ query, limit }) {
+    const turn = yield* RuthTurn;
+    const retrieval = yield* Retrieval;
+    const hits = yield* retrieval.search(turn.userId, {
+      text: query,
+      ...(limit === undefined ? {} : { limit }),
+    });
+    return hits.map((hit) => ({
+      chunkId: hit.chunkId,
+      itemId: hit.itemId,
+      title: hit.itemTitle,
+      location: hit.location,
+      content: hit.content,
+    }));
+  }, asToolFailure),
 
-  read_item: ({ itemId, fromOrdinal, count }) =>
-    Effect.gen(function* () {
-      const turn = yield* RuthTurn;
-      const database = yield* Database;
-      const rows = yield* database.use((db) =>
-        db
-          .select({
-            chunkId: chunk.id,
-            title: item.title,
-            location: chunk.location,
-            content: chunk.content,
-          })
-          .from(chunk)
-          .innerJoin(item, eq(chunk.itemId, item.id))
-          .where(
-            and(
-              eq(item.id, itemId),
-              eq(item.userId, turn.userId),
-              ...(fromOrdinal === undefined ? [] : [gte(chunk.ordinal, fromOrdinal)]),
-            ),
-          )
-          .orderBy(asc(chunk.ordinal))
-          .limit(Math.min(Math.max(count ?? 12, 1), 40)),
-      );
-      return rows.map((row) => ({ ...row, chunkId: ChunkId.make(row.chunkId), itemId }));
-    }).pipe(asToolFailure),
+  read_item: Effect.fn("RuthTools.readItem")(function* ({ itemId, fromOrdinal, count }) {
+    const turn = yield* RuthTurn;
+    const database = yield* Database;
+    const limit = Math.min(Math.max(count ?? DEFAULT_READ_CHUNKS, 1), MAX_READ_CHUNKS);
+    const rows = yield* database.use((db) =>
+      db
+        .select({
+          chunkId: chunk.id,
+          title: item.title,
+          location: chunk.location,
+          content: chunk.content,
+        })
+        .from(chunk)
+        .innerJoin(item, eq(chunk.itemId, item.id))
+        .where(
+          and(
+            eq(item.id, itemId),
+            eq(item.userId, turn.userId),
+            ...(fromOrdinal === undefined ? [] : [gte(chunk.ordinal, fromOrdinal)]),
+          ),
+        )
+        .orderBy(asc(chunk.ordinal))
+        .limit(limit),
+    );
+    return rows.map((row) => ({ ...row, chunkId: ChunkId.make(row.chunkId), itemId }));
+  }, asToolFailure),
 
-  run_python: ({ code, packages }) =>
-    Effect.gen(function* () {
-      const sandboxes = yield* Sandboxes;
-      const output = yield* sandboxes.runPython({
-        code,
-        ...(packages === undefined ? {} : { packages }),
-      });
-      const plots = yield* Effect.forEach(output.charts, (chart, index) =>
-        storeArtifact({
-          kind: "plot",
-          title: chart.title ?? `Plot ${index + 1}`,
-          fileName: `plot-${index + 1}.png`,
-          mimeType: "image/png",
-          bytes: chart.png,
-        }),
-      );
-      return { code, stdout: output.stdout, plots };
-    }).pipe(asToolFailure),
+  run_python: Effect.fn("RuthTools.runPython")(function* ({ code, packages }) {
+    const sandboxes = yield* Sandboxes;
+    const output = yield* sandboxes.runPython({
+      code,
+      ...(packages === undefined ? {} : { packages }),
+    });
+    const plots = yield* Effect.forEach(output.charts, (chart, index) =>
+      storeArtifact({
+        kind: "plot",
+        title: chart.title ?? `Plot ${index + 1}`,
+        fileName: `plot-${index + 1}.png`,
+        mimeType: "image/png",
+        bytes: chart.png,
+      }),
+    );
+    return { code, stdout: output.stdout, plots };
+  }, asToolFailure),
 
-  render_manim: ({ code, sceneName, quality }) =>
-    Effect.gen(function* () {
-      const sandboxes = yield* Sandboxes;
-      const output = yield* sandboxes.renderManim({ code, sceneName, quality: quality ?? "m" });
-      return yield* storeArtifact({
-        kind: "video",
-        title: sceneName,
-        fileName: `${sceneName}.mp4`,
-        mimeType: "video/mp4",
-        bytes: output.video,
-      });
-    }).pipe(asToolFailure),
+  render_manim: Effect.fn("RuthTools.renderManim")(function* ({ code, sceneName, quality }) {
+    const sandboxes = yield* Sandboxes;
+    const output = yield* sandboxes.renderManim({ code, sceneName, quality: quality ?? "m" });
+    return yield* storeArtifact({
+      kind: "video",
+      title: sceneName,
+      fileName: `${sceneName}.mp4`,
+      mimeType: "video/mp4",
+      bytes: output.video,
+    });
+  }, asToolFailure),
 
   show_widget: ({ title, html }) => {
     const problem = validateWidgetHtml(html);
     return problem === undefined ? Effect.succeed({ title, html }) : Effect.fail(problem);
   },
 
-  propose_file_action: ({ action }) =>
-    Effect.gen(function* () {
-      const turn = yield* RuthTurn;
-      const database = yield* Database;
-      const id = yield* newId(Approval.fields.id);
-      const createdAt = DateTime.formatIso(yield* DateTime.now);
-      yield* database.use((db) =>
-        db
-          .insert(ruthApproval)
-          .values({ id, userId: turn.userId, threadId: turn.threadId, action }),
-      );
-      return { id, threadId: turn.threadId, action, status: "pending" as const, createdAt };
-    }).pipe(asToolFailure),
+  propose_file_action: Effect.fn("RuthTools.proposeFileAction")(function* ({ action }) {
+    const turn = yield* RuthTurn;
+    const database = yield* Database;
+    const id = yield* newId(ApprovalId);
+    const createdAt = DateTime.formatIso(yield* DateTime.now);
+    yield* database.use((db) =>
+      db.insert(ruthApproval).values({ id, userId: turn.userId, threadId: turn.threadId, action }),
+    );
+    return { id, threadId: turn.threadId, action, status: "pending" as const, createdAt };
+  }, asToolFailure),
 });
 
 /** The message parts a successful tool result contributes to Ruth's reply. */

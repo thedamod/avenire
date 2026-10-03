@@ -1,7 +1,9 @@
 import { WORKSPACE_DIR } from "@avenire/cloud/desktop-box";
 
-const MATERIALS_DIR = `${WORKSPACE_DIR}/materials`;
-const OUT_DIR = `${WORKSPACE_DIR}/out`;
+/** Where the run's source material is written, one markdown file per item. */
+export const MATERIALS_DIR = `${WORKSPACE_DIR}/materials`;
+/** Where Ruth Cloud writes the artifacts it was asked for. */
+export const OUT_DIR = `${WORKSPACE_DIR}/out`;
 
 export const RUTH_CLOUD_SYSTEM_PROMPT = `You are Ruth Cloud, Avenire's nightly study agent.
 

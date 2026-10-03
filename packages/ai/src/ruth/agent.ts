@@ -8,11 +8,13 @@ import {
   type ApprovalDecision,
   type ApprovalId,
   type Citation,
+  Conflict,
   type FileAction,
   ItemId,
   type Message,
   MessageId,
   type MessagePart,
+  NotFound,
   type RuthEvent,
   ThreadId,
   type UserId,
@@ -84,8 +86,12 @@ export interface DecideInput {
 export class Ruth extends Context.Service<
   Ruth,
   {
-    readonly send: (input: SendInput) => Stream.Stream<RuthEvent, RuthError>;
-    readonly decide: (input: DecideInput) => Stream.Stream<RuthEvent, RuthError>;
+    /** Fails with NotFound when `threadId` is not one of the user's threads. */
+    readonly send: (input: SendInput) => Stream.Stream<RuthEvent, RuthError | NotFound>;
+    /** Fails with Conflict when the approval was already decided. */
+    readonly decide: (
+      input: DecideInput,
+    ) => Stream.Stream<RuthEvent, RuthError | NotFound | Conflict>;
   }
 >()("avenire/ai/Ruth") {}
 
@@ -129,6 +135,24 @@ const toMessage = (row: RuthMessageRow): Message => ({
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
+const decisionNote = (decision: ApprovalDecision): string =>
+  `The user ${decision} your proposed file action, and it was ` +
+  `${decision === "approved" ? "applied" : "not applied"}. ` +
+  "Acknowledge this briefly and continue helping.";
+
+/** What one model call produced: its text, why it stopped, and the parts to replay. */
+interface StepResult {
+  readonly text: string;
+  readonly finishReason: Response.FinishReason | undefined;
+  readonly responseParts: ReadonlyArray<Response.AnyPart>;
+}
+
+/** Collects what a turn contributes to the final assistant message. */
+interface TurnAccumulator {
+  readonly toolParts: Array<MessagePart>;
+  readonly citations: Map<string, Citation>;
+}
+
 const makeRuth = Effect.gen(function* () {
   const database = yield* Database;
   const storage = yield* Storage;
@@ -138,6 +162,10 @@ const makeRuth = Effect.gen(function* () {
   const toolServices = yield* Effect.context<
     Database | Storage | Retrieval | Sandboxes | Crypto.Crypto
   >();
+
+  /** Infrastructure failures surface as RuthError; domain errors are kept as they are. */
+  const failWith = (operation: string) => (cause: unknown) =>
+    Effect.fail(new RuthError({ operation, cause }));
 
   const loadMessages = (userId: UserId, threadId: ThreadId) =>
     database
@@ -163,10 +191,9 @@ const makeRuth = Effect.gen(function* () {
   const ensureThread = Effect.fn("Ruth.ensureThread")(function* (input: SendInput) {
     if (input.threadId === undefined) {
       const id = yield* newId(ThreadId);
+      const title = input.text.slice(0, THREAD_TITLE_LENGTH);
       yield* database.use((db) =>
-        db
-          .insert(ruthThread)
-          .values({ id, userId: input.userId, title: input.text.slice(0, THREAD_TITLE_LENGTH) }),
+        db.insert(ruthThread).values({ id, userId: input.userId, title }),
       );
       return id;
     }
@@ -177,9 +204,54 @@ const makeRuth = Effect.gen(function* () {
         where: and(eq(ruthThread.id, threadId), eq(ruthThread.userId, input.userId)),
       }),
     );
-    if (owned === undefined) return yield* Effect.fail(new Error(`Thread ${threadId} not found`));
+    if (owned === undefined) return yield* new NotFound({ entity: "Thread", id: threadId });
     return threadId;
   });
+
+  /** One model call: streams text to the client and records tool results as it goes. */
+  const runStep = (
+    prompt: Prompt.Prompt,
+    messageId: MessageId,
+    emit: (event: RuthEvent) => Effect.Effect<boolean>,
+    turn: TurnAccumulator,
+  ) =>
+    Effect.gen(function* () {
+      let text = "";
+      let finishReason: Response.FinishReason | undefined;
+      const responseParts: Array<Response.AnyPart> = [];
+
+      yield* Stream.runForEach(model.streamText({ prompt, toolkit }), (part) =>
+        Effect.gen(function* () {
+          switch (part.type) {
+            case "text-delta":
+              text += part.delta;
+              yield* emit({ _tag: "text-delta", messageId, delta: part.delta });
+              return;
+            case "tool-call":
+              responseParts.push(part);
+              return;
+            case "tool-result":
+              responseParts.push(part);
+              for (const citation of toolResultCitations(part)) {
+                turn.citations.set(citation.chunkId, citation);
+              }
+              for (const messagePart of toolResultParts(part)) {
+                turn.toolParts.push(messagePart);
+                yield* emit({ _tag: "part", messageId, part: messagePart });
+              }
+              if (part.name === "propose_file_action" && !part.isFailure) {
+                yield* emit({ _tag: "approval-requested", approval: part.result });
+              }
+              return;
+            case "finish":
+              finishReason = part.reason;
+              return;
+          }
+        }),
+      );
+      const result: StepResult = { text, finishReason, responseParts };
+      return result;
+    });
 
   /** One assistant reply: stream model steps, run tools, persist the final message. */
   const runTurn = (
@@ -194,57 +266,23 @@ const makeRuth = Effect.gen(function* () {
         const messageId = yield* newId(MessageId);
         yield* emit({ _tag: "message-started", messageId });
 
-        const toolParts: Array<MessagePart> = [];
-        const citations = new Map<string, Citation>();
+        const turn: TurnAccumulator = { toolParts: [], citations: new Map() };
         let replyText = "";
         let prompt = historyToPrompt(history, note);
-
         for (let step = 0; step < MAX_STEPS; step++) {
-          let stepText = "";
-          let finishReason: Response.FinishReason | undefined;
-          const stepParts: Array<Response.AnyPart> = [];
-
-          yield* Stream.runForEach(model.streamText({ prompt, toolkit }), (part) =>
-            Effect.gen(function* () {
-              switch (part.type) {
-                case "text-delta":
-                  stepText += part.delta;
-                  yield* emit({ _tag: "text-delta", messageId, delta: part.delta });
-                  return;
-                case "tool-call":
-                  stepParts.push(part);
-                  return;
-                case "tool-result":
-                  stepParts.push(part);
-                  for (const citation of toolResultCitations(part))
-                    citations.set(citation.chunkId, citation);
-                  for (const messagePart of toolResultParts(part)) {
-                    toolParts.push(messagePart);
-                    yield* emit({ _tag: "part", messageId, part: messagePart });
-                  }
-                  if (part.name === "propose_file_action" && !part.isFailure) {
-                    yield* emit({ _tag: "approval-requested", approval: part.result });
-                  }
-                  return;
-                case "finish":
-                  finishReason = part.reason;
-                  return;
-              }
-            }),
-          );
-
-          replyText += stepText;
-          if (finishReason !== "tool-calls") break;
+          const result = yield* runStep(prompt, messageId, emit, turn);
+          replyText += result.text;
+          if (result.finishReason !== "tool-calls") break;
           const assistantText =
-            stepText === "" ? [] : [Response.makePart("text", { text: stepText })];
+            result.text === "" ? [] : [Response.makePart("text", { text: result.text })];
           prompt = Prompt.concat(
             prompt,
-            Prompt.fromResponseParts([...assistantText, ...stepParts]),
+            Prompt.fromResponseParts([...assistantText, ...result.responseParts]),
           );
         }
 
         // Cite only the chunks the reply actually refers to.
-        const cited = [...citations.values()].filter((citation) =>
+        const cited = [...turn.citations.values()].filter((citation) =>
           replyText.includes(citation.chunkId),
         );
         const textParts: ReadonlyArray<MessagePart> =
@@ -253,54 +291,81 @@ const makeRuth = Effect.gen(function* () {
           id: messageId,
           threadId,
           role: "assistant",
-          parts: [...textParts, ...toolParts],
+          parts: [...textParts, ...turn.toolParts],
           createdAt: yield* nowIso,
         };
         yield* saveMessage(userId, message);
         yield* emit({ _tag: "message-completed", message });
         yield* Queue.end(queue);
       }).pipe(Effect.provideContext(Context.add(toolServices, RuthTurn, { userId, threadId }))),
-    );
-
-  const send = (input: SendInput): Stream.Stream<RuthEvent, RuthError> =>
-    Stream.unwrap(
-      Effect.gen(function* () {
-        const threadId = yield* ensureThread(input);
-        const userMessage: Message = {
-          id: yield* newId(MessageId),
-          threadId,
-          role: "user",
-          parts: [{ _tag: "text", text: input.text, citations: [] }],
-          createdAt: yield* nowIso,
-        };
-        yield* saveMessage(input.userId, userMessage);
-        const history = yield* loadMessages(input.userId, threadId);
-        return runTurn(input.userId, threadId, history);
-      }).pipe(Effect.provideContext(toolServices)),
     ).pipe(Stream.mapError((cause) => new RuthError({ operation: "reply", cause })));
+
+  /** Saves the user's message and returns the stream of Ruth's reply. */
+  const startReply = Effect.fn("Ruth.send")(function* (input: SendInput) {
+    const threadId = yield* ensureThread(input);
+    const userMessage: Message = {
+      id: yield* newId(MessageId),
+      threadId,
+      role: "user",
+      parts: [{ _tag: "text", text: input.text, citations: [] }],
+      createdAt: yield* nowIso,
+    };
+    yield* saveMessage(input.userId, userMessage);
+    const history = yield* loadMessages(input.userId, threadId);
+    return runTurn(input.userId, threadId, history);
+  }, Effect.provideContext(toolServices));
+
+  const moveItem = Effect.fn("Ruth.moveItem")(function* (
+    userId: UserId,
+    action: Extract<FileAction, { readonly _tag: "move" }>,
+  ) {
+    const moved = yield* database.useTransaction(async (tx) => {
+      const target = await tx.query.cluster.findFirst({
+        columns: { id: true },
+        where: and(eq(cluster.id, action.toClusterId), eq(cluster.userId, userId)),
+      });
+      const owned = await tx.query.item.findFirst({
+        columns: { id: true },
+        where: and(eq(item.id, action.itemId), eq(item.userId, userId)),
+      });
+      if (target === undefined || owned === undefined) return false;
+      await tx
+        .delete(itemCluster)
+        .where(and(eq(itemCluster.itemId, action.itemId), eq(itemCluster.userId, userId)));
+      await tx.insert(itemCluster).values({ itemId: action.itemId, clusterId: target.id, userId });
+      return true;
+    });
+    if (!moved) return yield* new NotFound({ entity: "Item or cluster", id: action.itemId });
+  });
+
+  const createNote = Effect.fn("Ruth.createNote")(function* (
+    userId: UserId,
+    action: Extract<FileAction, { readonly _tag: "create-note" }>,
+  ) {
+    const id = yield* newId(ItemId);
+    const storageKey = itemSourceKey(userId, id, "note.md");
+    const bytes = new TextEncoder().encode(action.markdown);
+    yield* storage.put(storageKey, bytes, { contentType: "text/markdown" });
+    yield* database.use((db) =>
+      db.insert(item).values({
+        id,
+        userId,
+        kind: "note",
+        title: action.title,
+        storageKey,
+        mimeType: "text/markdown",
+        sizeBytes: bytes.byteLength,
+        dedupeKey: `ruth-note:${id}`,
+      }),
+    );
+    yield* enqueueIngestion(userId, id);
+  });
 
   const applyAction = (userId: UserId, action: FileAction) => {
     const ownedItem = (itemId: ItemId) => and(eq(item.id, itemId), eq(item.userId, userId));
     switch (action._tag) {
       case "move":
-        return database.useTransaction(async (tx) => {
-          const target = await tx.query.cluster.findFirst({
-            columns: { id: true },
-            where: and(eq(cluster.id, action.toClusterId), eq(cluster.userId, userId)),
-          });
-          const owned = await tx.query.item.findFirst({
-            columns: { id: true },
-            where: ownedItem(action.itemId),
-          });
-          if (target === undefined || owned === undefined)
-            throw new Error("Item or cluster not found");
-          await tx
-            .delete(itemCluster)
-            .where(and(eq(itemCluster.itemId, action.itemId), eq(itemCluster.userId, userId)));
-          await tx
-            .insert(itemCluster)
-            .values({ itemId: action.itemId, clusterId: target.id, userId });
-        });
+        return moveItem(userId, action);
       case "rename":
         return database.use((db) =>
           db.update(item).set({ title: action.title }).where(ownedItem(action.itemId)),
@@ -311,61 +376,56 @@ const makeRuth = Effect.gen(function* () {
           db.update(item).set({ placement: "archived" }).where(ownedItem(action.itemId)),
         );
       case "create-note":
-        return Effect.gen(function* () {
-          const id = yield* newId(ItemId);
-          const storageKey = itemSourceKey(userId, id, "note.md");
-          const bytes = new TextEncoder().encode(action.markdown);
-          yield* storage.put(storageKey, bytes, { contentType: "text/markdown" });
-          yield* database.use((db) =>
-            db.insert(item).values({
-              id,
-              userId,
-              kind: "note",
-              title: action.title,
-              storageKey,
-              mimeType: "text/markdown",
-              sizeBytes: bytes.byteLength,
-              dedupeKey: `ruth-note:${id}`,
-            }),
-          );
-          yield* enqueueIngestion(userId, id);
-        });
+        return createNote(userId, action);
     }
   };
 
-  const decide = (input: DecideInput): Stream.Stream<RuthEvent, RuthError> =>
-    Stream.unwrap(
-      Effect.gen(function* () {
-        // The status guard makes deciding idempotent under double-clicks.
-        const [approval] = yield* database.use((db) =>
-          db
-            .update(ruthApproval)
-            .set({ status: input.decision, decidedAt: sql`now()` })
-            .where(
-              and(
-                eq(ruthApproval.id, input.approvalId),
-                eq(ruthApproval.userId, input.userId),
-                eq(ruthApproval.status, "pending"),
-              ),
-            )
-            .returning(),
-        );
-        if (approval === undefined)
-          return yield* Effect.fail(new Error("This approval is no longer pending"));
-        if (input.decision === "approved") yield* applyAction(input.userId, approval.action);
+  /** Records the decision, applies an approved action, and returns Ruth's follow-up. */
+  const applyDecision = Effect.fn("Ruth.decide")(function* (input: DecideInput) {
+    // The status guard makes deciding idempotent under double-clicks.
+    const [approval] = yield* database.use((db) =>
+      db
+        .update(ruthApproval)
+        .set({ status: input.decision, decidedAt: sql`now()` })
+        .where(
+          and(
+            eq(ruthApproval.id, input.approvalId),
+            eq(ruthApproval.userId, input.userId),
+            eq(ruthApproval.status, "pending"),
+          ),
+        )
+        .returning(),
+    );
+    if (approval === undefined) {
+      return yield* new Conflict({ reason: "This approval is no longer pending" });
+    }
+    if (input.decision === "approved") yield* applyAction(input.userId, approval.action);
 
-        const threadId = ThreadId.make(approval.threadId);
-        const history = yield* loadMessages(input.userId, threadId);
-        return runTurn(
-          input.userId,
-          threadId,
-          history,
-          `The user ${input.decision} your proposed file action, and it was ${input.decision === "approved" ? "applied" : "not applied"}. Acknowledge this briefly and continue helping.`,
-        );
-      }).pipe(Effect.provideContext(toolServices)),
-    ).pipe(Stream.mapError((cause) => new RuthError({ operation: "apply the decision", cause })));
+    const threadId = ThreadId.make(approval.threadId);
+    const history = yield* loadMessages(input.userId, threadId);
+    return runTurn(input.userId, threadId, history, decisionNote(input.decision));
+  }, Effect.provideContext(toolServices));
 
-  return Ruth.of({ send, decide });
+  return Ruth.of({
+    send: (input) =>
+      Stream.unwrap(
+        Effect.catchTag(
+          startReply(input),
+          "NotFound",
+          (error) => Effect.fail(error),
+          failWith("start the reply"),
+        ),
+      ),
+    decide: (input) =>
+      Stream.unwrap(
+        Effect.catchTag(
+          applyDecision(input),
+          ["NotFound", "Conflict"],
+          (error) => Effect.fail(error),
+          failWith("apply the decision"),
+        ),
+      ),
+  });
 });
 
 export const RuthLive = Layer.effect(Ruth, makeRuth).pipe(

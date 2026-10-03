@@ -50,12 +50,15 @@ export const artifactPlan = (kinds: ReadonlyArray<ArtifactKind>): ReadonlyArray<
     return planned === undefined ? [] : [planned];
   });
 
+const pad = (value: number, width = 2): string => String(value).padStart(width, "0");
+
+/** `runAt` (HH:mm) on the same local calendar day as `date`, in `timeZone`. */
 const atLocalTime = (date: DateTime.DateTime, runAt: string, timeZone: string): DateTime.Zoned => {
   const { year, month, day } = DateTime.toParts(date);
-  return DateTime.makeZonedUnsafe(
-    `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T${runAt}:00`,
-    { timeZone, adjustForTimeZone: true },
-  );
+  return DateTime.makeZonedUnsafe(`${pad(year, 4)}-${pad(month)}-${pad(day)}T${runAt}:00`, {
+    timeZone,
+    adjustForTimeZone: true,
+  });
 };
 
 const asUtcIso = (instant: DateTime.DateTime): string =>
