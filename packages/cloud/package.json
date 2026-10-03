@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./daytona": {
+      "types": "./src/daytona.ts",
+      "import": "./src/daytona.ts"
+    },
     "./sandbox": {
       "types": "./src/sandbox.ts",
       "import": "./src/sandbox.ts"

@@ -1,0 +1,11 @@
+appId: space.avenire.desktop
+productName: Avenire
+files:
+  - dist/**
+  - package.json
+mac:
+  target: dmg
+win:
+  target: nsis
+linux:
+  target: AppImage

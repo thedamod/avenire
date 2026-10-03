@@ -22,5 +22,11 @@
     "electron-builder": "26.15.3",
     "esbuild": "^0.27.0",
     "vite-plus": "catalog:"
+  },
+  "exports": {
+    "./bridge": {
+      "types": "./src/bridge.ts",
+      "import": "./src/bridge.ts"
+    }
   }
 }
