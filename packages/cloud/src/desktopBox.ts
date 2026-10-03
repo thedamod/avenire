@@ -12,7 +12,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import type * as Scope from "effect/Scope";
 
-import { attempt, type CloudError, DaytonaClient, decodeBase64 } from "./daytona.ts";
+import { attempt, CloudError, DaytonaClient, decodeBase64 } from "./daytona.ts";
 
 export const WORKSPACE_DIR = "/home/daytona/workspace";
 
@@ -70,7 +70,7 @@ const makeBox = (sandbox: Sandbox, recordingId: Ref.Ref<Option.Option<string>>):
   screenshot: attempt("screenshot", () => sandbox.computerUse.screenshot.takeFullScreen()).pipe(
     Effect.flatMap(({ screenshot }) =>
       screenshot === undefined
-        ? attempt("screenshot", () => Promise.reject(new Error("Screenshot returned no image")))
+        ? Effect.fail(new CloudError({ operation: "screenshot", detail: "no image returned" }))
         : Effect.succeed(decodeBase64(screenshot)),
     ),
   ),

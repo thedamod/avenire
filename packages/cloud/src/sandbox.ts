@@ -68,6 +68,7 @@ const SCENE_NAME = /^[A-Za-z_]\w*$/;
 const DEFAULT_TIMEOUT_SECONDS = 120;
 const BASE_PACKAGES = ["matplotlib", "numpy"];
 const MEDIA_DIR = "/tmp/media";
+const SCENE_FILE = "/tmp/scene.py";
 
 /** Returns why the input is rejected, or undefined when it is acceptable. */
 export const validateSandboxInput = (input: {
@@ -92,17 +93,90 @@ const validate = (input: Parameters<typeof validateSandboxInput>[0]) => {
   return reason === undefined ? Effect.void : Effect.fail(new SandboxInputRejected({ reason }));
 };
 
-const pipInstall = (sandbox: Sandbox, packages: ReadonlyArray<string>, timeout: number) =>
+const validateScene = (input: RenderManimInput) =>
+  SCENE_NAME.test(input.sceneName) &&
+  new RegExp(`\\bclass\\s+${input.sceneName}\\b`).test(input.code)
+    ? Effect.void
+    : Effect.fail(
+        new SandboxInputRejected({
+          reason: `Scene class ${input.sceneName} is not defined in the source`,
+        }),
+      );
+
+const exec = (
+  operation: string,
+  sandbox: Sandbox,
+  command: string,
+  options: { readonly cwd?: string; readonly timeoutSeconds?: number } = {},
+) =>
+  attempt(operation, () =>
+    sandbox.process.executeCommand(command, options.cwd, undefined, options.timeoutSeconds),
+  );
+
+const pipInstall = (sandbox: Sandbox, packages: ReadonlyArray<string>, timeoutSeconds: number) =>
   packages.length === 0
     ? Effect.void
-    : attempt("pipInstall", () =>
-        sandbox.process.executeCommand(
-          `python -m pip install --quiet ${packages.map((name) => `'${name}'`).join(" ")}`,
-          undefined,
-          undefined,
-          timeout,
-        ),
+    : exec(
+        "pipInstall",
+        sandbox,
+        // Names are validated against PIP_NAME, so quoting them is enough.
+        `python -m pip install --quiet ${packages.map((name) => `'${name}'`).join(" ")}`,
+        { timeoutSeconds },
       ).pipe(Effect.flatMap(requireSuccess("pipInstall")), Effect.asVoid);
+
+const MANIM_SYSTEM_DEPS =
+  "sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg libcairo2-dev libpango1.0-dev";
+
+const installManim = (sandbox: Sandbox, timeoutSeconds: number) =>
+  exec("installManimSystemDeps", sandbox, MANIM_SYSTEM_DEPS, { timeoutSeconds }).pipe(
+    Effect.flatMap(requireSuccess("installManimSystemDeps")),
+    Effect.andThen(pipInstall(sandbox, ["manim", ...BASE_PACKAGES], timeoutSeconds)),
+  );
+
+type CodeRunResponse = Awaited<ReturnType<Sandbox["process"]["codeRun"]>>;
+
+const chartsFrom = (response: CodeRunResponse): RunPythonResult["charts"] =>
+  (response.artifacts?.charts ?? []).flatMap((chart) =>
+    chart.png === undefined
+      ? []
+      : [{ ...(chart.title ? { title: chart.title } : {}), png: decodeBase64(chart.png) }],
+  );
+
+const runCode = (sandbox: Sandbox, code: string, timeoutSeconds: number) =>
+  attempt("codeRun", () => sandbox.process.codeRun(code, undefined, timeoutSeconds)).pipe(
+    // The SDK timeout is enforced inside the sandbox; this guards against a hung API call.
+    Effect.timeoutOrElse({
+      duration: `${timeoutSeconds + 30} seconds`,
+      orElse: () => Effect.fail(new SandboxTimeout({ operation: "codeRun", timeoutSeconds })),
+    }),
+  );
+
+const renderScene = Effect.fnUntraced(function* (
+  sandbox: Sandbox,
+  input: RenderManimInput,
+  timeoutSeconds: number,
+) {
+  yield* attempt("uploadManimSource", () =>
+    sandbox.fs.uploadFile(Buffer.from(input.code), SCENE_FILE),
+  );
+  const rendered = yield* exec(
+    "renderManim",
+    sandbox,
+    `manim render -q${input.quality} --media_dir ${MEDIA_DIR} ${SCENE_FILE} ${input.sceneName}`,
+    { cwd: "/tmp", timeoutSeconds },
+  ).pipe(Effect.flatMap(requireSuccess("renderManim")));
+  const located = yield* exec(
+    "locateManimVideo",
+    sandbox,
+    `find ${MEDIA_DIR}/videos -name '${input.sceneName}.mp4' -print -quit`,
+  );
+  const path = located.result.trim();
+  if (path === "") {
+    return yield* new CloudError({ operation: "locateManimVideo", detail: "no video rendered" });
+  }
+  const video = yield* attempt("downloadManimVideo", () => sandbox.fs.downloadFile(path));
+  return { video: new Uint8Array(video), stdout: rendered.result };
+});
 
 export const SandboxesLive = Layer.effect(
   Sandboxes,
@@ -139,88 +213,32 @@ export const SandboxesLive = Layer.effect(
       runPython: Effect.fn("Sandboxes.runPython")(function* (input) {
         yield* validate(input);
         const timeout = input.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
-        return yield* withSandbox(pythonSnapshot, (sandbox) =>
-          Effect.gen(function* () {
-            const packages = Option.isSome(pythonSnapshot)
-              ? (input.packages ?? [])
-              : [...BASE_PACKAGES, ...(input.packages ?? [])];
-            yield* pipInstall(sandbox, packages, timeout);
-            const response = yield* attempt("codeRun", () =>
-              sandbox.process.codeRun(input.code, undefined, timeout),
-            ).pipe(
-              Effect.timeoutOrElse({
-                duration: `${timeout + 30} seconds`,
-                orElse: () =>
-                  Effect.fail(
-                    new SandboxTimeout({ operation: "codeRun", timeoutSeconds: timeout }),
-                  ),
-              }),
-            );
-            const charts = (response.artifacts?.charts ?? []).flatMap((chart) =>
-              chart.png === undefined
-                ? []
-                : [
-                    {
-                      ...(chart.title ? { title: chart.title } : {}),
-                      png: decodeBase64(chart.png),
-                    },
-                  ],
-            );
-            return { stdout: response.result, exitCode: response.exitCode, charts };
-          }),
+        // A custom snapshot ships its own base packages.
+        const packages = Option.isSome(pythonSnapshot)
+          ? (input.packages ?? [])
+          : [...BASE_PACKAGES, ...(input.packages ?? [])];
+        const response = yield* withSandbox(pythonSnapshot, (sandbox) =>
+          pipInstall(sandbox, packages, timeout).pipe(
+            Effect.andThen(runCode(sandbox, input.code, timeout)),
+          ),
         );
+        return {
+          stdout: response.result,
+          exitCode: response.exitCode,
+          charts: chartsFrom(response),
+        };
       }),
 
       renderManim: Effect.fn("Sandboxes.renderManim")(function* (input) {
         yield* validate(input);
-        if (
-          !SCENE_NAME.test(input.sceneName) ||
-          !new RegExp(`\\bclass\\s+${input.sceneName}\\b`).test(input.code)
-        ) {
-          return yield* new SandboxInputRejected({
-            reason: `Scene class ${input.sceneName} is not defined in the source`,
-          });
-        }
+        yield* validateScene(input);
         const timeout = input.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
         return yield* withSandbox(manimSnapshot, (sandbox) =>
-          Effect.gen(function* () {
-            if (Option.isNone(manimSnapshot)) {
-              yield* attempt("installManimSystemDeps", () =>
-                sandbox.process.executeCommand(
-                  "sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg libcairo2-dev libpango1.0-dev",
-                  undefined,
-                  undefined,
-                  timeout,
-                ),
-              ).pipe(Effect.flatMap(requireSuccess("installManimSystemDeps")));
-              yield* pipInstall(sandbox, ["manim", ...BASE_PACKAGES], timeout);
-            }
-            yield* attempt("uploadManimSource", () =>
-              sandbox.fs.uploadFile(Buffer.from(input.code), "/tmp/scene.py"),
-            );
-            const rendered = yield* attempt("renderManim", () =>
-              sandbox.process.executeCommand(
-                `manim render -q${input.quality} --media_dir ${MEDIA_DIR} /tmp/scene.py ${input.sceneName}`,
-                "/tmp",
-                undefined,
-                timeout,
+          Option.isSome(manimSnapshot)
+            ? renderScene(sandbox, input, timeout)
+            : installManim(sandbox, timeout).pipe(
+                Effect.andThen(renderScene(sandbox, input, timeout)),
               ),
-            ).pipe(Effect.flatMap(requireSuccess("renderManim")));
-            const located = yield* attempt("locateManimVideo", () =>
-              sandbox.process.executeCommand(
-                `find ${MEDIA_DIR}/videos -name '${input.sceneName}.mp4' -print -quit`,
-              ),
-            );
-            const path = located.result.trim();
-            if (path === "") {
-              return yield* new CloudError({
-                operation: "locateManimVideo",
-                cause: new Error("Rendered video not found"),
-              });
-            }
-            const video = yield* attempt("downloadManimVideo", () => sandbox.fs.downloadFile(path));
-            return { video: new Uint8Array(video), stdout: rendered.result };
-          }),
         );
       }),
     });
