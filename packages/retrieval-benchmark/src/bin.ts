@@ -5,8 +5,9 @@ import { DatabaseLive } from "@avenire/database/client";
 import { EmbedderLive, EmbedderTest } from "@avenire/ingestion/embed";
 import { RetrievalLive } from "@avenire/ingestion/retrieval";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import { writeFile } from "node:fs/promises";
+
 import { formatTable, runBenchmark } from "./run.ts";
 
 const args = process.argv.slice(2);
@@ -21,31 +22,29 @@ if (embedderName !== "test" && embedderName !== "openai") {
 }
 if (args.includes("--json") && !jsonPath) throw new Error("--json requires a file path");
 
-const embedderLayer = embedderName === "test" ? EmbedderTest : EmbedderLive;
 const InfrastructureLive = Layer.mergeAll(
   DatabaseLive,
   NodeServices.layer,
   NodeHttpClient.layerNodeHttp,
 );
-const WithEmbedderLive = embedderLayer.pipe(Layer.provideMerge(InfrastructureLive));
-const AppLive = RetrievalLive.pipe(Layer.provideMerge(WithEmbedderLive));
-
-const program = runBenchmark.pipe(
-  Effect.flatMap(({ seeded, results }) =>
-    Effect.gen(function* () {
-      yield* Effect.logInfo(
-        `Seeded ${seeded.documents} documents and ${seeded.chunks} chunks with ${seeded.model}`,
-      );
-      yield* Effect.logInfo(`\n${formatTable(results)}`);
-      if (jsonPath) {
-        yield* Effect.tryPromise(() =>
-          writeFile(jsonPath, `${JSON.stringify({ seeded, results }, null, 2)}\n`, "utf8"),
-        );
-        yield* Effect.logInfo(`Wrote ${jsonPath}`);
-      }
-    }),
-  ),
-  Effect.provide(AppLive),
+// The benchmark seeds through Database and Embedder as well as searching through
+// Retrieval, so those layers stay visible to the program (provideMerge, not provide).
+const AppLive = RetrievalLive.pipe(
+  Layer.provideMerge(embedderName === "test" ? EmbedderTest : EmbedderLive),
+  Layer.provideMerge(InfrastructureLive),
 );
+
+const program = Effect.gen(function* () {
+  const { seeded, results } = yield* runBenchmark;
+  yield* Effect.logInfo(
+    `Seeded ${seeded.documents} documents and ${seeded.chunks} chunks with ${seeded.model}`,
+  );
+  yield* Effect.logInfo(`\n${formatTable(results)}`);
+  if (jsonPath) {
+    const fs = yield* FileSystem.FileSystem;
+    yield* fs.writeFileString(jsonPath, `${JSON.stringify({ seeded, results }, null, 2)}\n`);
+    yield* Effect.logInfo(`Wrote ${jsonPath}`);
+  }
+}).pipe(Effect.provide(AppLive));
 
 NodeRuntime.runMain(program);

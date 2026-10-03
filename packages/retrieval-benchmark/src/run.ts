@@ -1,8 +1,9 @@
 import type { SearchHit } from "@avenire/contracts";
 import { Retrieval } from "@avenire/ingestion/retrieval";
 import * as Effect from "effect/Effect";
-import { aggregateBy, scoreQuery, type MetricValues } from "./metrics.ts";
-import { queries, type QueryType } from "./dataset/index.ts";
+
+import { type BenchmarkQuery, queries, type QueryType } from "./dataset/index.ts";
+import { aggregateBy, type MetricValues, scoreQuery } from "./metrics.ts";
 import { BENCH_USER_ID, seedCorpus } from "./seed.ts";
 
 export type QueryResult = {
@@ -14,34 +15,36 @@ export type QueryResult = {
   readonly metrics: MetricValues;
 };
 
+const K = 10;
+
+/** Documents in the order their first chunk was retrieved. */
+const rankedDocuments = (hits: ReadonlyArray<SearchHit>): ReadonlyArray<string> => [
+  ...new Set(hits.map((hit) => hit.itemId)),
+];
+
+const scoreResult = (query: BenchmarkQuery, hits: ReadonlyArray<SearchHit>): QueryResult => {
+  const ranked = rankedDocuments(hits);
+  const relevant = query.relevant.map(({ documentId, grade }) => ({
+    documentId,
+    ...(grade === undefined ? {} : { grade }),
+  }));
+  return {
+    id: query.id,
+    type: query.type,
+    text: query.text,
+    expected: query.relevant.map(({ documentId }) => documentId),
+    ranked,
+    metrics: scoreQuery(ranked, relevant, K),
+  };
+};
+
 export const runBenchmark = Effect.gen(function* () {
   const retrieval = yield* Retrieval;
   const seeded = yield* seedCorpus;
-  const results: Array<QueryResult> = yield* Effect.forEach(queries, (query) =>
-    retrieval.search(BENCH_USER_ID, { text: query.text, limit: 10 }).pipe(
-      Effect.map((hits: ReadonlyArray<SearchHit>) => {
-        const ranked: Array<string> = [];
-        const seen = new Set<string>();
-        for (const hit of hits) {
-          if (!seen.has(hit.itemId)) {
-            ranked.push(hit.itemId);
-            seen.add(hit.itemId);
-          }
-        }
-        const relevant = query.relevant.map(({ documentId, grade }) => ({
-          documentId,
-          ...(grade === undefined ? {} : { grade }),
-        }));
-        return {
-          id: query.id,
-          type: query.type,
-          text: query.text,
-          expected: query.relevant.map(({ documentId }) => documentId),
-          ranked,
-          metrics: scoreQuery(ranked, relevant, 10),
-        };
-      }),
-    ),
+  const results = yield* Effect.forEach(queries, (query) =>
+    retrieval
+      .search(BENCH_USER_ID, { text: query.text, limit: K })
+      .pipe(Effect.map((hits) => scoreResult(query, hits))),
   );
   return { seeded, results };
 });
