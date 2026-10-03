@@ -11,6 +11,10 @@
       "types": "./src/ruth/agent.ts",
       "import": "./src/ruth/agent.ts"
     },
+    "./ruth-tools": {
+      "types": "./src/ruth/tools.ts",
+      "import": "./src/ruth/tools.ts"
+    },
     "./ruth-cloud": {
       "types": "./src/ruthCloud/run.ts",
       "import": "./src/ruthCloud/run.ts"
