@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { call, stream, type AvenireRpcClient } from "@avenire/client-runtime/rpc";
+import * as Cause from "effect/Cause";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 import { useApi } from "../state/api";
@@ -60,8 +61,10 @@ export function useStream<T, E>(
       onEvent: (event) => {
         if (active) eventRef.current(event);
       },
-      onError: (error) => {
-        if (active) errorRef.current?.(error);
+      // Hand callers the failure itself (a tagged error or defect), not the Cause,
+      // so errorMessage() can read it.
+      onError: (cause) => {
+        if (active) errorRef.current?.(Cause.squash(cause));
       },
     });
     return () => {
