@@ -22,6 +22,7 @@ export interface CreateAuthOptions {
   readonly google?: { readonly clientId: string; readonly clientSecret: string };
 }
 
+// Runs inside better-auth callbacks (plain promises), so ids come from Web Crypto here.
 const enqueueEmail = (
   db: DatabaseClient,
   template: "verify-email" | "reset-password",
@@ -67,7 +68,11 @@ export type Auth = ReturnType<typeof createAuth>;
 
 export class AuthError extends Schema.TaggedError<AuthError>()("AuthError", {
   cause: Schema.Defect(),
-}) {}
+}) {
+  override get message(): string {
+    return "Could not resolve the session";
+  }
+}
 
 export const AuthConfig = Config.all({
   secret: Config.Redacted("BETTER_AUTH_SECRET"),
@@ -85,45 +90,49 @@ export class AuthService extends Context.Service<
   }
 >()("avenire/auth/AuthService") {}
 
+const parseOrigins = (value: string): ReadonlyArray<string> =>
+  value
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
 export const AuthLive = Layer.effect(
   AuthService,
   Effect.gen(function* () {
     const config = yield* AuthConfig;
     const database = yield* Database;
-    const trustedOrigins = Option.isSome(config.trustedOrigins)
-      ? config.trustedOrigins.value
-          .split(",")
-          .map((origin) => origin.trim())
-          .filter(Boolean)
-      : [config.baseURL, "avenire://"];
-    const google =
-      Option.isSome(config.googleClientId) && Option.isSome(config.googleClientSecret)
-        ? { clientId: config.googleClientId.value, clientSecret: config.googleClientSecret.value }
-        : undefined;
+    const google = Option.all({
+      clientId: config.googleClientId,
+      clientSecret: config.googleClientSecret,
+    });
     const auth = createAuth({
       db: database.db,
       baseURL: config.baseURL,
       secret: Redacted.value(config.secret),
-      trustedOrigins,
-      ...(google === undefined ? {} : { google }),
+      trustedOrigins: Option.match(config.trustedOrigins, {
+        onNone: () => [config.baseURL, "avenire://"],
+        onSome: parseOrigins,
+      }),
+      ...Option.match(google, { onNone: () => ({}), onSome: (google) => ({ google }) }),
     });
 
-    return AuthService.of({
-      auth,
-      getSession: (headers) =>
-        Effect.tryPromise({
-          try: async () => {
-            const result = await auth.api.getSession({ headers });
-            return result === null
-              ? null
-              : {
-                  id: UserId.make(result.user.id),
-                  email: result.user.email,
-                  name: result.user.name,
-                };
-          },
-          catch: (cause) => new AuthError({ cause }),
-        }),
-    });
+    const getSession = (headers: Headers) =>
+      Effect.tryPromise({
+        try: () => auth.api.getSession({ headers }),
+        catch: (cause) => new AuthError({ cause }),
+      }).pipe(
+        Effect.map((result): SessionUser | null =>
+          result === null
+            ? null
+            : {
+                id: UserId.make(result.user.id),
+                email: result.user.email,
+                name: result.user.name,
+              },
+        ),
+        Effect.withSpan("AuthService.getSession"),
+      );
+
+    return AuthService.of({ auth, getSession });
   }),
 );
