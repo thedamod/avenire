@@ -26,7 +26,10 @@ export interface DesktopBox {
   readonly readFile: (path: string) => Effect.Effect<Uint8Array, CloudError>;
   readonly listFiles: (
     dir: string,
-  ) => Effect.Effect<ReadonlyArray<{ readonly name: string; readonly isDirectory: boolean }>, CloudError>;
+  ) => Effect.Effect<
+    ReadonlyArray<{ readonly name: string; readonly isDirectory: boolean }>,
+    CloudError
+  >;
   readonly screenshot: Effect.Effect<Uint8Array, CloudError>;
   /** Stops the screen recording and returns the video, if one is running. */
   readonly stopRecording: Effect.Effect<Option.Option<Uint8Array>, CloudError>;
@@ -47,11 +50,19 @@ const makeBox = (sandbox: Sandbox, recordingId: Ref.Ref<Option.Option<string>>):
   id: sandbox.id,
   shell: (command, options = {}) =>
     attempt("shell", () =>
-      sandbox.process.executeCommand(command, options.cwd ?? WORKSPACE_DIR, undefined, options.timeoutSeconds),
+      sandbox.process.executeCommand(
+        command,
+        options.cwd ?? WORKSPACE_DIR,
+        undefined,
+        options.timeoutSeconds,
+      ),
     ).pipe(Effect.map(({ result, exitCode }) => ({ stdout: result, exitCode }))),
-  writeFile: (path, bytes) => attempt("writeFile", () => sandbox.fs.uploadFile(Buffer.from(bytes), path)),
+  writeFile: (path, bytes) =>
+    attempt("writeFile", () => sandbox.fs.uploadFile(Buffer.from(bytes), path)),
   readFile: (path) =>
-    attempt("readFile", () => sandbox.fs.downloadFile(path)).pipe(Effect.map((bytes) => new Uint8Array(bytes))),
+    attempt("readFile", () => sandbox.fs.downloadFile(path)).pipe(
+      Effect.map((bytes) => new Uint8Array(bytes)),
+    ),
   listFiles: (dir) =>
     attempt("listFiles", () => sandbox.fs.listFiles(dir)).pipe(
       Effect.map((files) => files.map((file) => ({ name: file.name, isDirectory: file.isDir }))),
@@ -69,7 +80,9 @@ const makeBox = (sandbox: Sandbox, recordingId: Ref.Ref<Option.Option<string>>):
         onNone: () => Effect.succeed(Option.none<Uint8Array>()),
         onSome: (id) =>
           attempt("stopRecording", () => sandbox.computerUse.recording.stop(id)).pipe(
-            Effect.flatMap((recording) => attempt("downloadRecording", () => sandbox.fs.downloadFile(recording.filePath))),
+            Effect.flatMap((recording) =>
+              attempt("downloadRecording", () => sandbox.fs.downloadFile(recording.filePath)),
+            ),
             Effect.map((bytes) => Option.some(new Uint8Array(bytes))),
           ),
       }),
@@ -81,7 +94,9 @@ export const DesktopBoxesLive = Layer.effect(
   DesktopBoxes,
   Effect.gen(function* () {
     const daytona = yield* DaytonaClient;
-    const snapshot = yield* Config.String("DAYTONA_DESKTOP_SNAPSHOT").pipe(Config.withDefault("daytonaio/sandbox"));
+    const snapshot = yield* Config.String("DAYTONA_DESKTOP_SNAPSHOT").pipe(
+      Config.withDefault("daytonaio/sandbox"),
+    );
 
     return DesktopBoxes.of({
       open: Effect.fn("DesktopBoxes.open")(function* ({ userId, runId }) {
@@ -95,17 +110,23 @@ export const DesktopBoxesLive = Layer.effect(
           ),
           (sandbox) =>
             attempt("deleteDesktopBox", () => sandbox.delete()).pipe(
-              Effect.catchCause((cause) => Effect.logWarning("Failed to delete desktop box", cause)),
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Failed to delete desktop box", cause),
+              ),
             ),
         );
         yield* attempt("startComputerUse", () => sandbox.computerUse.start());
         yield* attempt("createWorkspace", () => sandbox.fs.createFolder(WORKSPACE_DIR, "755"));
-        const recording = yield* attempt("startRecording", () => sandbox.computerUse.recording.start(`ruth-${runId}`));
+        const recording = yield* attempt("startRecording", () =>
+          sandbox.computerUse.recording.start(`ruth-${runId}`),
+        );
         const recordingId = yield* Ref.make(Option.some(recording.id));
         const box = makeBox(sandbox, recordingId);
         // Runs before the delete finalizer above, so an unfinished recording is stopped cleanly.
         yield* Effect.addFinalizer(() =>
-          box.stopRecording.pipe(Effect.catchCause((cause) => Effect.logWarning("Failed to stop recording", cause))),
+          box.stopRecording.pipe(
+            Effect.catchCause((cause) => Effect.logWarning("Failed to stop recording", cause)),
+          ),
         );
         return box;
       }),

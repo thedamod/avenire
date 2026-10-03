@@ -8,7 +8,11 @@ let report: { readonly tabs: readonly CapturedTabType[]; readonly at: number } |
 let server: Http.Server | undefined;
 
 const LOOPBACK_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
-const EXTENSION_PROTOCOLS = new Set(["chrome-extension:", "moz-extension:", "safari-web-extension:"]);
+const EXTENSION_PROTOCOLS = new Set([
+  "chrome-extension:",
+  "moz-extension:",
+  "safari-web-extension:",
+]);
 
 /**
  * Only the Avenire extension may report tabs: the request must come from this machine,
@@ -41,7 +45,9 @@ export function startTabsReceiver(): void {
     });
     request.on("end", () => {
       try {
-        const decoded = Schema.decodeUnknownSync(Schema.Array(CapturedTab))(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        const decoded = Schema.decodeUnknownSync(Schema.Array(CapturedTab))(
+          JSON.parse(Buffer.concat(chunks).toString("utf8")),
+        );
         report = { tabs: decoded, at: Date.now() };
         response.writeHead(204).end();
       } catch {
@@ -54,5 +60,11 @@ export function startTabsReceiver(): void {
 
 export function latestTabs(): readonly CapturedTabType[] {
   if (!report || Date.now() - report.at > 10_000) return [];
-  return report.tabs.filter((tab) => tab.activeInWindow || tab.engagement.dwellMs >= 8_000 || tab.engagement.scrollDepthPct >= 15 || tab.engagement.mediaPlaying);
+  return report.tabs.filter(
+    (tab) =>
+      tab.activeInWindow ||
+      tab.engagement.dwellMs >= 8_000 ||
+      tab.engagement.scrollDepthPct >= 15 ||
+      tab.engagement.mediaPlaying,
+  );
 }

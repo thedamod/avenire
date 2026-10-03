@@ -47,7 +47,9 @@ export const makeClientLayer = (options: ClientOptions) => {
       ? {}
       : {
           transformClient: HttpClient.mapRequestEffect((request) =>
-            Effect.promise(async () => HttpClientRequest.setHeaders(request, await getAuthHeaders())),
+            Effect.promise(async () =>
+              HttpClientRequest.setHeaders(request, await getAuthHeaders()),
+            ),
           ),
         }),
   }).pipe(Layer.provide(Layer.mergeAll(RpcSerialization.layerNdjson, http)));

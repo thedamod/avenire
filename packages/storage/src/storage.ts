@@ -40,8 +40,16 @@ export class Storage extends Context.Service<
     readonly get: (key: StorageKey) => Effect.Effect<Uint8Array, StorageError | ObjectNotFound>;
     readonly head: (key: StorageKey) => Effect.Effect<StoredObject, StorageError | ObjectNotFound>;
     readonly remove: (key: StorageKey) => Effect.Effect<void, StorageError>;
-    readonly list: (prefix: StorageKey) => Effect.Effect<ReadonlyArray<{ readonly key: StorageKey; readonly size: number }>, StorageError>;
-    readonly signedDownloadUrl: (key: StorageKey, expiresInSeconds: number) => Effect.Effect<string, StorageError>;
+    readonly list: (
+      prefix: StorageKey,
+    ) => Effect.Effect<
+      ReadonlyArray<{ readonly key: StorageKey; readonly size: number }>,
+      StorageError
+    >;
+    readonly signedDownloadUrl: (
+      key: StorageKey,
+      expiresInSeconds: number,
+    ) => Effect.Effect<string, StorageError>;
     readonly signedUploadUrl: (
       key: StorageKey,
       options: SignedUploadOptions,
@@ -74,10 +82,17 @@ const makeStorage = (files: Files): Storage["Service"] => {
 
   return Storage.of({
     files,
-    put: (key, body, options) => attempt("put", key, () => files.upload(key, body, options)).pipe(Effect.asVoid),
+    put: (key, body, options) =>
+      attempt("put", key, () => files.upload(key, body, options)).pipe(Effect.asVoid),
     get: (key) =>
       ensureExists(key).pipe(
-        Effect.andThen(attempt("get", key, async () => new Uint8Array(await (await files.download(key)).arrayBuffer()))),
+        Effect.andThen(
+          attempt(
+            "get",
+            key,
+            async () => new Uint8Array(await (await files.download(key)).arrayBuffer()),
+          ),
+        ),
       ),
     head: (key) =>
       ensureExists(key).pipe(
@@ -101,7 +116,10 @@ const makeStorage = (files: Files): Storage["Service"] => {
       attempt("signedDownloadUrl", key, () => files.url(key, { expiresIn: expiresInSeconds })),
     signedUploadUrl: (key, options) =>
       attempt("signedUploadUrl", key, () =>
-        files.signedUploadUrl(key, { contentType: options.contentType, expiresIn: options.expiresInSeconds }),
+        files.signedUploadUrl(key, {
+          contentType: options.contentType,
+          expiresIn: options.expiresInSeconds,
+        }),
       ),
   });
 };

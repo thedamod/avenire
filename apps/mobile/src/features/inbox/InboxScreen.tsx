@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ActivityIndicator, Text } from "react-native";
+import { ActivityIndicator } from "react-native";
 import type { IngestionJob } from "@avenire/contracts";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState, errorMessage } from "../../components/ErrorState";
@@ -8,10 +8,12 @@ import { Screen } from "../../components/Screen";
 import { useQuery, useStream } from "../../lib/useRpc";
 
 export function InboxScreen() {
-  const { data: items, error, loading, refetch } = useQuery(
-    (client) => client["library.listItems"]({ placement: "inbox" }),
-    "inbox-items",
-  );
+  const {
+    data: items,
+    error,
+    loading,
+    refetch,
+  } = useQuery((client) => client["library.listItems"]({ placement: "inbox" }), "inbox-items");
   const [jobsById, setJobsById] = useState<ReadonlyMap<IngestionJob["id"], IngestionJob>>(
     () => new Map(),
   );

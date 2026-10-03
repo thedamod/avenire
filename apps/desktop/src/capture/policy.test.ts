@@ -11,8 +11,18 @@ const snapshot: CaptureSnapshot = {
   platform: "linux",
   windows: [],
   tabs: [
-    { url: "https://mail.google.com", title: "Inbox", activeInWindow: true, engagement: { dwellMs: 10_000, scrollDepthPct: 20, mediaPlaying: false } },
-    { url: "https://example.com/notes", title: "Notes", activeInWindow: true, engagement: { dwellMs: 10_000, scrollDepthPct: 20, mediaPlaying: false } },
+    {
+      url: "https://mail.google.com",
+      title: "Inbox",
+      activeInWindow: true,
+      engagement: { dwellMs: 10_000, scrollDepthPct: 20, mediaPlaying: false },
+    },
+    {
+      url: "https://example.com/notes",
+      title: "Notes",
+      activeInWindow: true,
+      engagement: { dwellMs: 10_000, scrollDepthPct: 20, mediaPlaying: false },
+    },
   ],
   media: [],
   collectorNotes: [],

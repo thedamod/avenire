@@ -21,13 +21,13 @@
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "effect": "catalog:",
     "@avenire/contracts": "workspace:*",
     "@avenire/database": "workspace:*",
     "@avenire/emailer": "workspace:*",
-    "better-auth": "catalog:",
     "@better-auth/expo": "1.7.7",
-    "drizzle-orm": "catalog:"
+    "better-auth": "catalog:",
+    "drizzle-orm": "catalog:",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

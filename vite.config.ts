@@ -41,6 +41,7 @@ export default defineConfig({
       "react-in-jsx-scope": "off",
       "react-hooks/exhaustive-deps": "off",
       "eslint/no-shadow": "off",
+      "eslint/no-underscore-dangle": "off",
       "unicorn/consistent-function-scoping": "off",
       "unicorn/no-array-sort": "off",
       "oxc/no-map-spread": "off",

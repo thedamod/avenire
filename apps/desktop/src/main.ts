@@ -1,5 +1,14 @@
 import * as Path from "node:path";
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
+import {
+  app,
+  BrowserWindow,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  nativeImage,
+  shell,
+  Tray,
+} from "electron";
 import type { CapturePayload } from "./bridge.ts";
 import { appUrl, defaultCaptureShortcut } from "./config.ts";
 import { collectSnapshot } from "./capture/collect.ts";
@@ -47,18 +56,27 @@ function createWindow(): void {
     }
   });
   void window.loadURL(appUrl);
-  window.on("closed", () => { window = undefined; });
+  window.on("closed", () => {
+    window = undefined;
+  });
 }
 
 function createTray(): void {
   tray = new Tray(nativeImage.createEmpty());
   tray.setToolTip("Avenire");
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "Capture now", click: () => { void capture(); } },
-    { label: "Show Avenire", click: () => window?.show() },
-    { type: "separator" },
-    { label: "Quit", click: () => app.quit() },
-  ]));
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: "Capture now",
+        click: () => {
+          void capture();
+        },
+      },
+      { label: "Show Avenire", click: () => window?.show() },
+      { type: "separator" },
+      { label: "Quit", click: () => app.quit() },
+    ]),
+  );
   tray.on("double-click", () => window?.show());
 }
 
@@ -89,7 +107,8 @@ async function capture(): Promise<void> {
 
 ipcMain.handle("avenire:capture-now", () => capture());
 ipcMain.handle("avenire:set-shortcut", (_event, accelerator: unknown) => {
-  if (typeof accelerator !== "string" || accelerator.length === 0 || accelerator.length > 100) return false;
+  if (typeof accelerator !== "string" || accelerator.length === 0 || accelerator.length > 100)
+    return false;
   return registerShortcut(accelerator);
 });
 

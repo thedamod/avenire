@@ -10,13 +10,25 @@ const officeTypes = new Set([
   "application/vnd.oasis.opendocument.text",
 ]);
 
-export const supportsOffice = (mimeType: string | null) => mimeType !== null && officeTypes.has((mimeType.split(";")[0] ?? "").trim().toLowerCase());
+export const supportsOffice = (mimeType: string | null) =>
+  mimeType !== null && officeTypes.has((mimeType.split(";")[0] ?? "").trim().toLowerCase());
 
-export const extractOffice = (mimeType: string | null, source: Uint8Array): Effect.Effect<ExtractedDocument, ExtractionError | UnsupportedSource> => {
+export const extractOffice = (
+  mimeType: string | null,
+  source: Uint8Array,
+): Effect.Effect<ExtractedDocument, ExtractionError | UnsupportedSource> => {
   const mime = mimeType?.split(";")[0]?.trim().toLowerCase();
-  if (!mime || !officeTypes.has(mime)) return Effect.fail(new UnsupportedSource({ kind: "document", reason: `Unsupported office MIME type: ${mime ?? "missing"}` }));
+  if (!mime || !officeTypes.has(mime))
+    return Effect.fail(
+      new UnsupportedSource({
+        kind: "document",
+        reason: `Unsupported office MIME type: ${mime ?? "missing"}`,
+      }),
+    );
   return Effect.tryPromise({
     try: async () => (await OfficeParser.parseOffice(source)).to("text"),
     catch: (cause) => new ExtractionError({ source: `office:${mime}`, cause }),
-  }).pipe(Effect.map(({ value }) => ({ sections: value.trim() ? [{ text: value, location: {} }] : [] })));
+  }).pipe(
+    Effect.map(({ value }) => ({ sections: value.trim() ? [{ text: value, location: {} }] : [] })),
+  );
 };

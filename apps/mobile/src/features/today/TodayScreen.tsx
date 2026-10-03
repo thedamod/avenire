@@ -13,10 +13,12 @@ import { useQuery } from "../../lib/useRpc";
 
 export function TodayScreen() {
   const api = useApi();
-  const { data: runs, error, loading, refetch } = useQuery(
-    (client) => client["cloud.listRuns"]({ limit: 1 }),
-    "today-latest-run",
-  );
+  const {
+    data: runs,
+    error,
+    loading,
+    refetch,
+  } = useQuery((client) => client["cloud.listRuns"]({ limit: 1 }), "today-latest-run");
   const [openError, setOpenError] = useState<string>();
   const run = runs?.[0];
 

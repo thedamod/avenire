@@ -2,7 +2,12 @@ import * as Crypto from "node:crypto";
 import * as OS from "node:os";
 import * as Schema from "effect/Schema";
 import { CaptureId } from "@avenire/contracts";
-import type { CaptureSnapshot, CapturedMedia, CapturedTab, CapturedWindow } from "@avenire/contracts";
+import type {
+  CaptureSnapshot,
+  CapturedMedia,
+  CapturedTab,
+  CapturedWindow,
+} from "@avenire/contracts";
 import { collectForeground } from "./foreground.ts";
 import { collectSelection } from "./selection.ts";
 import { latestTabs } from "./tabs.ts";
@@ -21,20 +26,26 @@ async function withTimeout(collector: Collector): Promise<Collected> {
   try {
     return await Promise.race([
       collector(),
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("timed out after 1500ms")), 1_500); }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("timed out after 1500ms")), 1_500);
+      }),
     ]);
   } finally {
     if (timer) clearTimeout(timer);
   }
 }
 
-export async function collectSnapshot(capturedAt = new Date().toISOString()): Promise<CaptureSnapshot> {
+export async function collectSnapshot(
+  capturedAt = new Date().toISOString(),
+): Promise<CaptureSnapshot> {
   const collectors: readonly [string, Collector][] = [
     ["foreground", collectForeground],
     ["tabs", async () => ({ tabs: latestTabs() })],
     ["selection", collectSelection],
   ];
-  const results = await Promise.allSettled(collectors.map(([, collector]) => withTimeout(collector)));
+  const results = await Promise.allSettled(
+    collectors.map(([, collector]) => withTimeout(collector)),
+  );
   const values: Collected[] = [];
   const notes: string[] = [];
   for (let index = 0; index < results.length; index += 1) {
@@ -44,16 +55,24 @@ export async function collectSnapshot(capturedAt = new Date().toISOString()): Pr
       notes.push(...(result.value.notes ?? []));
     } else {
       const reason = result?.status === "rejected" ? result.reason : "unknown error";
-      notes.push(`${collectors[index]?.[0] ?? "collector"} collector failed: ${reason instanceof Error ? reason.message : String(reason)}`);
+      notes.push(
+        `${collectors[index]?.[0] ?? "collector"} collector failed: ${reason instanceof Error ? reason.message : String(reason)}`,
+      );
       values.push({});
     }
   }
   const selectionText = values.find((value) => value.selectionText !== undefined)?.selectionText;
-  const platform = process.platform === "darwin" || process.platform === "win32" || process.platform === "linux" ? process.platform : "linux";
+  const platform =
+    process.platform === "darwin" || process.platform === "win32" || process.platform === "linux"
+      ? process.platform
+      : "linux";
   return {
     id: Schema.decodeUnknownSync(CaptureId)(Crypto.randomUUID()),
     capturedAt,
-    deviceId: Crypto.createHash("sha256").update(`${OS.hostname()}\0${OS.userInfo().username}`).digest("hex").slice(0, 32),
+    deviceId: Crypto.createHash("sha256")
+      .update(`${OS.hostname()}\0${OS.userInfo().username}`)
+      .digest("hex")
+      .slice(0, 32),
     platform,
     windows: values.flatMap((value) => value.windows ?? []),
     tabs: values.flatMap((value) => value.tabs ?? []),

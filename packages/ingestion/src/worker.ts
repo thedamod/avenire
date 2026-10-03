@@ -22,10 +22,16 @@ const IN_PROGRESS = sql`('extracting', 'chunking', 'embedding', 'clustering')`;
 export const retryDelayMinutes = (attempts: number): number => 2 ** attempts;
 
 /** Queue (or re-queue) an item for ingestion. Fails with NotFound if the user doesn't own it. */
-export const enqueueIngestion = Effect.fn("Ingestion.enqueue")(function* (userId: UserId, itemId: ItemId) {
+export const enqueueIngestion = Effect.fn("Ingestion.enqueue")(function* (
+  userId: UserId,
+  itemId: ItemId,
+) {
   const database = yield* Database;
   const owned = yield* database.use((db) =>
-    db.query.item.findFirst({ columns: { id: true }, where: and(eq(item.id, itemId), eq(item.userId, userId)) }),
+    db.query.item.findFirst({
+      columns: { id: true },
+      where: and(eq(item.id, itemId), eq(item.userId, userId)),
+    }),
   );
   if (owned === undefined) return yield* new NotFound({ entity: "Item", id: itemId });
   const id = yield* newId(IngestionJobId);
@@ -34,7 +40,10 @@ export const enqueueIngestion = Effect.fn("Ingestion.enqueue")(function* (userId
     db
       .insert(ingestionJob)
       .values({ id, userId, itemId, ...reset })
-      .onConflictDoUpdate({ target: ingestionJob.itemId, set: { ...reset, updatedAt: sql`now()` } }),
+      .onConflictDoUpdate({
+        target: ingestionJob.itemId,
+        set: { ...reset, updatedAt: sql`now()` },
+      }),
   );
 });
 
@@ -58,24 +67,25 @@ export const IngestionWorkerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const database = yield* Database;
     const pipeline = yield* IngestionPipeline;
-    const concurrency = Math.max(1, yield* Config.Int("INGESTION_CONCURRENCY").pipe(Config.withDefault(2)));
+    const concurrency = Math.max(
+      1,
+      yield* Config.Int("INGESTION_CONCURRENCY").pipe(Config.withDefault(2)),
+    );
 
     const claim = database.use(async (db) => {
       const rows = await db.execute(claimJobs(concurrency));
       // postgres-js returns snake_case columns for raw SQL; map them onto the drizzle row type.
-      return rows.map(
-        (row): IngestionJobRow => ({
-          id: String(row.id),
-          userId: String(row.user_id),
-          itemId: String(row.item_id),
-          status: "extracting",
-          attempts: Number(row.attempts),
-          error: null,
-          lockedUntil: null,
-          createdAt: new Date(String(row.created_at)),
-          updatedAt: new Date(String(row.updated_at)),
-        }),
-      );
+      return rows.map((row): IngestionJobRow => ({
+        id: String(row.id),
+        userId: String(row.user_id),
+        itemId: String(row.item_id),
+        status: "extracting",
+        attempts: Number(row.attempts),
+        error: null,
+        lockedUntil: null,
+        createdAt: new Date(String(row.created_at)),
+        updatedAt: new Date(String(row.updated_at)),
+      }));
     });
 
     const recordFailure = (job: IngestionJobRow, message: string) => {
@@ -86,7 +96,9 @@ export const IngestionWorkerLive = Layer.effectDiscard(
           .set({
             status: exhausted ? "failed" : "queued",
             error: message,
-            lockedUntil: exhausted ? null : sql`now() + (${retryDelayMinutes(job.attempts)} * interval '1 minute')`,
+            lockedUntil: exhausted
+              ? null
+              : sql`now() + (${retryDelayMinutes(job.attempts)} * interval '1 minute')`,
             updatedAt: sql`now()`,
           })
           .where(eq(ingestionJob.id, job.id)),
@@ -94,13 +106,17 @@ export const IngestionWorkerLive = Layer.effectDiscard(
     };
 
     const runJob = (job: IngestionJobRow) =>
-      pipeline.run(job).pipe(
-        Effect.catchTag("IngestionError", (error) =>
-          Effect.logWarning("Ingestion failed", { jobId: job.id, attempts: job.attempts, error: error.message }).pipe(
-            Effect.andThen(recordFailure(job, error.message)),
+      pipeline
+        .run(job)
+        .pipe(
+          Effect.catchTag("IngestionError", (error) =>
+            Effect.logWarning("Ingestion failed", {
+              jobId: job.id,
+              attempts: job.attempts,
+              error: error.message,
+            }).pipe(Effect.andThen(recordFailure(job, error.message))),
           ),
-        ),
-      );
+        );
 
     const pollOnce = claim.pipe(
       Effect.flatMap((jobs) =>
@@ -110,7 +126,9 @@ export const IngestionWorkerLive = Layer.effectDiscard(
       ),
       // Infrastructure failures (database down, ...) must not stop the worker.
       Effect.catchCause((cause) =>
-        Effect.logError("Ingestion poll failed", cause).pipe(Effect.andThen(Effect.sleep("10 seconds"))),
+        Effect.logError("Ingestion poll failed", cause).pipe(
+          Effect.andThen(Effect.sleep("10 seconds")),
+        ),
       ),
     );
 

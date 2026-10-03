@@ -43,7 +43,10 @@ function ensureDraft(
   return drafts.get(messageId) ?? { id: messageId, parts: [] };
 }
 
-function appendTextPart(parts: ReadonlyArray<MessagePart>, delta: string): ReadonlyArray<MessagePart> {
+function appendTextPart(
+  parts: ReadonlyArray<MessagePart>,
+  delta: string,
+): ReadonlyArray<MessagePart> {
   const last = parts.at(-1);
   if (last?._tag === "text") {
     return [...parts.slice(0, -1), { ...last, text: last.text + delta }];
@@ -100,4 +103,3 @@ export function ruthReducer(state: RuthState, action: RuthAction): RuthState {
   }
   return { ...state, drafts, error: undefined };
 }
-

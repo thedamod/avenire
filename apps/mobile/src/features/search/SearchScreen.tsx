@@ -17,7 +17,9 @@ function formatLocation(hit: SearchHit): string {
   if (hit.location.page !== undefined) return `Page ${hit.location.page}`;
   if (hit.location.startSec !== undefined) {
     const minutes = Math.floor(hit.location.startSec / 60);
-    const seconds = Math.floor(hit.location.startSec % 60).toString().padStart(2, "0");
+    const seconds = Math.floor(hit.location.startSec % 60)
+      .toString()
+      .padStart(2, "0");
     return `${minutes}:${seconds}`;
   }
   return hit.chunkKind;

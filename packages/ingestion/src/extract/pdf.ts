@@ -7,4 +7,8 @@ export const extractPdf = (source: Uint8Array): Effect.Effect<ExtractedDocument,
   Effect.tryPromise({
     try: () => extractText(source),
     catch: (cause) => new ExtractionError({ source: "pdf", cause }),
-  }).pipe(Effect.map(({ text }) => ({ sections: text.map((text, index) => ({ text, location: { page: index + 1 } })) })));
+  }).pipe(
+    Effect.map(({ text }) => ({
+      sections: text.map((text, index) => ({ text, location: { page: index + 1 } })),
+    })),
+  );

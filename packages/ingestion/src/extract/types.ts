@@ -11,7 +11,10 @@ export class ExtractionError extends Schema.TaggedError<ExtractionError>()("Extr
   cause: Schema.Defect(),
 }) {}
 
-export class UnsupportedSource extends Schema.TaggedError<UnsupportedSource>()("UnsupportedSource", {
-  kind: Schema.String,
-  reason: Schema.String,
-}) {}
+export class UnsupportedSource extends Schema.TaggedError<UnsupportedSource>()(
+  "UnsupportedSource",
+  {
+    kind: Schema.String,
+    reason: Schema.String,
+  },
+) {}

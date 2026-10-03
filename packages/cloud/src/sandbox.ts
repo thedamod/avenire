@@ -55,7 +55,9 @@ export class Sandboxes extends Context.Service<
   Sandboxes,
   {
     readonly runPython: (input: RunPythonInput) => Effect.Effect<RunPythonResult, SandboxError>;
-    readonly renderManim: (input: RenderManimInput) => Effect.Effect<RenderManimResult, SandboxError>;
+    readonly renderManim: (
+      input: RenderManimInput,
+    ) => Effect.Effect<RenderManimResult, SandboxError>;
   }
 >()("avenire/cloud/Sandboxes") {}
 
@@ -120,7 +122,10 @@ export const SandboxesLive = Layer.effect(
             ephemeral: true,
             // Safety net: if delete fails, the sandbox still stops (and is then deleted).
             autoStopInterval: 15,
-            ...Option.match(snapshot, { onNone: () => ({}), onSome: (name) => ({ snapshot: name }) }),
+            ...Option.match(snapshot, {
+              onNone: () => ({}),
+              onSome: (name) => ({ snapshot: name }),
+            }),
           }),
         ),
         use,
@@ -145,13 +150,21 @@ export const SandboxesLive = Layer.effect(
             ).pipe(
               Effect.timeoutOrElse({
                 duration: `${timeout + 30} seconds`,
-                orElse: () => Effect.fail(new SandboxTimeout({ operation: "codeRun", timeoutSeconds: timeout })),
+                orElse: () =>
+                  Effect.fail(
+                    new SandboxTimeout({ operation: "codeRun", timeoutSeconds: timeout }),
+                  ),
               }),
             );
             const charts = (response.artifacts?.charts ?? []).flatMap((chart) =>
               chart.png === undefined
                 ? []
-                : [{ ...(chart.title ? { title: chart.title } : {}), png: decodeBase64(chart.png) }],
+                : [
+                    {
+                      ...(chart.title ? { title: chart.title } : {}),
+                      png: decodeBase64(chart.png),
+                    },
+                  ],
             );
             return { stdout: response.result, exitCode: response.exitCode, charts };
           }),
@@ -160,8 +173,13 @@ export const SandboxesLive = Layer.effect(
 
       renderManim: Effect.fn("Sandboxes.renderManim")(function* (input) {
         yield* validate(input);
-        if (!SCENE_NAME.test(input.sceneName) || !new RegExp(`\\bclass\\s+${input.sceneName}\\b`).test(input.code)) {
-          return yield* new SandboxInputRejected({ reason: `Scene class ${input.sceneName} is not defined in the source` });
+        if (
+          !SCENE_NAME.test(input.sceneName) ||
+          !new RegExp(`\\bclass\\s+${input.sceneName}\\b`).test(input.code)
+        ) {
+          return yield* new SandboxInputRejected({
+            reason: `Scene class ${input.sceneName} is not defined in the source`,
+          });
         }
         const timeout = input.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
         return yield* withSandbox(manimSnapshot, (sandbox) =>
@@ -195,7 +213,10 @@ export const SandboxesLive = Layer.effect(
             );
             const path = located.result.trim();
             if (path === "") {
-              return yield* new CloudError({ operation: "locateManimVideo", cause: new Error("Rendered video not found") });
+              return yield* new CloudError({
+                operation: "locateManimVideo",
+                cause: new Error("Rendered video not found"),
+              });
             }
             const video = yield* attempt("downloadManimVideo", () => sandbox.fs.downloadFile(path));
             return { video: new Uint8Array(video), stdout: rendered.result };

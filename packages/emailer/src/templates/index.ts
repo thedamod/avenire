@@ -14,14 +14,22 @@ export const TemplatePropsSchema = {
     name: Schema.String,
     date: Schema.String,
     itemsStudied: Schema.Number,
-    artifacts: Schema.Array(Schema.Struct({ kind: ArtifactKind, title: Schema.String, url: Schema.String })),
+    artifacts: Schema.Array(
+      Schema.Struct({ kind: ArtifactKind, title: Schema.String, url: Schema.String }),
+    ),
   }),
-  "cloud-run-failed": Schema.Struct({ name: Schema.String, reason: Schema.String, retryUrl: Schema.String }),
+  "cloud-run-failed": Schema.Struct({
+    name: Schema.String,
+    reason: Schema.String,
+    retryUrl: Schema.String,
+  }),
 };
 
 export type TemplateName = keyof typeof TemplatePropsSchema;
-export type TemplateProps<N extends TemplateName> = typeof TemplatePropsSchema[N]["Type"];
-type EmailTemplate<N extends TemplateName> = ComponentType<TemplateProps<N>> & { readonly PreviewProps: TemplateProps<N> };
+export type TemplateProps<N extends TemplateName> = (typeof TemplatePropsSchema)[N]["Type"];
+type EmailTemplate<N extends TemplateName> = ComponentType<TemplateProps<N>> & {
+  readonly PreviewProps: TemplateProps<N>;
+};
 
 export const templates: { readonly [N in TemplateName]: EmailTemplate<N> } = {
   "verify-email": VerifyEmail,

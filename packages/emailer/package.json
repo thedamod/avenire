@@ -18,10 +18,10 @@
     "preview": "email dev --dir src/templates --port 3030"
   },
   "dependencies": {
-    "effect": "catalog:",
     "@avenire/contracts": "workspace:*",
     "@react-email/components": "1.0.12",
     "@react-email/render": "2.1.0",
+    "effect": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "resend": "6.32.0"
@@ -29,8 +29,8 @@
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
-    "vite-plus": "catalog:",
     "@types/react": "catalog:",
-    "react-email": "6.11.0"
+    "react-email": "6.11.0",
+    "vite-plus": "catalog:"
   }
 }

@@ -12,15 +12,19 @@ export const createAvenireExpoAuthClient = ({
   readonly baseURL: string;
   readonly scheme?: string;
   readonly storage: ExpoStorage;
-}) => createAuthClient({
-  baseURL,
-  plugins: [expoClient({
-    scheme,
-    storagePrefix: "avenire",
-    storage,
-  })],
-});
+}) =>
+  createAuthClient({
+    baseURL,
+    plugins: [
+      expoClient({
+        scheme,
+        storagePrefix: "avenire",
+        storage,
+      }),
+    ],
+  });
 
 export type AvenireExpoAuthClient = ReturnType<typeof createAvenireExpoAuthClient>;
 
-export const getCookieHeader = (client: AvenireExpoAuthClient): Promise<string> => client.getCookie();
+export const getCookieHeader = (client: AvenireExpoAuthClient): Promise<string> =>
+  client.getCookie();

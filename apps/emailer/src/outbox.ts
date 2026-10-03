@@ -46,7 +46,9 @@ export const nextState = (attempts: number, error: string): NextState =>
     : { status: "pending", lastError: error, backoffMinutes: backoffMinutes(attempts) };
 
 const execute = (statement: ReturnType<typeof sql>) =>
-  Effect.flatMap(Effect.service(Database), (database) => database.use((db) => db.execute(statement)));
+  Effect.flatMap(Effect.service(Database), (database) =>
+    database.use((db) => db.execute(statement)),
+  );
 
 const claimBatch = execute(sql`
   UPDATE email_outbox
@@ -62,7 +64,9 @@ const claimBatch = execute(sql`
 `).pipe(Effect.flatMap(decodeClaimed), Effect.withSpan("OutboxWorker.claimBatch"));
 
 const markSent = (id: string) =>
-  execute(sql`UPDATE email_outbox SET status = 'sent', sent_at = now(), last_error = NULL WHERE id = ${id}`);
+  execute(
+    sql`UPDATE email_outbox SET status = 'sent', sent_at = now(), last_error = NULL WHERE id = ${id}`,
+  );
 
 /** Malformed rows will never succeed, so they fail immediately instead of retrying. */
 const markFailed = (id: string, error: string) =>
@@ -105,11 +109,19 @@ const processRow = Effect.fn("OutboxWorker.processRow")(function* (row: ClaimedE
           Effect.matchEffect({
             onSuccess: ({ id }) =>
               markSent(row.id).pipe(
-                Effect.andThen(Effect.logInfo("Sent email", { id: row.id, template: request.template, messageId: id })),
+                Effect.andThen(
+                  Effect.logInfo("Sent email", {
+                    id: row.id,
+                    template: request.template,
+                    messageId: id,
+                  }),
+                ),
               ),
             onFailure: (error) =>
               markRetry(row, error.message).pipe(
-                Effect.andThen(Effect.logWarning("Email send failed", { id: row.id, attempts: row.attempts })),
+                Effect.andThen(
+                  Effect.logWarning("Email send failed", { id: row.id, attempts: row.attempts }),
+                ),
               ),
           }),
         ),
@@ -119,7 +131,9 @@ const processRow = Effect.fn("OutboxWorker.processRow")(function* (row: ClaimedE
 
 /** One poll: process whatever was claimed and report whether there was work. */
 const drainOnce = claimBatch.pipe(
-  Effect.tap((rows) => Effect.forEach(rows, processRow, { concurrency: CONCURRENCY, discard: true })),
+  Effect.tap((rows) =>
+    Effect.forEach(rows, processRow, { concurrency: CONCURRENCY, discard: true }),
+  ),
   Effect.map((rows) => rows.length > 0),
 );
 

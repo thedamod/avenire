@@ -13,8 +13,8 @@
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "effect": "catalog:",
-    "@avenire/contracts": "workspace:*"
+    "@avenire/contracts": "workspace:*",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

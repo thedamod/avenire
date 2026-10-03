@@ -11,7 +11,12 @@ type Props = NativeStackScreenProps<RootStackParamList, "Cluster">;
 
 export function ClusterScreen({ route }: Props) {
   const { clusterId, name } = route.params;
-  const { data: items, error, loading, refetch } = useQuery(
+  const {
+    data: items,
+    error,
+    loading,
+    refetch,
+  } = useQuery(
     (client) => client["library.listItems"]({ clusterId }),
     `cluster-items:${clusterId}`,
   );
@@ -23,7 +28,9 @@ export function ClusterScreen({ route }: Props) {
       {!loading && !error && items?.length === 0 ? (
         <EmptyState title="No material in this cluster" />
       ) : null}
-      {items?.map((item) => <ListRow key={item.id} title={item.title} detail={item.kind} />)}
+      {items?.map((item) => (
+        <ListRow key={item.id} title={item.title} detail={item.kind} />
+      ))}
     </Screen>
   );
 }

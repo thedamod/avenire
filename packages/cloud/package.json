@@ -21,9 +21,9 @@
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "effect": "catalog:",
     "@avenire/contracts": "workspace:*",
-    "@daytonaio/sdk": "0.220.0"
+    "@daytonaio/sdk": "0.220.0",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

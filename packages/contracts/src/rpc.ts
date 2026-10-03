@@ -97,9 +97,17 @@ export class CloudRpcs extends RpcGroup.make(
     error: ApiError,
   }),
   Rpc.make("cloud.getSchedule", { success: CloudSchedule, error: ApiError }),
-  Rpc.make("cloud.setSchedule", { payload: CloudSchedule, success: CloudSchedule, error: ApiError }),
+  Rpc.make("cloud.setSchedule", {
+    payload: CloudSchedule,
+    success: CloudSchedule,
+    error: ApiError,
+  }),
   Rpc.make("cloud.runNow", { success: CloudRun, error: ApiError }),
-  Rpc.make("cloud.cancelRun", { payload: { runId: CloudRunId }, success: CloudRun, error: ApiError }),
+  Rpc.make("cloud.cancelRun", {
+    payload: { runId: CloudRunId },
+    success: CloudRun,
+    error: ApiError,
+  }),
   Rpc.make("cloud.artifactUrl", {
     payload: { artifactId: ArtifactId },
     success: Schema.Struct({ artifact: Artifact, url: Schema.String }),

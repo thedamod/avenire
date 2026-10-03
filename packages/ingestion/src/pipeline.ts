@@ -3,7 +3,13 @@
  * Each stage is persisted on the job so the inbox can show progress, and chunk
  * writes replace the item's previous chunks so re-ingestion is idempotent.
  */
-import { ChunkId, type IngestionStatus, type ItemId, type StorageKey, type UserId } from "@avenire/contracts";
+import {
+  ChunkId,
+  type IngestionStatus,
+  type ItemId,
+  type StorageKey,
+  type UserId,
+} from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { chunk, type IngestionJobRow, ingestionJob, item } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
@@ -57,18 +63,26 @@ export const IngestionPipelineLive = Layer.effect(
       database.use((db) =>
         db
           .update(ingestionJob)
-          .set({ status, updatedAt: sql`now()`, ...(status === "indexed" ? { error: null, lockedUntil: null } : {}) })
+          .set({
+            status,
+            updatedAt: sql`now()`,
+            ...(status === "indexed" ? { error: null, lockedUntil: null } : {}),
+          })
           .where(and(eq(ingestionJob.id, job.id), eq(ingestionJob.userId, job.userId))),
       );
 
     const loadItem = (job: IngestionJobRow) =>
       database
         .use((db) =>
-          db.query.item.findFirst({ where: and(eq(item.id, job.itemId), eq(item.userId, job.userId)) }),
+          db.query.item.findFirst({
+            where: and(eq(item.id, job.itemId), eq(item.userId, job.userId)),
+          }),
         )
         .pipe(
           Effect.flatMap((found) =>
-            found === undefined ? Effect.fail(new Error(`Item ${job.itemId} no longer exists`)) : Effect.succeed(found),
+            found === undefined
+              ? Effect.fail(new Error(`Item ${job.itemId} no longer exists`))
+              : Effect.succeed(found),
           ),
         );
 
@@ -89,7 +103,9 @@ export const IngestionPipelineLive = Layer.effect(
       const chunks = chunkSections(document.sections, { transcript: found.kind === "video" });
 
       yield* setStatus(job, "embedding").pipe(stage("embedding"));
-      const vectors = yield* embedder.embedMany(chunks.map((value) => value.content)).pipe(stage("embedding"));
+      const vectors = yield* embedder
+        .embedMany(chunks.map((value) => value.content))
+        .pipe(stage("embedding"));
 
       const rows = yield* Effect.forEach(chunks, (value, index) =>
         Effect.map(newId(ChunkId), (id) => ({
@@ -114,10 +130,12 @@ export const IngestionPipelineLive = Layer.effect(
 
       if (vectors.length > 0) {
         yield* setStatus(job, "clustering").pipe(stage("clustering"));
-        yield* assignClusters(userId, itemId, meanVector(vectors), document.title ?? found.title).pipe(
-          Effect.provideService(Database, database),
-          stage("clustering"),
-        );
+        yield* assignClusters(
+          userId,
+          itemId,
+          meanVector(vectors),
+          document.title ?? found.title,
+        ).pipe(Effect.provideService(Database, database), stage("clustering"));
       }
       yield* setStatus(job, "indexed").pipe(stage("finishing"));
     });

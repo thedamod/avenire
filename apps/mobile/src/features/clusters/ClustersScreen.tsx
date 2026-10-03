@@ -9,10 +9,12 @@ import { useQuery } from "../../lib/useRpc";
 
 export function ClustersScreen() {
   const navigation = useNavigation<RootNavigation>();
-  const { data: clusters, error, loading, refetch } = useQuery(
-    (client) => client["library.listClusters"](),
-    "clusters-list",
-  );
+  const {
+    data: clusters,
+    error,
+    loading,
+    refetch,
+  } = useQuery((client) => client["library.listClusters"](), "clusters-list");
 
   return (
     <Screen title="Clusters" subtitle="Related material, grouped by topic.">
@@ -26,7 +28,9 @@ export function ClustersScreen() {
           key={cluster.id}
           title={cluster.name}
           detail={`${cluster.itemCount} ${cluster.itemCount === 1 ? "item" : "items"}${cluster.suggested ? " · Suggested" : ""}`}
-          onPress={() => navigation.navigate("Cluster", { clusterId: cluster.id, name: cluster.name })}
+          onPress={() =>
+            navigation.navigate("Cluster", { clusterId: cluster.id, name: cluster.name })
+          }
         />
       ))}
     </Screen>

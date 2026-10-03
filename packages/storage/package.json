@@ -17,12 +17,12 @@
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "effect": "catalog:",
     "@avenire/contracts": "workspace:*",
-    "files-sdk": "catalog:",
     "@aws-sdk/client-s3": "^3.913.0",
+    "@aws-sdk/s3-presigned-post": "^3.913.0",
     "@aws-sdk/s3-request-presigner": "^3.913.0",
-    "@aws-sdk/s3-presigned-post": "^3.913.0"
+    "effect": "catalog:",
+    "files-sdk": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

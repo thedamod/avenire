@@ -3,7 +3,14 @@
  * full-text search, fused with Reciprocal Rank Fusion. RRF only needs ranks, so the
  * two very different score scales never have to be calibrated against each other.
  */
-import { ChunkKind, ChunkLocation, ItemKind, type SearchHit, type SearchQuery, type UserId } from "@avenire/contracts";
+import {
+  ChunkKind,
+  ChunkLocation,
+  ItemKind,
+  type SearchHit,
+  type SearchQuery,
+  type UserId,
+} from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { type SQL, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
@@ -50,7 +57,11 @@ const CandidateRow = Schema.Struct({
 });
 const decodeCandidates = Schema.decodeUnknownEffect(Schema.Array(CandidateRow));
 
-const list = (values: ReadonlyArray<string>) => sql.join(values.map((value) => sql`${value}`), sql`, `);
+const list = (values: ReadonlyArray<string>) =>
+  sql.join(
+    values.map((value) => sql`${value}`),
+    sql`, `,
+  );
 
 const filters = (userId: UserId, query: SearchQuery): SQL => {
   const kinds = query.kinds?.length ? sql` AND i.kind IN (${list(query.kinds)})` : sql``;
@@ -68,7 +79,10 @@ const SELECT_CANDIDATE = sql`
 export class Retrieval extends Context.Service<
   Retrieval,
   {
-    readonly search: (userId: UserId, query: SearchQuery) => Effect.Effect<ReadonlyArray<SearchHit>, RetrievalError>;
+    readonly search: (
+      userId: UserId,
+      query: SearchQuery,
+    ) => Effect.Effect<ReadonlyArray<SearchHit>, RetrievalError>;
   }
 >()("avenire/ingestion/Retrieval") {}
 
@@ -108,7 +122,10 @@ export const RetrievalLive = Layer.effect(
 
       const byId = new Map([...semantic, ...lexical].map((row) => [row.chunkId, row]));
       const limit = Math.min(MAX_LIMIT, Math.max(1, query.limit ?? DEFAULT_LIMIT));
-      const fused = reciprocalRankFusion([semantic.map((row) => row.chunkId), lexical.map((row) => row.chunkId)]);
+      const fused = reciprocalRankFusion([
+        semantic.map((row) => row.chunkId),
+        lexical.map((row) => row.chunkId),
+      ]);
 
       return fused.slice(0, limit).flatMap(({ id, score }): ReadonlyArray<SearchHit> => {
         const row = byId.get(id);
@@ -129,7 +146,8 @@ export const RetrievalLive = Layer.effect(
     });
 
     return Retrieval.of({
-      search: (userId, query) => search(userId, query).pipe(Effect.mapError((cause) => new RetrievalError({ cause }))),
+      search: (userId, query) =>
+        search(userId, query).pipe(Effect.mapError((cause) => new RetrievalError({ cause }))),
     });
   }),
 );

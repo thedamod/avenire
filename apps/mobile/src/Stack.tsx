@@ -2,7 +2,6 @@ import { createStaticNavigation } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
-import { Button } from "./components/Button";
 import { SignInScreen } from "./features/auth/SignInScreen";
 import { TodayScreen } from "./features/today/TodayScreen";
 import { InboxScreen } from "./features/inbox/InboxScreen";
@@ -47,9 +46,7 @@ function HomeTabs() {
           >
             <Text
               className={
-                selectedTab === tab
-                  ? "font-semibold text-primary"
-                  : "text-muted-foreground"
+                selectedTab === tab ? "font-semibold text-primary" : "text-muted-foreground"
               }
             >
               {tab}

@@ -28,40 +28,40 @@ const enqueueEmail = (
   toAddress: string,
   name: string,
   url: string,
-) => db.insert(emailOutbox).values({
-  id: crypto.randomUUID(),
-  toAddress,
-  template,
-  props: { name, url },
-});
+) =>
+  db.insert(emailOutbox).values({
+    id: crypto.randomUUID(),
+    toAddress,
+    template,
+    props: { name, url },
+  });
 
-export const createAuth = (options: CreateAuthOptions) => betterAuth({
-  baseURL: options.baseURL,
-  secret: options.secret,
-  trustedOrigins: [...options.trustedOrigins],
-  database: drizzleAdapter(options.db, {
-    provider: "pg",
-    schema: { user, session, account, verification },
-  }),
-  emailAndPassword: {
-    enabled: true,
-    requireEmailVerification: true,
-    sendResetPassword: async ({ user: authUser, url }) => {
-      await enqueueEmail(options.db, "reset-password", authUser.email, authUser.name, url);
+export const createAuth = (options: CreateAuthOptions) =>
+  betterAuth({
+    baseURL: options.baseURL,
+    secret: options.secret,
+    trustedOrigins: [...options.trustedOrigins],
+    database: drizzleAdapter(options.db, {
+      provider: "pg",
+      schema: { user, session, account, verification },
+    }),
+    emailAndPassword: {
+      enabled: true,
+      requireEmailVerification: true,
+      sendResetPassword: async ({ user: authUser, url }) => {
+        await enqueueEmail(options.db, "reset-password", authUser.email, authUser.name, url);
+      },
     },
-  },
-  emailVerification: {
-    sendOnSignUp: true,
-    autoSignInAfterVerification: true,
-    sendVerificationEmail: async ({ user: authUser, url }) => {
-      await enqueueEmail(options.db, "verify-email", authUser.email, authUser.name, url);
+    emailVerification: {
+      sendOnSignUp: true,
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: async ({ user: authUser, url }) => {
+        await enqueueEmail(options.db, "verify-email", authUser.email, authUser.name, url);
+      },
     },
-  },
-  ...(options.google === undefined
-    ? {}
-    : { socialProviders: { google: options.google } }),
-  plugins: [expo(), nextCookies()],
-});
+    ...(options.google === undefined ? {} : { socialProviders: { google: options.google } }),
+    plugins: [expo(), nextCookies()],
+  });
 
 export type Auth = ReturnType<typeof createAuth>;
 
@@ -77,10 +77,13 @@ export const AuthConfig = Config.all({
   googleClientSecret: Config.option(Config.String("GOOGLE_CLIENT_SECRET")),
 });
 
-export class AuthService extends Context.Service<AuthService, {
-  readonly auth: Auth;
-  readonly getSession: (headers: Headers) => Effect.Effect<SessionUser | null, AuthError>;
-}>()("avenire/auth/AuthService") {}
+export class AuthService extends Context.Service<
+  AuthService,
+  {
+    readonly auth: Auth;
+    readonly getSession: (headers: Headers) => Effect.Effect<SessionUser | null, AuthError>;
+  }
+>()("avenire/auth/AuthService") {}
 
 export const AuthLive = Layer.effect(
   AuthService,
@@ -88,11 +91,15 @@ export const AuthLive = Layer.effect(
     const config = yield* AuthConfig;
     const database = yield* Database;
     const trustedOrigins = Option.isSome(config.trustedOrigins)
-      ? config.trustedOrigins.value.split(",").map((origin) => origin.trim()).filter(Boolean)
+      ? config.trustedOrigins.value
+          .split(",")
+          .map((origin) => origin.trim())
+          .filter(Boolean)
       : [config.baseURL, "avenire://"];
-    const google = Option.isSome(config.googleClientId) && Option.isSome(config.googleClientSecret)
-      ? { clientId: config.googleClientId.value, clientSecret: config.googleClientSecret.value }
-      : undefined;
+    const google =
+      Option.isSome(config.googleClientId) && Option.isSome(config.googleClientSecret)
+        ? { clientId: config.googleClientId.value, clientSecret: config.googleClientSecret.value }
+        : undefined;
     const auth = createAuth({
       db: database.db,
       baseURL: config.baseURL,
@@ -103,17 +110,20 @@ export const AuthLive = Layer.effect(
 
     return AuthService.of({
       auth,
-      getSession: (headers) => Effect.tryPromise({
-        try: async () => {
-          const result = await auth.api.getSession({ headers });
-          return result === null ? null : {
-            id: UserId.make(result.user.id),
-            email: result.user.email,
-            name: result.user.name,
-          };
-        },
-        catch: (cause) => new AuthError({ cause }),
-      }),
+      getSession: (headers) =>
+        Effect.tryPromise({
+          try: async () => {
+            const result = await auth.api.getSession({ headers });
+            return result === null
+              ? null
+              : {
+                  id: UserId.make(result.user.id),
+                  email: result.user.email,
+                  name: result.user.name,
+                };
+          },
+          catch: (cause) => new AuthError({ cause }),
+        }),
     });
   }),
 );

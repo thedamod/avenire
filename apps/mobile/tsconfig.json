@@ -4,16 +4,8 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
-    "lib": [
-      "ESNext",
-      "DOM"
-    ],
+    "lib": ["ESNext", "DOM"],
     "types": []
   },
-  "include": [
-    "index.ts",
-    "src",
-    "app.config.ts",
-    "uniwind-types.d.ts"
-  ]
+  "include": ["index.ts", "src", "app.config.ts", "uniwind-types.d.ts"]
 }

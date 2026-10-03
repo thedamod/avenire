@@ -28,7 +28,8 @@ const splitOversized = (paragraph: string, maxTokens: number, overlapTokens: num
     if (oversizedWord && estimate(oversizedWord) > maxTokens) {
       const width = maxTokens * 4;
       const step = Math.max(1, width - overlapTokens * 4);
-      for (let offset = 0; offset < oversizedWord.length; offset += step) result.push(oversizedWord.slice(offset, offset + width));
+      for (let offset = 0; offset < oversizedWord.length; offset += step)
+        result.push(oversizedWord.slice(offset, offset + width));
       start++;
       continue;
     }
@@ -57,26 +58,46 @@ const splitOversized = (paragraph: string, maxTokens: number, overlapTokens: num
 
 export const chunkSections = (
   sections: ReadonlyArray<ChunkSection>,
-  options: { readonly targetTokens?: number; readonly maxTokens?: number; readonly overlapTokens?: number; readonly transcript?: boolean } = {},
+  options: {
+    readonly targetTokens?: number;
+    readonly maxTokens?: number;
+    readonly overlapTokens?: number;
+    readonly transcript?: boolean;
+  } = {},
 ): ReadonlyArray<Chunk> => {
   const target = options.targetTokens ?? 320;
   const max = options.maxTokens ?? 420;
   const overlap = options.overlapTokens ?? 48;
   const chunks: Array<Chunk> = [];
   for (const section of sections) {
-    const paragraphs = section.text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    const paragraphs = section.text
+      .split(/\n\s*\n/)
+      .map((p) => p.trim())
+      .filter(Boolean);
     let pending: string[] = [];
     const flush = () => {
       if (!pending.length) return;
       const content = pending.join("\n\n");
-      chunks.push({ ordinal: chunks.length, kind: classify(content, options.transcript ?? false), content, location: section.location, tokenCount: estimate(content) });
+      chunks.push({
+        ordinal: chunks.length,
+        kind: classify(content, options.transcript ?? false),
+        content,
+        location: section.location,
+        tokenCount: estimate(content),
+      });
       pending = [];
     };
     for (const paragraph of paragraphs) {
       if (estimate(paragraph) > max) {
         flush();
         for (const content of splitOversized(paragraph, max, overlap)) {
-          chunks.push({ ordinal: chunks.length, kind: classify(content, options.transcript ?? false), content, location: section.location, tokenCount: estimate(content) });
+          chunks.push({
+            ordinal: chunks.length,
+            kind: classify(content, options.transcript ?? false),
+            content,
+            location: section.location,
+            tokenCount: estimate(content),
+          });
         }
         continue;
       }

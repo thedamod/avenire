@@ -11,30 +11,47 @@ export class EmbeddingError extends Schema.TaggedError<EmbeddingError>()("Embedd
   cause: Schema.Defect(),
 }) {}
 
-export class Embedder extends Context.Service<Embedder, {
-  readonly model: string;
-  readonly embedMany: (texts: ReadonlyArray<string>) => Effect.Effect<ReadonlyArray<ReadonlyArray<number>>, EmbeddingError>;
-}>()("avenire/ingestion/Embedder") {}
+export class Embedder extends Context.Service<
+  Embedder,
+  {
+    readonly model: string;
+    readonly embedMany: (
+      texts: ReadonlyArray<string>,
+    ) => Effect.Effect<ReadonlyArray<ReadonlyArray<number>>, EmbeddingError>;
+  }
+>()("avenire/ingestion/Embedder") {}
 
-const makeEmbedder = (model: string, embed: EmbeddingModel.EmbeddingModel): Embedder["Service"] => Embedder.of({
-  model,
-  embedMany: (texts) => Effect.forEach(
-    Array.from({ length: Math.ceil(texts.length / 96) }, (_, index) => texts.slice(index * 96, (index + 1) * 96)),
-    (batch) => embed.embedMany(batch).pipe(
-      Effect.map((response) => response.embeddings.map(({ vector }) => vector)),
-      Effect.mapError((cause) => new EmbeddingError({ cause })),
-    ),
-    { concurrency: 1 },
-  ).pipe(Effect.map((batches) => batches.flat())),
-});
+const makeEmbedder = (model: string, embed: EmbeddingModel.EmbeddingModel): Embedder["Service"] =>
+  Embedder.of({
+    model,
+    embedMany: (texts) =>
+      Effect.forEach(
+        Array.from({ length: Math.ceil(texts.length / 96) }, (_, index) =>
+          texts.slice(index * 96, (index + 1) * 96),
+        ),
+        (batch) =>
+          embed.embedMany(batch).pipe(
+            Effect.map((response) => response.embeddings.map(({ vector }) => vector)),
+            Effect.mapError((cause) => new EmbeddingError({ cause })),
+          ),
+        { concurrency: 1 },
+      ).pipe(Effect.map((batches) => batches.flat())),
+  });
 
-export const EmbedderLive = Layer.unwrap(Effect.gen(function* () {
-  const apiKey = yield* Config.Redacted("OPENAI_API_KEY");
-  const model = yield* Config.String("EMBEDDING_MODEL").pipe(Config.withDefault("text-embedding-3-small"));
-  const openAi = yield* OpenAiClient.make({ apiKey });
-  const embedding = yield* OpenAiEmbeddingModel.make({ model, config: { dimensions: 1536 } }).pipe(Effect.provideService(OpenAiClient.OpenAiClient, openAi));
-  return Layer.succeed(Embedder, makeEmbedder(model, embedding));
-}));
+export const EmbedderLive = Layer.unwrap(
+  Effect.gen(function* () {
+    const apiKey = yield* Config.Redacted("OPENAI_API_KEY");
+    const model = yield* Config.String("EMBEDDING_MODEL").pipe(
+      Config.withDefault("text-embedding-3-small"),
+    );
+    const openAi = yield* OpenAiClient.make({ apiKey });
+    const embedding = yield* OpenAiEmbeddingModel.make({
+      model,
+      config: { dimensions: 1536 },
+    }).pipe(Effect.provideService(OpenAiClient.OpenAiClient, openAi));
+    return Layer.succeed(Embedder, makeEmbedder(model, embedding));
+  }),
+);
 
 const TEST_DIMENSIONS = 1536;
 

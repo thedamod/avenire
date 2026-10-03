@@ -20,15 +20,15 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
-    "effect": "catalog:",
     "@avenire/contracts": "workspace:*",
     "drizzle-orm": "catalog:",
+    "effect": "catalog:",
     "postgres": "3.4.9"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
-    "vite-plus": "catalog:",
-    "drizzle-kit": "catalog:"
+    "drizzle-kit": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

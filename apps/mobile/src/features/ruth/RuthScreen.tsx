@@ -57,7 +57,9 @@ function PlotPart({
   return (
     <View className="gap-2 rounded-xl bg-muted p-3">
       <Text className="text-foreground">{part.alt}</Text>
-      <Button onPress={() => onOpenArtifact(part.artifactId)} variant="secondary">Open plot</Button>
+      <Button onPress={() => onOpenArtifact(part.artifactId)} variant="secondary">
+        Open plot
+      </Button>
     </View>
   );
 }
@@ -72,7 +74,9 @@ function VideoPart({
   return (
     <View className="gap-2 rounded-xl bg-muted p-3">
       <Text className="font-medium text-foreground">{part.title}</Text>
-      <Button onPress={() => onOpenArtifact(part.artifactId)} variant="secondary">Open video</Button>
+      <Button onPress={() => onOpenArtifact(part.artifactId)} variant="secondary">
+        Open video
+      </Button>
     </View>
   );
 }
@@ -81,8 +85,14 @@ function CodePart({ part }: { readonly part: Extract<MessagePart, { _tag: "code"
   return (
     <View className="gap-2 rounded-xl bg-muted p-3">
       <Text className="text-xs font-semibold uppercase text-muted-foreground">Python</Text>
-      <Text selectable className="font-mono text-sm text-foreground">{part.source}</Text>
-      {part.stdout ? <Text selectable className="font-mono text-sm text-muted-foreground">{part.stdout}</Text> : null}
+      <Text selectable className="font-mono text-sm text-foreground">
+        {part.source}
+      </Text>
+      {part.stdout ? (
+        <Text selectable className="font-mono text-sm text-muted-foreground">
+          {part.stdout}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -102,16 +112,25 @@ function ApprovalPart({
   return (
     <View className="gap-2 rounded-xl border border-border bg-muted p-3">
       <Text className="font-semibold text-foreground">Approval required</Text>
-      <Text className="text-sm text-muted-foreground">{approval ? describeApproval(approval) : "Review this action."}</Text>
+      <Text className="text-sm text-muted-foreground">
+        {approval ? describeApproval(approval) : "Review this action."}
+      </Text>
       {approval?.status === "pending" ? (
         <View className="flex-row gap-2">
           <View className="flex-1">
-            <Button onPress={() => onDecide(part.approvalId, "approved")} busy={deciding === part.approvalId}>
+            <Button
+              onPress={() => onDecide(part.approvalId, "approved")}
+              busy={deciding === part.approvalId}
+            >
               Approve
             </Button>
           </View>
           <View className="flex-1">
-            <Button onPress={() => onDecide(part.approvalId, "rejected")} variant="destructive" busy={deciding === part.approvalId}>
+            <Button
+              onPress={() => onDecide(part.approvalId, "rejected")}
+              variant="destructive"
+              busy={deciding === part.approvalId}
+            >
               Reject
             </Button>
           </View>
@@ -134,7 +153,14 @@ function MessagePartView({ part, ...props }: MessagePartProps & { readonly part:
     case "code":
       return <CodePart part={part} />;
     case "approval":
-      return <ApprovalPart part={part} approvals={props.approvals} onDecide={props.onDecide} deciding={props.deciding} />;
+      return (
+        <ApprovalPart
+          part={part}
+          approvals={props.approvals}
+          onDecide={props.onDecide}
+          deciding={props.deciding}
+        />
+      );
   }
 }
 
@@ -185,7 +211,10 @@ function ChatMessage({
   );
 }
 
-function DraftMessageView({ parts, ...props }: MessagePartProps & { readonly parts: ReadonlyArray<MessagePart> }) {
+function DraftMessageView({
+  parts,
+  ...props
+}: MessagePartProps & { readonly parts: ReadonlyArray<MessagePart> }) {
   return (
     <Card>
       <View className="gap-3">
@@ -216,10 +245,13 @@ export function RuthScreen() {
   const [artifactError, setArtifactError] = useState<string>();
   const streamStops = useRef<Set<() => void>>(new Set());
 
-  useEffect(() => () => {
-    for (const stop of streamStops.current) stop();
-    streamStops.current.clear();
-  }, []);
+  useEffect(
+    () => () => {
+      for (const stop of streamStops.current) stop();
+      streamStops.current.clear();
+    },
+    [],
+  );
 
   const openArtifact = async (artifactId: ArtifactId) => {
     setArtifactError(undefined);
@@ -235,25 +267,21 @@ export function RuthScreen() {
     setDeciding(approvalId);
     dispatch({ type: "clear-error" });
     let stopStream: (() => void) | undefined;
-    const stop = stream(
-      api,
-      (client) => client["ruth.decide"]({ approvalId, decision }),
-      {
-        onEvent: (event) => {
-          dispatch({ type: "event", event });
-          if (event._tag === "message-completed") {
-            dispatch({ type: "approval-decided", approvalId });
-            setDeciding(undefined);
-            if (stopStream) streamStops.current.delete(stopStream);
-          }
-        },
-        onError: (cause) => {
-          dispatch({ type: "error", message: errorMessage(cause) });
+    const stop = stream(api, (client) => client["ruth.decide"]({ approvalId, decision }), {
+      onEvent: (event) => {
+        dispatch({ type: "event", event });
+        if (event._tag === "message-completed") {
+          dispatch({ type: "approval-decided", approvalId });
           setDeciding(undefined);
           if (stopStream) streamStops.current.delete(stopStream);
-        },
+        }
       },
-    );
+      onError: (cause) => {
+        dispatch({ type: "error", message: errorMessage(cause) });
+        setDeciding(undefined);
+        if (stopStream) streamStops.current.delete(stopStream);
+      },
+    });
     stopStream = stop;
     streamStops.current.add(stop);
   };
@@ -270,12 +298,15 @@ export function RuthScreen() {
     let stopStream: (() => void) | undefined;
     const stop = stream(
       api,
-      (client) => client["ruth.send"]({ text, ...(state.threadId ? { threadId: state.threadId } : {}) }),
+      (client) =>
+        client["ruth.send"]({ text, ...(state.threadId ? { threadId: state.threadId } : {}) }),
       {
         onEvent: (event) => {
           dispatch({ type: "event", event });
           if (event._tag === "message-completed") {
-            void call(api, (client) => client["ruth.listMessages"]({ threadId: event.message.threadId }))
+            void call(api, (client) =>
+              client["ruth.listMessages"]({ threadId: event.message.threadId }),
+            )
               .then((messages) => dispatch({ type: "history-loaded", messages }))
               .catch((cause: unknown) => dispatch({ type: "error", message: errorMessage(cause) }))
               .finally(() => {
@@ -301,12 +332,19 @@ export function RuthScreen() {
   const drafts = [...state.drafts.values()];
 
   return (
-    <Screen title="Ask Ruth" subtitle="Ask questions grounded in your study library." scroll={false}>
+    <Screen
+      title="Ask Ruth"
+      subtitle="Ask questions grounded in your study library."
+      scroll={false}
+    >
       <ScrollView className="flex-1" contentContainerClassName="gap-3 pb-3">
         {state.error ? <ErrorState message={state.error} /> : null}
         {artifactError ? <ErrorState message={artifactError} /> : null}
         {messages.length === 0 && drafts.length === 0 && !pendingPrompt ? (
-          <EmptyState title="Start a conversation" description="Ask Ruth to explain something you have studied." />
+          <EmptyState
+            title="Start a conversation"
+            description="Ask Ruth to explain something you have studied."
+          />
         ) : null}
         {messages.map((message) => (
           <ChatMessage
@@ -344,7 +382,9 @@ export function RuthScreen() {
           className="max-h-28 min-h-12 flex-1 rounded-xl border border-border bg-card px-4 py-3 text-foreground"
         />
         <View className="w-20">
-          <Button onPress={send} disabled={!input.trim()} busy={sending}>Send</Button>
+          <Button onPress={send} disabled={!input.trim()} busy={sending}>
+            Send
+          </Button>
         </View>
       </View>
     </Screen>
