@@ -14,16 +14,17 @@
     "bench": "tsx src/bin.ts"
   },
   "dependencies": {
-    "effect": "catalog:",
     "@avenire/contracts": "workspace:*",
     "@avenire/database": "workspace:*",
     "@avenire/ingestion": "workspace:*",
-    "@effect/platform-node": "catalog:"
+    "@effect/platform-node": "catalog:",
+    "drizzle-orm": "catalog:",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
-    "vite-plus": "catalog:",
-    "tsx": "4.23.15"
+    "tsx": "4.23.15",
+    "vite-plus": "catalog:"
   }
 }
