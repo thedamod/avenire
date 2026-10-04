@@ -7,7 +7,7 @@ import {
   lastAssistantMessageIsCompleteWithToolCalls,
 } from "ai";
 import { fetch as expoFetch } from "expo/fetch";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
@@ -68,18 +68,20 @@ export function RuthScreen() {
   const [error, setError] = useState<string>();
   const threadId = useRef<ThreadId>(undefined);
   const page = useRef<PageContext>(undefined);
-  page.current = {
-    surface: "chat",
-    platform: "mobile",
-    contentWidthPx: Math.round(width - 64),
-    colorScheme: colorScheme === "dark" ? "dark" : "light",
-    themeTokens: {},
-    fonts: { body: "System", mono: "monospace" },
-  };
+  useEffect(() => {
+    page.current = {
+      surface: "chat",
+      platform: "mobile",
+      contentWidthPx: Math.round(width - 64),
+      colorScheme: colorScheme === "dark" ? "dark" : "light",
+      themeTokens: {},
+      fonts: { body: "System", mono: "monospace" },
+    };
+  }, [width, colorScheme]);
 
-  const { messages, sendMessage, status, addToolApprovalResponse, addToolOutput } =
-    useChat<RuthUIMessage>({
-      transport: new DefaultChatTransport<RuthUIMessage>({
+  const [transport] = useState(
+    () =>
+      new DefaultChatTransport<RuthUIMessage>({
         api: `${apiUrl}${RUTH_CHAT_PATH}`,
         fetch: streamingFetch,
         headers: getCookieHeader,
@@ -94,6 +96,10 @@ export function RuthScreen() {
           },
         }),
       }),
+  );
+  const { messages, sendMessage, status, addToolApprovalResponse, addToolOutput } =
+    useChat<RuthUIMessage>({
+      transport,
       sendAutomaticallyWhen: (options) =>
         lastAssistantMessageIsCompleteWithApprovalResponses(options) ||
         lastAssistantMessageIsCompleteWithToolCalls(options),

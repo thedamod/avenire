@@ -150,9 +150,9 @@ export function RuthPanel() {
   const threadId = useRef<ThreadId>(undefined);
   const column = useRef<HTMLDivElement>(null);
 
-  const { messages, sendMessage, status, addToolApprovalResponse, addToolOutput } =
-    useChat<RuthUIMessage>({
-      transport: new DefaultChatTransport<RuthUIMessage>({
+  const [transport] = useState(
+    () =>
+      new DefaultChatTransport<RuthUIMessage>({
         api: RUTH_CHAT_PATH,
         // The server owns the history; send only the latest message.
         prepareSendMessagesRequest: ({ messages: current }) => ({
@@ -164,6 +164,10 @@ export function RuthPanel() {
           },
         }),
       }),
+  );
+  const { messages, sendMessage, status, addToolApprovalResponse, addToolOutput } =
+    useChat<RuthUIMessage>({
+      transport,
       sendAutomaticallyWhen: (options) =>
         lastAssistantMessageIsCompleteWithApprovalResponses(options) ||
         lastAssistantMessageIsCompleteWithToolCalls(options),

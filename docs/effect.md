@@ -1,7 +1,7 @@
 # Effect 4.0 conventions
 
 We use `effect@4.0.0` (stable). Modules that were under `effect/unstable/*` in the release
-candidates are now top-level: `effect/rpc/*`, `effect/http/*`, `effect/ai/*`, `effect/sql/*`,
+candidates are now top-level: `effect/rpc/*`, `effect/http/*`, `effect/sql/*`,
 `effect/observability/*`. Import modules by namespace from their own path:
 
 ```ts
@@ -9,8 +9,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
-import * as LanguageModel from "effect/ai/LanguageModel";
 ```
+
+Model calls, tools and chat streaming use the AI SDK, not `effect/ai` (see the rule in `AGENTS.md`).
 
 ## Services
 
