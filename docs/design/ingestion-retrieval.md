@@ -1,7 +1,8 @@
 # Ingestion & retrieval — audit and v2 design
 
 Why indexed videos don't come back in search, why some never get indexed, why storage
-is wasteful, how rigorous retrieval is, and what v2 should do instead. The evidence is in `context/_notes/v1-ingestion-audit.md` (v1, with
+is wasteful, how rigorous retrieval is, how to fix v1 under a benchmark v2 then has to
+beat (§3), and what v2 should do instead. The evidence is in `context/_notes/v1-ingestion-audit.md` (v1, with
 line references) plus a direct review of `packages/ingestion` and
 `packages/database/src/schema.ts` (v2). §1.1 and §1.5 are a line-level read of v1 retrieval in
 `context/avenire/packages/ingestion`.
@@ -117,13 +118,26 @@ For video **search** (v2 has none of v1's scoring biases, items 1–2, 6 and 10)
 | Issue | v1 | v2 |
 | --- | --- | --- |
 | Re-ingesting unchanged content re-extracts and re-embeds everything | yes (except markdown notes) | **yes**: delete-all + insert-all, and `item.content_hash` is unused |
-| Transcript stored twice (chunks + `file_transcript_cue`) | yes | no (chunks only) |
+| Transcript stored twice (chunks + `file_transcript_cue`) | yes, and the "cues" were copies of the 30 s chunks, not caption cues (below) | no, but only because v2 keeps **no** cue-level timing at all (below) |
 | Chunk metadata JSON duplicating resource fields | yes | no |
 | Separate embedding table | yes | no (vector inline) |
 | Normalized extracted document kept | no | **no**, so a chunking change means re-fetching sources that may have changed or vanished |
 | Web page snapshot kept | no | **no**, only the URL |
 | Vector precision | float32 ×1024 | float32 ×1536 (6 KB/chunk); `halfvec` would halve it |
 | Large media buffered fully in memory | yes | **yes**: `Storage.get` returns the whole object |
+
+**What v1's cue table actually held.** `toTranscriptCues` (`ingestion/pipeline.ts:38-60`)
+copies the `video-transcript` *chunks* into `file_transcript_cue`. Those are 30 s,
+900-character windows, with any keyframe `labels: … | ocr: …` text appended
+(`video.ts:313-356`). The `captions.vtt` route then serves those rows as captions
+(`apps/web/…/captions.vtt/workspace-file-captions-route-get.ts`). So v1 stored the same
+text twice in Postgres at the same coarse granularity, showed 30-second caption blocks
+with OCR noise, and threw away the real cue timing from SRT/VTT/Whisper segments after
+windowing. It also kept only the last video resource per file and capped at 5,000 rows.
+
+**v2 today** drops cues entirely: `extract/youtube.ts` folds caption cues into 60 s
+sections, and only those sections reach `chunk`. Captions, seeking finer than a minute,
+and "highlight what's being said" are impossible without re-fetching the source.
 
 ### 1.5 Retrieval in v1, in depth
 
@@ -369,8 +383,30 @@ if known) and `slide` sections (sec, OCR text, frame key).
 | Web page snapshot | object storage (`snapshot.html` + readable markdown) | so re-chunking never re-fetches |
 | `NormalizedDocument` | object storage, `document.v<extractorVersion>.json.gz` | the single canonical extracted text with locations |
 | Keyframes | object storage, only frames that were OCR'd and kept | referenced from slide sections |
+| Caption cues | inside `NormalizedDocument` (`transcript.cues[]`: `startMs`, `endMs`, `text`, optional `speaker`), plus a derived `captions.v<extractorVersion>.vtt` next to it | the only cue store; immutable per extractor version, so the VTT is served straight from storage/CDN |
 | Chunks | Postgres `chunk` | text, location, `content_hash`, `token_count`, `embedding halfvec(1536)`, `search` tsvector (weighted) |
 | Embedding cache | Postgres `embedding_cache(model, content_hash) → halfvec` | reused across re-ingestion and identical passages |
+
+**How cues are stored once.** Postgres is the *index*; object storage is the *record*.
+The record is the `NormalizedDocument`: the real caption cues at source granularity
+(SRT/VTT cue, platform caption line, or Whisper segment), never re-windowed. Transcript
+chunks are built from contiguous cue runs. Each chunk's `location` holds `{ startSec,
+endSec, cues: [first, last] }`, and its `content` is the joined cue text, because FTS and
+embedding need text in the row. That copy is index material, derivable and rebuilt on
+re-chunk, not a second record. There's no cue table:
+
+- **Playback captions:** `<track src>` points at the derived `captions.vtt`. A 1-hour
+  lecture is about 60 KB of text (≈ 20 KB gzipped). It's written once per extractor
+  version and cacheable forever.
+- **Seek from a search hit:** the hit's `location.startSec`; with `cues`, the player can
+  highlight the exact cue run that matched.
+- **Ruth quoting a moment:** `read_item` already returns chunk content and location;
+  finer quotes come from the cue range in the document.
+- **Re-chunking** (new window size, chapters) reads cues from the document, with no
+  re-fetch or re-transcription.
+
+v2 change: `extract/youtube.ts` (and every media extractor) returns `cues` alongside
+`sections`, and the pipeline persists them with the document (§2.1 "persist doc").
 
 New columns: `item.content_hash` (actually used), `item.document_key`,
 `item.extractor_version`, `chunk.content_hash`. Re-ingestion is a no-op when
@@ -486,7 +522,119 @@ benchmark.
 - Report **p50/p95 latency and provider calls per query** with the quality metrics, so
   a stage that adds cost has to pay for itself.
 
-## 3. What changes in code (when we implement)
+## 3. Fixing v1 as the baseline v2 must beat
+
+v1 is the only system with real ingested material, a serious benchmark (below), and
+per-stage traces. Fixing it *under that benchmark*, one measured step at a time, gives
+v2 two things it doesn't have: **numbers to beat per slice**, and **evidence for which
+techniques are worth porting**. v2 then builds on measured results instead of a list of
+ideas.
+
+### 3.1 What v1 fails at
+
+| Area | Failure | Where | Benchmark signal that should catch it |
+| --- | --- | --- | --- |
+| Capture | Extension video/audio routed as empty notes; YouTube metadata-only; no player/LMS/HLS discovery; silent downgrades | §1.2 | evidence materialization rate (unmatched evidence = ingest failure) |
+| Captions | "Cues" are 30 s chunk copies with OCR noise; real cue timing discarded | §1.4 | time-locator precision: matched chunk span vs evidence span |
+| Dense recall | ≤ 40 HNSW rows before the workspace filter; no model filter | §1.5 #1 | Recall@50 at the `dense` trace stage |
+| Lexical | AND semantics; title match floods intro chunks; seq scans; noisy tsvector | §1.5 #2–4 | `lexical` stage Recall@50; `paraphrase` and `timestamp` families |
+| Fusion | raw scores of incompatible scales decide order; RRF is cosmetic | §1.5 #6 | `query-fusion` / `global-fusion` stage nDCG@10 vs best single lane |
+| Bias | doc bonuses, intent regexes, ×0.15 demotion of video | §1.1 #1–2, §1.5 #7–8 | `video-transcript` modality slice; `timestamp` family |
+| Video representation | bare 30 s fragments; keyframe duplicates; timestamps ignored | §1.1 #3–5, #8 | `timestamp` family, MRR@10 |
+| Rerank | 16 candidates; fallback discards its own scores | §1.5 #12–13 | `rerank-input` Recall@16 (ceiling) vs `rerank-output` |
+| Abstention | one uncalibrated threshold, bypassed for most queries | §1.5 #14 | `unanswerable` family (10 queries already in the dataset) |
+| Context | 8 results become 2–3; duplicated overlap; citations blurred | §1.5 #18–19 | `final` stage Recall@8 vs `rerank-output` Recall@8 |
+| Cost | HyDE + expansion every query; shadow reruns; warm-up for a 45 s cache | §1.5 #16–17, #21 | provider calls and p95 latency per query (to add) |
+
+### 3.2 The benchmark v2 inherits
+
+v1's `context/avenire/packages/retrieval-benchmark` is the better foundation, so v2
+adopts its contract. v2's current `packages/retrieval-benchmark` is document-level
+relevance over inline synthetic text, three query types and no media; it becomes a fast
+offline smoke lane.
+
+What carries over unchanged:
+
+- **Pinned corpus.** `data/manifest.json`: 65 artifacts (49 PDF, 6 markdown, 5 video,
+  3 office, 1 image, 1 audio), each with license, byte size and SHA-256. Media excerpts
+  are derived by deterministic ffmpeg stream copies.
+- **Locator-based qrels.** `data/dataset.json`: 48 evidence targets addressed by `page`,
+  `slide`, `sheet`, `time` (`startMs`/`endMs`), `text` (needle) or `document`. There are
+  95 graded judgments (0–3) and `requiredEvidenceGroups` for multi-evidence queries.
+  Qrels are materialized to *whatever chunks a run produced*
+  (`materialize-qrels.ts`), so **v1 and v2 can chunk differently and still be scored
+  on the same judgments**. This is the property that makes a cross-version comparison
+  possible.
+- **84 queries in 13 families** (timestamp 11, paraphrase 10, formula-chart 10,
+  multi-hop 10, cross-file 10, unanswerable 10, direct-fact 8, exact-identifier 7, …),
+  split 15 development / 69 test.
+- **Metrics** per trace stage: Recall@k, Precision@k, MRR@10, nDCG@k, AP, all-evidence
+  success. Slices by family, source type, format and evidence modality.
+  `classifyStrength` refuses claims for slices under 40 queries.
+
+What has to be added, in both systems' runners:
+
+1. **One retriever adapter.** `retrieve(query) → { hits: [{ itemRef, location: { page?,
+   slide?, sheet?, startMs?, endMs? }, content }], abstained, trace?, providerCalls,
+   latencyMs }`. v1 implements it with `retrieveRelevantChunks(new
+   PostgresVectorStore(ws), …)`, as `run-database-benchmark.ts` already does. v2
+   implements it with `Retrieval.search` plus a `hnsw`/`lexical`/`rrf` trace.
+2. **Ingest through each system's own pipeline.** Unmatched evidence is reported as an
+   ingest failure, not dropped (v1 already does this). That makes capture and caption
+   fixes measurable in the same run as retrieval.
+3. **Abstention scoring** on the `unanswerable` family: abstention precision and
+   recall, and false abstentions on answerable queries.
+4. **Cost columns:** p50/p95 latency, LLM calls, embedding calls and rerank calls per
+   query.
+5. **Versioned baselines.** Commit run *summaries* (not raw traces) as
+   `baselines/<system>-<step>.json` with git SHA, corpus version, dataset version and
+   model IDs. Tune on `development` and report `test` only.
+6. **Grow the thin slices to 40.** Timestamp/video (11 + 10 evidence), visual-only (2)
+   and table-cell (1) are below the gate. Grow them before claiming anything about
+   video; the MIT OCW candidates in `VIDEO_DOWNLOAD_CANDIDATES.md` are the intended
+   source.
+
+### 3.3 Fix ladder for v1
+
+Each rung is a config flag or a small patch, measured on `development`, then frozen and
+reported on `test`. Rung 0 is the baseline every later number is compared against.
+
+| Rung | Change (v1) | Expected movement | Port to v2? |
+| --- | --- | --- | --- |
+| 0 | **Baseline as-is:** `auto`, `full` and `fast` modes; expansion/HyDE on and off | establishes `v1-asis` | — |
+| 1 | **No-regret bugs:** rerank fallback uses its cosine scores (or drop the fallback); HyDE token cap; `ingestion_embedding.model` filter; stop selecting `e.embedding`; don't send `:`-containing questions to trigram | correctness; fewer provider calls | model filter and no re-embed fallback are already in §2.5 |
+| 2 | **Recall:** `hnsw.iterative_scan` + `ef_search = 200`; OR lexical with negation preserved | `dense` / `lexical` stage Recall@50 | already in v2, negation fix in §2.5 step 1 |
+| 3 | **Lexical quality:** stored weighted tsvector (title A, content D) as one GIN column; drop `kind`/`source` from it; trigram on a stored normalized column | `paraphrase`, `exact-identifier`; latency | §2.5 steps 3, 5 |
+| 4 | **Fusion:** pure RRF over lanes; remove raw-score addition, modality multipliers, doc bonus and intent regexes, as one ablation | `video-transcript` slice; no regression on `direct-fact` | already in v2 (pure RRF) |
+| 5 | **Timestamp lane:** wire `extractQueryTimestampMs` as an RRF location list | `timestamp` family MRR@10 | §2.5 step 8 |
+| 6 | **Contextual transcript chunks:** re-ingest the benchmark corpus with title + `[mm:ss]` in the embedding text; keyframes stop duplicating transcript | `timestamp`, `video-transcript`, `cross-file` | §2.5 step 4 and the video block |
+| 7 | **Rerank wider and with context:** top 40 RRF candidates, documents include title + location | `rerank-output` nDCG@10 | §2.5 step 6 |
+| 8 | **Calibrated abstention:** one threshold fitted on `development` unanswerables, no bypasses | `unanswerable` abstention F1 | §2.5 step 7 |
+| 9 | **Context assembly:** no whole-neighbour splicing; trim overlap | `final` Recall@8 ≈ `rerank-output` Recall@8 | §2.5 step 9 |
+| 10 | **Cost ablations:** expansion, HyDE, decomposition, learner boosts, fast path, each on and off on top of rung 9 | quality delta vs calls/latency | port only what wins on `test` |
+| 11 | **Ingest:** extension media routing; real caption cues (store SRT/Whisper cues, serve VTT from them) | evidence materialization rate; time-locator precision | §2.2–2.4 |
+
+Rungs 1–5 and 9 are SQL or config only. Rung 6 needs a re-ingest of the ~65-artifact
+corpus, not production. Rung 11 changes v1's capture path; do it only if v1 must keep
+serving users while v2 is built.
+
+### 3.4 How v2 uses the result
+
+- **The bar:** v2 replaces v1 retrieval when, on `test`, every slice with ≥ 40 queries
+  is within the bootstrap confidence interval of `v1-best` or above it, abstention F1 is
+  ≥ v1's, and p95 latency and provider calls per query are ≤ v1's.
+- **The port list:** a technique from rung 10 enters v2 only if it moved a `test` slice
+  in v1. Everything else stays in the "deliberately not ported" list in §2.5.
+- **The regression gate:** after cut-over, `v2-<sha>` runs on every retrieval change,
+  and a drop beyond the interval on any supported slice fails the check.
+
+Prerequisites, checked: v1's tree under `context/avenire` has no `node_modules`, so it
+needs `pnpm install` there. It also needs Postgres with pgvector ≥ 0.8 (for rung 2),
+`COHERE_API_KEY`, and the `apollo` reranking/LLM provider keys. The commands are already
+in its README: `corpus:fetch`, `corpus:ingest-controlled -- --user-email …`,
+`run:controlled`, `report:run`.
+
+## 4. What changes in code (when we implement)
 
 | Package | Change |
 | --- | --- |
@@ -495,7 +643,7 @@ benchmark.
 | `ingestion` | `resolve` stage; media extractor (sandboxed ffmpeg / yt-dlp / Whisper / OCR); `NormalizedDocument` persistence; hash-diffed chunk upsert; contextual embedding text; retrieval changes in §2.5 |
 | `cloud` | `avenire-media` snapshot and a `MediaJobs` runner (segment checkpointing) |
 | `apps/desktop` + extension | report video pages with time position; native media goes through the media path, never "note" |
-| `retrieval-benchmark` | video lane, capture-to-index fixtures, no-answer lane, query-shape lanes, latency and provider-call reporting |
+| `retrieval-benchmark` | adopt v1's contract (pinned manifest, locator qrels, families, stage metrics, strength gate) behind one retriever adapter for v1 and v2; versioned baselines; then the video, capture-to-index, no-answer, query-shape and cost additions (§2.6, §3.2) |
 
 The retrieval steps in §2.5 are independent of the media pipeline. Steps 1–3 and 5
 are SQL and schema only. Step 4 rides on the re-embed in §2.4. Steps 6–7 need the
