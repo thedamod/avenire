@@ -1,5 +1,5 @@
 /**
- * Ruth's tools, bound to one chat request. Each `execute` runs an Effect program
+ * Ruth's tools with their server-side `execute`, bound to one chat request. Each `execute` runs an Effect program
  * against the services captured when Ruth was built. Failures reach the model as
  * tool errors: domain errors keep their message, defects become a generic one so
  * nothing internal leaks into the conversation.
@@ -32,7 +32,6 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { VISUAL_BUDGETS, VISUAL_RUNTIME } from "./pageRuntime.ts";
 import {
   askUserSpec,
   getPageContextSpec,
@@ -41,7 +40,9 @@ import {
   readItemSpec,
   runPythonSpec,
   searchMaterialsSpec,
-} from "./toolSpecs.ts";
+} from "./index.ts";
+import { VISUAL_BUDGETS, VISUAL_RUNTIME } from "./page.ts";
+import { loadSkillTool } from "./skills.ts";
 
 /** What tool programs may use. */
 export type RuthToolServices = Database | Storage | Retrieval | Sandboxes | Crypto.Crypto;
@@ -64,19 +65,6 @@ const UNEXPECTED_FAILURE = "The tool failed unexpectedly. Try a different approa
 
 const MAX_READ_CHUNKS = 40;
 const DEFAULT_READ_CHUNKS = 12;
-
-const VISUAL_TAG = /<avenire-(?:chart|sim)\b([^>]*)>/g;
-const attribute = (attributes: string, name: string): string | undefined =>
-  new RegExp(`\\b${name}="([^"]*)"`).exec(attributes)?.[1];
-
-/** Visuals with an id in assistant text, so Ruth can revise instead of starting over. */
-export const findVisuals = (texts: ReadonlyArray<string>): PageContextResult["existingVisuals"] =>
-  texts.flatMap((text) =>
-    [...text.matchAll(VISUAL_TAG)].flatMap(([, attributes = ""]) => {
-      const id = attribute(attributes, "id");
-      return id === undefined ? [] : [{ id, title: attribute(attributes, "title") ?? "" }];
-    }),
-  );
 
 const storeFigure = Effect.fn("RuthTools.storeFigure")(function* (
   turn: RuthTurn,
@@ -214,7 +202,7 @@ const toolFailure = (
       );
 
 /** Builds the toolset for one request; `services` are captured once by the Ruth layer. */
-export const makeRuthTools = (services: Context.Context<RuthToolServices>, turn: RuthTurn) => {
+export const createRuthTools = (services: Context.Context<RuthToolServices>, turn: RuthTurn) => {
   const run =
     <A, E extends { readonly message: string }>(
       name: string,
@@ -230,6 +218,8 @@ export const makeRuthTools = (services: Context.Context<RuthToolServices>, turn:
       );
 
   return {
+    load_skill: loadSkillTool(),
+
     search_materials: tool({
       ...searchMaterialsSpec,
       execute: ({ query, limit }, { abortSignal }) =>

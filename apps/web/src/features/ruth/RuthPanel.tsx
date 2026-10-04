@@ -11,7 +11,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { RuthUIMessage } from "@avenire/ai/ruth-messages";
+import type { RuthUIMessage } from "@avenire/ai/message-types";
 import {
   type ArtifactId,
   type FileAction,

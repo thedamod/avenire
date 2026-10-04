@@ -30,7 +30,15 @@ packages/
 ```
 
 Packages are source-first: `exports` point at `./src/*.ts`, there is no build step, and each
-public module is an explicit subpath (no barrels except `@avenire/contracts`).
+public module is an explicit subpath (no barrels except `@avenire/contracts`, and the
+folder entry points of `@avenire/ai`).
+
+`@avenire/ai` follows the v1 layout: `models/` (the `ruth-*` registry; never name a provider
+at a call site), `prompts/`, `tools/` (`index.ts` holds client-safe specs, the other files
+add `execute`), `skills/` (markdown in `sections/`, compiled into `skills.ts` by
+`pnpm --filter @avenire/ai skills:generate`; never edit `skills.ts` by hand), `agents/`
+(`createRuthAgent` / `createRuthCloudAgent` plus the services that drive them),
+`scheduler/`, and `message-types.ts`.
 
 ## Rules
 

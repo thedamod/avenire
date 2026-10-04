@@ -41,11 +41,21 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Config from "effect/Config";
 
-import { RuthModels, RuthModelsLive } from "../models.ts";
-import { incomingMessageSchemas, ruthMessageSchemas, type RuthUIMessage } from "./messages.ts";
-import { RUTH_SYSTEM_PROMPT } from "./prompt.ts";
-import { findVisuals, makeRuthTools, type RuthToolServices } from "./tools.ts";
-import { ruthToolSpecs } from "./toolSpecs.ts";
+import {
+  incomingMessageSchemas,
+  ruthMessageSchemas,
+  type RuthUIMessage,
+} from "../message-types.ts";
+import {
+  RUTH_DEFAULT_MODEL,
+  RUTH_FAST_MODEL,
+  RuthModels,
+  RuthModelsLive,
+} from "../models/index.ts";
+import { RUTH_PROMPT } from "../prompts/ruth.ts";
+import { ruthToolSpecs } from "../tools/index.ts";
+import { findVisuals } from "../tools/page.ts";
+import { createRuthTools, type RuthToolServices, type RuthTurn } from "../tools/ruth.ts";
 
 const MAX_STEPS = 8;
 const DEFAULT_THREAD_TITLE = "New thread";
@@ -146,6 +156,27 @@ const toStoredMessage = (row: RuthMessageRow): RuthMessage => ({
   parts: row.parts,
   metadata: row.metadata,
   createdAt: row.createdAt.toISOString(),
+});
+
+/**
+ * The Ruth agent for one turn: model, system prompt, tools and approval policy.
+ * Spread it into `streamText` with the conversation's messages. Full access still
+ * routes file actions through approval (as "approved") so they show in the stream.
+ */
+export const createRuthAgent = (options: {
+  readonly models: RuthModels["Service"];
+  readonly services: Context.Context<RuthToolServices>;
+  readonly turn: RuthTurn;
+  readonly fullAccess: boolean;
+  readonly fast?: boolean | undefined;
+}) => ({
+  model: options.models.languageModel(options.fast === true ? RUTH_FAST_MODEL : RUTH_DEFAULT_MODEL),
+  system: RUTH_PROMPT({ fullAccess: options.fullAccess }),
+  tools: createRuthTools(options.services, options.turn),
+  toolApproval: {
+    propose_file_action: options.fullAccess ? ("approved" as const) : ("user-approval" as const),
+  },
+  stopWhen: stepCountIs(MAX_STEPS),
 });
 
 const textOf = (messages: ReadonlyArray<RuthUIMessage>): Array<string> =>
@@ -273,14 +304,20 @@ const makeRuth = Effect.gen(function* () {
     const conversation = appendIncoming(history, incoming, { freshId, createdAt });
     yield* saveMessages(input.userId, input.threadId, conversation.slice(-1));
 
-    const tools = makeRuthTools(services, {
-      userId: input.userId,
-      threadId: input.threadId,
-      page: input.page,
-      existingVisuals: findVisuals(textOf(conversation)),
+    const agent = createRuthAgent({
+      models,
+      services,
+      fullAccess: thread.fullAccess,
+      fast: input.fast,
+      turn: {
+        userId: input.userId,
+        threadId: input.threadId,
+        page: input.page,
+        existingVisuals: findVisuals(textOf(conversation)),
+      },
     });
     const modelMessages = yield* Effect.tryPromise({
-      try: () => convertToModelMessages(conversation, { tools }),
+      try: () => convertToModelMessages(conversation, { tools: agent.tools }),
       catch: fail("prepare the conversation"),
     });
     const responseId = yield* makeId(MessageId);
@@ -290,19 +327,14 @@ const makeRuth = Effect.gen(function* () {
       last?.role === "assistant" && last.metadata ? last.metadata : { createdAt };
 
     const result = streamText({
-      model: input.fast === true ? models.fast : models.ruth,
-      system: RUTH_SYSTEM_PROMPT,
+      ...agent,
       messages: modelMessages,
-      tools,
-      // Full access still routes through approval, so auto-approvals show in the stream.
-      toolApproval: { propose_file_action: thread.fullAccess ? "approved" : "user-approval" },
       experimental_toolApprovalSecret: Redacted.value(approvalSecret),
-      stopWhen: stepCountIs(MAX_STEPS),
     });
 
-    const stream: RuthChatStream = toUIMessageStream<typeof tools, RuthUIMessage>({
+    const stream: RuthChatStream = toUIMessageStream<typeof agent.tools, RuthUIMessage>({
       stream: result.stream,
-      tools,
+      tools: agent.tools,
       originalMessages: conversation,
       generateMessageId: () => responseId,
       messageMetadata: ({ part }) => (part.type === "start" ? replyMetadata : undefined),

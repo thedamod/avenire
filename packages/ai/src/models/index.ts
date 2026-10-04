@@ -1,50 +1,60 @@
 /**
- * Model choices for Ruth. Interactive turns favour latency (with a lighter "fast"
- * option the user can pick per request); the nightly Ruth Cloud run favours depth.
- * All three are AI SDK language models from one Anthropic provider.
+ * Ruth's model registry. Call sites use `ruth-*` names and never a provider or
+ * model id, so models change through `RUTH_MODEL_*` without code changes:
+ *
+ * - `ruth-sprint`: fast and cheap (chat with Fast on, summaries, routing)
+ * - `ruth-core`: the default for interactive chat
+ * - `ruth-apex`: strongest reasoning (hard analysis, long video plans)
+ * - `ruth-agent`: tool-heavy loops (Ruth Cloud runs)
  */
 import { createAnthropic } from "@ai-sdk/anthropic";
-import type { LanguageModel } from "ai";
+import { customProvider, type LanguageModel } from "ai";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
-export const RUTH_DEFAULT_MODEL = "claude-sonnet-5-5";
-export const RUTH_FAST_DEFAULT_MODEL = "claude-haiku-4-5-20251001";
-export const RUTH_CLOUD_DEFAULT_MODEL = "claude-opus-5-5";
+export const RUTH_MODEL_NAMES = ["ruth-sprint", "ruth-core", "ruth-apex", "ruth-agent"] as const;
+export type RuthModelName = (typeof RUTH_MODEL_NAMES)[number];
+
+/** Underlying model ids; each is overridable with `RUTH_MODEL_<NAME>`, e.g. `RUTH_MODEL_CORE`. */
+export const RUTH_MODEL_DEFAULTS: Record<RuthModelName, string> = {
+  "ruth-sprint": "claude-haiku-4-5-20251001",
+  "ruth-core": "claude-sonnet-5-5",
+  "ruth-apex": "claude-opus-5-5",
+  "ruth-agent": "claude-opus-5-5",
+};
+
+export const RUTH_DEFAULT_MODEL: RuthModelName = "ruth-core";
+export const RUTH_FAST_MODEL: RuthModelName = "ruth-sprint";
+export const RUTH_CLOUD_MODEL: RuthModelName = "ruth-agent";
 
 export class RuthModels extends Context.Service<
   RuthModels,
-  {
-    /** The model behind interactive Ruth turns (`RUTH_MODEL`). */
-    readonly ruth: LanguageModel;
-    /** The model behind interactive turns with Fast on (`RUTH_FAST_MODEL`). */
-    readonly fast: LanguageModel;
-    /** The model behind nightly Ruth Cloud runs (`RUTH_CLOUD_MODEL`). */
-    readonly cloud: LanguageModel;
-  }
+  { readonly languageModel: (name: RuthModelName) => LanguageModel }
 >()("avenire/ai/RuthModels") {}
 
-const modelId = (name: string, fallback: string) =>
-  Config.String(name).pipe(Config.withDefault(fallback));
+const envName = (name: RuthModelName) => `RUTH_MODEL_${name.slice("ruth-".length).toUpperCase()}`;
 
-/** Reads `ANTHROPIC_API_KEY` and the model overrides. */
+/** Reads `ANTHROPIC_API_KEY` and the `RUTH_MODEL_*` overrides. */
 export const RuthModelsLive = Layer.effect(
   RuthModels,
   Effect.gen(function* () {
     const apiKey = yield* Config.Redacted("ANTHROPIC_API_KEY");
-    const ids = yield* Config.all({
-      ruth: modelId("RUTH_MODEL", RUTH_DEFAULT_MODEL),
-      fast: modelId("RUTH_FAST_MODEL", RUTH_FAST_DEFAULT_MODEL),
-      cloud: modelId("RUTH_CLOUD_MODEL", RUTH_CLOUD_DEFAULT_MODEL),
-    });
     const anthropic = createAnthropic({ apiKey: Redacted.value(apiKey) });
-    return RuthModels.of({
-      ruth: anthropic(ids.ruth),
-      fast: anthropic(ids.fast),
-      cloud: anthropic(ids.cloud),
-    });
+    const ids = yield* Config.all(
+      Object.fromEntries(
+        RUTH_MODEL_NAMES.map((name) => [
+          name,
+          Config.String(envName(name)).pipe(Config.withDefault(RUTH_MODEL_DEFAULTS[name])),
+        ]),
+      ),
+    );
+    const languageModels = Object.fromEntries(
+      Object.entries(ids).map(([name, id]) => [name, anthropic(id)]),
+    );
+    const ruth = customProvider({ languageModels });
+    return RuthModels.of({ languageModel: (name) => ruth.languageModel(name) });
   }),
 );

@@ -19,7 +19,7 @@ import {
 } from "react-native";
 import { call } from "@avenire/client-runtime/rpc";
 import * as WebBrowser from "expo-web-browser";
-import type { RuthUIMessage } from "@avenire/ai/ruth-messages";
+import type { RuthUIMessage } from "@avenire/ai/message-types";
 import {
   type ArtifactId,
   type FileAction,

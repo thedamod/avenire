@@ -2,7 +2,7 @@
  * Ruth - the study agent that explains concepts from the user's own material.
  *
  * Chat messages are AI SDK `UIMessage`s (typed as `RuthUIMessage` in
- * `@avenire/ai/ruth-messages`); here they travel as opaque JSON. Streaming goes
+ * `@avenire/ai/message-types`); here they travel as opaque JSON. Streaming goes
  * over a plain HTTP endpoint (`RUTH_CHAT_PATH`), thread management over RPC.
  * File actions pause on an approval tool part unless the thread has Full access.
  */

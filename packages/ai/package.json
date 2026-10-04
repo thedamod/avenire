@@ -4,31 +4,40 @@
   "type": "module",
   "exports": {
     "./models": {
-      "types": "./src/models.ts",
-      "import": "./src/models.ts"
+      "types": "./src/models/index.ts",
+      "import": "./src/models/index.ts"
+    },
+    "./prompts": {
+      "types": "./src/prompts/index.ts",
+      "import": "./src/prompts/index.ts"
+    },
+    "./skills": {
+      "types": "./src/skills/index.ts",
+      "import": "./src/skills/index.ts"
+    },
+    "./tools": {
+      "types": "./src/tools/index.ts",
+      "import": "./src/tools/index.ts"
+    },
+    "./message-types": {
+      "types": "./src/message-types.ts",
+      "import": "./src/message-types.ts"
     },
     "./ruth": {
-      "types": "./src/ruth/agent.ts",
-      "import": "./src/ruth/agent.ts"
-    },
-    "./ruth-messages": {
-      "types": "./src/ruth/messages.ts",
-      "import": "./src/ruth/messages.ts"
-    },
-    "./ruth-tools": {
-      "types": "./src/ruth/tools.ts",
-      "import": "./src/ruth/tools.ts"
+      "types": "./src/agents/ruth.ts",
+      "import": "./src/agents/ruth.ts"
     },
     "./ruth-cloud": {
-      "types": "./src/ruthCloud/run.ts",
-      "import": "./src/ruthCloud/run.ts"
+      "types": "./src/agents/cloud.ts",
+      "import": "./src/agents/cloud.ts"
     },
     "./scheduler": {
-      "types": "./src/ruthCloud/scheduler.ts",
-      "import": "./src/ruthCloud/scheduler.ts"
+      "types": "./src/scheduler/index.ts",
+      "import": "./src/scheduler/index.ts"
     }
   },
   "scripts": {
+    "skills:generate": "node src/skills/scripts/generator.ts",
     "typecheck": "tsc --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },

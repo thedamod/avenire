@@ -1,7 +1,7 @@
 /**
  * The shape of Ruth's tools: descriptions and input/output schemas, without the
- * server-side `execute`. Kept free of server dependencies so clients can derive
- * their message types from it (see `messages.ts`).
+ * server-side `execute` (see `ruth.ts`, `skills.ts`). Kept free of server
+ * dependencies so clients can derive their message types from it.
  */
 import {
   ArtifactId,
@@ -14,9 +14,8 @@ import {
 import { tool } from "ai";
 import * as Schema from "effect/Schema";
 
-/** An Effect Schema as a Standard Schema with JSON Schema, which the AI SDK accepts. */
-export const standardSchema = <S extends Schema.Codec<unknown, unknown>>(schema: S) =>
-  Schema.toStandardJSONSchemaV1(Schema.toStandardSchemaV1(schema));
+import { AVAILABLE_SKILLS } from "../skills/index.ts";
+import { standardSchema } from "./schema.ts";
 
 const ChunkResult = Schema.Struct({
   chunkId: ChunkId,
@@ -109,8 +108,21 @@ export const askUserSpec = {
   outputSchema: standardSchema(Schema.Struct({ answers: Schema.Array(Schema.String) })),
 };
 
+export const loadSkillSpec = {
+  description:
+    "Load skill instructions into context before acting. Ask only for the skills the task " +
+    "needs; the system prompt lists them.",
+  inputSchema: standardSchema(
+    Schema.Struct({ skills: Schema.NonEmptyArray(Schema.Literals(AVAILABLE_SKILLS)) }),
+  ),
+  outputSchema: standardSchema(
+    Schema.Struct({ skills: Schema.Array(Schema.String), content: Schema.String }),
+  ),
+};
+
 /** Ruth's toolset as the model and the UI see it; `ask_user` is answered by the client. */
 export const ruthToolSpecs = {
+  load_skill: tool(loadSkillSpec),
   search_materials: tool(searchMaterialsSpec),
   read_item: tool(readItemSpec),
   run_python: tool(runPythonSpec),

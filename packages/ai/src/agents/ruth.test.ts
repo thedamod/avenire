@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
-import { appendIncoming } from "./agent.ts";
-import type { RuthUIMessage } from "./messages.ts";
-import { findVisuals } from "./tools.ts";
+import { appendIncoming } from "./ruth.ts";
+import type { RuthUIMessage } from "../message-types.ts";
+import { findVisuals } from "../tools/page.ts";
 
 const message = (id: string, role: RuthUIMessage["role"], text: string): RuthUIMessage => ({
   id,

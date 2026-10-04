@@ -33,7 +33,7 @@ import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 
-import { RuthCloud } from "./run.ts";
+import { RuthCloud } from "../agents/cloud.ts";
 import { materialWindow, type MaterialWindow } from "./window.ts";
 
 const TICK_INTERVAL = "1 minute";

@@ -5,9 +5,10 @@
 import type { InferUITools, UIMessage } from "ai";
 import * as Schema from "effect/Schema";
 
-import { type RuthTools, standardSchema } from "./toolSpecs.ts";
+import { type RuthTools } from "./tools/index.ts";
+import { standardSchema } from "./tools/schema.ts";
 
-export type { PageContextResult, RuthTools } from "./toolSpecs.ts";
+export type { PageContextResult, RuthTools } from "./tools/index.ts";
 
 export const RuthMessageMetadata = Schema.Struct({
   createdAt: Schema.String,

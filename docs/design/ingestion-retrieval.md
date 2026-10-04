@@ -299,7 +299,7 @@ file).
 
 `packages/ingestion/src/retrieval.ts` is about 200 lines: per-user dense + lexical, RRF,
 two chunks per item. Ruth calls it through `search_materials` and can read neighbours
-itself with `read_item` (`packages/ai/src/ruth/tools.ts`). Commit `9112434` fixed three
+itself with `read_item` (`packages/ai/src/tools/ruth.ts`). Commit `9112434` fixed three
 §2.5 items:
 
 | Gap | Status in v2 |
