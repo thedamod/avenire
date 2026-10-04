@@ -1,14 +1,77 @@
 # Ingestion & retrieval — audit and v2 design
 
-Why videos go missing, why storage is wasteful, how rigorous retrieval is, and what v2
-should do instead. The evidence is in `context/_notes/v1-ingestion-audit.md` (v1, with
+Why indexed videos don't come back in search, why some never get indexed, why storage
+is wasteful, how rigorous retrieval is, and what v2 should do instead. The evidence is in `context/_notes/v1-ingestion-audit.md` (v1, with
 line references) plus a direct review of `packages/ingestion` and
-`packages/database/src/schema.ts` (v2). §1.4 is a line-level read of v1 retrieval in
+`packages/database/src/schema.ts` (v2). §1.1 and §1.5 are a line-level read of v1 retrieval in
 `context/avenire/packages/ingestion`.
 
 ## 1. Findings
 
-### 1.1 Why videos go missing (v1, ranked by impact)
+### 1.1 Why videos go missing from search (v1, ranked by impact)
+
+These are videos that *were* ingested, with transcript chunks in the index, and still
+don't come back. Paths are relative to `context/avenire/packages/ingestion/src`.
+Item numbers like "§1.5 #12" point at the general retrieval audit below.
+
+1. **Documents get bonuses a transcript can never earn.** On top of the score:
+   `+0.35 × word overlap` and `+0.28` for an exact phrase (`retrieval/retrieve.ts:1049-1050`),
+   `+0.18` more for pdf/document/markdown with ≥ 25% overlap (`:1052-1061`), and ×1.4
+   under document intent (`:1006-1013`). Cosine scores sit around 0.3–0.6, so these
+   additions decide the order. Written text repeats the question's words; speech
+   paraphrases them ("so if we multiply by the transpose…"). The scored list then picks
+   the 16 candidates the reranker sees (§1.5 #12). Videos that miss that cut are never
+   reranked, however relevant.
+2. **Everyday words demote videos by 85% and sort them last.** Document intent fires on
+   *page, text, quote, chapter, paragraph* (`:30-31`). The preferred types become
+   pdf/document/markdown/link, so every video candidate is ×0.15 (`:1015-1021`) and
+   then hard-sorted after every document (`:1514-1524`). "Quote what Strang says about
+   the column space" or "which chapter of the lecture…" bury the lecture itself.
+   Visual intent helps video, but "slide" isn't in its regex (`:26-27`).
+3. **Transcript chunks are bare speech fragments.** Transcripts are cut into windows of
+   at most 30 s and 900 characters (`ingestion/video.ts:142-186`). Each window is
+   embedded and indexed as just that text: no video title, no topic, often no
+   punctuation (`video.ts:313-356`). A query naming the lecture ("in the SVD lecture,
+   what kind of vectors…") gets low cosine against a window where "SVD" is never
+   spoken. Lexical search needs *every* query word in those 150 words (§1.5 #2),
+   which spoken paraphrase almost never has.
+4. **Naming the video returns its first minutes.** The lexical query treats a title
+   match as a match for every chunk of the resource, ties ordered by `chunk_index ASC`
+   (§1.5 #2). "Lecture 6" or "the SVD lecture" fills the lexical list with chunk 0, the
+   metadata stub (`Video source: … / Transcription mode: …`, `video.ts:292-312`), and
+   the intro. The answer at 44:28 is chunk ~90 and never makes the list.
+5. **Timestamps in the question are ignored.** The v1 benchmark's video queries are
+   mostly of the form "At roughly 9:15 in lecture 1, what…". `extractQueryTimestampMs`
+   and `temporalProximityMultiplier` exist and are unit-tested, but nothing calls them
+   (`retrieve.ts:552-588`). Worse, the `:` makes the query "symbol-heavy"
+   (`:41, :626-631`), so the whole question is sent to trigram search as a single
+   `ILIKE '%…%'` substring that can't match.
+6. **Video hits cost the most context, so they're the first dropped.** Transcript
+   chunks almost always look "fragmentary": they start lowercase or lack terminal
+   punctuation (`:702-712`). So each video hit pulls in both neighbours, while a
+   well-punctuated PDF paragraph doesn't. Under the 2,400-token budget the greedy loop
+   skips whatever no longer fits (§1.5 #18), which in practice is the lower-ranked
+   video hit.
+7. **The reranker sees fragments without context.** Rerank documents are
+   `[9:00-9:30] so the…` with no title (`:1645-1649`), so the cross-encoder compares a
+   context-free fragment against complete document paragraphs. If the reranker fails,
+   heuristic scores decide (§1.5 #13), which brings back item 1.
+8. **Keyframe chunks crowd out their own transcript.** Each keyframe becomes a chunk
+   holding title, caption, OCR and ±15 s of transcript, embedded together with the
+   image (`video.ts:358-419`). It duplicates transcript text, sits in a different region
+   of embedding space than text queries (image + text), and uses one of the 3–8 slots
+   per resource (`retrieve.ts:377-403`). The transcript chunk that actually answers
+   can be the one cut. Keyframe chunks do carry the title, which transcript chunks don't.
+9. **Noise filters hit non-Latin lectures.** Any candidate under 80% printable ASCII is
+   ×0.3 (`:636-648`), so lectures in non-Latin scripts are demoted across the board.
+10. **The fast path never reranks.** When it's taken, items 1–2 decide the order on
+    their own (§1.5 #15).
+
+Items 1, 2 and 6 are scoring bias, 3–5 and 8 are representation, and 7 compounds both.
+Together they explain why a correctly transcribed lecture is reliably out-ranked by any
+PDF that shares the question's vocabulary.
+
+### 1.2 Why some videos never get indexed (v1)
 
 1. **Extension captures of native video were silently routed as notes.** `popup.js`
    hard-coded `type: "note"`; the worker passed `content: ""`, string content won over MIME
@@ -25,7 +88,7 @@ line references) plus a direct review of `packages/ingestion` and
 5. **Silent downgrades.** Failed transcription fell back to link metadata and was
    reported as success.
 
-### 1.2 v2 today
+### 1.3 Video in v2 today
 
 - **Video coverage is narrower than v1.** Only YouTube URLs with available captions
   (`youtube-transcript`, which scrapes and breaks often). Uploaded video/audio, Vimeo,
@@ -35,7 +98,21 @@ line references) plus a direct review of `packages/ingestion` and
   the contract's `CapturedMedia.url` is only set when a player exposes it.
 - Routing trusts `item.kind` + `sourceUrl`; there's no MIME or byte sniffing.
 
-### 1.3 Storage
+For video **search** (v2 has none of v1's scoring biases, items 1–2, 6 and 10):
+
+- **Title and naming queries can't reach a video at all.** `chunk.search` is
+  `to_tsvector(content)` and embeddings are bare content, so "the SVD lecture" matches
+  only if someone says "SVD" in that minute. This is worse than v1, where at least the
+  intro matched.
+- **Timestamps in queries:** unsupported, the same as v1 item 5.
+- **Transcript chunks are fixed 60 s windows with no overlap** (`extract/youtube.ts:16-33`),
+  joined with spaces, so an explanation that crosses a minute boundary is split in two.
+  Caption text isn't cleaned. `youtube-transcript` is known to return HTML-entity-encoded
+  text (`&amp;#39;`) for some videos; unverified here, and nothing decodes it.
+- **No reranker,** so speech fragments compete with document paragraphs on raw RRF
+  rank alone.
+
+### 1.4 Storage
 
 | Issue | v1 | v2 |
 | --- | --- | --- |
@@ -48,7 +125,7 @@ line references) plus a direct review of `packages/ingestion` and
 | Vector precision | float32 ×1024 | float32 ×1536 (6 KB/chunk); `halfvec` would halve it |
 | Large media buffered fully in memory | yes | **yes**: `Storage.get` returns the whole object |
 
-### 1.4 Retrieval in v1, in depth
+### 1.5 Retrieval in v1, in depth
 
 v1 retrieval (`context/avenire/packages/ingestion/src/retrieval/`, SQL in
 `context/avenire/packages/database/src/ingestion-data.ts`) looks rigorous: hybrid search,
@@ -204,7 +281,7 @@ file).
 - Per-stage trace snapshots (`RetrievalTraceCollector`) that the benchmark can replay.
 - Hash-diffed incremental re-embedding for notes (`persist.ts:46-87`).
 
-### 1.5 Retrieval in v2 today
+### 1.6 Retrieval in v2 today
 
 `packages/ingestion/src/retrieval.ts` is about 200 lines: per-user dense + lexical, RRF,
 two chunks per item. Ruth calls it through `search_materials` and can read neighbours
@@ -302,7 +379,7 @@ otherwise chunks are diffed by hash and only changed chunks are embedded and wri
 
 ### 2.5 Retrieval
 
-Principles from §1.4. **Fuse by rank, never by raw score.** **Every stage must be
+Principles from §1.5. **Fuse by rank, never by raw score.** **Every stage must be
 measurable on the benchmark before it ships**, because v1's constants and fallbacks
 compounded unmeasured. **Prefer an index-backed SQL lane over an LLM call.** **Let Ruth
 own query rewriting**: it already writes the `search_materials` query, so there's no
@@ -323,7 +400,7 @@ RRF. Next steps, in order, each landing on its own:
    setweight(to_tsvector(content), 'D')`, written at chunk insert (the title is
    denormalised per chunk, and rewritten on item rename). Keep it a single GIN-indexed
    column: v1's OR across per-row `to_tsvector(title)` lost the index and flooded results
-   with title-only matches (§1.4 item 2). Don't index `kind` or `source`.
+   with title-only matches (§1.5 item 2). Don't index `kind` or `source`.
 4. **Contextual chunk embeddings.** Embed `"{item title} › {heading path}\n{content}"`,
    plus `[mm:ss]` for transcript chunks. Display and FTS keep the raw content. This
    needs a `chunker_version` bump and a re-embed, so it goes with the embedding-cache
@@ -332,16 +409,16 @@ RRF. Next steps, in order, each landing on its own:
    math symbols (v1's `extractTrigramQuery` heuristic is fine), add a third RRF list:
    `content ILIKE '%…%'` on raw `content`, served by a `gin_trgm_ops` index. Do the
    normalisation (NFKC, dash folding) at insert time in a stored `content_norm` column,
-   so the predicate stays indexable (§1.4 item 3).
+   so the predicate stays indexable (§1.5 item 3).
 6. **Reranker with a real score.** A `Reranker` service (Cohere `rerank-v3.5` or Voyage
    `rerank-2`) over the top ~30 fused candidates, documents formatted as `"{title} ›
    {heading} [{location}]\n{content}"`. If it fails, return the RRF order and flag
    `reranked: false`. No re-embedding fallback, and no reuse of another stage's scores as
-   a rerank score (§1.4 item 13).
+   a rerank score (§1.5 item 13).
 7. **Expose relevance, then abstain.** `SearchHit` gains `relevance` (the rerank score,
    or `null` when not reranked) and the result gains `reranked`. Pick one threshold on
    the benchmark's no-answer queries; below it, return no hits plus `abstained: true`, so
-   Ruth says the materials don't cover it. No intent-based bypasses (§1.4 item 14).
+   Ruth says the materials don't cover it. No intent-based bypasses (§1.5 item 14).
 8. **Location-aware queries.** Parse `p. 12`, `page 12`, `12:30` and `slide 4` from the
    query, and add an RRF list of chunks whose `location` contains that page or time
    (v1's `temporalProximityMultiplier`, as a ranked list instead of a multiplier).
@@ -349,7 +426,32 @@ RRF. Next steps, in order, each landing on its own:
    reads. For hits whose chunk was a mid-paragraph word-window split, attach
    `before`/`after` snippets of about 60 tokens with the overlap removed, fetched in one
    query for all hits. Don't splice whole neighbours into the hit content; v1 blew its
-   budget and blurred citations that way (§1.4 items 18–19).
+   budget and blurred citations that way (§1.5 items 18–19).
+
+**Video search specifically** (fixes §1.1 and the v2 gaps in §1.3):
+
+- **Title, chapter and time in every transcript chunk.** Steps 3–4 apply to transcripts
+  as `"{video title} › {chapter} [mm:ss]\n{text}"` in the embedding text, with title and
+  chapter in the weighted lexical vector. This fixes v1 #3 and v2's title blindness
+  without v1's flood of intro chunks (#4).
+- **Timestamp lane first.** Step 8 is the highest-value change for lectures. "At 9:15 in
+  lecture 1" becomes a location list (chunks whose `[startSec, endSec]` contains or is
+  near 555 s) fused with the title match, so the right minute of the right video ranks
+  first. Strip the parsed time from the text before it reaches the other lanes (v1 #5).
+- **Better transcript windows.** About 45–60 s, broken at cue gaps ≥ 1.5 s or at YouTube
+  chapter boundaries, with about 10 s of overlap. Decode HTML entities and drop `[Music]`
+  style cues.
+- **One `outline` chunk per video.** Title, channel or source, and chapters with
+  timestamps (YouTube chapters when present, otherwise generated once at ingest). It
+  replaces v1's metadata stub and is where "what's in the SVD lecture" lands. Its hits
+  carry `startSec` pointers, so Ruth can `read_item` at the right ordinal.
+- **Slides as their own `slide` chunks** (§2.3), embedded as OCR text rather than
+  image + duplicated transcript (v1 #8). The per-item cap counts a slide and the
+  transcript chunk at the same timestamp as one slot.
+- **No modality multipliers.** When the user means a video, Ruth passes
+  `kinds: ["video"]`; otherwise every kind competes on rank (v1 #1–2).
+- **Rerank documents carry title and time** (step 6), so the cross-encoder judges a
+  fragment in context (v1 #7).
 
 Deliberately not ported from v1: regex intent detection and modality multipliers (use
 `kinds` filters chosen by Ruth instead), LLM query expansion, HyDE and decomposition in
@@ -370,10 +472,15 @@ benchmark.
 - **Capture → index end to end:** a fixture snapshot from the desktop/extension contract
   goes through `submitCapture` into the pipeline, asserting video pages become media items.
 - Per-lane Recall@k / MRR / nDCG, plus per-source false-skip rate.
+- A **video retrieval lane**, separate from ingest. Port v1's 13 video/audio queries
+  (`context/avenire/packages/retrieval-benchmark/data/dataset.json`, mostly "at about
+  mm:ss in lecture N…") and seed them into a corpus that also has PDFs sharing the
+  lectures' vocabulary, so v1 #1-style bias shows up as a metric. Report Recall@10 for
+  video items and timestamp error.
 - A **no-answer lane:** questions whose answer is not in the seeded corpus. Report
   abstention precision and recall next to Recall@k, so the threshold in §2.5 step 7 is
   chosen on data.
-- **Query-shape lanes** matching §1.4's failure modes: question-style, negation, quoted
+- **Query-shape lanes** matching §1.5's failure modes: question-style, negation, quoted
   phrase or formula, code identifier, title-only ("what's in the thermodynamics notes"),
   page or timestamp reference, and everyday "show me…" phrasing.
 - Report **p50/p95 latency and provider calls per query** with the quality metrics, so
@@ -383,7 +490,7 @@ benchmark.
 
 | Package | Change |
 | --- | --- |
-| `contracts` | `CapturedMedia` gains `pageUrl`, `currentTimeSec`; `IngestionJob` gains `coverage`; `ChunkKind` gains `slide`; `SearchHit` gains `relevance`, search results gain `reranked` / `abstained` |
+| `contracts` | `CapturedMedia` gains `pageUrl`, `currentTimeSec`; `IngestionJob` gains `coverage`; `ChunkKind` gains `slide` and `outline`; `SearchHit` gains `relevance`, search results gain `reranked` / `abstained` |
 | `database` | `chunk.embedding → halfvec(1536)`, `chunk.content_hash`; stored weighted `search` (title A, heading B, content D); `content_norm` + `gin_trgm_ops` index; `embedding_cache`; `item.document_key`, `extractor_version` |
 | `ingestion` | `resolve` stage; media extractor (sandboxed ffmpeg / yt-dlp / Whisper / OCR); `NormalizedDocument` persistence; hash-diffed chunk upsert; contextual embedding text; retrieval changes in §2.5 |
 | `cloud` | `avenire-media` snapshot and a `MediaJobs` runner (segment checkpointing) |
