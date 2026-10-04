@@ -13,10 +13,11 @@ comes first, and these components consume whatever it produces.
 2. **The AI SDK message is the data model.** There's no separate item model. Text,
    reasoning, tool calls (with approval), files and custom data are `UIMessage` parts, as in
    v1 (`ai` 7, `@ai-sdk/react`).
-3. **Visuals are HTML in markdown.** Ruth writes `<avenire-sim>` / `<avenire-vis>` tags
-   inside its markdown, so it can place a visual mid-explanation and wrap it in its own
-   layout. The renderer allowlists those tags and mounts real components for them (see
-   `docs/vision/widget-renderer.md` §3.2, §4.4).
+3. **Visuals are inline HTML in markdown.** Ruth writes `<avenire-chart>` /
+   `<avenire-sim>` tags inside its markdown, so it can place a visual mid-explanation and
+   wrap it in its own layout. Before writing one it calls `get_page_context` to learn the
+   page (surface, width, theme, kits). The renderer allowlists those tags and mounts real
+   components for them (see `docs/vision/widget-renderer.md` §3.2, §4.4).
 4. **Stable identity while streaming.** A streaming assistant message keeps its id; a
    text-only update swaps that one row and reuses every other row object.
 5. **Requests are durable message parts, not chat text.** Approvals and questions live on
@@ -30,12 +31,18 @@ comes first, and these components consume whatever it produces.
 | --- | --- |
 | Prose, including `<avenire-*>` visual tags | `text` |
 | Ruth's reasoning summary | `reasoning` (collapsed by default) |
-| Search, read, analysis, chart, simulation tools | `tool-<name>` with `input-streaming` → `input-available` → `output-available` / `output-error` |
-| File action needing approval | `tool-propose_file_action` with `needsApproval`; state `approval-requested` → `approval-responded`, answered with `addToolApprovalResponse` |
+| `search_materials`, `read_item`, `run_python`, `get_page_context` | `tool-<name>` with `input-streaming` → `input-available` → `output-available` / `output-error` |
+| File action | `tool-propose_file_action` with `needsApproval: !thread.fullAccess`; state `approval-requested` → `approval-responded`, answered with `addToolApprovalResponse` |
 | A question for the user | `tool-ask_user`, a client-side tool with no `execute`, answered with `addToolOutput` (choices / free text) |
 | A subagent (the video agent) | `data-subagent` part `{ subagentId, kind, status, stage, progress }`, updated in place by id |
 | A Ruth Cloud run | `data-cloud-run` part `{ runId }`, rendered from live run state |
 | User attachments | `file` parts with an `attachmentId` (upload state lives outside the message; see §6.4) |
+
+**Page facts travel with the request.** `DefaultChatTransport` sends
+`{ threadId, fast, page }` in the body, where `page` is `{ surface, platform,
+contentWidthPx, colorScheme, themeTokens, fonts }` measured from the chat column. The server
+merges it with runtime constants when Ruth calls `get_page_context`, so the tool never
+waits on the client. Resizing between turns just changes the next request's `page`.
 
 **Questions from subagents.** A subagent's question is an `ask_user` tool part carrying
 `origin: { subagentId }`. The banner labels it ("Video agent asks…"), and the answer is
@@ -69,7 +76,8 @@ persisted message, so the banner is rebuilt from the last assistant message's pa
 
 A **markdown worker** turns text into a sanitized hast tree: remark-gfm, remark-math with
 KaTeX output, Shiki highlighting, and rehype-sanitize with an allowlist that admits
-`avenire-sim`, `avenire-vis` and their declared children (`script[type="avenire/params"]`,
+`avenire-chart`, `avenire-sim`, `avenire-vis` (stored, in notes and canvas) and their
+declared children (`script[type="avenire/params"]`,
 `script[type="avenire/worker"]`). The main thread renders hast → React with
 `hast-util-to-jsx-runtime` and maps the custom tags to components.
 
@@ -87,7 +95,7 @@ KaTeX output, Shiki highlighting, and rehype-sanitize with an allowlist that adm
 | user message | plain text with inline item/cluster tokens (§6.2) and attachment chips (with upload state) |
 | assistant prose | worker-parsed markdown; citation chips open the source item at the cited page or timestamp |
 | tool group | compact work row; expanding shows sources read in a bounded nested list |
-| visual | `<avenire-sim>` / `<avenire-vis>` / chart / figure card / video, with a reserved height from the artifact's declared aspect ratio, a poster while offscreen, and an "open full" action |
+| visual | `<avenire-chart>` / `<avenire-sim>` / `<avenire-vis>` / `run_python` figure card / video, with a reserved height from the artifact's declared aspect ratio, a poster while offscreen, and an "open full" action |
 | request | inline card; when pending, also docked above the composer (§6.3) |
 | subagent | grouped card (§7) |
 | cloud run | live card subscribed to the run: status, progress, artifacts when done |
@@ -177,9 +185,11 @@ Use TipTap (as t3code does) so references are real inline tokens, not text:
 
 - No model or thinking pickers.
 - **Fast** (⚡): a lighter model and a shorter tool budget for quick answers.
-- **Full access:** Ruth may apply file actions in this thread without asking. Actions
-  still log to the thread, stay undoable, and delete still means archive. It's off by
-  default, and shown as a persistent badge while on.
+- **Full access:** the user's call. Turning it on overrides the approval protection, and
+  Ruth applies file actions in this thread without asking (`ruth.setFullAccess`, stored on
+  the thread; a settings default for new threads). Actions still log to the thread and
+  stay undoable, and delete still means archive. Approvals are on until the user changes
+  it, and a persistent badge shows while Full access is on.
 - Voice input (mic) as in v1.
 - While Ruth is working: Stop. Sending again queues the message for after the turn.
 
