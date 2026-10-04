@@ -53,13 +53,13 @@ export const PageContext = Schema.Struct({
 export type PageContext = typeof PageContext.Type;
 
 /**
- * Body of a `RUTH_CHAT_PATH` request, as sent by `DefaultChatTransport`. Extra
- * transport fields (`id`, `trigger`, `messageId`) are ignored; `messages` are
- * validated against Ruth's tools on the server.
+ * Body of a `RUTH_CHAT_PATH` request. The client sends only its latest message
+ * (via `prepareSendMessagesRequest`); the server owns the thread's history and
+ * validates `message` against Ruth's tools.
  */
 export const RuthChatRequest = Schema.Struct({
   threadId: ThreadId,
-  messages: Schema.Array(Schema.Unknown),
+  message: Schema.Unknown,
   page: PageContext,
   fast: Schema.optional(Schema.Boolean),
 });

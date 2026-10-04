@@ -1,157 +1,93 @@
 /**
- * Ruth's tools. Results are typed with contract schemas, so the agent can turn
- * them into message parts without re-parsing. Tool failures are returned to the
- * model (`failureMode: "return"`) so Ruth can recover instead of aborting the turn.
+ * Ruth's tools, bound to one chat request. Each `execute` runs an Effect program
+ * against the services captured when Ruth was built. Failures reach the model as
+ * tool errors: domain errors keep their message, defects become a generic one so
+ * nothing internal leaks into the conversation.
  */
 import {
-  Approval,
-  ApprovalId,
   ArtifactId,
   type ArtifactKind,
   ChunkId,
-  ChunkLocation,
-  type Citation,
-  FileAction,
+  type FileAction,
   ItemId,
-  type MessagePart,
-  ThreadId,
+  NotFound,
+  type PageContext,
+  type ThreadId,
   type UserId,
 } from "@avenire/contracts";
 import { Sandboxes } from "@avenire/cloud/sandbox";
 import { Database } from "@avenire/database/client";
-import { artifact, chunk, item, ruthApproval } from "@avenire/database/schema";
+import { artifact, chunk, cluster, item, itemCluster } from "@avenire/database/schema";
 import { Retrieval } from "@avenire/ingestion/retrieval";
+import { enqueueIngestion } from "@avenire/ingestion/worker";
 import { newId } from "@avenire/shared/id";
-import { artifactKey } from "@avenire/storage/keys";
+import { artifactKey, itemSourceKey } from "@avenire/storage/keys";
 import { Storage } from "@avenire/storage/storage";
+import { tool } from "ai";
 import { and, asc, eq, gte } from "drizzle-orm";
-import type * as Response from "effect/ai/Response";
-import * as Tool from "effect/ai/Tool";
-import * as Toolkit from "effect/ai/Toolkit";
-import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
-import * as DateTime from "effect/DateTime";
+import * as Cause from "effect/Cause";
+import type * as Context from "effect/Context";
+import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-/** The user and thread a turn runs for; provided per turn so tools stay pure. */
-export class RuthTurn extends Context.Service<
-  RuthTurn,
-  { readonly userId: UserId; readonly threadId: ThreadId }
->()("avenire/ai/RuthTurn") {}
+import { VISUAL_BUDGETS, VISUAL_RUNTIME } from "./pageRuntime.ts";
+import {
+  askUserSpec,
+  getPageContextSpec,
+  type PageContextResult,
+  proposeFileActionSpec,
+  readItemSpec,
+  runPythonSpec,
+  searchMaterialsSpec,
+} from "./toolSpecs.ts";
 
-const ChunkResult = Schema.Struct({
-  chunkId: ChunkId,
-  itemId: ItemId,
-  title: Schema.String,
-  location: ChunkLocation,
-  content: Schema.String,
-});
+/** What tool programs may use. */
+export type RuthToolServices = Database | Storage | Retrieval | Sandboxes | Crypto.Crypto;
 
-const ArtifactRef = Schema.Struct({ artifactId: ArtifactId, title: Schema.String });
+/** The request a toolset is built for. */
+export interface RuthTurn {
+  readonly userId: UserId;
+  readonly threadId: ThreadId;
+  readonly page: PageContext;
+  readonly existingVisuals: PageContextResult["existingVisuals"];
+}
 
-const toolOptions = { failure: Schema.String, failureMode: "return" } as const;
+/** A tool failure as the model sees it. */
+export class RuthToolError extends Schema.TaggedError<RuthToolError>()("RuthToolError", {
+  tool: Schema.String,
+  message: Schema.String,
+}) {}
 
-const SearchMaterials = Tool.make("search_materials", {
-  description: "Search the user's own study material. Always do this before explaining a concept.",
-  parameters: Schema.Struct({ query: Schema.NonEmptyString, limit: Schema.optional(Schema.Int) }),
-  success: Schema.Array(ChunkResult),
-  dependencies: [RuthTurn, Retrieval],
-  ...toolOptions,
-});
+const UNEXPECTED_FAILURE = "The tool failed unexpectedly. Try a different approach.";
 
-const ReadItem = Tool.make("read_item", {
-  description: "Read consecutive chunks of one item, e.g. to see the context around a search hit.",
-  parameters: Schema.Struct({
-    itemId: ItemId,
-    fromOrdinal: Schema.optional(Schema.Int),
-    count: Schema.optional(Schema.Int),
-  }),
-  success: Schema.Array(ChunkResult),
-  dependencies: [RuthTurn, Database],
-  ...toolOptions,
-});
+const MAX_READ_CHUNKS = 40;
+const DEFAULT_READ_CHUNKS = 12;
 
-const RunPython = Tool.make("run_python", {
-  description: "Run Python in a sandbox for computation and matplotlib plots.",
-  parameters: Schema.Struct({
-    code: Schema.String,
-    packages: Schema.optional(Schema.Array(Schema.String)),
-  }),
-  success: Schema.Struct({
-    code: Schema.String,
-    stdout: Schema.String,
-    plots: Schema.Array(ArtifactRef),
-  }),
-  dependencies: [RuthTurn, Sandboxes, Storage, Database, Crypto.Crypto],
-  ...toolOptions,
-});
+const VISUAL_TAG = /<avenire-(?:chart|sim)\b([^>]*)>/g;
+const attribute = (attributes: string, name: string): string | undefined =>
+  new RegExp(`\\b${name}="([^"]*)"`).exec(attributes)?.[1];
 
-const RenderManim = Tool.make("render_manim", {
-  description: "Render a Manim scene to a short explanatory video.",
-  parameters: Schema.Struct({
-    code: Schema.String,
-    sceneName: Schema.String,
-    quality: Schema.optional(Schema.Literals(["l", "m", "h", "k"])),
-  }),
-  success: ArtifactRef,
-  dependencies: [RuthTurn, Sandboxes, Storage, Database, Crypto.Crypto],
-  ...toolOptions,
-});
+/** Visuals with an id in assistant text, so Ruth can revise instead of starting over. */
+export const findVisuals = (texts: ReadonlyArray<string>): PageContextResult["existingVisuals"] =>
+  texts.flatMap((text) =>
+    [...text.matchAll(VISUAL_TAG)].flatMap(([, attributes = ""]) => {
+      const id = attribute(attributes, "id");
+      return id === undefined ? [] : [{ id, title: attribute(attributes, "title") ?? "" }];
+    }),
+  );
 
-const ShowWidget = Tool.make("show_widget", {
-  description:
-    "Show a self-contained interactive HTML widget (inline CSS/JS only, no network access).",
-  parameters: Schema.Struct({ title: Schema.String, html: Schema.String }),
-  success: Schema.Struct({ title: Schema.String, html: Schema.String }),
-  ...toolOptions,
-});
-
-const ProposeFileAction = Tool.make("propose_file_action", {
-  description:
-    "Ask the user to approve a change to their files. This never performs the change itself.",
-  parameters: Schema.Struct({ action: FileAction }),
-  success: Approval,
-  dependencies: [RuthTurn, Database, Crypto.Crypto],
-  ...toolOptions,
-});
-
-export const RuthToolkit = Toolkit.make(
-  SearchMaterials,
-  ReadItem,
-  RunPython,
-  RenderManim,
-  ShowWidget,
-  ProposeFileAction,
-);
-
-export type RuthToolResult = Response.ToolResultParts<typeof RuthToolkit.tools>;
-
-const WIDGET_RULES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/<script\b[^>]*\bsrc\s*=/i, "External scripts are not allowed"],
-  [/<form\b/i, "Forms are not allowed"],
-  [/\bfetch\s*\(/i, "Network fetch is not allowed"],
-  [/XMLHttpRequest|WebSocket|EventSource/i, "Network APIs are not allowed"],
-  [/(?:src|href)\s*=\s*["']\s*https?:\/\//i, "External resources are not allowed"],
-];
-
-/** Returns why the widget is rejected, or undefined if it is self-contained. */
-export const validateWidgetHtml = (html: string): string | undefined =>
-  WIDGET_RULES.find(([pattern]) => pattern.test(html))?.[1];
-
-/** Tools report failures to the model as plain messages. */
-const asToolFailure = <A, E extends { readonly message: string }, R>(
-  effect: Effect.Effect<A, E, R>,
-) => Effect.mapError(effect, (error) => error.message);
-
-const storeArtifact = Effect.fn("RuthTools.storeArtifact")(function* (input: {
-  readonly kind: ArtifactKind;
-  readonly title: string;
-  readonly fileName: string;
-  readonly mimeType: string;
-  readonly bytes: Uint8Array;
-}) {
-  const turn = yield* RuthTurn;
+const storeFigure = Effect.fn("RuthTools.storeFigure")(function* (
+  turn: RuthTurn,
+  input: {
+    readonly kind: ArtifactKind;
+    readonly title: string;
+    readonly fileName: string;
+    readonly mimeType: string;
+    readonly bytes: Uint8Array;
+  },
+) {
   const storage = yield* Storage;
   const database = yield* Database;
   const id = yield* newId(ArtifactId);
@@ -172,137 +108,224 @@ const storeArtifact = Effect.fn("RuthTools.storeArtifact")(function* (input: {
   return { artifactId: id, title: input.title };
 });
 
-const MAX_READ_CHUNKS = 40;
-const DEFAULT_READ_CHUNKS = 12;
-
-export const RuthToolsLive = RuthToolkit.toLayer({
-  search_materials: Effect.fn("RuthTools.searchMaterials")(function* ({ query, limit }) {
-    const turn = yield* RuthTurn;
-    const retrieval = yield* Retrieval;
-    const hits = yield* retrieval.search(turn.userId, {
-      text: query,
-      ...(limit === undefined ? {} : { limit }),
+const moveItem = Effect.fn("RuthTools.moveItem")(function* (
+  userId: UserId,
+  action: Extract<FileAction, { readonly _tag: "move" }>,
+) {
+  const database = yield* Database;
+  const moved = yield* database.useTransaction(async (tx) => {
+    const target = await tx.query.cluster.findFirst({
+      columns: { id: true },
+      where: and(eq(cluster.id, action.toClusterId), eq(cluster.userId, userId)),
     });
-    return hits.map((hit) => ({
-      chunkId: hit.chunkId,
-      itemId: hit.itemId,
-      title: hit.itemTitle,
-      location: hit.location,
-      content: hit.content,
-    }));
-  }, asToolFailure),
-
-  read_item: Effect.fn("RuthTools.readItem")(function* ({ itemId, fromOrdinal, count }) {
-    const turn = yield* RuthTurn;
-    const database = yield* Database;
-    const limit = Math.min(Math.max(count ?? DEFAULT_READ_CHUNKS, 1), MAX_READ_CHUNKS);
-    const rows = yield* database.use((db) =>
-      db
-        .select({
-          chunkId: chunk.id,
-          title: item.title,
-          location: chunk.location,
-          content: chunk.content,
-        })
-        .from(chunk)
-        .innerJoin(item, eq(chunk.itemId, item.id))
-        .where(
-          and(
-            eq(item.id, itemId),
-            eq(item.userId, turn.userId),
-            ...(fromOrdinal === undefined ? [] : [gte(chunk.ordinal, fromOrdinal)]),
-          ),
-        )
-        .orderBy(asc(chunk.ordinal))
-        .limit(limit),
-    );
-    return rows.map((row) => ({ ...row, chunkId: ChunkId.make(row.chunkId), itemId }));
-  }, asToolFailure),
-
-  run_python: Effect.fn("RuthTools.runPython")(function* ({ code, packages }) {
-    const sandboxes = yield* Sandboxes;
-    const output = yield* sandboxes.runPython({
-      code,
-      ...(packages === undefined ? {} : { packages }),
+    const owned = await tx.query.item.findFirst({
+      columns: { id: true },
+      where: and(eq(item.id, action.itemId), eq(item.userId, userId)),
     });
-    const plots = yield* Effect.forEach(output.charts, (chart, index) =>
-      storeArtifact({
-        kind: "plot",
-        title: chart.title ?? `Plot ${index + 1}`,
-        fileName: `plot-${index + 1}.png`,
-        mimeType: "image/png",
-        bytes: chart.png,
-      }),
-    );
-    return { code, stdout: output.stdout, plots };
-  }, asToolFailure),
-
-  render_manim: Effect.fn("RuthTools.renderManim")(function* ({ code, sceneName, quality }) {
-    const sandboxes = yield* Sandboxes;
-    const output = yield* sandboxes.renderManim({ code, sceneName, quality: quality ?? "m" });
-    return yield* storeArtifact({
-      kind: "video",
-      title: sceneName,
-      fileName: `${sceneName}.mp4`,
-      mimeType: "video/mp4",
-      bytes: output.video,
-    });
-  }, asToolFailure),
-
-  show_widget: ({ title, html }) => {
-    const problem = validateWidgetHtml(html);
-    return problem === undefined ? Effect.succeed({ title, html }) : Effect.fail(problem);
-  },
-
-  propose_file_action: Effect.fn("RuthTools.proposeFileAction")(function* ({ action }) {
-    const turn = yield* RuthTurn;
-    const database = yield* Database;
-    const id = yield* newId(ApprovalId);
-    const createdAt = DateTime.formatIso(yield* DateTime.now);
-    yield* database.use((db) =>
-      db.insert(ruthApproval).values({ id, userId: turn.userId, threadId: turn.threadId, action }),
-    );
-    return { id, threadId: turn.threadId, action, status: "pending" as const, createdAt };
-  }, asToolFailure),
+    if (target === undefined || owned === undefined) return false;
+    await tx
+      .delete(itemCluster)
+      .where(and(eq(itemCluster.itemId, action.itemId), eq(itemCluster.userId, userId)));
+    await tx.insert(itemCluster).values({ itemId: action.itemId, clusterId: target.id, userId });
+    return true;
+  });
+  if (!moved) return yield* new NotFound({ entity: "Item or cluster", id: action.itemId });
+  return { itemId: action.itemId, summary: "Moved the item to another cluster." };
 });
 
-/** The message parts a successful tool result contributes to Ruth's reply. */
-export const toolResultParts = (result: RuthToolResult): ReadonlyArray<MessagePart> => {
-  if (result.isFailure) return [];
-  switch (result.name) {
-    case "run_python":
-      return [
-        {
-          _tag: "code",
-          language: "python",
-          source: result.result.code,
-          stdout: result.result.stdout,
-        },
-        ...result.result.plots.map((plot): MessagePart => ({
-          _tag: "plot",
-          artifactId: plot.artifactId,
-          alt: plot.title,
-        })),
-      ];
-    case "render_manim":
-      return [{ _tag: "video", artifactId: result.result.artifactId, title: result.result.title }];
-    case "show_widget":
-      return [{ _tag: "widget", title: result.result.title, html: result.result.html }];
-    case "propose_file_action":
-      return [{ _tag: "approval", approvalId: result.result.id }];
-    case "search_materials":
-    case "read_item":
-      return [];
+const updateItem = Effect.fn("RuthTools.updateItem")(function* (
+  userId: UserId,
+  itemId: ItemId,
+  changes: { readonly title?: string; readonly placement?: "archived" },
+  summary: string,
+) {
+  const database = yield* Database;
+  const updated = yield* database.use((db) =>
+    db
+      .update(item)
+      .set(changes)
+      .where(and(eq(item.id, itemId), eq(item.userId, userId)))
+      .returning({ id: item.id }),
+  );
+  if (updated.length === 0) return yield* new NotFound({ entity: "Item", id: itemId });
+  return { itemId, summary };
+});
+
+const createNote = Effect.fn("RuthTools.createNote")(function* (
+  userId: UserId,
+  action: Extract<FileAction, { readonly _tag: "create-note" }>,
+) {
+  const storage = yield* Storage;
+  const database = yield* Database;
+  const id = yield* newId(ItemId);
+  const storageKey = itemSourceKey(userId, id, "note.md");
+  const bytes = new TextEncoder().encode(action.markdown);
+  yield* storage.put(storageKey, bytes, { contentType: "text/markdown" });
+  yield* database.use((db) =>
+    db.insert(item).values({
+      id,
+      userId,
+      kind: "note",
+      title: action.title,
+      storageKey,
+      mimeType: "text/markdown",
+      sizeBytes: bytes.byteLength,
+      dedupeKey: `ruth-note:${id}`,
+    }),
+  );
+  yield* enqueueIngestion(userId, id);
+  return { itemId: id, summary: `Created the note "${action.title}".` };
+});
+
+const applyFileAction = (userId: UserId, action: FileAction) => {
+  switch (action._tag) {
+    case "move":
+      return moveItem(userId, action);
+    case "rename":
+      return updateItem(
+        userId,
+        action.itemId,
+        { title: action.title },
+        `Renamed the item to "${action.title}".`,
+      );
+    case "delete":
+      // Archive rather than delete, so a mistaken action is recoverable.
+      return updateItem(userId, action.itemId, { placement: "archived" }, "Archived the item.");
+    case "create-note":
+      return createNote(userId, action);
   }
 };
 
-/** Chunks returned by retrieval tools, offered as citations for the reply. */
-export const toolResultCitations = (result: RuthToolResult): ReadonlyArray<Citation> => {
-  if (result.isFailure || (result.name !== "search_materials" && result.name !== "read_item"))
-    return [];
-  return result.result.map((hit) => ({
-    chunkId: hit.chunkId,
-    itemId: hit.itemId,
-    label: hit.location.page === undefined ? hit.title : `${hit.title}, p. ${hit.location.page}`,
-  }));
+/** Interruptions stay interruptions; anything else becomes a model-safe tool error. */
+const toolFailure = (
+  tool: string,
+  cause: Cause.Cause<{ readonly message: string }>,
+): Effect.Effect<never, RuthToolError> =>
+  Cause.hasInterruptsOnly(cause)
+    ? Effect.interrupt
+    : Effect.fail(
+        new RuthToolError({
+          tool,
+          message: Option.match(Cause.findErrorOption(cause), {
+            onNone: () => UNEXPECTED_FAILURE,
+            onSome: (error) => error.message,
+          }),
+        }),
+      );
+
+/** Builds the toolset for one request; `services` are captured once by the Ruth layer. */
+export const makeRuthTools = (services: Context.Context<RuthToolServices>, turn: RuthTurn) => {
+  const run =
+    <A, E extends { readonly message: string }>(
+      name: string,
+      program: Effect.Effect<A, E, RuthToolServices>,
+    ) =>
+    (abortSignal: AbortSignal | undefined): Promise<A> =>
+      Effect.runPromiseWith(services)(
+        program.pipe(
+          Effect.tapCause((cause) => Effect.logWarning(`Ruth tool ${name} failed`, cause)),
+          Effect.catchCause((cause) => toolFailure(name, cause)),
+        ),
+        { signal: abortSignal },
+      );
+
+  return {
+    search_materials: tool({
+      ...searchMaterialsSpec,
+      execute: ({ query, limit }, { abortSignal }) =>
+        run(
+          "search_materials",
+          Effect.gen(function* () {
+            const retrieval = yield* Retrieval;
+            const hits = yield* retrieval.search(turn.userId, {
+              text: query,
+              ...(limit === undefined ? {} : { limit }),
+            });
+            return hits.map((hit) => ({
+              chunkId: hit.chunkId,
+              itemId: hit.itemId,
+              title: hit.itemTitle,
+              location: hit.location,
+              content: hit.content,
+            }));
+          }),
+        )(abortSignal),
+    }),
+
+    read_item: tool({
+      ...readItemSpec,
+      execute: ({ itemId, fromOrdinal, count }, { abortSignal }) =>
+        run(
+          "read_item",
+          Effect.gen(function* () {
+            const database = yield* Database;
+            const limit = Math.min(Math.max(count ?? DEFAULT_READ_CHUNKS, 1), MAX_READ_CHUNKS);
+            const rows = yield* database.use((db) =>
+              db
+                .select({
+                  chunkId: chunk.id,
+                  title: item.title,
+                  location: chunk.location,
+                  content: chunk.content,
+                })
+                .from(chunk)
+                .innerJoin(item, eq(chunk.itemId, item.id))
+                .where(
+                  and(
+                    eq(item.id, itemId),
+                    eq(item.userId, turn.userId),
+                    ...(fromOrdinal === undefined ? [] : [gte(chunk.ordinal, fromOrdinal)]),
+                  ),
+                )
+                .orderBy(asc(chunk.ordinal))
+                .limit(limit),
+            );
+            return rows.map((row) => ({ ...row, chunkId: ChunkId.make(row.chunkId), itemId }));
+          }),
+        )(abortSignal),
+    }),
+
+    run_python: tool({
+      ...runPythonSpec,
+      execute: ({ code, packages }, { abortSignal }) =>
+        run(
+          "run_python",
+          Effect.gen(function* () {
+            const sandboxes = yield* Sandboxes;
+            const output = yield* sandboxes.runPython({
+              code,
+              ...(packages === undefined ? {} : { packages }),
+            });
+            const figures = yield* Effect.forEach(output.charts, (chart, index) =>
+              storeFigure(turn, {
+                kind: "plot",
+                title: chart.title ?? `Figure ${index + 1}`,
+                fileName: `figure-${index + 1}.png`,
+                mimeType: "image/png",
+                bytes: chart.png,
+              }),
+            );
+            return { stdout: output.stdout, exitCode: output.exitCode, figures };
+          }),
+        )(abortSignal),
+    }),
+
+    get_page_context: tool({
+      ...getPageContextSpec,
+      execute: (): PageContextResult => ({
+        ...turn.page,
+        runtime: VISUAL_RUNTIME,
+        budgets: VISUAL_BUDGETS,
+        existingVisuals: turn.existingVisuals,
+      }),
+    }),
+
+    propose_file_action: tool({
+      ...proposeFileActionSpec,
+      execute: ({ action }, { abortSignal }) =>
+        run("propose_file_action", applyFileAction(turn.userId, action))(abortSignal),
+    }),
+
+    ask_user: tool(askUserSpec),
+  };
 };
