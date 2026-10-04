@@ -307,7 +307,7 @@ const makeRuth = Effect.gen(function* () {
       generateMessageId: () => responseId,
       messageMetadata: ({ part }) => (part.type === "start" ? replyMetadata : undefined),
       onError: (error) => {
-        Effect.runFork(Effect.logError("Ruth chat stream failed", { error }));
+        Effect.runForkWith(services)(Effect.logError("Ruth chat stream failed", { error }));
         return STREAM_ERROR;
       },
       onEnd: ({ responseMessage }) =>
