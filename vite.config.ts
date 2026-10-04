@@ -11,6 +11,7 @@ const IGNORED = [
   "pnpm-lock.yaml",
   "*.tsbuildinfo",
   "packages/database/drizzle/**",
+  "packages/ai/src/skills/skills.ts",
   "apps/mobile/ios/**",
   "apps/mobile/android/**",
 ];
