@@ -23,7 +23,7 @@ packages/
   storage/           files-sdk wrapped as the `Storage` service
   cloud/             Daytona sandboxes (ephemeral compute + persistent Ruth Cloud boxes)
   ingestion/         Extract -> chunk -> embed -> cluster, the job queue worker, and hybrid retrieval
-  ai/                Ruth (interactive agent) and Ruth Cloud (nightly run), built on effect/ai
+  ai/                Ruth (interactive agent) and Ruth Cloud (nightly run), built on the Vercel AI SDK
   emailer/           react-email templates + the `Mailer` service (Resend)
   retrieval-benchmark/  Dataset + runner for retrieval quality (recall@k, MRR, nDCG)
   ui/                shadcn/ui primitives for web and desktop
@@ -43,8 +43,12 @@ public module is an explicit subpath (no barrels except `@avenire/contracts`).
 - Errors are `Schema.TaggedError` classes. Never throw inside Effect code; never `catch` and
   swallow. Map infrastructure errors to domain errors at service boundaries.
 - No `process.env` reads outside `Config`. No `console.*` in Effect code; use `Effect.log*`.
-- Anything Ruth does that changes the user's files requires an approval. Sandboxed compute
-  and read-only tools do not.
+- Anything Ruth does that changes the user's files requires an approval by default. The
+  user can turn approvals off per thread ("Full access"); then actions apply directly but
+  are still logged and undoable. Sandboxed compute and read-only tools never need approval.
+- Model calls, tools and chat streaming use the AI SDK (`ai`, `@ai-sdk/*`), never
+  `effect/ai`. Effect stays for services, errors, config and jobs; tool `execute` functions
+  run Effect programs against the request's services.
 - Ruth Cloud never edits or deletes existing material; it only writes new artifacts.
 - `context/` holds reference repos (t3code, legacy v1, research). Read-only, never imported,
   never committed.
