@@ -1,5 +1,4 @@
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
-import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { DatabaseLive } from "@avenire/database/client";
 import { EmbedderLive, EmbedderTest } from "@avenire/ingestion/embed";
@@ -22,11 +21,7 @@ if (embedderName !== "test" && embedderName !== "openai") {
 }
 if (args.includes("--json") && !jsonPath) throw new Error("--json requires a file path");
 
-const InfrastructureLive = Layer.mergeAll(
-  DatabaseLive,
-  NodeServices.layer,
-  NodeHttpClient.layerNodeHttp,
-);
+const InfrastructureLive = Layer.mergeAll(DatabaseLive, NodeServices.layer);
 // The benchmark seeds through Database and Embedder as well as searching through
 // Retrieval, so those layers stay visible to the program (provideMerge, not provide).
 const AppLive = RetrievalLive.pipe(

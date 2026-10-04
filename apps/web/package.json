@@ -11,6 +11,7 @@
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
+    "@ai-sdk/react": "catalog:",
     "@avenire/ai": "workspace:*",
     "@avenire/auth": "workspace:*",
     "@avenire/client-runtime": "workspace:*",
@@ -25,6 +26,7 @@
     "@avenire/ui": "workspace:*",
     "@effect/platform-node": "catalog:",
     "@xyflow/react": "12.12.0",
+    "ai": "catalog:",
     "effect": "catalog:",
     "lucide-react": "1.51.0",
     "next": "catalog:",

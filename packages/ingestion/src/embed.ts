@@ -1,11 +1,11 @@
-import * as OpenAiClient from "@effect/ai-openai/OpenAiClient";
-import * as OpenAiEmbeddingModel from "@effect/ai-openai/OpenAiEmbeddingModel";
-import * as EmbeddingModel from "effect/ai/EmbeddingModel";
+import { createOpenAI } from "@ai-sdk/openai";
+import { embedMany } from "ai";
 import * as Arr from "effect/Array";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 /** Must match the `vector(1536)` columns in the database schema. */
@@ -32,7 +32,7 @@ export class Embedder extends Context.Service<
   }
 >()("avenire/ingestion/Embedder") {}
 
-/** Requires an `HttpClient`; reads `OPENAI_API_KEY` and `EMBEDDING_MODEL`. */
+/** Reads `OPENAI_API_KEY` and `EMBEDDING_MODEL`. */
 export const EmbedderLive = Layer.effect(
   Embedder,
   Effect.gen(function* () {
@@ -40,16 +40,19 @@ export const EmbedderLive = Layer.effect(
     const model = yield* Config.String("EMBEDDING_MODEL").pipe(
       Config.withDefault("text-embedding-3-small"),
     );
-    const embedding: EmbeddingModel.EmbeddingModel = yield* OpenAiEmbeddingModel.make({
-      model,
-      config: { dimensions: DIMENSIONS },
-    }).pipe(Effect.provideServiceEffect(OpenAiClient.OpenAiClient, OpenAiClient.make({ apiKey })));
+    const embedding = createOpenAI({ apiKey: Redacted.value(apiKey) }).embedding(model);
 
     const embedBatch = (batch: ReadonlyArray<string>) =>
-      embedding.embedMany(batch).pipe(
-        Effect.map((response) => response.embeddings.map(({ vector }) => vector)),
-        Effect.mapError((cause) => new EmbeddingError({ cause })),
-      );
+      Effect.tryPromise({
+        try: (abortSignal) =>
+          embedMany({
+            model: embedding,
+            values: [...batch],
+            abortSignal,
+            providerOptions: { openai: { dimensions: DIMENSIONS } },
+          }),
+        catch: (cause) => new EmbeddingError({ cause }),
+      }).pipe(Effect.map((response) => response.embeddings));
 
     return Embedder.of({
       model,

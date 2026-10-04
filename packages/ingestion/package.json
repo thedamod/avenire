@@ -37,11 +37,12 @@
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
+    "@ai-sdk/openai": "catalog:",
     "@avenire/contracts": "workspace:*",
     "@avenire/database": "workspace:*",
     "@avenire/shared": "workspace:*",
     "@avenire/storage": "workspace:*",
-    "@effect/ai-openai": "4.0.0",
+    "ai": "catalog:",
     "defuddle": "0.19.4",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
