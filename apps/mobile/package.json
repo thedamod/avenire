@@ -33,6 +33,7 @@
     "uniwind": "1.12.1"
   },
   "devDependencies": {
+    "@avenire/ai": "workspace:*",
     "@types/react": "~19.2.0",
     "typescript": "catalog:"
   }

@@ -1,7 +1,6 @@
 import { createContext, useContext, useMemo, type PropsWithChildren } from "react";
-import Constants from "expo-constants";
 import { makeClientRuntime, type ClientRuntime } from "@avenire/client-runtime/rpc";
-import { getCookieHeader } from "./auth";
+import { apiUrl, getCookieHeader } from "./auth";
 
 const ApiContext = createContext<ClientRuntime | null>(null);
 
@@ -9,7 +8,7 @@ export function ApiProvider({ children }: PropsWithChildren) {
   const runtime = useMemo(
     () =>
       makeClientRuntime({
-        baseUrl: Constants.expoConfig?.extra?.apiUrl ?? "http://localhost:3000",
+        baseUrl: apiUrl,
         getAuthHeaders: getCookieHeader,
       }),
     [],

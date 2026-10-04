@@ -3,8 +3,11 @@ import { expoClient } from "@better-auth/expo/client";
 import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
 
+/** Origin of the Avenire web server the app talks to. */
+export const apiUrl: string = Constants.expoConfig?.extra?.apiUrl ?? "http://localhost:3000";
+
 export const authClient = createAuthClient({
-  baseURL: Constants.expoConfig?.extra?.apiUrl ?? "http://localhost:3000",
+  baseURL: apiUrl,
   plugins: [
     expoClient({
       scheme: "avenire",
