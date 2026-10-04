@@ -9,11 +9,11 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import { CaptureSnapshot } from "./capture.ts";
 import { Artifact, CloudRun, CloudSchedule } from "./cloud.ts";
 import { ApiError } from "./errors.ts";
-import { ApprovalId, ArtifactId, ClusterId, CloudRunId, ItemId, ThreadId } from "./ids.ts";
+import { ArtifactId, ClusterId, CloudRunId, ItemId, ThreadId } from "./ids.ts";
 import { IngestionJob } from "./ingestion.ts";
 import { CanvasNode, Cluster, Item, ItemPlacement } from "./library.ts";
 import { SearchHit, SearchQuery } from "./retrieval.ts";
-import { ApprovalDecision, Message, RuthEvent } from "./ruth.ts";
+import { RuthMessage, RuthThread } from "./ruth.ts";
 import { Authenticated } from "./session.ts";
 
 export const SubmitCaptureResult = Schema.Struct({
@@ -71,22 +71,21 @@ export class SearchRpcs extends RpcGroup.make(
 ).middleware(Authenticated) {}
 
 export class RuthRpcs extends RpcGroup.make(
+  Rpc.make("ruth.listThreads", { success: Schema.Array(RuthThread), error: ApiError }),
+  Rpc.make("ruth.createThread", {
+    payload: { title: Schema.optional(Schema.String) },
+    success: RuthThread,
+    error: ApiError,
+  }),
   Rpc.make("ruth.listMessages", {
     payload: { threadId: ThreadId },
-    success: Schema.Array(Message),
+    success: Schema.Array(RuthMessage),
     error: ApiError,
   }),
-  Rpc.make("ruth.send", {
-    payload: { threadId: Schema.optional(ThreadId), text: Schema.NonEmptyString },
-    success: RuthEvent,
+  Rpc.make("ruth.setFullAccess", {
+    payload: { threadId: ThreadId, enabled: Schema.Boolean },
+    success: RuthThread,
     error: ApiError,
-    stream: true,
-  }),
-  Rpc.make("ruth.decide", {
-    payload: { approvalId: ApprovalId, decision: ApprovalDecision },
-    success: RuthEvent,
-    error: ApiError,
-    stream: true,
   }),
 ).middleware(Authenticated) {}
 

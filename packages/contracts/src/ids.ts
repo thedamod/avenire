@@ -27,9 +27,6 @@ export type ThreadId = typeof ThreadId.Type;
 export const MessageId = Schema.NonEmptyString.pipe(Schema.brand("MessageId"));
 export type MessageId = typeof MessageId.Type;
 
-export const ApprovalId = Schema.NonEmptyString.pipe(Schema.brand("ApprovalId"));
-export type ApprovalId = typeof ApprovalId.Type;
-
 export const CloudRunId = Schema.NonEmptyString.pipe(Schema.brand("CloudRunId"));
 export type CloudRunId = typeof CloudRunId.Type;
 

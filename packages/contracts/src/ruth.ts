@@ -1,42 +1,37 @@
 /**
  * Ruth - the study agent that explains concepts from the user's own material.
  *
- * Ruth streams typed parts. Anything that changes the user's files pauses on an
- * approval the user must grant; read-only work and sandboxed compute do not.
+ * Chat messages are AI SDK `UIMessage`s (typed as `RuthUIMessage` in
+ * `@avenire/ai/ruth-messages`); here they travel as opaque JSON. Streaming goes
+ * over a plain HTTP endpoint (`RUTH_CHAT_PATH`), thread management over RPC.
+ * File actions pause on an approval tool part unless the thread has Full access.
  */
 import * as Schema from "effect/Schema";
 
-import { ApprovalId, ArtifactId, ChunkId, ItemId, MessageId, ThreadId } from "./ids.ts";
+import { ItemId, MessageId, ThreadId } from "./ids.ts";
 
-export const Citation = Schema.Struct({
-  chunkId: ChunkId,
-  itemId: ItemId,
-  label: Schema.String,
+/** Path the chat stream endpoint is mounted on, relative to the web server origin. */
+export const RUTH_CHAT_PATH = "/api/ruth/chat";
+
+export const RuthThread = Schema.Struct({
+  id: ThreadId,
+  title: Schema.String,
+  /** When on, Ruth applies file actions without asking (still logged and undoable). */
+  fullAccess: Schema.Boolean,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
 });
-export type Citation = typeof Citation.Type;
+export type RuthThread = typeof RuthThread.Type;
 
-export const MessagePart = Schema.Union([
-  Schema.TaggedStruct("text", { text: Schema.String, citations: Schema.Array(Citation) }),
-  Schema.TaggedStruct("widget", { title: Schema.String, html: Schema.String }),
-  Schema.TaggedStruct("plot", { artifactId: ArtifactId, alt: Schema.String }),
-  Schema.TaggedStruct("video", { artifactId: ArtifactId, title: Schema.String }),
-  Schema.TaggedStruct("code", {
-    language: Schema.Literal("python"),
-    source: Schema.String,
-    stdout: Schema.String,
-  }),
-  Schema.TaggedStruct("approval", { approvalId: ApprovalId }),
-]);
-export type MessagePart = typeof MessagePart.Type;
-
-export const Message = Schema.Struct({
+/** A persisted `RuthUIMessage`; parts and metadata are the AI SDK's JSON. */
+export const RuthMessage = Schema.Struct({
   id: MessageId,
-  threadId: ThreadId,
-  role: Schema.Literals(["user", "assistant"]),
-  parts: Schema.Array(MessagePart),
+  role: Schema.Literals(["system", "user", "assistant"]),
+  parts: Schema.Array(Schema.Unknown),
+  metadata: Schema.Unknown,
   createdAt: Schema.String,
 });
-export type Message = typeof Message.Type;
+export type RuthMessage = typeof RuthMessage.Type;
 
 export const FileAction = Schema.Union([
   Schema.TaggedStruct("move", { itemId: ItemId, toClusterId: Schema.String }),
@@ -46,24 +41,26 @@ export const FileAction = Schema.Union([
 ]);
 export type FileAction = typeof FileAction.Type;
 
-export const ApprovalDecision = Schema.Literals(["approved", "rejected"]);
-export type ApprovalDecision = typeof ApprovalDecision.Type;
-
-export const Approval = Schema.Struct({
-  id: ApprovalId,
-  threadId: ThreadId,
-  action: FileAction,
-  status: Schema.Literals(["pending", "approved", "rejected"]),
-  createdAt: Schema.String,
+/** What the client knows about the page a visual will render into. */
+export const PageContext = Schema.Struct({
+  surface: Schema.Literals(["chat", "note", "canvas"]),
+  platform: Schema.Literals(["desktop", "web", "mobile"]),
+  contentWidthPx: Schema.Int,
+  colorScheme: Schema.Literals(["light", "dark"]),
+  themeTokens: Schema.Record(Schema.String, Schema.String),
+  fonts: Schema.Struct({ body: Schema.String, mono: Schema.String }),
 });
-export type Approval = typeof Approval.Type;
+export type PageContext = typeof PageContext.Type;
 
-/** Events streamed to a client while Ruth works on a turn. */
-export const RuthEvent = Schema.Union([
-  Schema.TaggedStruct("message-started", { messageId: MessageId }),
-  Schema.TaggedStruct("text-delta", { messageId: MessageId, delta: Schema.String }),
-  Schema.TaggedStruct("part", { messageId: MessageId, part: MessagePart }),
-  Schema.TaggedStruct("approval-requested", { approval: Approval }),
-  Schema.TaggedStruct("message-completed", { message: Message }),
-]);
-export type RuthEvent = typeof RuthEvent.Type;
+/**
+ * Body of a `RUTH_CHAT_PATH` request, as sent by `DefaultChatTransport`. Extra
+ * transport fields (`id`, `trigger`, `messageId`) are ignored; `messages` are
+ * validated against Ruth's tools on the server.
+ */
+export const RuthChatRequest = Schema.Struct({
+  threadId: ThreadId,
+  messages: Schema.Array(Schema.Unknown),
+  page: PageContext,
+  fast: Schema.optional(Schema.Boolean),
+});
+export type RuthChatRequest = typeof RuthChatRequest.Type;

@@ -5,11 +5,9 @@ import type {
   CaptureSnapshot,
   CanvasNodeRef,
   ChunkLocation,
-  FileAction,
   ItemKind,
   IngestionStatus,
   ItemPlacement,
-  MessagePart,
 } from "@avenire/contracts";
 import {
   bigint,
@@ -216,10 +214,13 @@ export const ruthThread = pgTable("ruth_thread", {
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
+  /** Full access: Ruth applies file actions without asking for approval. */
+  fullAccess: boolean("full_access").notNull().default(false),
   createdAt: timestamptz("created_at").notNull().defaultNow(),
   updatedAt: timestamptz("updated_at").notNull().defaultNow(),
 });
 
+/** One AI SDK `UIMessage`; approvals live in its tool parts. */
 export const ruthMessage = pgTable(
   "ruth_message",
   {
@@ -230,26 +231,13 @@ export const ruthMessage = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    role: text("role").$type<"user" | "assistant">().notNull(),
-    parts: jsonb("parts").$type<ReadonlyArray<MessagePart>>().notNull(),
+    role: text("role").$type<"system" | "user" | "assistant">().notNull(),
+    parts: jsonb("parts").$type<ReadonlyArray<unknown>>().notNull(),
+    metadata: jsonb("metadata").$type<unknown>(),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [index("ruth_message_thread_created_idx").on(t.threadId, t.createdAt)],
 );
-
-export const ruthApproval = pgTable("ruth_approval", {
-  id: text("id").primaryKey(),
-  threadId: text("thread_id")
-    .notNull()
-    .references(() => ruthThread.id, { onDelete: "cascade" }),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  action: jsonb("action").$type<FileAction>().notNull(),
-  status: text("status").$type<"pending" | "approved" | "rejected">().notNull().default("pending"),
-  decidedAt: timestamptz("decided_at"),
-  createdAt: timestamptz("created_at").notNull().defaultNow(),
-});
 
 export const cloudSchedule = pgTable("cloud_schedule", {
   userId: text("user_id")
@@ -351,7 +339,6 @@ export const schema = {
   chunk,
   ruthThread,
   ruthMessage,
-  ruthApproval,
   cloudSchedule,
   cloudRun,
   artifact,
@@ -377,7 +364,6 @@ export type IngestionJobRow = typeof ingestionJob.$inferSelect;
 export type ChunkRow = typeof chunk.$inferSelect;
 export type RuthThreadRow = typeof ruthThread.$inferSelect;
 export type RuthMessageRow = typeof ruthMessage.$inferSelect;
-export type RuthApprovalRow = typeof ruthApproval.$inferSelect;
 export type CloudScheduleRow = typeof cloudSchedule.$inferSelect;
 export type CloudRunRow = typeof cloudRun.$inferSelect;
 export type ArtifactRow = typeof artifact.$inferSelect;
