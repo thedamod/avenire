@@ -23,10 +23,7 @@ import { newId } from "@avenire/shared/id";
 import { artifactKey } from "@avenire/storage/keys";
 import { Storage } from "@avenire/storage/storage";
 import { and, asc, eq, gte, inArray, lt, or, type SQL, sql } from "drizzle-orm";
-import * as LanguageModel from "effect/ai/LanguageModel";
-import * as Prompt from "effect/ai/Prompt";
-import * as Tool from "effect/ai/Tool";
-import * as Toolkit from "effect/ai/Toolkit";
+import { generateText, hasToolCall, type LanguageModel, stepCountIs, tool } from "ai";
 import * as Cause from "effect/Cause";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -35,10 +32,10 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
-import { RuthCloudModelLive } from "../models.ts";
+import { RuthModels, RuthModelsLive } from "../models.ts";
+import { standardSchema } from "../ruth/toolSpecs.ts";
 import { makeRunPrompt, MATERIALS_DIR, OUT_DIR, RUTH_CLOUD_SYSTEM_PROMPT } from "./prompt.ts";
 import { artifactPlan, type PlannedArtifact } from "./window.ts";
 
@@ -57,6 +54,11 @@ export class RuthCloudError extends Schema.TaggedError<RuthCloudError>()("RuthCl
     return `Ruth Cloud run ${this.runId} failed: ${this.reason}`;
   }
 }
+
+/** A tool failure as the model sees it. */
+class RuthCloudToolError extends Schema.TaggedError<RuthCloudToolError>()("RuthCloudToolError", {
+  message: Schema.String,
+}) {}
 
 export class RuthCloud extends Context.Service<
   RuthCloud,
@@ -89,86 +91,86 @@ const materialFile = (entry: ItemRow, chunks: ReadonlyArray<string>): string =>
     "",
   ].join("\n");
 
-const Shell = Tool.make("shell", {
-  description: "Run a shell command in the sandbox workspace.",
-  parameters: Schema.Struct({ command: Schema.String }),
-  success: Schema.Struct({ exitCode: Schema.Number, output: Schema.String }),
-  failure: Schema.String,
-  failureMode: "return",
-});
+/** Runs a box operation for a tool; its failure message goes back to the model. */
+const runBoxTool = <A>(
+  program: Effect.Effect<A, { readonly message: string }>,
+  abortSignal: AbortSignal | undefined,
+): Promise<A> =>
+  Effect.runPromise(
+    program.pipe(Effect.mapError((error) => new RuthCloudToolError({ message: error.message }))),
+    { signal: abortSignal },
+  );
 
-const WriteFile = Tool.make("write_file", {
-  description: `Write a new file under ${OUT_DIR}. Paths outside that directory are rejected.`,
-  parameters: Schema.Struct({ path: Schema.String, content: Schema.String }),
-  success: Schema.Struct({ ok: Schema.Boolean }),
-  failure: Schema.String,
-  failureMode: "return",
-});
-
-const ReadFile = Tool.make("read_file", {
-  description: `Read a file under ${WORKSPACE_DIR}. Paths outside that directory are rejected.`,
-  parameters: Schema.Struct({ path: Schema.String }),
-  success: Schema.Struct({ content: Schema.String }),
-  failure: Schema.String,
-  failureMode: "return",
-});
-
-const Finish = Tool.make("finish", {
-  description: "Finish the run after all requested artifacts are complete.",
-  parameters: Schema.Struct({ summary: Schema.String }),
-  success: Schema.Struct({ ok: Schema.Boolean }),
-});
-
-const RuthCloudToolkit = Toolkit.make(Shell, WriteFile, ReadFile, Finish);
-
-/** Tool handlers bound to one box; `finished` flips when the model calls `finish`. */
-const toolHandlers = (box: DesktopBox, finished: Ref.Ref<boolean>) =>
-  RuthCloudToolkit.toLayer({
-    shell: ({ command }) =>
-      box.shell(command, { cwd: WORKSPACE_DIR, timeoutSeconds: SHELL_TIMEOUT_SECONDS }).pipe(
-        Effect.map(({ exitCode, stdout }) => ({ exitCode, output: truncate(stdout) })),
-        Effect.mapError((error) => error.message),
+/** The run's tools, bound to one box. Writes are confined to OUT_DIR. */
+const makeTools = (box: DesktopBox) => ({
+  shell: tool({
+    description: "Run a shell command in the sandbox workspace.",
+    inputSchema: standardSchema(Schema.Struct({ command: Schema.String })),
+    execute: ({ command }, { abortSignal }) =>
+      runBoxTool(
+        box
+          .shell(command, { cwd: WORKSPACE_DIR, timeoutSeconds: SHELL_TIMEOUT_SECONDS })
+          .pipe(Effect.map(({ exitCode, stdout }) => ({ exitCode, output: truncate(stdout) }))),
+        abortSignal,
       ),
-    write_file: ({ path, content }) =>
-      isWithin(OUT_DIR, path)
-        ? box.writeFile(path, textBytes(content)).pipe(
-            Effect.as({ ok: true }),
-            Effect.mapError((error) => error.message),
-          )
-        : Effect.fail(`write_file path must be inside ${OUT_DIR}`),
-    read_file: ({ path }) =>
-      isWithin(WORKSPACE_DIR, path)
-        ? box.readFile(path).pipe(
-            Effect.map((bytes) => ({ content: truncate(decodeText(bytes)) })),
-            Effect.mapError((error) => error.message),
-          )
-        : Effect.fail(`read_file path must be inside ${WORKSPACE_DIR}`),
-    finish: () => Ref.set(finished, true).pipe(Effect.as({ ok: true })),
-  });
+  }),
+  write_file: tool({
+    description: `Write a new file under ${OUT_DIR}. Paths outside that directory are rejected.`,
+    inputSchema: standardSchema(Schema.Struct({ path: Schema.String, content: Schema.String })),
+    execute: ({ path, content }, { abortSignal }) =>
+      runBoxTool(
+        isWithin(OUT_DIR, path)
+          ? box.writeFile(path, textBytes(content)).pipe(Effect.as({ ok: true }))
+          : Effect.fail({ message: `write_file path must be inside ${OUT_DIR}` }),
+        abortSignal,
+      ),
+  }),
+  read_file: tool({
+    description: `Read a file under ${WORKSPACE_DIR}. Paths outside that directory are rejected.`,
+    inputSchema: standardSchema(Schema.Struct({ path: Schema.String })),
+    execute: ({ path }, { abortSignal }) =>
+      runBoxTool(
+        isWithin(WORKSPACE_DIR, path)
+          ? box
+              .readFile(path)
+              .pipe(Effect.map((bytes) => ({ content: truncate(decodeText(bytes)) })))
+          : Effect.fail({ message: `read_file path must be inside ${WORKSPACE_DIR}` }),
+        abortSignal,
+      ),
+  }),
+  finish: tool({
+    description: "Finish the run after all requested artifacts are complete.",
+    inputSchema: standardSchema(Schema.Struct({ summary: Schema.String })),
+    execute: () => ({ ok: true }),
+  }),
+});
 
 /**
- * Drive the model until it calls `finish` or stops calling tools. Each step's
- * response (tool calls and their results) is appended to the prompt for the next.
+ * Drive the model until it calls `finish` or stops calling tools. Interrupting
+ * the fiber aborts the model call and any running tool.
  */
 const runAgent = Effect.fn("RuthCloud.runAgent")(function* (
-  model: LanguageModel.LanguageModel,
+  model: LanguageModel,
   box: DesktopBox,
   runId: CloudRunId,
   planned: ReadonlyArray<PlannedArtifact>,
 ) {
-  const finished = yield* Ref.make(false);
-  const handlers = toolHandlers(box, finished);
-  let prompt = Prompt.make([
-    { role: "system", content: RUTH_CLOUD_SYSTEM_PROMPT },
-    { role: "user", content: makeRunPrompt(planned) },
-  ]);
-  for (let step = 0; step < MAX_AGENT_STEPS; step++) {
-    const response = yield* model
-      .generateText({ prompt, toolkit: RuthCloudToolkit })
-      .pipe(Effect.provide(handlers));
-    if ((yield* Ref.get(finished)) || response.toolCalls.length === 0) return;
-    prompt = Prompt.concat(prompt, Prompt.fromResponseParts(response.content));
-  }
+  const result = yield* Effect.tryPromise({
+    try: (abortSignal) =>
+      generateText({
+        model,
+        system: RUTH_CLOUD_SYSTEM_PROMPT,
+        prompt: makeRunPrompt(planned),
+        tools: makeTools(box),
+        stopWhen: [hasToolCall("finish"), stepCountIs(MAX_AGENT_STEPS)],
+        abortSignal,
+      }),
+    catch: (cause) => new RuthCloudError({ runId, reason: "the model call failed", cause }),
+  });
+  const finished = result.steps.some((step) =>
+    step.toolCalls.some((call) => call.toolName === "finish"),
+  );
+  if (finished || result.finalStep.toolCalls.length === 0) return;
   return yield* new RuthCloudError({
     runId,
     reason: `did not finish within ${MAX_AGENT_STEPS} steps`,
@@ -188,7 +190,7 @@ export const RuthCloudLive = Layer.effect(
     const storage = yield* Storage;
     const boxes = yield* DesktopBoxes;
     const crypto = yield* Crypto.Crypto;
-    const model = yield* LanguageModel.LanguageModel;
+    const model = (yield* RuthModels).cloud;
     const appUrl = yield* Config.String("APP_URL").pipe(
       Config.withDefault("https://avenire.space"),
     );
@@ -423,4 +425,4 @@ export const RuthCloudLive = Layer.effect(
       },
     });
   }),
-).pipe(Layer.provide(RuthCloudModelLive));
+).pipe(Layer.provide(RuthModelsLive));
