@@ -1,31 +1,64 @@
 "use client";
 
-import { useEffect, useReducer, useState } from "react";
+import { useChat } from "@ai-sdk/react";
+import {
+  DefaultChatTransport,
+  getToolName,
+  isStaticToolUIPart,
+  lastAssistantMessageIsCompleteWithApprovalResponses,
+  lastAssistantMessageIsCompleteWithToolCalls,
+} from "ai";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type {
-  Approval,
-  ApprovalDecision,
-  ApprovalId,
-  ArtifactId,
-  Item,
-  Message,
-  MessagePart,
+import type { RuthUIMessage } from "@avenire/ai/ruth-messages";
+import {
+  type ArtifactId,
+  type FileAction,
+  type PageContext,
+  RUTH_CHAT_PATH,
+  type ThreadId,
 } from "@avenire/contracts";
-import { call, stream } from "@avenire/client-runtime/rpc";
+import { call } from "@avenire/client-runtime/rpc";
 import { Button } from "@avenire/ui/components/button";
 import { Textarea } from "@avenire/ui/components/textarea";
 import { useApi, errorMessage } from "~/lib/rpc";
-import { initialRuthState, ruthReducer } from "./ruthReducer";
-import { ItemDetail } from "~/features/library/ItemDetail";
+
+type Part = RuthUIMessage["parts"][number];
+type ToolPart = Extract<Part, { type: `tool-${string}` }>;
+
+const THEME_TOKENS = [
+  "--background",
+  "--foreground",
+  "--primary",
+  "--muted",
+  "--border",
+  "--accent",
+];
+
+/** The page facts `get_page_context` hands to Ruth, measured from the chat column. */
+function measurePage(column: HTMLElement | null): PageContext {
+  const root = getComputedStyle(document.documentElement);
+  return {
+    surface: "chat",
+    platform: window.avenire ? "desktop" : "web",
+    contentWidthPx: Math.round(column?.clientWidth ?? 480),
+    colorScheme: document.documentElement.classList.contains("dark") ? "dark" : "light",
+    themeTokens: Object.fromEntries(
+      THEME_TOKENS.map((token) => [token, root.getPropertyValue(token).trim()]),
+    ),
+    fonts: {
+      body: getComputedStyle(document.body).fontFamily,
+      mono: root.getPropertyValue("--font-mono").trim() || "monospace",
+    },
+  };
+}
 
 function ArtifactView({
   artifactId,
-  kind,
   label,
 }: {
   readonly artifactId: ArtifactId;
-  readonly kind: "plot" | "video";
   readonly label: string;
 }) {
   const api = useApi();
@@ -49,11 +82,7 @@ function ArtifactView({
       {error ? (
         <p className="text-sm text-destructive">{error}</p>
       ) : url ? (
-        kind === "video" ? (
-          <video controls src={url} className="max-h-64 w-full" />
-        ) : (
-          <img src={url} alt={label} className="max-h-64 max-w-full object-contain" />
-        )
+        <img src={url} alt={label} className="max-h-64 max-w-full object-contain" />
       ) : (
         <p className="text-sm text-muted-foreground">Loading {label}…</p>
       )}
@@ -61,208 +90,224 @@ function ArtifactView({
   );
 }
 
-function ApprovalCard({
-  approval,
-  onDecide,
-  deciding,
-}: {
-  readonly approval: Approval;
-  readonly onDecide: (id: ApprovalId, decision: ApprovalDecision) => void;
-  readonly deciding: boolean;
-}) {
-  let description: string;
-  switch (approval.action._tag) {
+function describeAction(action: FileAction): string {
+  switch (action._tag) {
     case "move":
-      description = "Move a library item into another cluster.";
-      break;
+      return "Move a library item into another cluster.";
     case "rename":
-      description = `Rename an item to “${approval.action.title}”.`;
-      break;
+      return `Rename an item to “${action.title}”.`;
     case "delete":
-      description = "Delete a library item.";
-      break;
+      return "Archive a library item.";
     case "create-note":
-      description = `Create the note “${approval.action.title}”.`;
-      break;
+      return `Create the note “${action.title}”.`;
   }
+}
+
+function AskUserCard({
+  question,
+  choices,
+  allowCustom,
+  onAnswer,
+}: {
+  readonly question: string;
+  readonly choices: ReadonlyArray<string>;
+  readonly allowCustom: boolean;
+  readonly onAnswer: (answer: string) => void;
+}) {
+  const [custom, setCustom] = useState("");
   return (
     <div className="grid gap-3 border border-border bg-muted p-3">
-      <p className="font-medium">Approval required</p>
-      <p className="text-sm text-muted-foreground">{description}</p>
-      {approval.status === "pending" ? (
-        <div className="flex gap-2">
-          <Button size="sm" disabled={deciding} onClick={() => onDecide(approval.id, "approved")}>
-            Approve
+      <p className="font-medium">{question}</p>
+      <div className="flex flex-wrap gap-2">
+        {choices.map((choice) => (
+          <Button key={choice} size="sm" variant="outline" onClick={() => onAnswer(choice)}>
+            {choice}
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={deciding}
-            onClick={() => onDecide(approval.id, "rejected")}
-          >
-            Reject
+        ))}
+      </div>
+      {allowCustom ? (
+        <form
+          className="flex gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (custom.trim()) onAnswer(custom.trim());
+          }}
+        >
+          <Textarea value={custom} onChange={(event) => setCustom(event.target.value)} rows={1} />
+          <Button size="sm" type="submit" disabled={!custom.trim()}>
+            Answer
           </Button>
-        </div>
-      ) : (
-        <p className="text-sm">{approval.status}</p>
-      )}
+        </form>
+      ) : null}
     </div>
   );
 }
 
 export function RuthPanel() {
   const api = useApi();
-  const [state, dispatch] = useReducer(ruthReducer, initialRuthState);
   const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
-  const [deciding, setDeciding] = useState<ApprovalId>();
-  const [items, setItems] = useState<ReadonlyArray<Item>>([]);
-  const [selectedItem, setSelectedItem] = useState<Item>();
+  const [error, setError] = useState<string>();
+  const threadId = useRef<ThreadId>(undefined);
+  const column = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    void call(api, (client) => client["library.listItems"]({}))
-      .then(setItems)
-      .catch(() => undefined);
-  }, [api]);
-  useEffect(() => {
-    const threadId = state.threadId;
-    if (!threadId) return;
-    let active = true;
-    void call(api, (client) => client["ruth.listMessages"]({ threadId }))
-      .then((messages) => {
-        if (active) dispatch({ type: "history-loaded", messages });
-      })
-      .catch((cause: unknown) => {
-        if (active) dispatch({ type: "error", message: errorMessage(cause) });
-      });
-    return () => {
-      active = false;
-    };
-  }, [api, state.threadId]);
-
-  function send() {
-    const message = text.trim();
-    if (!message || sending) return;
-    setSending(true);
-    dispatch({ type: "clear-error" });
-    const unsubscribe = stream(
-      api,
-      (client) =>
-        client["ruth.send"]({
-          ...(state.threadId ? { threadId: state.threadId } : {}),
-          text: message,
+  const { messages, sendMessage, status, addToolApprovalResponse, addToolOutput } =
+    useChat<RuthUIMessage>({
+      transport: new DefaultChatTransport<RuthUIMessage>({
+        api: RUTH_CHAT_PATH,
+        // The server owns the history; send only the latest message.
+        prepareSendMessagesRequest: ({ messages: current }) => ({
+          body: {
+            threadId: threadId.current,
+            message: current.at(-1),
+            page: measurePage(column.current),
+            fast: false,
+          },
         }),
-      {
-        onEvent: (event) => {
-          dispatch({ type: "event", event });
-          if (event._tag === "message-completed") setSending(false);
-        },
-        onError: (cause) => {
-          dispatch({ type: "error", message: errorMessage(cause) });
-          setSending(false);
-        },
-      },
-    );
-    setText("");
-    window.setTimeout(unsubscribe, 120_000);
-  }
-
-  function decide(approvalId: ApprovalId, decision: ApprovalDecision) {
-    setDeciding(approvalId);
-    const unsubscribe = stream(api, (client) => client["ruth.decide"]({ approvalId, decision }), {
-      onEvent: (event) => dispatch({ type: "event", event }),
-      onError: (cause) => dispatch({ type: "error", message: errorMessage(cause) }),
+      }),
+      sendAutomaticallyWhen: (options) =>
+        lastAssistantMessageIsCompleteWithApprovalResponses(options) ||
+        lastAssistantMessageIsCompleteWithToolCalls(options),
+      onError: (cause) => setError(errorMessage(cause)),
     });
-    dispatch({ type: "approval-decided", approvalId });
-    window.setTimeout(() => {
-      unsubscribe();
-      setDeciding(undefined);
-    }, 120_000);
+  const working = status === "submitted" || status === "streaming";
+
+  async function send() {
+    const message = text.trim();
+    if (!message || working) return;
+    setError(undefined);
+    setText("");
+    try {
+      if (threadId.current === undefined) {
+        const thread = await call(api, (client) =>
+          client["ruth.createThread"]({ title: message.slice(0, 60) }),
+        );
+        threadId.current = thread.id;
+      }
+      await sendMessage({ text: message });
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
   }
 
-  function partView(part: MessagePart, key: string) {
-    switch (part._tag) {
-      case "text":
+  function toolView(part: ToolPart, key: string) {
+    if (part.type === "tool-propose_file_action") {
+      if (part.state === "approval-requested") {
         return (
-          <div key={key} className="prose prose-sm max-w-none text-foreground dark:prose-invert">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
-            {part.citations.length ? (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {part.citations.map((citation) => (
-                  <button
-                    key={citation.chunkId}
-                    className="border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
-                    onClick={() =>
-                      setSelectedItem(items.find((item) => item.id === citation.itemId))
-                    }
-                  >
-                    {citation.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+          <div key={key} className="grid gap-3 border border-border bg-muted p-3">
+            <p className="font-medium">Approval required</p>
+            <p className="text-sm text-muted-foreground">{describeAction(part.input.action)}</p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: true })}
+              >
+                Approve
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: false })}
+              >
+                Decline
+              </Button>
+            </div>
           </div>
         );
-      case "code":
+      }
+      if (part.state === "output-available") {
         return (
-          <pre key={key} className="overflow-auto border border-border bg-muted p-3 text-xs">
-            <code>{part.source}</code>
-            {part.stdout ? (
-              <code className="mt-2 block text-muted-foreground">{part.stdout}</code>
-            ) : null}
-          </pre>
-        );
-      case "widget":
-        return (
-          <div key={key} className="grid gap-2">
-            <p className="text-sm font-medium">{part.title}</p>
-            <iframe
-              title={part.title}
-              sandbox="allow-scripts"
-              srcDoc={part.html}
-              className="h-64 w-full border border-border bg-background"
-            />
-          </div>
-        );
-      case "plot":
-        return <ArtifactView key={key} artifactId={part.artifactId} kind="plot" label={part.alt} />;
-      case "video":
-        return (
-          <ArtifactView key={key} artifactId={part.artifactId} kind="video" label={part.title} />
-        );
-      case "approval": {
-        const approval = state.pendingApprovals.get(part.approvalId);
-        return approval ? (
-          <ApprovalCard
-            key={key}
-            approval={approval}
-            onDecide={decide}
-            deciding={deciding === approval.id}
-          />
-        ) : (
           <p key={key} className="text-sm text-muted-foreground">
-            Approval request received.
+            {part.output.summary}
+          </p>
+        );
+      }
+      if (part.state === "output-denied") {
+        return (
+          <p key={key} className="text-sm text-muted-foreground">
+            File action declined.
           </p>
         );
       }
     }
+    if (part.type === "tool-ask_user" && part.state === "input-available") {
+      return (
+        <AskUserCard
+          key={key}
+          question={part.input.question}
+          choices={part.input.choices ?? []}
+          allowCustom={part.input.allowCustom}
+          onAnswer={(answer) =>
+            addToolOutput({
+              tool: "ask_user",
+              toolCallId: part.toolCallId,
+              output: { answers: [answer] },
+            })
+          }
+        />
+      );
+    }
+    if (part.type === "tool-run_python" && part.state === "output-available") {
+      return (
+        <div key={key} className="grid gap-2">
+          {part.output.stdout ? (
+            <pre className="overflow-auto border border-border bg-muted p-3 text-xs">
+              <code>{part.output.stdout}</code>
+            </pre>
+          ) : null}
+          {part.output.figures.map((figure) => (
+            <ArtifactView
+              key={figure.artifactId}
+              artifactId={figure.artifactId}
+              label={figure.title}
+            />
+          ))}
+        </div>
+      );
+    }
+    if (part.state === "output-error") {
+      return (
+        <p key={key} className="text-xs text-destructive">
+          {getToolName(part)} failed: {part.errorText}
+        </p>
+      );
+    }
+    return (
+      <p key={key} className="text-xs text-muted-foreground">
+        {getToolName(part).replaceAll("_", " ")}
+        {part.state === "output-available" ? "" : "…"}
+      </p>
+    );
   }
 
-  const messages: ReadonlyArray<{
-    readonly id: string;
-    readonly role: string;
-    readonly parts: ReadonlyArray<MessagePart>;
-  }> = [
-    ...state.messages,
-    ...[...state.drafts.values()].map((draft) => ({
-      id: draft.id,
-      role: "assistant",
-      parts: draft.parts,
-    })),
-  ];
+  function partView(part: Part, key: string) {
+    if (isStaticToolUIPart(part)) return toolView(part, key);
+    switch (part.type) {
+      case "text":
+        return (
+          <div key={key} className="prose prose-sm max-w-none text-foreground dark:prose-invert">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
+          </div>
+        );
+      case "data-subagent":
+        return (
+          <div key={key} className="border border-border p-3 text-sm">
+            Video agent: {part.data.stage ?? part.data.status}
+          </div>
+        );
+      case "data-cloud-run":
+        return (
+          <div key={key} className="border border-border p-3 text-sm">
+            Ruth Cloud run started.
+          </div>
+        );
+      default:
+        return null;
+    }
+  }
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+      <div ref={column} className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
         {messages.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Ask Ruth to explain something from your library.
@@ -276,9 +321,9 @@ export function RuthPanel() {
             {message.parts.map((part, index) => partView(part, `${message.id}-${index}`))}
           </article>
         ))}
-        {state.error ? (
+        {error ? (
           <p role="alert" className="text-sm text-destructive">
-            {state.error}
+            {error}
           </p>
         ) : null}
       </div>
@@ -286,7 +331,7 @@ export function RuthPanel() {
         className="grid gap-2 border-t border-border p-3"
         onSubmit={(event) => {
           event.preventDefault();
-          send();
+          void send();
         }}
       >
         <Textarea
@@ -295,13 +340,10 @@ export function RuthPanel() {
           placeholder="Ask about your material"
           rows={3}
         />
-        <Button type="submit" disabled={sending || !text.trim()}>
-          {sending ? "Ruth is working…" : "Send"}
+        <Button type="submit" disabled={working || !text.trim()}>
+          {working ? "Ruth is working…" : "Send"}
         </Button>
       </form>
-      {selectedItem ? (
-        <ItemDetail item={selectedItem} onClose={() => setSelectedItem(undefined)} />
-      ) : null}
     </div>
   );
 }
