@@ -173,6 +173,8 @@ export const ingestionJob = pgTable(
       .unique()
       .references(() => item.id, { onDelete: "cascade" }),
     status: text("status").$type<IngestionStatus>().notNull().default("queued"),
+    /** Bumped on every enqueue; a run only writes while its generation is current. */
+    generation: integer("generation").notNull().default(0),
     attempts: integer("attempts").notNull().default(0),
     error: text("error"),
     coverage: jsonb("coverage").$type<ExtractionCoverage>(),

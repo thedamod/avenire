@@ -39,6 +39,8 @@ export interface IngestionTask {
   readonly id: IngestionJobId;
   readonly userId: UserId;
   readonly itemId: ItemId;
+  /** The job's generation when claimed; writes are ignored once it is superseded. */
+  readonly generation: number;
 }
 
 export class IngestionPipeline extends Context.Service<
@@ -70,7 +72,13 @@ export const IngestionPipelineLive = Layer.effect(
             updatedAt: sql`now()`,
             ...(status === "indexed" ? { error: null, lockedUntil: null } : {}),
           })
-          .where(and(eq(ingestionJob.id, job.id), eq(ingestionJob.userId, job.userId))),
+          .where(
+            and(
+              eq(ingestionJob.id, job.id),
+              eq(ingestionJob.userId, job.userId),
+              eq(ingestionJob.generation, job.generation),
+            ),
+          ),
       );
 
     const loadItem = (job: IngestionTask) =>
@@ -92,7 +100,13 @@ export const IngestionPipelineLive = Layer.effect(
         db
           .update(ingestionJob)
           .set({ coverage, updatedAt: sql`now()` })
-          .where(and(eq(ingestionJob.id, job.id), eq(ingestionJob.userId, job.userId))),
+          .where(
+            and(
+              eq(ingestionJob.id, job.id),
+              eq(ingestionJob.userId, job.userId),
+              eq(ingestionJob.generation, job.generation),
+            ),
+          ),
       );
 
     const readSource = (found: ItemRow) =>
