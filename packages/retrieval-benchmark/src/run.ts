@@ -1,5 +1,6 @@
 import type { SearchDepth, SearchHit, SearchResult } from "@avenire/contracts";
 import { Retrieval } from "@avenire/ingestion/retrieval";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 
 import { type BenchmarkQuery, queries, type QueryType } from "./dataset/index.ts";
@@ -14,6 +15,8 @@ export type QueryResult = {
   readonly ranked: ReadonlyArray<string>;
   readonly metrics: MetricValues;
   readonly abstained: boolean;
+  /** Wall-clock time of the search call. */
+  readonly latencyMs: number;
 };
 
 const K = 10;
@@ -23,7 +26,11 @@ const rankedDocuments = (hits: ReadonlyArray<SearchHit>): ReadonlyArray<string> 
   ...new Set(hits.map((hit) => hit.itemId)),
 ];
 
-const scoreResult = (query: BenchmarkQuery, result: SearchResult): QueryResult => {
+const scoreResult = (
+  query: BenchmarkQuery,
+  result: SearchResult,
+  latencyMs: number,
+): QueryResult => {
   const ranked = rankedDocuments(result.hits);
   const relevant = query.relevant.map(({ documentId, grade }) => ({
     documentId,
@@ -36,6 +43,7 @@ const scoreResult = (query: BenchmarkQuery, result: SearchResult): QueryResult =
     expected: query.relevant.map(({ documentId }) => documentId),
     ranked,
     abstained: result.abstained,
+    latencyMs,
     metrics: scoreQuery(ranked, relevant, K),
   };
 };
@@ -44,12 +52,25 @@ export const runBenchmark = Effect.fn("RetrievalBenchmark.run")(function* (depth
   const retrieval = yield* Retrieval;
   const seeded = yield* seedCorpus;
   const results = yield* Effect.forEach(queries, (query) =>
-    retrieval
-      .search(BENCH_USER_ID, { text: query.text, limit: K, depth })
-      .pipe(Effect.map((result) => scoreResult(query, result))),
+    retrieval.search(BENCH_USER_ID, { text: query.text, limit: K, depth }).pipe(
+      Effect.timed,
+      Effect.map(([elapsed, result]) => scoreResult(query, result, Duration.toMillis(elapsed))),
+    ),
   );
   return { seeded, results };
 });
+
+/** The value at quantile `q` (0..1) of `values`, nearest-rank. */
+export const quantile = (values: ReadonlyArray<number>, q: number): number => {
+  const sorted = values.toSorted((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1))] ?? 0;
+};
+
+export const formatLatency = (results: ReadonlyArray<QueryResult>): string => {
+  const latencies = results.map((result) => result.latencyMs);
+  const ms = (q: number) => `${Math.round(quantile(latencies, q))} ms`;
+  return `latency p50 ${ms(0.5)}, p95 ${ms(0.95)}, max ${ms(1)}`;
+};
 
 export const summarize = (results: ReadonlyArray<QueryResult>) => {
   const abstained = (group: string) =>

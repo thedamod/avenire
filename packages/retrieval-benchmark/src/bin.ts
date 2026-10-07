@@ -15,7 +15,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 
-import { formatTable, runBenchmark } from "./run.ts";
+import { formatLatency, formatTable, runBenchmark } from "./run.ts";
 
 const args = process.argv.slice(2);
 const option = (name: string): string | undefined => {
@@ -59,7 +59,7 @@ const program = Effect.gen(function* () {
   yield* Effect.logInfo(
     `Seeded ${seeded.documents} documents and ${seeded.chunks} chunks with ${seeded.model}`,
   );
-  yield* Effect.logInfo(`\n${formatTable(results)}`);
+  yield* Effect.logInfo(`\n${formatTable(results)}\n${formatLatency(results)}`);
   if (jsonPath) {
     const fs = yield* FileSystem.FileSystem;
     yield* fs.writeFileString(jsonPath, `${JSON.stringify({ seeded, results }, null, 2)}\n`);
