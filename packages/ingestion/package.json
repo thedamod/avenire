@@ -71,6 +71,7 @@
   "dependencies": {
     "@ai-sdk/cohere": "catalog:",
     "@ai-sdk/google": "catalog:",
+    "@ai-sdk/groq": "catalog:",
     "@avenire/contracts": "workspace:*",
     "@avenire/database": "workspace:*",
     "@avenire/shared": "workspace:*",

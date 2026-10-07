@@ -15,6 +15,9 @@ catalogs:
     '@ai-sdk/google':
       specifier: 4.0.90
       version: 4.0.90
+    '@ai-sdk/groq':
+      specifier: 4.0.57
+      version: 4.0.57
     '@ai-sdk/react':
       specifier: 4.0.130
       version: 4.0.130
@@ -557,6 +560,9 @@ importers:
       '@ai-sdk/google':
         specifier: 'catalog:'
         version: 4.0.90(zod@4.6.5)
+      '@ai-sdk/groq':
+        specifier: 'catalog:'
+        version: 4.0.57(zod@4.6.5)
       '@avenire/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -768,6 +774,12 @@ packages:
 
   '@ai-sdk/google@4.0.90':
     resolution: {integrity: sha512-XQNKWT6CwcgARdqTUZn0j89y0gvDMR0k2j2qhOg7ffoL+6MNViQ9t3ALoleAAKo10yMLFE7Ato0Fk+RD14i2kg==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/groq@4.0.57':
+    resolution: {integrity: sha512-ilsyKha2I3IRwH0VSxlk6GLymHaa7R9wvxq+lz9AfNR713Sy5pVCUHQxbqP+wv7weITV6XcdY3gjdPvYLhk16g==}
     engines: {node: '>=22'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -9341,6 +9353,12 @@ snapshots:
       zod: 4.6.5
 
   '@ai-sdk/google@4.0.90(zod@4.6.5)':
+    dependencies:
+      '@ai-sdk/provider': 4.0.24
+      '@ai-sdk/provider-utils': 5.0.56(zod@4.6.5)
+      zod: 4.6.5
+
+  '@ai-sdk/groq@4.0.57(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.24
       '@ai-sdk/provider-utils': 5.0.56(zod@4.6.5)
