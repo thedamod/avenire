@@ -1,18 +1,51 @@
-import type { ChunkLocation } from "@avenire/contracts";
+import type { ChunkKind, ChunkLocation, ExtractionCoverage, ItemKind } from "@avenire/contracts";
 import * as Schema from "effect/Schema";
 
-export type ExtractedDocument = {
+/** What an extractor needs to know about a source, independent of how it's stored. */
+export interface SourceInput {
+  readonly kind: ItemKind;
+  readonly title: string;
+  readonly mimeType: string | null;
+  readonly sourceUrl: string | null;
+  /** The stored original, when there is one. */
+  readonly bytes: Uint8Array | null;
+}
+
+export interface ExtractedSection {
+  readonly text: string;
+  readonly location: ChunkLocation;
+  /** Set when the extractor knows the role (a slide, a figure); otherwise inferred. */
+  readonly kind?: ChunkKind;
+}
+
+export interface ExtractedDocument {
   readonly title?: string;
-  readonly sections: ReadonlyArray<{ readonly text: string; readonly location: ChunkLocation }>;
-};
+  readonly sections: ReadonlyArray<ExtractedSection>;
+  readonly coverage: ExtractionCoverage;
+}
+
+/** Coverage for a document produced in full by one part, e.g. `fullCoverage("text")`. */
+export const fullCoverage = (part: string): ExtractionCoverage => ({
+  status: "full",
+  parts: [{ part, status: "full" }],
+});
+
+/** Overall coverage from its parts: full only if every part is, none only if every part is. */
+export const combineCoverage = (parts: ExtractionCoverage["parts"]): ExtractionCoverage => ({
+  status: parts.every((part) => part.status === "full")
+    ? "full"
+    : parts.every((part) => part.status === "none")
+      ? "none"
+      : "partial",
+  parts,
+});
 
 export class ExtractionError extends Schema.TaggedError<ExtractionError>()("ExtractionError", {
   source: Schema.String,
   cause: Schema.Defect(),
 }) {
   override get message(): string {
-    const detail = this.cause instanceof Error ? this.cause.message : String(this.cause);
-    return `Could not extract ${this.source}: ${detail}`;
+    return `Could not extract ${this.source}`;
   }
 }
 

@@ -1,40 +1,68 @@
-import type { ItemRow } from "@avenire/database/schema";
 import * as Effect from "effect/Effect";
 import type * as HttpClient from "effect/http/HttpClient";
 
-import { extractOffice, supportsOffice } from "./office.ts";
+import type { ImageDescriber } from "./describe.ts";
+import { extractImage } from "./image.ts";
+import { extractMedia } from "./av.ts";
+import type { MediaProcessor } from "./media.ts";
+import type { Ocr } from "./ocr.ts";
+import { extractOffice } from "./office.ts";
 import { extractPdf } from "./pdf.ts";
+import { resolveFormat } from "./resolve.ts";
 import { extractTextDocument } from "./text.ts";
-import { type ExtractedDocument, type ExtractionError, UnsupportedSource } from "./types.ts";
+import type { Transcriber } from "./transcribe.ts";
+import {
+  type ExtractedDocument,
+  type ExtractionError,
+  type SourceInput,
+  UnsupportedSource,
+} from "./types.ts";
 import { extractWeb } from "./web.ts";
-import { extractYouTube, isYouTubeUrl } from "./youtube.ts";
+import { extractYouTube } from "./youtube.ts";
 
-export type { ExtractedDocument } from "./types.ts";
+export type { ExtractedDocument, SourceInput } from "./types.ts";
 export { ExtractionError, UnsupportedSource } from "./types.ts";
 
-/** Picks the extractor for an item from its kind, stored bytes and source URL. */
+/** Services the extractors call: page fetches, OCR, speech to text, vision, ffmpeg. */
+export type ExtractionServices =
+  | HttpClient.HttpClient
+  | Ocr
+  | Transcriber
+  | ImageDescriber
+  | MediaProcessor;
+
+/** Extracts a source with the extractor its bytes, MIME type and URL call for. */
 export const extract = (
-  item: ItemRow,
-  source: Uint8Array | null,
-): Effect.Effect<ExtractedDocument, ExtractionError | UnsupportedSource, HttpClient.HttpClient> => {
-  if (item.kind === "pdf" && source) return extractPdf(source);
-  if (item.kind === "document" && source && supportsOffice(item.mimeType)) {
-    return extractOffice(item.mimeType, source);
-  }
-  if ((item.kind === "web-page" || item.kind === "video") && item.sourceUrl) {
-    if (isYouTubeUrl(item.sourceUrl)) return extractYouTube(item.sourceUrl);
-    if (item.kind === "web-page") return extractWeb(item.sourceUrl, source);
-  }
-  if ((item.kind === "note" || item.kind === "selection") && source) {
-    return Effect.succeed(extractTextDocument(source, item.title));
+  source: SourceInput,
+): Effect.Effect<ExtractedDocument, ExtractionError | UnsupportedSource, ExtractionServices> => {
+  const { bytes, sourceUrl } = source;
+  const format = resolveFormat(source);
+  if (bytes !== null) {
+    switch (format) {
+      case "pdf":
+        return extractPdf(bytes);
+      case "office":
+        return extractOffice(source.mimeType, bytes);
+      case "image":
+        return extractImage(bytes, source);
+      case "media":
+        return extractMedia(bytes, source);
+      case "text":
+        return Effect.succeed(extractTextDocument(bytes, source));
+      case "html":
+        return extractWeb(sourceUrl ?? "", bytes);
+    }
+  } else if (sourceUrl !== null) {
+    if (format === "youtube") return extractYouTube(sourceUrl);
+    if (format === "web") return extractWeb(sourceUrl, null);
   }
   return Effect.fail(
     new UnsupportedSource({
-      kind: item.kind,
+      kind: source.kind,
       reason:
-        source === null
+        bytes === null
           ? "This source requires stored content or a supported URL"
-          : "No extractor is available for this item format",
+          : "No extractor is available for this file format",
     }),
   );
 };

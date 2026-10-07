@@ -38,8 +38,6 @@ export interface IndexInput {
   /** Title used in contextual embedding text and the lexical vector (weight A). */
   readonly title: string;
   readonly sections: ReadonlyArray<ChunkSection>;
-  /** Sections are timed transcript windows. */
-  readonly transcript: boolean;
 }
 
 export interface IndexStats {
@@ -80,7 +78,7 @@ type ExistingChunk = Pick<Chunk, "ordinal" | "kind" | "location" | "content"> & 
 };
 
 const prepare = (input: IndexInput): ReadonlyArray<IncomingChunk> =>
-  chunkSections(input.sections, { transcript: input.transcript }).map((value) => {
+  chunkSections(input.sections).map((value) => {
     const text = embeddingText(input.title, value);
     return {
       ...value,

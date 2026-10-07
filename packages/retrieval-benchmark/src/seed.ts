@@ -33,7 +33,6 @@ const seedDocument = Effect.fn("RetrievalBenchmark.seedDocument")(function* (
     userId: BENCH_USER_ID,
     itemId,
     title: document.title,
-    transcript: false,
     sections: document.sections.map(({ text, heading }) => ({ text, location: { heading } })),
   });
 });

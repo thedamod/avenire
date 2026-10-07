@@ -23,8 +23,8 @@ describe("groupCues", () => {
       { text: "fifth", offset: 59, duration: 4 },
     ]);
     expect(sections).toEqual([
-      { text: "first second third", location: { startSec: 0, endSec: 48 } },
-      { text: "third fourth fifth", location: { startSec: 40, endSec: 63 } },
+      { text: "first second third", location: { startSec: 0, endSec: 48 }, kind: "transcript" },
+      { text: "third fourth fifth", location: { startSec: 40, endSec: 63 }, kind: "transcript" },
     ]);
   });
 
@@ -35,8 +35,8 @@ describe("groupCues", () => {
       { text: "three", offset: 59_000, duration: 4_000 },
     ]);
     expect(sections).toEqual([
-      { text: "one two", location: { startSec: 0, endSec: 59 } },
-      { text: "three", location: { startSec: 59, endSec: 63 } },
+      { text: "one two", location: { startSec: 0, endSec: 59 }, kind: "transcript" },
+      { text: "three", location: { startSec: 59, endSec: 63 }, kind: "transcript" },
     ]);
   });
 });

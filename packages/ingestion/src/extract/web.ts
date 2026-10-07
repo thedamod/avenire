@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as HttpClient from "effect/http/HttpClient";
 import { parseHTML } from "linkedom";
 
-import { type ExtractedDocument, ExtractionError } from "./types.ts";
+import { type ExtractedDocument, ExtractionError, fullCoverage } from "./types.ts";
 
 type HeadedSection = { readonly text: string; readonly location: { readonly heading?: string } };
 
@@ -45,6 +45,7 @@ const parseHtml = (html: string) =>
       return {
         ...(parsed.title ? { title: parsed.title } : {}),
         sections: sectionsFromMarkdown(parsed.contentMarkdown ?? parsed.content),
+        coverage: fullCoverage("text"),
       };
     },
     catch: (cause) => new ExtractionError({ source: "web-parse", cause }),

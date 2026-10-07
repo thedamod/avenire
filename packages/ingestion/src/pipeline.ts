@@ -3,6 +3,7 @@
  * Each stage is persisted on the job so the inbox can show progress.
  */
 import {
+  type ExtractionCoverage,
   type IngestionJobId,
   type IngestionStatus,
   type ItemId,
@@ -17,12 +18,11 @@ import { and, eq, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import type * as HttpClient from "effect/http/HttpClient";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { assignClusters } from "./cluster.ts";
-import { extract } from "./extract/index.ts";
+import { extract, type ExtractionServices } from "./extract/index.ts";
 import { ItemIndexer } from "./indexer.ts";
 
 export class IngestionError extends Schema.TaggedError<IngestionError>()("IngestionError", {
@@ -52,14 +52,14 @@ const stage =
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, IngestionError, R> =>
     Effect.mapError(effect, (cause) => new IngestionError({ stage: name, cause }));
 
-/** Requires `HttpClient` (web extraction), `Database` and `Crypto` (cluster ids). */
+/** Requires the extraction services, `Database` and `Crypto` (cluster ids). */
 export const IngestionPipelineLive = Layer.effect(
   IngestionPipeline,
   Effect.gen(function* () {
     const database = yield* Database;
     const storage = yield* Storage;
     const itemIndexer = yield* ItemIndexer;
-    const services = yield* Effect.context<Database | HttpClient.HttpClient | Crypto.Crypto>();
+    const services = yield* Effect.context<Database | Crypto.Crypto | ExtractionServices>();
 
     const setStatus = (job: IngestionTask, status: IngestionStatus) =>
       database.use((db) =>
@@ -87,6 +87,14 @@ export const IngestionPipelineLive = Layer.effect(
           ),
         );
 
+    const recordCoverage = (job: IngestionTask, coverage: ExtractionCoverage) =>
+      database.use((db) =>
+        db
+          .update(ingestionJob)
+          .set({ coverage, updatedAt: sql`now()` })
+          .where(and(eq(ingestionJob.id, job.id), eq(ingestionJob.userId, job.userId))),
+      );
+
     const readSource = (found: ItemRow) =>
       found.storageKey === null
         ? Effect.succeed(null)
@@ -94,10 +102,17 @@ export const IngestionPipelineLive = Layer.effect(
 
     const run = Effect.fn("IngestionPipeline.run")(function* (job: IngestionTask) {
       const found = yield* loadItem(job).pipe(stage("loading the item"));
-      const source = yield* readSource(found).pipe(stage("reading the source"));
+      const bytes = yield* readSource(found).pipe(stage("reading the source"));
 
       yield* setStatus(job, "extracting").pipe(stage("extracting"));
-      const document = yield* extract(found, source).pipe(stage("extracting"));
+      const document = yield* extract({ ...found, bytes }).pipe(stage("extracting"));
+      yield* recordCoverage(job, document.coverage).pipe(stage("extracting"));
+      if (document.sections.length === 0) {
+        return yield* new IngestionError({
+          stage: "extracting",
+          cause: "Nothing searchable was extracted",
+        });
+      }
 
       yield* setStatus(job, "chunking").pipe(stage("chunking"));
       const title = document.title ?? found.title;
@@ -108,7 +123,6 @@ export const IngestionPipelineLive = Layer.effect(
             itemId: job.itemId,
             title,
             sections: document.sections,
-            transcript: found.kind === "video",
           },
           (status) => setStatus(job, status),
         )

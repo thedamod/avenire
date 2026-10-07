@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import { fetchTranscript } from "youtube-transcript";
 
-import { type ExtractedDocument, ExtractionError } from "./types.ts";
+import { type ExtractedDocument, ExtractionError, fullCoverage } from "./types.ts";
 
 const SOFT_SECONDS = 45;
 const HARD_SECONDS = 60;
@@ -9,10 +9,11 @@ const GAP_SECONDS = 1.5;
 const OVERLAP_SECONDS = 10;
 
 type Cue = Awaited<ReturnType<typeof fetchTranscript>>[number];
-type TimedSection = { text: string; location: { startSec: number; endSec: number } };
-
-export const isYouTubeUrl = (url: string | null): boolean =>
-  url !== null && /(?:youtube\.com|youtu\.be)/i.test(url);
+type TimedSection = {
+  readonly text: string;
+  readonly location: { readonly startSec: number; readonly endSec: number };
+  readonly kind: "transcript";
+};
 
 /** Decodes caption markup and removes non-speech cues without discarding symbols or numbers. */
 export const cleanCaptionText = (text: string): string => {
@@ -78,6 +79,7 @@ export const groupCues = (cues: ReadonlyArray<Cue>): ReadonlyArray<TimedSection>
         .map((cue) => cue.text)
         .join(" "),
       location: { startSec: first.startSec, endSec: last.endSec },
+      kind: "transcript",
     });
     if (end === cleaned.length - 1) break;
     let nextStart = end + 1;
@@ -97,4 +99,6 @@ export const extractYouTube = (url: string): Effect.Effect<ExtractedDocument, Ex
   Effect.tryPromise({
     try: () => fetchTranscript(url),
     catch: (cause) => new ExtractionError({ source: "youtube", cause }),
-  }).pipe(Effect.map((cues) => ({ sections: groupCues(cues) })));
+  }).pipe(
+    Effect.map((cues) => ({ sections: groupCues(cues), coverage: fullCoverage("transcript") })),
+  );
