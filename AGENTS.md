@@ -22,7 +22,8 @@ packages/
   auth/              better-auth server + clients
   storage/           files-sdk wrapped as the `Storage` service
   cloud/             Daytona sandboxes (ephemeral compute + persistent Ruth Cloud boxes)
-  ingestion/         Extract -> chunk -> embed -> cluster, the job queue worker, and hybrid retrieval
+  ingestion/         Extract -> chunk -> embed -> graph -> cluster, the job queue worker, and retrieval
+                     (multi-lane RRF, rerank, graph RAG, semantic cache)
   ai/                Ruth (interactive agent) and Ruth Cloud (nightly run), built on the Vercel AI SDK
   emailer/           react-email templates + the `Mailer` service (Resend)
   retrieval-benchmark/  Dataset + runner for retrieval quality (recall@k, MRR, nDCG)
