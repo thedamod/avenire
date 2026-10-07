@@ -41,21 +41,31 @@ export const weightedRrf = (
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
 };
 
+/**
+ * Keeps ranked entries in order, at most `maxPerItem` slots per item, until `limit`.
+ * An entry that `sharesSlot` with one already kept from its item doesn't take a new
+ * slot. Entries whose item can't be resolved are skipped.
+ */
 export const capPerItem = <T extends { readonly id: string }>(
   ranked: ReadonlyArray<T>,
   itemOf: (id: string) => string | undefined,
   limit: number,
   maxPerItem = 2,
+  sharesSlot: (a: T, b: T) => boolean = () => false,
 ): ReadonlyArray<T> => {
-  const perItem = new Map<string, number>();
-  const kept: T[] = [];
+  const keptByItem = new Map<string, Array<T>>();
+  const slots = new Map<string, number>();
+  const kept: Array<T> = [];
   for (const entry of ranked) {
     if (kept.length >= limit) break;
     const itemId = itemOf(entry.id);
     if (itemId === undefined) continue;
-    const count = perItem.get(itemId) ?? 0;
-    if (count >= maxPerItem) continue;
-    perItem.set(itemId, count + 1);
+    const siblings = keptByItem.get(itemId) ?? [];
+    const free = siblings.some((sibling) => sharesSlot(sibling, entry));
+    const used = slots.get(itemId) ?? 0;
+    if (!free && used >= maxPerItem) continue;
+    if (!free) slots.set(itemId, used + 1);
+    keptByItem.set(itemId, [...siblings, entry]);
     kept.push(entry);
   }
   return kept;

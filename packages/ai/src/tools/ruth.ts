@@ -250,6 +250,7 @@ export const createRuthTools = (services: Context.Context<RuthToolServices>, tur
                 location: hit.location,
                 content: hit.content,
                 relevance: hit.relevance,
+                ...(hit.context === undefined ? {} : { context: hit.context }),
               })),
               facts: result.facts,
               aspects: result.aspects,

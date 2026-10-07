@@ -29,6 +29,7 @@ const CandidateRow = Schema.Struct({
   itemTitle: Schema.String,
   itemKind: ItemKind,
   chunkKind: ChunkKind,
+  ordinal: Schema.Number,
   content: Schema.String,
   location: ChunkLocation,
 });
@@ -36,7 +37,7 @@ export type CandidateRow = typeof CandidateRow.Type;
 const decodeCandidates = Schema.decodeUnknownEffect(Schema.Array(CandidateRow));
 
 const COLUMNS = sql`c.id AS "chunkId", i.id AS "itemId", i.title AS "itemTitle",
-  i.kind AS "itemKind", c.kind AS "chunkKind", c.content, c.location`;
+  i.kind AS "itemKind", c.kind AS "chunkKind", c.ordinal, c.content, c.location`;
 const SOURCE = sql`FROM chunk c JOIN item i ON i.id = c.item_id AND i.user_id = c.user_id`;
 
 const list = (values: ReadonlyArray<string | number>) =>
@@ -159,3 +160,27 @@ export const hydrate = (where: SQL, ids: ReadonlyArray<ChunkId>) =>
           return ids.flatMap((id) => byId.get(id) ?? []);
         }),
       );
+
+const NeighbourRow = Schema.Struct({
+  itemId: Schema.String,
+  ordinal: Schema.Number,
+  content: Schema.String,
+});
+const decodeNeighbours = Schema.decodeUnknownEffect(Schema.Array(NeighbourRow));
+
+/** The content of the given (item, ordinal) chunks, in one query. */
+export const neighbours = (
+  userId: UserId,
+  wanted: ReadonlyArray<{ readonly itemId: string; readonly ordinal: number }>,
+) =>
+  wanted.length === 0
+    ? Effect.succeed<ReadonlyArray<typeof NeighbourRow.Type>>([])
+    : Effect.flatMap(Effect.service(Database), (database) =>
+        database.use((db) =>
+          db.execute(sql`SELECT c.item_id AS "itemId", c.ordinal, c.content FROM chunk c
+            WHERE c.user_id = ${userId} AND (c.item_id, c.ordinal) IN (${sql.join(
+              wanted.map(({ itemId, ordinal }) => sql`(${itemId}, ${ordinal})`),
+              sql`, `,
+            )})`),
+        ),
+      ).pipe(Effect.flatMap(decodeNeighbours));

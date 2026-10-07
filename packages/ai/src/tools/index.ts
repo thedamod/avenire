@@ -13,6 +13,7 @@ import {
   GraphFact,
   SearchAspect,
   SearchDepth,
+  SearchHit,
 } from "@avenire/contracts";
 import { tool } from "ai";
 import * as Schema from "effect/Schema";
@@ -41,7 +42,11 @@ export const searchMaterialsSpec = {
   outputSchema: standardSchema(
     Schema.Struct({
       hits: Schema.Array(
-        Schema.Struct({ ...ChunkResult.fields, relevance: Schema.NullOr(Schema.Number) }),
+        Schema.Struct({
+          ...ChunkResult.fields,
+          relevance: Schema.NullOr(Schema.Number),
+          context: SearchHit.fields.context,
+        }),
       ),
       facts: Schema.Array(GraphFact),
       aspects: Schema.Array(SearchAspect),

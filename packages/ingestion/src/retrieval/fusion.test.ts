@@ -26,4 +26,15 @@ describe("capPerItem", () => {
     const ranked = ["a:1", "a:2", "a:3", "b:1"].map((id) => ({ id, score: 1 }));
     expect(capPerItem(ranked, itemOf, 10).map((entry) => entry.id)).toEqual(["a:1", "a:2", "b:1"]);
   });
+
+  it("lets an entry that shares a slot with a kept sibling through for free", () => {
+    const ranked = ["a:slide", "a:talk", "a:other", "a:more"].map((id) => ({ id, score: 1 }));
+    const pairs = (x: { id: string }, y: { id: string }) =>
+      [x.id, y.id].sort().join() === "a:slide,a:talk";
+    expect(capPerItem(ranked, itemOf, 10, 2, pairs).map((entry) => entry.id)).toEqual([
+      "a:slide",
+      "a:talk",
+      "a:other",
+    ]);
+  });
 });

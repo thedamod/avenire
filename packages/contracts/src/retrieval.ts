@@ -39,6 +39,11 @@ export const SearchHit = Schema.Struct({
   relevance: Schema.NullOr(Schema.Number),
   /** Lanes that found this chunk. */
   lanes: Schema.Array(SearchLane),
+  /**
+   * Text just before and after the chunk, when it starts or ends mid-sentence. Context
+   * only: citations still point at the chunk itself.
+   */
+  context: Schema.optionalKey(Schema.Struct({ before: Schema.String, after: Schema.String })),
 });
 export type SearchHit = typeof SearchHit.Type;
 
