@@ -14,7 +14,8 @@ export const normalizeForMatch = (text: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
-export const sha256Hex = (text: string): string => createHash("sha256").update(text).digest("hex");
+export const sha256Hex = (data: string | Uint8Array): string =>
+  createHash("sha256").update(data).digest("hex");
 
 /** `[1,2]` as a pgvector literal. */
 export const toVectorLiteral = (vector: ReadonlyArray<number>): string => `[${vector.join(",")}]`;

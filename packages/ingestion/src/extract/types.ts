@@ -1,5 +1,11 @@
-import type { ChunkKind, ChunkLocation, ExtractionCoverage, ItemKind } from "@avenire/contracts";
+import { ChunkKind, ChunkLocation, ExtractionCoverage, type ItemKind } from "@avenire/contracts";
 import * as Schema from "effect/Schema";
+
+/**
+ * Bump when any extractor's output changes. Stored documents from older versions
+ * are re-extracted on the next ingest; same-version ones are reused.
+ */
+export const EXTRACTOR_VERSION = 1;
 
 /** What an extractor needs to know about a source, independent of how it's stored. */
 export interface SourceInput {
@@ -11,18 +17,21 @@ export interface SourceInput {
   readonly bytes: Uint8Array | null;
 }
 
-export interface ExtractedSection {
-  readonly text: string;
-  readonly location: ChunkLocation;
+export const ExtractedSection = Schema.Struct({
+  text: Schema.String,
+  location: ChunkLocation,
   /** Set when the extractor knows the role (a slide, a figure); otherwise inferred. */
-  readonly kind?: ChunkKind;
-}
+  kind: Schema.optionalKey(ChunkKind),
+});
+export type ExtractedSection = typeof ExtractedSection.Type;
 
-export interface ExtractedDocument {
-  readonly title?: string;
-  readonly sections: ReadonlyArray<ExtractedSection>;
-  readonly coverage: ExtractionCoverage;
-}
+/** An extraction result; persisted per source hash so re-ingestion doesn't re-extract. */
+export const ExtractedDocument = Schema.Struct({
+  title: Schema.optionalKey(Schema.String),
+  sections: Schema.Array(ExtractedSection),
+  coverage: ExtractionCoverage,
+});
+export type ExtractedDocument = typeof ExtractedDocument.Type;
 
 /** Coverage for a document produced in full by one part, e.g. `fullCoverage("text")`. */
 export const fullCoverage = (part: string): ExtractionCoverage => ({

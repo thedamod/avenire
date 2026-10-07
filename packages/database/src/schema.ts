@@ -109,7 +109,11 @@ export const item = pgTable(
     captureId: text("capture_id").references(() => capture.id, { onDelete: "set null" }),
     dedupeKey: text("dedupe_key").notNull(),
     mediaPositionSec: real("media_position_sec"),
+    /** SHA-256 of the stored source bytes the current index was built from. */
     contentHash: text("content_hash"),
+    /** The extracted document for `contentHash`, and the extractor version that produced it. */
+    documentKey: text("document_key"),
+    extractorVersion: integer("extractor_version"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
     updatedAt: timestamptz("updated_at").notNull().defaultNow(),
   },

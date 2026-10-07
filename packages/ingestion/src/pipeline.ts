@@ -19,11 +19,15 @@ import * as Context from "effect/Context";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { assignClusters } from "./cluster.ts";
+import { loadDocument, saveDocument } from "./document.ts";
 import { extract, type ExtractionServices } from "./extract/index.ts";
+import { EXTRACTOR_VERSION } from "./extract/types.ts";
 import { ItemIndexer } from "./indexer.ts";
+import { sha256Hex } from "./text.ts";
 
 export class IngestionError extends Schema.TaggedError<IngestionError>()("IngestionError", {
   stage: Schema.String,
@@ -61,7 +65,9 @@ export const IngestionPipelineLive = Layer.effect(
     const database = yield* Database;
     const storage = yield* Storage;
     const itemIndexer = yield* ItemIndexer;
-    const services = yield* Effect.context<Database | Crypto.Crypto | ExtractionServices>();
+    const services = yield* Effect.context<
+      Database | Storage | Crypto.Crypto | ExtractionServices
+    >();
 
     const setStatus = (job: IngestionTask, status: IngestionStatus) =>
       database.use((db) =>
@@ -114,12 +120,45 @@ export const IngestionPipelineLive = Layer.effect(
         ? Effect.succeed(null)
         : storage.get(StorageKey.make(found.storageKey));
 
+    /**
+     * The stored document when the source bytes and extractor version are unchanged,
+     * otherwise a fresh extraction, stored for next time.
+     */
+    const documentFor = Effect.fn("IngestionPipeline.documentFor")(function* (
+      job: IngestionTask,
+      found: ItemRow,
+      bytes: Uint8Array | null,
+    ) {
+      const contentHash = bytes === null ? null : sha256Hex(bytes);
+      const reusable =
+        contentHash !== null &&
+        found.contentHash === contentHash &&
+        found.extractorVersion === EXTRACTOR_VERSION &&
+        found.documentKey !== null;
+      if (reusable) {
+        const stored = yield* loadDocument(job.userId, job.itemId);
+        if (Option.isSome(stored)) return stored.value;
+      }
+      const document = yield* extract({ ...found, bytes });
+      // Only bytes we can hash are worth keeping: URL sources are re-fetched anyway.
+      if (contentHash !== null && document.sections.length > 0) {
+        const key = yield* saveDocument(job.userId, job.itemId, document);
+        yield* database.use((db) =>
+          db
+            .update(item)
+            .set({ contentHash, documentKey: key, extractorVersion: EXTRACTOR_VERSION })
+            .where(and(eq(item.id, found.id), eq(item.userId, found.userId))),
+        );
+      }
+      return document;
+    });
+
     const run = Effect.fn("IngestionPipeline.run")(function* (job: IngestionTask) {
       const found = yield* loadItem(job).pipe(stage("loading the item"));
       const bytes = yield* readSource(found).pipe(stage("reading the source"));
 
       yield* setStatus(job, "extracting").pipe(stage("extracting"));
-      const document = yield* extract({ ...found, bytes }).pipe(stage("extracting"));
+      const document = yield* documentFor(job, found, bytes).pipe(stage("extracting"));
       yield* recordCoverage(job, document.coverage).pipe(stage("extracting"));
       if (document.sections.length === 0) {
         return yield* new IngestionError({
