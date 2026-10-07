@@ -19,6 +19,7 @@ import { Sandboxes } from "@avenire/cloud/sandbox";
 import { Database } from "@avenire/database/client";
 import { artifact, chunk, cluster, item, itemCluster } from "@avenire/database/schema";
 import { Retrieval } from "@avenire/ingestion/retrieval";
+import { SemanticCache } from "@avenire/ingestion/retrieval/cache";
 import { enqueueIngestion } from "@avenire/ingestion/worker";
 import { newId } from "@avenire/shared/id";
 import { artifactKey, itemSourceKey } from "@avenire/storage/keys";
@@ -45,7 +46,13 @@ import { VISUAL_BUDGETS, VISUAL_RUNTIME } from "./page.ts";
 import { loadSkillTool } from "./skills.ts";
 
 /** What tool programs may use. */
-export type RuthToolServices = Database | Storage | Retrieval | Sandboxes | Crypto.Crypto;
+export type RuthToolServices =
+  | Database
+  | Storage
+  | Retrieval
+  | SemanticCache
+  | Sandboxes
+  | Crypto.Crypto;
 
 /** The request a toolset is built for. */
 export interface RuthTurn {
@@ -118,6 +125,8 @@ const moveItem = Effect.fn("RuthTools.moveItem")(function* (
     return true;
   });
   if (!moved) return yield* new NotFound({ entity: "Item or cluster", id: action.itemId });
+  const cache = yield* SemanticCache;
+  yield* cache.invalidate(userId);
   return { itemId: action.itemId, summary: "Moved the item to another cluster." };
 });
 
@@ -136,6 +145,10 @@ const updateItem = Effect.fn("RuthTools.updateItem")(function* (
       .returning({ id: item.id }),
   );
   if (updated.length === 0) return yield* new NotFound({ entity: "Item", id: itemId });
+  // Titles are part of the index (embedding text and lexical weight A).
+  if (changes.title !== undefined) yield* enqueueIngestion(userId, itemId);
+  const cache = yield* SemanticCache;
+  yield* cache.invalidate(userId);
   return { itemId, summary };
 });
 
@@ -204,10 +217,7 @@ const toolFailure = (
 /** Builds the toolset for one request; `services` are captured once by the Ruth layer. */
 export const createRuthTools = (services: Context.Context<RuthToolServices>, turn: RuthTurn) => {
   const run =
-    <A, E extends { readonly message: string }>(
-      name: string,
-      program: Effect.Effect<A, E, RuthToolServices>,
-    ) =>
+    <A>(name: string, program: Effect.Effect<A, { readonly message: string }, RuthToolServices>) =>
     (abortSignal: AbortSignal | undefined): Promise<A> =>
       Effect.runPromiseWith(services)(
         program.pipe(
@@ -222,22 +232,29 @@ export const createRuthTools = (services: Context.Context<RuthToolServices>, tur
 
     search_materials: tool({
       ...searchMaterialsSpec,
-      execute: ({ query, limit }, { abortSignal }) =>
+      execute: ({ query, limit, depth }, { abortSignal }) =>
         run(
           "search_materials",
           Effect.gen(function* () {
             const retrieval = yield* Retrieval;
-            const hits = yield* retrieval.search(turn.userId, {
+            const result = yield* retrieval.search(turn.userId, {
               text: query,
               ...(limit === undefined ? {} : { limit }),
+              ...(depth === undefined ? {} : { depth }),
             });
-            return hits.map((hit) => ({
-              chunkId: hit.chunkId,
-              itemId: hit.itemId,
-              title: hit.itemTitle,
-              location: hit.location,
-              content: hit.content,
-            }));
+            return {
+              hits: result.hits.map((hit) => ({
+                chunkId: hit.chunkId,
+                itemId: hit.itemId,
+                title: hit.itemTitle,
+                location: hit.location,
+                content: hit.content,
+                relevance: hit.relevance,
+              })),
+              facts: result.facts,
+              aspects: result.aspects,
+              abstained: result.abstained,
+            };
           }),
         )(abortSignal),
     }),

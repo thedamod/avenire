@@ -5,7 +5,7 @@ export type StudyDocument = {
   readonly sections: ReadonlyArray<{ readonly heading: string; readonly text: string }>;
 };
 
-export type QueryType = "paraphrase" | "keyword" | "cross-document";
+export type QueryType = "paraphrase" | "keyword" | "cross-document" | "multi-hop";
 export type BenchmarkQuery = {
   readonly id: string;
   readonly type: QueryType;
@@ -18,6 +18,51 @@ export type BenchmarkQuery = {
 };
 
 export const documents: ReadonlyArray<StudyDocument> = [
+  {
+    id: "history-schmidt",
+    subject: "Mathematics history",
+    title: "Gram-Schmidt process",
+    sections: [
+      {
+        heading: "Publication",
+        text: "The Gram-Schmidt orthogonalization process was published by Erhard Schmidt in 1907. It constructs an orthogonal basis from linearly independent vectors.",
+      },
+    ],
+  },
+  {
+    id: "history-hilbert",
+    subject: "Mathematics history",
+    title: "Erhard Schmidt at Göttingen",
+    sections: [
+      {
+        heading: "Mentorship",
+        text: "Erhard Schmidt studied under David Hilbert at the University of Göttingen. Hilbert supervised Schmidt's doctoral work.",
+      },
+    ],
+  },
+  {
+    id: "history-noether",
+    subject: "Mathematics history",
+    title: "Noether's theorem",
+    sections: [
+      {
+        heading: "Discovery",
+        text: "Emmy Noether proved Noether's theorem in 1915. It connects each continuous symmetry of an action with a conserved quantity.",
+      },
+    ],
+  },
+  {
+    id: "history-erl",
+    subject: "Mathematics history",
+    title: "Emmy Noether's education",
+    sections: [
+      {
+        heading: "Doctorate",
+        text: "Emmy Noether earned her doctorate at the University of Erlangen under Paul Gordan. Her dissertation concerned algebraic invariants.",
+      },
+    ],
+  },
+
   {
     id: "la-eigen",
     subject: "Linear algebra",
@@ -186,6 +231,55 @@ export const documents: ReadonlyArray<StudyDocument> = [
 ];
 
 export const queries: ReadonlyArray<BenchmarkQuery> = [
+  {
+    id: "m01",
+    type: "multi-hop",
+    text: "Under whom did the mathematician behind the Gram-Schmidt process study?",
+    relevant: [{ documentId: "history-schmidt" }, { documentId: "history-hilbert" }],
+  },
+  {
+    id: "m02",
+    type: "multi-hop",
+    text: "Which university trained the publisher of the Gram-Schmidt process?",
+    relevant: [{ documentId: "history-schmidt" }, { documentId: "history-hilbert" }],
+  },
+  {
+    id: "m03",
+    type: "multi-hop",
+    text: "Who supervised the mathematician who published Gram-Schmidt orthogonalization?",
+    relevant: [{ documentId: "history-schmidt" }, { documentId: "history-hilbert" }],
+  },
+  {
+    id: "m04",
+    type: "multi-hop",
+    text: "What was the doctoral relationship between Hilbert and the Gram-Schmidt author?",
+    relevant: [{ documentId: "history-schmidt" }, { documentId: "history-hilbert" }],
+  },
+  {
+    id: "m05",
+    type: "multi-hop",
+    text: "Under whom did the discoverer of the symmetry-conservation theorem earn a doctorate?",
+    relevant: [{ documentId: "history-noether" }, { documentId: "history-erl" }],
+  },
+  {
+    id: "m06",
+    type: "multi-hop",
+    text: "At which university did the author of Noether's theorem study for a doctorate?",
+    relevant: [{ documentId: "history-noether" }, { documentId: "history-erl" }],
+  },
+  {
+    id: "m07",
+    type: "multi-hop",
+    text: "Who advised the mathematician who connected continuous symmetry and conservation?",
+    relevant: [{ documentId: "history-noether" }, { documentId: "history-erl" }],
+  },
+  {
+    id: "m08",
+    type: "multi-hop",
+    text: "What was the dissertation field of the person behind Noether's theorem?",
+    relevant: [{ documentId: "history-noether" }, { documentId: "history-erl" }],
+  },
+
   {
     id: "p01",
     type: "paraphrase",

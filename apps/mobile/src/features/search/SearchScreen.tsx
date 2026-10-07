@@ -29,6 +29,7 @@ export function SearchScreen() {
   const api = useApi();
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<ReadonlyArray<SearchHit>>([]);
+  const [abstained, setAbstained] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -37,6 +38,7 @@ export function SearchScreen() {
     let active = true;
     if (!text) {
       setHits([]);
+      setAbstained(false);
       setError(undefined);
       setLoading(false);
       return () => {
@@ -49,7 +51,10 @@ export function SearchScreen() {
       setError(undefined);
       void call(api, (client) => client["search.query"]({ text, limit: 20 }))
         .then((results) => {
-          if (active) setHits(results);
+          if (active) {
+            setHits(results.hits);
+            setAbstained(results.abstained);
+          }
         })
         .catch((cause: unknown) => {
           if (active) setError(errorMessage(cause));
@@ -77,7 +82,10 @@ export function SearchScreen() {
       {loading ? <ListRow title="Searching…" /> : null}
       {error ? <ErrorState message={error} /> : null}
       {!loading && !error && query.trim() && hits.length === 0 ? (
-        <EmptyState title="No results found" description="Try a different word or phrase." />
+        <EmptyState
+          title={abstained ? "Nothing in your materials matches this" : "No results found"}
+          description="Try a different word or phrase."
+        />
       ) : null}
       {hits.map((hit) => (
         <ListRow

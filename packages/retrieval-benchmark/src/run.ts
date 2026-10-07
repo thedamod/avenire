@@ -1,4 +1,4 @@
-import type { SearchHit } from "@avenire/contracts";
+import type { SearchDepth, SearchHit, SearchResult } from "@avenire/contracts";
 import { Retrieval } from "@avenire/ingestion/retrieval";
 import * as Effect from "effect/Effect";
 
@@ -13,6 +13,7 @@ export type QueryResult = {
   readonly expected: ReadonlyArray<string>;
   readonly ranked: ReadonlyArray<string>;
   readonly metrics: MetricValues;
+  readonly abstained: boolean;
 };
 
 const K = 10;
@@ -22,8 +23,8 @@ const rankedDocuments = (hits: ReadonlyArray<SearchHit>): ReadonlyArray<string> 
   ...new Set(hits.map((hit) => hit.itemId)),
 ];
 
-const scoreResult = (query: BenchmarkQuery, hits: ReadonlyArray<SearchHit>): QueryResult => {
-  const ranked = rankedDocuments(hits);
+const scoreResult = (query: BenchmarkQuery, result: SearchResult): QueryResult => {
+  const ranked = rankedDocuments(result.hits);
   const relevant = query.relevant.map(({ documentId, grade }) => ({
     documentId,
     ...(grade === undefined ? {} : { grade }),
@@ -34,41 +35,49 @@ const scoreResult = (query: BenchmarkQuery, hits: ReadonlyArray<SearchHit>): Que
     text: query.text,
     expected: query.relevant.map(({ documentId }) => documentId),
     ranked,
+    abstained: result.abstained,
     metrics: scoreQuery(ranked, relevant, K),
   };
 };
 
-export const runBenchmark = Effect.gen(function* () {
+export const runBenchmark = Effect.fn("RetrievalBenchmark.run")(function* (depth: SearchDepth) {
   const retrieval = yield* Retrieval;
   const seeded = yield* seedCorpus;
   const results = yield* Effect.forEach(queries, (query) =>
     retrieval
-      .search(BENCH_USER_ID, { text: query.text, limit: K })
-      .pipe(Effect.map((hits) => scoreResult(query, hits))),
+      .search(BENCH_USER_ID, { text: query.text, limit: K, depth })
+      .pipe(Effect.map((result) => scoreResult(query, result))),
   );
   return { seeded, results };
 });
 
 export const summarize = (results: ReadonlyArray<QueryResult>) => {
+  const abstained = (group: string) =>
+    results.filter((result) => result.abstained && (group === "overall" || result.type === group))
+      .length;
   const grouped = aggregateBy(results.map(({ type, metrics }) => ({ group: type, metrics })));
-  const overall = aggregateBy(results.map(({ metrics }) => ({ group: "overall", metrics })))[0];
-  return [...grouped, ...(overall ? [overall] : [])];
+  const overall = aggregateBy(results.map(({ metrics }) => ({ group: "overall", metrics })));
+  return [...grouped, ...overall].map((row) => ({ ...row, abstained: abstained(row.group) }));
 };
 
 export const formatTable = (results: ReadonlyArray<QueryResult>): string => {
-  const rows = summarize(results);
-  const header = ["query type", "n", "recall@10", "precision@10", "MRR", "nDCG@10"];
-  const lines = [
-    header.join("  "),
-    ...rows.map(({ group, count, metrics }) =>
-      [group, String(count), metrics.recall, metrics.precision, metrics.mrr, metrics.ndcg]
-        .map((value, index) =>
-          index < 2
-            ? String(value).padEnd(index === 0 ? 17 : 4)
-            : Number(value).toFixed(3).padStart(10),
-        )
-        .join("  "),
-    ),
+  const score = (value: number) => value.toFixed(3).padStart(12);
+  const header = [
+    "query type".padEnd(17),
+    "n".padEnd(4),
+    ...["recall@10", "precision@10", "MRR", "nDCG@10"].map((name) => name.padStart(12)),
+    "abstained".padStart(9),
   ];
-  return lines.join("\n");
+  const rows = summarize(results).map(({ group, count, metrics, abstained }) =>
+    [
+      group.padEnd(17),
+      String(count).padEnd(4),
+      score(metrics.recall),
+      score(metrics.precision),
+      score(metrics.mrr),
+      score(metrics.ndcg),
+      String(abstained).padStart(9),
+    ].join("  "),
+  );
+  return [header.join("  "), ...rows].join("\n");
 };

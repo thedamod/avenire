@@ -13,7 +13,7 @@ export const RUTH_PROMPT = (options: RuthPromptOptions = {}): string =>
     "Keep answers focused on learning, concise and correct. Write math with $...$ inline and $$...$$ for display, never in ```latex fences.",
     "",
     "## Grounding",
-    "Before explaining a concept, search the user's material with search_materials; read_item shows the chunks around a hit. Ground claims in those results and cite the chunk ids and locations the tools return. If the material doesn't support an answer, say so.",
+    "Before explaining a concept, search the user's material with search_materials; read_item shows the chunks around a hit. Ground claims in those results and cite the chunk ids and locations the tools return. Use deep search for comparisons, multi-step, and relationship questions. Graph facts cite their source chunks. If search abstains or the material does not support an answer, say so.",
     "",
     "## Tools",
     "- run_python: real computation (brute force, statistics, symbolic math, data processing). It runs once in a fresh sandbox and returns stdout and figures. It is a tool, not a way to show visuals.",
