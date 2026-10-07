@@ -68,7 +68,7 @@ const claimJobs = (limit: number) => sql`
   WITH candidates AS (
     SELECT id FROM ingestion_job
     WHERE (status = 'queued' AND (locked_until IS NULL OR locked_until < now()))
-       OR (status IN ('extracting', 'chunking', 'embedding', 'clustering')
+       OR (status IN ('extracting', 'chunking', 'embedding', 'graphing', 'clustering')
            AND locked_until < now())
     ORDER BY created_at
     FOR UPDATE SKIP LOCKED
@@ -119,11 +119,8 @@ export const IngestionWorkerLive = Layer.effectDiscard(
 
     const handleFailure = (job: ClaimedJob, cause: Cause.Cause<unknown>) => {
       const reason = failureReason(cause);
-      return Effect.logWarning("Ingestion failed", {
-        jobId: job.id,
-        attempts: job.attempts,
-        error: reason,
-      }).pipe(
+      return Effect.logWarning("Ingestion failed", cause).pipe(
+        Effect.annotateLogs({ jobId: job.id, attempts: job.attempts }),
         Effect.andThen(recordFailure(job, reason)),
         Effect.catchTag("DatabaseError", (error) =>
           Effect.logError("Could not record the ingestion failure", { jobId: job.id, error }),

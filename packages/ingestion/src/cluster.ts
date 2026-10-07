@@ -1,10 +1,12 @@
 import { ClusterId, type ItemId, type UserId } from "@avenire/contracts";
 import { Database, type DatabaseTransaction } from "@avenire/database/client";
-import { cluster, itemCluster } from "@avenire/database/schema";
+import { chunk, cluster, itemCluster } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
 import { and, eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+
+import { toVectorLiteral } from "./text.ts";
 
 export class ClusterError extends Schema.TaggedError<ClusterError>()("ClusterError", {
   cause: Schema.Defect(),
@@ -14,15 +16,6 @@ export class ClusterError extends Schema.TaggedError<ClusterError>()("ClusterErr
     return `Clustering failed: ${detail}`;
   }
 }
-
-export const meanVector = (
-  vectors: ReadonlyArray<ReadonlyArray<number>>,
-): ReadonlyArray<number> => {
-  if (!vectors.length) return [];
-  return (vectors[0] ?? []).map(
-    (_, index) => vectors.reduce((sum, vector) => sum + (vector[index] ?? 0), 0) / vectors.length,
-  );
-};
 
 export const cosineSimilarity = (
   left: ReadonlyArray<number>,
@@ -43,8 +36,6 @@ export const runningMean = (
 /** Items at least this similar to a cluster's centroid join it instead of starting a new one. */
 const JOIN_THRESHOLD = 0.8;
 const CLUSTER_NAME_LENGTH = 48;
-
-const toVectorLiteral = (vector: ReadonlyArray<number>) => `[${vector.join(",")}]`;
 
 const nearestCluster = (tx: DatabaseTransaction, userId: UserId, vector: ReadonlyArray<number>) =>
   tx
@@ -91,13 +82,22 @@ const updateCentroid = async (
 export const assignClusters = Effect.fn("Clustering.assign")(function* (
   userId: UserId,
   itemId: ItemId,
-  itemVector: ReadonlyArray<number>,
   title: string,
 ) {
   const database = yield* Database;
   const newClusterId = yield* newId(ClusterId);
   return yield* database
     .useTransaction(async (tx) => {
+      const [itemEmbedding] = await tx
+        .select({
+          vector: sql<ReadonlyArray<number> | null>`avg(${chunk.embedding})`.mapWith(
+            chunk.embedding,
+          ),
+        })
+        .from(chunk)
+        .where(and(eq(chunk.userId, userId), eq(chunk.itemId, itemId)));
+      const itemVector = itemEmbedding?.vector;
+      if (itemVector == null) return null;
       const nearest = await nearestCluster(tx, userId, itemVector);
       let clusterId: ClusterId = newClusterId;
       if (nearest?.centroid && cosineSimilarity(nearest.centroid, itemVector) >= JOIN_THRESHOLD) {

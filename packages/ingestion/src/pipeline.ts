@@ -1,10 +1,8 @@
 /**
- * One ingestion run: load -> extract -> chunk -> embed -> persist -> cluster.
- * Each stage is persisted on the job so the inbox can show progress, and chunk
- * writes replace the item's previous chunks so re-ingestion is idempotent.
+ * One ingestion run: load -> extract -> index -> cluster.
+ * Each stage is persisted on the job so the inbox can show progress.
  */
 import {
-  ChunkId,
   type IngestionJobId,
   type IngestionStatus,
   type ItemId,
@@ -13,8 +11,7 @@ import {
   type UserId,
 } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import { chunk, ingestionJob, item, type ItemRow } from "@avenire/database/schema";
-import { newId } from "@avenire/shared/id";
+import { ingestionJob, item, type ItemRow } from "@avenire/database/schema";
 import { Storage } from "@avenire/storage/storage";
 import { and, eq, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
@@ -24,18 +21,16 @@ import type * as HttpClient from "effect/http/HttpClient";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { type Chunk, chunkSections } from "./chunk.ts";
-import { assignClusters, meanVector } from "./cluster.ts";
-import { Embedder } from "./embed.ts";
+import { assignClusters } from "./cluster.ts";
 import { extract } from "./extract/index.ts";
+import { ItemIndexer } from "./indexer.ts";
 
 export class IngestionError extends Schema.TaggedError<IngestionError>()("IngestionError", {
   stage: Schema.String,
   cause: Schema.Defect(),
 }) {
   override get message(): string {
-    const detail = this.cause instanceof Error ? this.cause.message : String(this.cause);
-    return `Ingestion failed while ${this.stage}: ${detail}`;
+    return `Ingestion failed while ${this.stage}`;
   }
 }
 
@@ -57,13 +52,13 @@ const stage =
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, IngestionError, R> =>
     Effect.mapError(effect, (cause) => new IngestionError({ stage: name, cause }));
 
-/** Requires `HttpClient` (web extraction) and `Crypto` (chunk ids) at construction. */
+/** Requires `HttpClient` (web extraction), `Database` and `Crypto` (cluster ids). */
 export const IngestionPipelineLive = Layer.effect(
   IngestionPipeline,
   Effect.gen(function* () {
     const database = yield* Database;
     const storage = yield* Storage;
-    const embedder = yield* Embedder;
+    const itemIndexer = yield* ItemIndexer;
     const services = yield* Effect.context<Database | HttpClient.HttpClient | Crypto.Crypto>();
 
     const setStatus = (job: IngestionTask, status: IngestionStatus) =>
@@ -97,34 +92,6 @@ export const IngestionPipelineLive = Layer.effect(
         ? Effect.succeed(null)
         : storage.get(StorageKey.make(found.storageKey));
 
-    const chunkRows = (
-      job: IngestionTask,
-      chunks: ReadonlyArray<Chunk>,
-      vectors: ReadonlyArray<ReadonlyArray<number>>,
-    ) =>
-      Effect.forEach(chunks, (value, index) =>
-        Effect.map(newId(ChunkId), (id) => ({
-          id,
-          userId: job.userId,
-          itemId: job.itemId,
-          ordinal: value.ordinal,
-          kind: value.kind,
-          content: value.content,
-          location: value.location,
-          tokenCount: value.tokenCount,
-          embedding: [...(vectors[index] ?? [])],
-          embeddingModel: embedder.model,
-        })),
-      );
-
-    const replaceChunks = (job: IngestionTask, rows: ReadonlyArray<typeof chunk.$inferInsert>) =>
-      database.useTransaction(async (tx) => {
-        await tx
-          .delete(chunk)
-          .where(and(eq(chunk.itemId, job.itemId), eq(chunk.userId, job.userId)));
-        if (rows.length > 0) await tx.insert(chunk).values([...rows]);
-      });
-
     const run = Effect.fn("IngestionPipeline.run")(function* (job: IngestionTask) {
       const found = yield* loadItem(job).pipe(stage("loading the item"));
       const source = yield* readSource(found).pipe(stage("reading the source"));
@@ -133,23 +100,22 @@ export const IngestionPipelineLive = Layer.effect(
       const document = yield* extract(found, source).pipe(stage("extracting"));
 
       yield* setStatus(job, "chunking").pipe(stage("chunking"));
-      const chunks = chunkSections(document.sections, { transcript: found.kind === "video" });
+      const title = document.title ?? found.title;
+      yield* itemIndexer
+        .index(
+          {
+            userId: job.userId,
+            itemId: job.itemId,
+            title,
+            sections: document.sections,
+            transcript: found.kind === "video",
+          },
+          (status) => setStatus(job, status),
+        )
+        .pipe(stage("indexing"));
 
-      yield* setStatus(job, "embedding").pipe(stage("embedding"));
-      const vectors = yield* embedder
-        .embedMany(chunks.map((value) => value.content))
-        .pipe(stage("embedding"));
-
-      const rows = yield* chunkRows(job, chunks, vectors).pipe(stage("persisting chunks"));
-      yield* replaceChunks(job, rows).pipe(stage("persisting chunks"));
-
-      if (vectors.length > 0) {
-        yield* setStatus(job, "clustering").pipe(stage("clustering"));
-        const title = document.title ?? found.title;
-        yield* assignClusters(job.userId, job.itemId, meanVector(vectors), title).pipe(
-          stage("clustering"),
-        );
-      }
+      yield* setStatus(job, "clustering").pipe(stage("clustering"));
+      yield* assignClusters(job.userId, job.itemId, title).pipe(stage("clustering"));
       yield* setStatus(job, "indexed").pipe(stage("finishing"));
     });
 

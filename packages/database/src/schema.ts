@@ -204,6 +204,8 @@ export const chunk = pgTable(
     /** Weighted at write time: item title A, heading B, content D. */
     search: tsvector("search").notNull(),
     embeddingModel: text("embedding_model"),
+    /** Set once the chunk's entities and relations are stored; false chunks are retried. */
+    graphIndexed: boolean("graph_indexed").notNull().default(false),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [
