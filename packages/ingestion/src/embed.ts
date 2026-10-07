@@ -1,6 +1,5 @@
-import { createOpenAI } from "@ai-sdk/openai";
+import { createCohere } from "@ai-sdk/cohere";
 import { embedMany } from "ai";
-import * as Arr from "effect/Array";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -9,57 +8,63 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 /** Must match the `vector(1536)` columns in the database schema. */
-const DIMENSIONS = 1536;
-/** Texts per embedding request. */
-const BATCH_SIZE = 96;
+export const DIMENSIONS = 1536;
 
 export class EmbeddingError extends Schema.TaggedError<EmbeddingError>()("EmbeddingError", {
+  inputType: Schema.Literals(["document", "query"]),
+  count: Schema.Number,
   cause: Schema.Defect(),
 }) {
   override get message(): string {
-    const detail = this.cause instanceof Error ? this.cause.message : String(this.cause);
-    return `Embedding failed: ${detail}`;
+    return `Embedding ${this.count} ${this.inputType} text(s) failed`;
   }
 }
+
+type Vectors = ReadonlyArray<ReadonlyArray<number>>;
 
 export class Embedder extends Context.Service<
   Embedder,
   {
     readonly model: string;
-    readonly embedMany: (
+    /** Vectors for stored text: chunks and entity descriptions. */
+    readonly embedDocuments: (
       texts: ReadonlyArray<string>,
-    ) => Effect.Effect<ReadonlyArray<ReadonlyArray<number>>, EmbeddingError>;
+    ) => Effect.Effect<Vectors, EmbeddingError>;
+    /** Vectors for search queries, which asymmetric models embed differently from passages. */
+    readonly embedQueries: (texts: ReadonlyArray<string>) => Effect.Effect<Vectors, EmbeddingError>;
   }
 >()("avenire/ingestion/Embedder") {}
 
-/** Reads `OPENAI_API_KEY` and `EMBEDDING_MODEL`. */
+/** Reads `COHERE_API_KEY` and `EMBEDDING_MODEL`. */
 export const EmbedderLive = Layer.effect(
   Embedder,
   Effect.gen(function* () {
-    const apiKey = yield* Config.Redacted("OPENAI_API_KEY");
-    const model = yield* Config.String("EMBEDDING_MODEL").pipe(
-      Config.withDefault("text-embedding-3-small"),
-    );
-    const embedding = createOpenAI({ apiKey: Redacted.value(apiKey) }).embedding(model);
+    const apiKey = yield* Config.Redacted("COHERE_API_KEY");
+    const model = yield* Config.String("EMBEDDING_MODEL").pipe(Config.withDefault("embed-v4.0"));
+    const embedding = createCohere({ apiKey: Redacted.value(apiKey) }).embedding(model);
 
-    const embedBatch = (batch: ReadonlyArray<string>) =>
-      Effect.tryPromise({
-        try: (abortSignal) =>
-          embedMany({
-            model: embedding,
-            values: [...batch],
-            abortSignal,
-            providerOptions: { openai: { dimensions: DIMENSIONS } },
-          }),
-        catch: (cause) => new EmbeddingError({ cause }),
-      }).pipe(Effect.map((response) => response.embeddings));
+    // embedMany splits into provider-sized batches itself.
+    const embed = (inputType: "document" | "query") => (texts: ReadonlyArray<string>) =>
+      texts.length === 0
+        ? Effect.succeed([])
+        : Effect.tryPromise({
+            try: (abortSignal) =>
+              embedMany({
+                model: embedding,
+                values: [...texts],
+                abortSignal,
+                maxParallelCalls: 2,
+                providerOptions: {
+                  cohere: { inputType: `search_${inputType}`, outputDimension: DIMENSIONS },
+                },
+              }),
+            catch: (cause) => new EmbeddingError({ inputType, count: texts.length, cause }),
+          }).pipe(Effect.map((response) => response.embeddings));
 
     return Embedder.of({
       model,
-      embedMany: Effect.fn("Embedder.embedMany")(function* (texts) {
-        const batches = yield* Effect.forEach(Arr.chunksOf(texts, BATCH_SIZE), embedBatch);
-        return batches.flat();
-      }),
+      embedDocuments: Effect.fn("Embedder.embedDocuments")(embed("document")),
+      embedQueries: Effect.fn("Embedder.embedQueries")(embed("query")),
     });
   }),
 );
@@ -74,25 +79,23 @@ const hashToken = (token: string): number => {
   return hash >>> 0;
 };
 
-/**
- * Offline embedder: hashed bag-of-words unit vectors. Texts sharing vocabulary get
- * high cosine similarity, which is enough to exercise retrieval without an API key.
- */
+/** Hashed bag-of-words unit vector: texts sharing vocabulary get high cosine similarity. */
+const bagOfWords = (text: string): ReadonlyArray<number> => {
+  const vector = Array.from({ length: DIMENSIONS }, () => 0);
+  for (const token of text.toLowerCase().match(/[a-z0-9]+/g) ?? []) {
+    const slot = hashToken(token) % DIMENSIONS;
+    vector[slot] = (vector[slot] ?? 0) + 1;
+  }
+  const norm = Math.hypot(...vector) || 1;
+  return vector.map((value) => value / norm);
+};
+
+/** Offline embedder, enough to exercise retrieval without an API key. */
 export const EmbedderTest = Layer.succeed(
   Embedder,
   Embedder.of({
     model: "test/hashed-bow-v1",
-    embedMany: (texts) =>
-      Effect.succeed(
-        texts.map((text) => {
-          const vector = Array.from({ length: DIMENSIONS }, () => 0);
-          for (const token of text.toLowerCase().match(/[a-z0-9]+/g) ?? []) {
-            const slot = hashToken(token) % DIMENSIONS;
-            vector[slot] = (vector[slot] ?? 0) + 1;
-          }
-          const norm = Math.hypot(...vector) || 1;
-          return vector.map((value) => value / norm);
-        }),
-      ),
+    embedDocuments: (texts) => Effect.succeed(texts.map(bagOfWords)),
+    embedQueries: (texts) => Effect.succeed(texts.map(bagOfWords)),
   }),
 );

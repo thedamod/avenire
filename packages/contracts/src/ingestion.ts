@@ -13,6 +13,7 @@ export const IngestionStatus = Schema.Literals([
   "extracting",
   "chunking",
   "embedding",
+  "graphing",
   "clustering",
   "indexed",
   "paused",

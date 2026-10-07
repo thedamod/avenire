@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { capPerItem, reciprocalRankFusion } from "./retrieval.ts";
+import { capPerItem, reciprocalRankFusion } from "./fusion.ts";
 
 describe("reciprocalRankFusion", () => {
   it("ranks an id found by both rankers above ids found by one", () => {

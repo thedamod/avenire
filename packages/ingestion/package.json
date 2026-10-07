@@ -15,6 +15,14 @@
       "types": "./src/embed.ts",
       "import": "./src/embed.ts"
     },
+    "./models": {
+      "types": "./src/models.ts",
+      "import": "./src/models.ts"
+    },
+    "./indexer": {
+      "types": "./src/indexer.ts",
+      "import": "./src/indexer.ts"
+    },
     "./pipeline": {
       "types": "./src/pipeline.ts",
       "import": "./src/pipeline.ts"
@@ -23,13 +31,37 @@
       "types": "./src/worker.ts",
       "import": "./src/worker.ts"
     },
-    "./retrieval": {
-      "types": "./src/retrieval.ts",
-      "import": "./src/retrieval.ts"
-    },
     "./cluster": {
       "types": "./src/cluster.ts",
       "import": "./src/cluster.ts"
+    },
+    "./graph/extract": {
+      "types": "./src/graph/extract.ts",
+      "import": "./src/graph/extract.ts"
+    },
+    "./graph/indexer": {
+      "types": "./src/graph/indexer.ts",
+      "import": "./src/graph/indexer.ts"
+    },
+    "./graph/search": {
+      "types": "./src/graph/search.ts",
+      "import": "./src/graph/search.ts"
+    },
+    "./retrieval": {
+      "types": "./src/retrieval/retrieval.ts",
+      "import": "./src/retrieval/retrieval.ts"
+    },
+    "./retrieval/rerank": {
+      "types": "./src/retrieval/rerank.ts",
+      "import": "./src/retrieval/rerank.ts"
+    },
+    "./retrieval/planner": {
+      "types": "./src/retrieval/planner.ts",
+      "import": "./src/retrieval/planner.ts"
+    },
+    "./retrieval/cache": {
+      "types": "./src/retrieval/cache.ts",
+      "import": "./src/retrieval/cache.ts"
     }
   },
   "scripts": {
@@ -37,7 +69,8 @@
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "@ai-sdk/openai": "catalog:",
+    "@ai-sdk/cohere": "catalog:",
+    "@ai-sdk/google": "catalog:",
     "@avenire/contracts": "workspace:*",
     "@avenire/database": "workspace:*",
     "@avenire/shared": "workspace:*",
