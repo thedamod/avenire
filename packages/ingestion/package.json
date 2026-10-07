@@ -62,6 +62,22 @@
     "./retrieval/cache": {
       "types": "./src/retrieval/cache.ts",
       "import": "./src/retrieval/cache.ts"
+    },
+    "./extract/ocr": {
+      "types": "./src/extract/ocr.ts",
+      "import": "./src/extract/ocr.ts"
+    },
+    "./extract/transcribe": {
+      "types": "./src/extract/transcribe.ts",
+      "import": "./src/extract/transcribe.ts"
+    },
+    "./extract/describe": {
+      "types": "./src/extract/describe.ts",
+      "import": "./src/extract/describe.ts"
+    },
+    "./extract/media": {
+      "types": "./src/extract/media.ts",
+      "import": "./src/extract/media.ts"
     }
   },
   "scripts": {
