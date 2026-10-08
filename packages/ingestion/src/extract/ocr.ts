@@ -104,7 +104,7 @@ const pageMarkdown = (page: (typeof OcrResponse.Type)["pages"][number]) =>
       : Effect.succeed(""),
   ).pipe(Effect.map((figures) => [page.markdown, ...figures].filter(Boolean).join("\n\n").trim()));
 
-/** Gemini reads PDFs inline up to this size; larger ones have no fallback. */
+/** Gemini reads PDFs inline up to this size. */
 const MAX_FALLBACK_BYTES = 20 * 1024 * 1024;
 
 const FallbackPages = Schema.Struct({
@@ -140,6 +140,15 @@ export const remapFallbackPages = (
     const original = originals === undefined ? page : originals[page - 1];
     return original === undefined ? [] : [{ page: original, markdown }];
   });
+
+/** Split an oversized fallback request while preserving source page order. */
+export const splitFallbackPages = (
+  pages: ReadonlyArray<number>,
+): readonly [ReadonlyArray<number>, ReadonlyArray<number>] | null => {
+  if (pages.length < 2) return null;
+  const middle = Math.floor(pages.length / 2);
+  return [pages.slice(0, middle), pages.slice(middle)];
+};
 
 /**
  * Mistral OCR, falling back to Gemini (which reads PDFs natively) when a request
@@ -181,34 +190,50 @@ export const OcrLive = Layer.effect(
       );
 
     /** The given 1-based pages (all when omitted) of a PDF, transcribed by Gemini. */
+    const fallbackBatch: (
+      bytes: Uint8Array,
+      pages: ReadonlyArray<number> | undefined,
+    ) => Effect.Effect<ReadonlyArray<OcrPage>, unknown> = Effect.fn("Ocr.fallbackBatch")(function* (
+      bytes: Uint8Array,
+      pages: ReadonlyArray<number> | undefined,
+    ) {
+      const document =
+        pages === undefined ? bytes : yield* Effect.tryPromise(() => subsetPdfPages(bytes, pages));
+      if (document.byteLength > MAX_FALLBACK_BYTES) {
+        const sourcePages =
+          pages ??
+          (yield* Effect.tryPromise(() => PDFDocument.load(bytes)))
+            .getPages()
+            .map((_, index) => index + 1);
+        const halves = splitFallbackPages(sourcePages);
+        if (halves === null) return yield* Effect.fail("Too large for the fallback");
+        const results = yield* Effect.forEach(halves, (half) => fallbackBatch(bytes, half));
+        return results.flat();
+      }
+      const { output } = yield* Effect.tryPromise((abortSignal) =>
+        generateText({
+          model: models.languageModel("ingest-vision"),
+          output: fallbackOutput,
+          system: FALLBACK_SYSTEM,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Transcribe every page of this PDF." },
+                { type: "file", data: document, mediaType: "application/pdf" },
+              ],
+            },
+          ],
+          abortSignal,
+        }),
+      ).pipe(Effect.timeout("3 minutes"), Effect.retry(INGESTION_RETRY));
+      return remapFallbackPages(output.pages, pages);
+    });
+
     const fallback = (bytes: Uint8Array, pages: ReadonlyArray<number> | undefined) =>
-      Effect.fn("Ocr.fallback")(function* () {
-        const document =
-          pages === undefined
-            ? bytes
-            : yield* Effect.tryPromise(() => subsetPdfPages(bytes, pages));
-        if (document.byteLength > MAX_FALLBACK_BYTES) {
-          return yield* Effect.fail("Too large for the fallback");
-        }
-        const { output } = yield* Effect.tryPromise((abortSignal) =>
-          generateText({
-            model: models.languageModel("ingest-vision"),
-            output: fallbackOutput,
-            system: FALLBACK_SYSTEM,
-            messages: [
-              {
-                role: "user",
-                content: [
-                  { type: "text", text: "Transcribe every page of this PDF." },
-                  { type: "file", data: document, mediaType: "application/pdf" },
-                ],
-              },
-            ],
-            abortSignal,
-          }),
-        ).pipe(Effect.timeout("3 minutes"), Effect.retry(INGESTION_RETRY));
-        return remapFallbackPages(output.pages, pages);
-      })().pipe(Effect.mapError((cause) => new OcrError({ pages: pages?.length ?? 1, cause })));
+      fallbackBatch(bytes, pages).pipe(
+        Effect.mapError((cause) => new OcrError({ pages: pages?.length ?? 1, cause })),
+      );
 
     const tooLarge = (bytes: Uint8Array, pages: number) =>
       bytes.byteLength > MAX_BYTES

@@ -1,10 +1,12 @@
 import { createCohere } from "@ai-sdk/cohere";
-import { embedMany } from "ai";
+import { APICallError, RetryError, embedMany } from "ai";
+import * as Arr from "effect/Array";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 
 /** Must match the `vector(1536)` columns in the database schema. */
@@ -21,6 +23,23 @@ export class EmbeddingError extends Schema.TaggedError<EmbeddingError>()("Embedd
 }
 
 type Vectors = ReadonlyArray<ReadonlyArray<number>>;
+
+/** The AI SDK has already exhausted its short retries before this error reaches us. */
+export const isEmbeddingRateLimit = (cause: unknown): boolean =>
+  (APICallError.isInstance(cause) && cause.statusCode === 429) ||
+  (RetryError.isInstance(cause) &&
+    APICallError.isInstance(cause.lastError) &&
+    cause.lastError.statusCode === 429);
+
+// Give Cohere's per-minute trial window time to refill after SDK retries.
+const DOCUMENT_RATE_LIMIT_RETRY = {
+  schedule: Schedule.exponential("15 seconds"),
+  times: 3,
+  while: (error: EmbeddingError) => isEmbeddingRateLimit(error.cause),
+} as const;
+
+// A rate-limited retry redoes one batch, not the whole document.
+const DOCUMENT_BATCH_SIZE = 64;
 
 export class Embedder extends Context.Service<
   Embedder,
@@ -63,7 +82,13 @@ export const EmbedderLive = Layer.effect(
 
     return Embedder.of({
       model,
-      embedDocuments: Effect.fn("Embedder.embedDocuments")(embed("document")),
+      embedDocuments: Effect.fn("Embedder.embedDocuments")(function* (texts) {
+        const batches = Arr.chunksOf(texts, DOCUMENT_BATCH_SIZE);
+        const vectors = yield* Effect.forEach(batches, (batch) =>
+          embed("document")(batch).pipe(Effect.retry(DOCUMENT_RATE_LIMIT_RETRY)),
+        );
+        return vectors.flat();
+      }),
       embedQueries: Effect.fn("Embedder.embedQueries")(embed("query")),
     });
   }),

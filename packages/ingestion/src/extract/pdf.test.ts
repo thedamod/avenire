@@ -1,10 +1,20 @@
 import { describe, expect, it } from "@effect/vitest";
 import { PDFDocument } from "pdf-lib";
 
-import { remapFallbackPages, subsetPdfPages } from "./ocr.ts";
+import { remapFallbackPages, splitFallbackPages, subsetPdfPages } from "./ocr.ts";
 import { assemblePdfDocument, mergePageText, pageNeedsOcr } from "./pdf.ts";
 
 describe("PDF extraction decisions", () => {
+  it("halves oversized fallback batches down to a single page", () => {
+    const pages = [1, 2, 6, 8, 20];
+    expect(splitFallbackPages(pages)).toEqual([
+      [1, 2],
+      [6, 8, 20],
+    ]);
+    expect(splitFallbackPages([405])).toBeNull();
+    expect(splitFallbackPages([])).toBeNull();
+  });
+
   it("sends only selected PDF pages and preserves their source numbers", async () => {
     const source = await PDFDocument.create();
     source.addPage([300, 400]);
