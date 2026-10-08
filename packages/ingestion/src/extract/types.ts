@@ -33,6 +33,22 @@ export const ExtractedDocument = Schema.Struct({
 });
 export type ExtractedDocument = typeof ExtractedDocument.Type;
 
+/**
+ * Text Postgres can store: no NUL characters (pdf.js emits them for some fonts) and
+ * no lone UTF-16 surrogates.
+ */
+export const storableText = (text: string): string => text.replaceAll("\u0000", "").toWellFormed();
+
+/** `document` with every title and section made storable; empty sections dropped. */
+export const storableDocument = (document: ExtractedDocument): ExtractedDocument => ({
+  ...document,
+  ...(document.title === undefined ? {} : { title: storableText(document.title) }),
+  sections: document.sections.flatMap((section) => {
+    const text = storableText(section.text);
+    return text.trim() ? [{ ...section, text }] : [];
+  }),
+});
+
 /** Coverage for a document produced in full by one part, e.g. `fullCoverage("text")`. */
 export const fullCoverage = (part: string): ExtractionCoverage => ({
   status: "full",

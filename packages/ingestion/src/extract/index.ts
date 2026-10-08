@@ -19,6 +19,7 @@ import {
   type ExtractedDocument,
   type ExtractionError,
   type SourceInput,
+  storableDocument,
   UnsupportedSource,
 } from "./types.ts";
 import { extractWeb } from "./web.ts";
@@ -74,6 +75,11 @@ const extractUrlMedia = Effect.fn("extractUrlMedia")(function* (
 
 /** Extracts a source with the extractor its bytes, MIME type and URL call for. */
 export const extract = (
+  source: SourceInput,
+): Effect.Effect<ExtractedDocument, ExtractionError | UnsupportedSource, ExtractionServices> =>
+  extractWith(source).pipe(Effect.map(storableDocument));
+
+const extractWith = (
   source: SourceInput,
 ): Effect.Effect<ExtractedDocument, ExtractionError | UnsupportedSource, ExtractionServices> => {
   const { bytes, sourceUrl } = source;
