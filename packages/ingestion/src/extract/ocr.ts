@@ -1,4 +1,5 @@
 /** Optical character recognition for scanned PDF pages and images (Mistral OCR). */
+import { generateText, Output } from "ai";
 import * as Arr from "effect/Array";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -10,6 +11,8 @@ import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
+
+import { INGESTION_RETRY, IngestionModels } from "../models.ts";
 
 export class OcrError extends Schema.TaggedError<OcrError>()("OcrError", {
   pages: Schema.Number,
@@ -100,9 +103,28 @@ const pageMarkdown = (page: (typeof OcrResponse.Type)["pages"][number]) =>
       : Effect.succeed(""),
   ).pipe(Effect.map((figures) => [page.markdown, ...figures].filter(Boolean).join("\n\n").trim()));
 
+/** Gemini reads PDFs inline up to this size; larger ones have no fallback. */
+const MAX_FALLBACK_BYTES = 20 * 1024 * 1024;
+
+const FallbackPages = Schema.Struct({
+  pages: Schema.Array(Schema.Struct({ page: Schema.Int, markdown: Schema.String })),
+});
+const fallbackOutput = Output.object({
+  schema: Schema.toStandardJSONSchemaV1(Schema.toStandardSchemaV1(FallbackPages)),
+});
+const FALLBACK_SYSTEM = [
+  "You are an OCR engine. Transcribe the requested PDF pages to Markdown, one entry per page, with 1-based page numbers.",
+  "Keep tables as Markdown tables and equations as LaTeX. For each figure or chart, add a line `Figure: <what it shows, its labels and data>`.",
+].join("\n");
+
+/**
+ * Mistral OCR, falling back to Gemini (which reads PDFs natively) when a request
+ * still fails after retries, e.g. while the Mistral key is rate limited.
+ */
 export const OcrLive = Layer.effect(
   Ocr,
   Effect.gen(function* () {
+    const models = yield* IngestionModels;
     const apiKey = yield* Config.Redacted("MISTRAL_API_KEY");
     const model = yield* Config.String("MISTRAL_OCR_MODEL").pipe(
       Config.withDefault("mistral-ocr-latest"),
@@ -134,6 +156,43 @@ export const OcrLive = Layer.effect(
         Effect.mapError((cause) => new OcrError({ pages: pages?.length ?? 1, cause })),
       );
 
+    /** The given 1-based pages (all when omitted) of a PDF, transcribed by Gemini. */
+    const fallback = (bytes: Uint8Array, pages: ReadonlyArray<number> | undefined) =>
+      bytes.byteLength > MAX_FALLBACK_BYTES
+        ? Effect.fail(
+            new OcrError({ pages: pages?.length ?? 1, cause: "Too large for the fallback" }),
+          )
+        : Effect.tryPromise((abortSignal) =>
+            generateText({
+              model: models.languageModel("ingest-vision"),
+              output: fallbackOutput,
+              system: FALLBACK_SYSTEM,
+              messages: [
+                {
+                  role: "user",
+                  content: [
+                    {
+                      type: "text",
+                      text:
+                        pages === undefined
+                          ? "Transcribe every page."
+                          : `Transcribe pages ${pages.join(", ")}.`,
+                    },
+                    { type: "file", data: bytes, mediaType: "application/pdf" },
+                  ],
+                },
+              ],
+              abortSignal,
+            }),
+          ).pipe(
+            Effect.timeout("3 minutes"),
+            Effect.retry(INGESTION_RETRY),
+            Effect.map(({ output }) =>
+              output.pages.filter(({ page }) => pages === undefined || pages.includes(page)),
+            ),
+            Effect.mapError((cause) => new OcrError({ pages: pages?.length ?? 1, cause })),
+          );
+
     const tooLarge = (bytes: Uint8Array, pages: number) =>
       bytes.byteLength > MAX_BYTES
         ? Effect.fail(new OcrError({ pages, cause: "Source exceeds 50 MiB" }))
@@ -144,7 +203,16 @@ export const OcrLive = Layer.effect(
       const document = { type: "document_url", document_url: dataUrl(bytes, "application/pdf") };
       const batches =
         pages === undefined ? [undefined] : Arr.chunksOf(pages, MAX_PAGES_PER_REQUEST);
-      const results = yield* Effect.forEach(batches, (batch) => request(document, batch));
+      const results = yield* Effect.forEach(batches, (batch) =>
+        request(document, batch).pipe(
+          Effect.catchTags({
+            OcrError: (error) =>
+              Effect.logWarning("Mistral OCR failed; falling back to Gemini", error).pipe(
+                Effect.andThen(fallback(bytes, batch)),
+              ),
+          }),
+        ),
+      );
       return results.flat();
     });
 

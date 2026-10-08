@@ -1,14 +1,14 @@
 /** Speech to text with timestamps (Whisper via the AI SDK). */
-import * as Context from "effect/Context";
+import { createGroq } from "@ai-sdk/groq";
+import { transcribe } from "ai";
 import * as Config from "effect/Config";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import { INGESTION_RETRY } from "../models.ts";
-import { createGroq } from "@ai-sdk/groq";
-import { transcribe } from "ai";
 
 export class TranscriptionError extends Schema.TaggedError<TranscriptionError>()(
   "TranscriptionError",
