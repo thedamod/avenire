@@ -11,6 +11,7 @@ import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import { PDFDocument } from "pdf-lib";
 
 import { INGESTION_RETRY, IngestionModels } from "../models.ts";
 
@@ -86,8 +87,8 @@ const annotationFormat = {
   },
 };
 
-/** Rate limits and outages are common on long ingests; back off instead of failing pages. */
-const RETRY = { schedule: Schedule.exponential("2 seconds"), times: 4 } as const;
+/** Brief transient errors are retried; a persistent one moves on to the Gemini fallback. */
+const RETRY = { schedule: Schedule.exponential("2 seconds"), times: 2 } as const;
 
 const dataUrl = (bytes: Uint8Array, mimeType: string) =>
   `data:${mimeType};base64,${Buffer.from(bytes).toString("base64")}`;
@@ -114,8 +115,31 @@ const fallbackOutput = Output.object({
 });
 const FALLBACK_SYSTEM = [
   "You are an OCR engine. Transcribe the requested PDF pages to Markdown, one entry per page, with 1-based page numbers.",
+  "Number pages by their order in the attached PDF, starting at 1; ignore printed page numbers.",
   "Keep tables as Markdown tables and equations as LaTeX. For each figure or chart, add a line `Figure: <what it shows, its labels and data>`.",
 ].join("\n");
+
+/** PDF page order becomes 1..N for Gemini; its answers are mapped to source pages below. */
+export const subsetPdfPages = async (bytes: Uint8Array, pages: ReadonlyArray<number>) => {
+  const source = await PDFDocument.load(bytes);
+  const subset = await PDFDocument.create();
+  const copied = await subset.copyPages(
+    source,
+    pages.map((page) => page - 1),
+  );
+  for (const page of copied) subset.addPage(page);
+  return subset.save();
+};
+
+/** Maps Gemini's 1-based subset page numbers back to the source PDF. */
+export const remapFallbackPages = (
+  recognized: ReadonlyArray<OcrPage>,
+  originals: ReadonlyArray<number> | undefined,
+): ReadonlyArray<OcrPage> =>
+  recognized.flatMap(({ page, markdown }) => {
+    const original = originals === undefined ? page : originals[page - 1];
+    return original === undefined ? [] : [{ page: original, markdown }];
+  });
 
 /**
  * Mistral OCR, falling back to Gemini (which reads PDFs natively) when a request
@@ -158,40 +182,33 @@ export const OcrLive = Layer.effect(
 
     /** The given 1-based pages (all when omitted) of a PDF, transcribed by Gemini. */
     const fallback = (bytes: Uint8Array, pages: ReadonlyArray<number> | undefined) =>
-      bytes.byteLength > MAX_FALLBACK_BYTES
-        ? Effect.fail(
-            new OcrError({ pages: pages?.length ?? 1, cause: "Too large for the fallback" }),
-          )
-        : Effect.tryPromise((abortSignal) =>
-            generateText({
-              model: models.languageModel("ingest-vision"),
-              output: fallbackOutput,
-              system: FALLBACK_SYSTEM,
-              messages: [
-                {
-                  role: "user",
-                  content: [
-                    {
-                      type: "text",
-                      text:
-                        pages === undefined
-                          ? "Transcribe every page."
-                          : `Transcribe pages ${pages.join(", ")}.`,
-                    },
-                    { type: "file", data: bytes, mediaType: "application/pdf" },
-                  ],
-                },
-              ],
-              abortSignal,
-            }),
-          ).pipe(
-            Effect.timeout("3 minutes"),
-            Effect.retry(INGESTION_RETRY),
-            Effect.map(({ output }) =>
-              output.pages.filter(({ page }) => pages === undefined || pages.includes(page)),
-            ),
-            Effect.mapError((cause) => new OcrError({ pages: pages?.length ?? 1, cause })),
-          );
+      Effect.fn("Ocr.fallback")(function* () {
+        const document =
+          pages === undefined
+            ? bytes
+            : yield* Effect.tryPromise(() => subsetPdfPages(bytes, pages));
+        if (document.byteLength > MAX_FALLBACK_BYTES) {
+          return yield* Effect.fail("Too large for the fallback");
+        }
+        const { output } = yield* Effect.tryPromise((abortSignal) =>
+          generateText({
+            model: models.languageModel("ingest-vision"),
+            output: fallbackOutput,
+            system: FALLBACK_SYSTEM,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "text", text: "Transcribe every page of this PDF." },
+                  { type: "file", data: document, mediaType: "application/pdf" },
+                ],
+              },
+            ],
+            abortSignal,
+          }),
+        ).pipe(Effect.timeout("3 minutes"), Effect.retry(INGESTION_RETRY));
+        return remapFallbackPages(output.pages, pages);
+      })().pipe(Effect.mapError((cause) => new OcrError({ pages: pages?.length ?? 1, cause })));
 
     const tooLarge = (bytes: Uint8Array, pages: number) =>
       bytes.byteLength > MAX_BYTES
