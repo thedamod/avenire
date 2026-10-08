@@ -5,7 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { generateText, Output } from "ai";
 
-import { IngestionModels } from "../models.ts";
+import { INGESTION_RETRY, IngestionModels } from "../models.ts";
 
 const DescriptionSchema = Schema.Struct({ description: Schema.String, text: Schema.String });
 const descriptionOutput = Output.object({
@@ -68,6 +68,7 @@ export const ImageDescriberLive = Layer.effect(
           }),
         ).pipe(
           Effect.timeout("60 seconds"),
+          Effect.retry(INGESTION_RETRY),
           Effect.mapError((cause) => new DescribeError({ cause })),
         );
         return result.output;

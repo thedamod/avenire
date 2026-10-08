@@ -14,6 +14,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import * as Schedule from "effect/Schedule";
 
 export const INGESTION_MODEL_NAMES = ["ingest-graph", "ingest-planner", "ingest-vision"] as const;
 export type IngestionModelName = (typeof INGESTION_MODEL_NAMES)[number];
@@ -23,6 +24,13 @@ export const INGESTION_MODEL_DEFAULTS: Record<IngestionModelName, string> = {
   "ingest-planner": "gemini-3.5-flash-lite",
   "ingest-vision": "gemini-3.5-flash-lite",
 };
+
+/**
+ * Retries for model calls made while indexing, on top of the AI SDK's quick ones.
+ * Provider overloads ("high demand", 429) usually pass within a minute, and a
+ * background job can wait; search-time calls don't use this.
+ */
+export const INGESTION_RETRY = { schedule: Schedule.exponential("5 seconds"), times: 3 } as const;
 
 export class IngestionModels extends Context.Service<
   IngestionModels,

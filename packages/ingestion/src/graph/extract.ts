@@ -5,7 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { generateText, Output } from "ai";
 
-import { IngestionModels } from "../models.ts";
+import { INGESTION_RETRY, IngestionModels } from "../models.ts";
 import { normalizeForMatch } from "../text.ts";
 
 export class GraphError extends Schema.TaggedError<GraphError>()("GraphError", {
@@ -193,7 +193,7 @@ export const GraphExtractorLive = Layer.effect(
               abortSignal,
             }),
           catch: (cause) => new GraphError({ operation: "extract", cause }),
-        });
+        }).pipe(Effect.retry(INGESTION_RETRY));
         return {
           chunks: result.output.chunks.filter(
             (entry) => entry.index >= 0 && entry.index < input.chunks.length,

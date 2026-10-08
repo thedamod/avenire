@@ -5,6 +5,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+
+import { INGESTION_RETRY } from "../models.ts";
 import { createGroq } from "@ai-sdk/groq";
 import { transcribe } from "ai";
 
@@ -59,7 +61,7 @@ export const TranscriberLive = Layer.effect(
                 groq: { responseFormat: "verbose_json", timestampGranularities: ["segment"] },
               },
             }),
-          ).pipe(Effect.timeout(TIMEOUT));
+          ).pipe(Effect.timeout(TIMEOUT), Effect.retry(INGESTION_RETRY));
           // Untimed text can't be placed on the timeline; treat it as a failed clip.
           if (result.segments.length === 0 && result.text.trim()) {
             return yield* Effect.fail("Transcript has no timed segments");
