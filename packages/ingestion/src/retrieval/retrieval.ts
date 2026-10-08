@@ -40,7 +40,7 @@ import {
   semanticLane,
 } from "./lanes.ts";
 import { QueryPlanner } from "./planner.ts";
-import { analyzeQuery, optionsKey, resultLimit } from "./query.ts";
+import { analyzeQuery, optionsKey, type QueryAnalysis, resultLimit } from "./query.ts";
 import { Reranker } from "./rerank.ts";
 
 export class RetrievalError extends Schema.TaggedError<RetrievalError>()("RetrievalError", {
@@ -256,55 +256,36 @@ export const RetrievalLive = Layer.effect(
         }),
       );
 
-    const collect = Effect.fn("Retrieval.collect")(function* (
-      userId: UserId,
-      query: SearchQuery,
-      analysis: ReturnType<typeof analyzeQuery>,
-      aspects: ReadonlyArray<string>,
-      vectors: ReadonlyArray<ReadonlyArray<number>>,
-    ) {
-      const where = candidateFilter(userId, query);
-      const [vector = [], ...aspectVectors] = vectors;
-      const [semantic, lexical, exact, location, graphed, aspectLists] = yield* Effect.all(
-        [
-          semanticLane(where, embedder.model, vector),
-          lexicalLane(where, analysis),
-          exactLane(where, analysis),
-          locationLane(where, analysis),
-          graphLane(where, {
-            userId,
-            text: analysis.text,
-            vector,
-            hops: query.depth === "deep" ? 2 : 1,
-            limit: LANE_LIMIT,
-          }),
-          Effect.forEach(
-            aspects,
-            (aspect, index) =>
-              Effect.all([
-                semanticLane(where, embedder.model, aspectVectors[index] ?? []),
-                lexicalLane(where, analyzeQuery(aspect)),
-              ]),
-            { concurrency: "unbounded" },
-          ),
-        ],
+    /** Lanes that need only the query text; they run while the query is embedded. */
+    const textLanes = (where: Parameters<typeof hydrate>[0], analysis: QueryAnalysis) =>
+      Effect.all(
+        [lexicalLane(where, analysis), exactLane(where, analysis), locationLane(where, analysis)],
         { concurrency: "unbounded" },
       );
-      const lists: ReadonlyArray<LaneList> = [
-        { lane: "semantic", weight: LANE_WEIGHTS.semantic, rows: semantic },
-        { lane: "lexical", weight: LANE_WEIGHTS.lexical, rows: lexical },
-        { lane: "exact", weight: LANE_WEIGHTS.exact, rows: exact },
-        { lane: "location", weight: LANE_WEIGHTS.location, rows: location },
-        { lane: "graph", weight: LANE_WEIGHTS.graph, rows: graphed.rows },
-        ...aspectLists.flatMap(([rows, lexicalRows]): ReadonlyArray<LaneList> => [
-          { lane: "semantic", weight: LANE_WEIGHTS.aspect, rows },
-          { lane: "lexical", weight: LANE_WEIGHTS.aspect, rows: lexicalRows },
-        ]),
-      ];
-      return { ...fuse(lists), facts: graphed.facts } satisfies Candidates;
-    });
 
-    /** Relevance against the question and each aspect; none when the reranker fails. */
+    /** Each aspect's own semantic and lexical lists. */
+    const aspectLanes = (where: Parameters<typeof hydrate>[0], aspects: ReadonlyArray<string>) =>
+      aspects.length === 0
+        ? Effect.succeed([])
+        : embedder
+            .embedQueries(aspects)
+            .pipe(
+              Effect.flatMap((vectors) =>
+                Effect.forEach(
+                  aspects,
+                  (aspect, index) =>
+                    Effect.all(
+                      [
+                        semanticLane(where, embedder.model, vectors[index] ?? []),
+                        lexicalLane(where, analyzeQuery(aspect)),
+                      ],
+                      { concurrency: 2 },
+                    ),
+                  { concurrency: "unbounded" },
+                ),
+              ),
+            );
+
     /** Before/after snippets for hits cut mid-sentence; without them on failure. */
     const withContext = (userId: UserId, hits: SearchResult["hits"], rows: Candidates["rows"]) => {
       const wanted = hits.flatMap(({ chunkId, itemId, content }) => {
@@ -368,13 +349,48 @@ export const RetrievalLive = Layer.effect(
         const repeat = yield* fromCache(cache.lookupExact(key, analysis.normalized));
         if (Option.isSome(repeat)) return repeat.value;
 
-        const aspects = yield* planAspects(query.depth ?? "standard", analysis.text);
-        const vectors = yield* embedder.embedQueries([analysis.text, ...aspects]);
-        const vector = vectors[0] ?? [];
+        const where = candidateFilter(userId, query);
+        // Planning, embedding the question and the text-only lanes don't depend on
+        // each other; everything that needs the vector or the aspects waits for them.
+        const [aspects, [vector = []], [lexical, exact, location]] = yield* Effect.all(
+          [
+            planAspects(query.depth ?? "standard", analysis.text),
+            embedder.embedQueries([analysis.text]),
+            textLanes(where, analysis),
+          ],
+          { concurrency: "unbounded" },
+        );
         const similar = yield* fromCache(cache.lookupSimilar(key, vector));
         if (Option.isSome(similar)) return similar.value;
 
-        const candidates = yield* collect(userId, query, analysis, aspects, vectors);
+        const [semantic, graphed, aspectLists] = yield* Effect.all(
+          [
+            semanticLane(where, embedder.model, vector),
+            graphLane(where, {
+              userId,
+              text: analysis.text,
+              vector,
+              hops: query.depth === "deep" ? 2 : 1,
+              limit: LANE_LIMIT,
+            }),
+            aspectLanes(where, aspects),
+          ],
+          { concurrency: "unbounded" },
+        );
+        const candidates: Candidates = {
+          ...fuse([
+            { lane: "semantic", weight: LANE_WEIGHTS.semantic, rows: semantic },
+            { lane: "lexical", weight: LANE_WEIGHTS.lexical, rows: lexical },
+            { lane: "exact", weight: LANE_WEIGHTS.exact, rows: exact },
+            { lane: "location", weight: LANE_WEIGHTS.location, rows: location },
+            { lane: "graph", weight: LANE_WEIGHTS.graph, rows: graphed.rows },
+            ...aspectLists.flatMap(([rows, lexicalRows]): ReadonlyArray<LaneList> => [
+              { lane: "semantic", weight: LANE_WEIGHTS.aspect, rows },
+              { lane: "lexical", weight: LANE_WEIGHTS.aspect, rows: lexicalRows },
+            ]),
+          ]),
+          facts: graphed.facts,
+        };
         const relevance = yield* rerank(query.text, aspects, candidates);
         const shaped = shapeResult({
           candidates,
