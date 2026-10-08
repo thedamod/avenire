@@ -13,12 +13,12 @@ import {
 } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { chunk, item, user } from "@avenire/database/schema";
-import { type ChunkSection, chunkSections } from "@avenire/ingestion/chunk";
+import type { ChunkSection } from "@avenire/ingestion/chunk";
 import { extract } from "@avenire/ingestion/extract";
 import { ItemIndexer } from "@avenire/ingestion/indexer";
 import { Retrieval } from "@avenire/ingestion/retrieval";
 import { SemanticCache } from "@avenire/ingestion/retrieval/cache";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
@@ -36,18 +36,22 @@ export const BENCH_USER_ID = UserId.make("bench-v1");
 const ITEM_PREFIX = "bench-v1:";
 const itemIdOf = (artifact: BenchmarkArtifact) => ItemId.make(`${ITEM_PREFIX}${artifact.id}`);
 
-/** Artifacts ingested at once; provider rate limits, not CPU, are the bound. */
-const INGEST_CONCURRENCY = 3;
+/** Keep embedding-heavy PDF ingestion below the provider's per-minute burst limit. */
+const INGEST_CONCURRENCY = 2;
 /**
- * Minimum spacing between query starts, so trial-tier provider quotas (Cohere ~40
- * requests/min) aren't what the latency numbers measure. Waiting isn't timed.
+ * Minimum time per Cohere rerank call a query makes. The trial key allows 10 rerank
+ * calls a minute (6 s each), and a 429 degrades the query. Waiting isn't timed.
  */
-export const QUERY_START_INTERVAL_MS: Readonly<Record<SearchDepth, number>> = {
-  standard: 2_000,
-  deep: 4_000,
-};
+export const RERANK_CALL_INTERVAL_MS = 6_500;
 /** Rate-limited calls wait for the provider's per-minute window to refill. */
 const RATE_LIMIT_RETRY = { schedule: Schedule.spaced("60 seconds"), times: 2 } as const;
+/** A query that came back unreranked or failed is retried once after a minute. */
+const DEGRADED_RETRY_DELAY = "60 seconds";
+const isTransient = (failure: unknown) => !isQuotaExhausted(failure) && !isRateLimited(failure);
+
+/** Rerank calls a search makes: one per question, none when served from the cache. */
+export const rerankCalls = (depth: SearchDepth, result: SearchResult): number =>
+  result.cached ? 0 : depth === "deep" ? 1 + result.aspects.length : 1;
 
 export class CorpusError extends Schema.TaggedError<CorpusError>()("CorpusError", {
   artifactId: Schema.String,
@@ -80,6 +84,8 @@ export interface QueryResult {
   readonly missingEvidenceIds: ReadonlyArray<string>;
   readonly evaluation: RankingEvaluation;
   readonly error?: string;
+  /** Set when reranking failed even after a retry, so the query was scored degraded. */
+  readonly unreranked?: true;
 }
 
 /** The innermost messages of a failure chain, for logs and run files. */
@@ -135,42 +141,6 @@ const ensureUser = Effect.flatMap(Effect.service(Database), (database) =>
   ),
 );
 
-/** Rebuilds the exact stored chunk sequence before asking the indexer to retry graphing. */
-const savedSections = Effect.fn("V1Benchmark.savedSections")(function* (
-  id: ItemId,
-  expectedChunks: number,
-) {
-  const database = yield* Database;
-  const rows = yield* database.use((db) =>
-    db
-      .select({
-        ordinal: chunk.ordinal,
-        content: chunk.content,
-        kind: chunk.kind,
-        location: chunk.location,
-      })
-      .from(chunk)
-      .where(and(eq(chunk.userId, BENCH_USER_ID), eq(chunk.itemId, id)))
-      .orderBy(asc(chunk.ordinal)),
-  );
-  const sections: ReadonlyArray<ChunkSection> = rows.map((row) => ({
-    text: row.content,
-    kind: row.kind,
-    location: row.location,
-  }));
-  const replayed = chunkSections(sections);
-  return rows.length === expectedChunks &&
-    replayed.length === rows.length &&
-    rows.every(
-      (row, index) =>
-        row.ordinal === index &&
-        replayed[index]?.content === row.content &&
-        replayed[index]?.kind === row.kind,
-    )
-    ? sections
-    : null;
-});
-
 const indexSections = Effect.fn("V1Benchmark.indexSections")(function* (
   id: ItemId,
   title: string,
@@ -178,13 +148,14 @@ const indexSections = Effect.fn("V1Benchmark.indexSections")(function* (
 ) {
   const indexer = yield* ItemIndexer;
   return yield* indexer.index({ userId: BENCH_USER_ID, itemId: id, title, sections }).pipe(
-    Effect.retry({ ...RATE_LIMIT_RETRY, while: isRateLimited }),
+    Effect.retry({
+      ...RATE_LIMIT_RETRY,
+      while: (error) => error.stage === "embedding" && isRateLimited(error),
+    }),
     Effect.as(false),
     Effect.catchTags({
       IndexError: (error) =>
-        error.stage === "graphing" && !isRateLimited(error)
-          ? Effect.succeed(true)
-          : Effect.fail(error),
+        error.stage === "graphing" ? Effect.succeed(true) : Effect.fail(error),
     }),
   );
 });
@@ -199,24 +170,19 @@ const ingestOne = Effect.fn("V1Benchmark.ingestOne")(function* (
   const id = itemIdOf(artifact);
   const [stored] = yield* database.use((db) =>
     db
-      .select({ contentHash: item.contentHash, title: item.title })
+      .select({ contentHash: item.contentHash })
       .from(item)
       .where(and(eq(item.userId, BENCH_USER_ID), eq(item.id, id))),
   );
   const before = yield* chunkStats(id);
   if (!reingest && stored?.contentHash === artifact.sha256 && before.chunks > 0) {
-    if (before.graphPending === 0) return { status: "reused", chunks: before.chunks } as const;
-    if (stored.title === artifact.title) {
-      const sections = yield* savedSections(id, before.chunks);
-      if (sections !== null) {
-        const graphFailed = yield* indexSections(id, artifact.title, sections);
-        const after = yield* chunkStats(id);
-        return {
-          status: graphFailed || after.graphPending > 0 ? "partial" : "indexed",
-          chunks: after.chunks,
-        } as const;
-      }
-    }
+    return before.graphPending === 0
+      ? ({ status: "reused", chunks: before.chunks } as const)
+      : ({
+          status: "partial",
+          chunks: before.chunks,
+          reason: "Graph indexing pending from an earlier run",
+        } as const);
   }
 
   const bytes = yield* Effect.tryPromise({
@@ -410,21 +376,44 @@ const evaluate = Effect.fn("V1Benchmark.evaluate")(function* (
       .search(BENCH_USER_ID, { text, limit: 10, depth })
       .pipe(Effect.retry({ ...RATE_LIMIT_RETRY, while: isRateLimited }));
 
+  const timedSearch = Effect.fn("V1Benchmark.timedSearch")(function* (text: string) {
+    const startedMs = yield* Clock.currentTimeMillis;
+    const [elapsed, outcome] = yield* Effect.timed(Effect.result(search(text)));
+    return { startedMs, latencyMs: Duration.toMillis(elapsed), outcome };
+  });
+  const pace = Effect.fn("V1Benchmark.pace")(function* (startedMs: number, calls: number) {
+    const wait = startedMs + RERANK_CALL_INTERVAL_MS * calls - (yield* Clock.currentTimeMillis);
+    if (wait > 0) yield* Effect.sleep(Duration.millis(wait));
+  });
+
   // Warm connection pools and provider clients outside the timed queries.
-  yield* Effect.ignore(search("Benchmark warmup query outside the evaluation dataset"));
+  const warmup = yield* timedSearch("Benchmark warmup query outside the evaluation dataset");
+  yield* pace(
+    warmup.startedMs,
+    warmup.outcome._tag === "Success" ? rerankCalls(depth, warmup.outcome.success) : 1,
+  );
 
   const queries = dataset.queries.filter((query) => split === "all" || query.split === split);
   const results: Array<QueryResult> = [];
   for (const query of queries) {
-    const startedMs = yield* Clock.currentTimeMillis;
-    const [elapsed, outcome] = yield* Effect.timed(Effect.result(search(query.text)));
+    let attempt = yield* timedSearch(query.text);
+    if (
+      attempt.outcome._tag === "Failure"
+        ? isTransient(attempt.outcome.failure)
+        : !attempt.outcome.success.reranked
+    ) {
+      yield* Effect.logWarning(`Query ${query.id} was degraded or failed; retrying once`);
+      yield* Effect.sleep(DEGRADED_RETRY_DELAY);
+      attempt = yield* timedSearch(query.text);
+    }
+    const { startedMs, latencyMs, outcome } = attempt;
     if (
       outcome._tag === "Failure" &&
       (isQuotaExhausted(outcome.failure) || isRateLimited(outcome.failure))
     ) {
       return yield* Effect.fail(outcome.failure);
     }
-    const latencyMs = Duration.toMillis(elapsed);
+    const unreranked = outcome._tag === "Success" && !outcome.success.reranked;
     const scored =
       outcome._tag === "Success"
         ? score(dataset, query, materialized, outcome.success, latencyMs)
@@ -436,12 +425,14 @@ const evaluate = Effect.fn("V1Benchmark.evaluate")(function* (
             latencyMs,
             describeFailure(outcome.failure),
           );
-    if (scored !== undefined) results.push(scored);
+    if (scored !== undefined) results.push(unreranked ? { ...scored, unreranked: true } : scored);
     yield* Effect.logInfo(
-      `Query ${results.length}/${queries.length}: ${query.id} ${latencyMs.toFixed(0)} ms${scored?.error ? " failed" : ""}`,
+      `Query ${results.length}/${queries.length}: ${query.id} ${latencyMs.toFixed(0)} ms${scored?.error ? " failed" : ""}${unreranked ? " unreranked" : ""}`,
     );
-    const wait = startedMs + QUERY_START_INTERVAL_MS[depth] - (yield* Clock.currentTimeMillis);
-    if (wait > 0) yield* Effect.sleep(Duration.millis(wait));
+    yield* pace(
+      startedMs,
+      rerankCalls(depth, outcome._tag === "Success" ? outcome.success : noResult),
+    );
   }
   return {
     results,
@@ -543,6 +534,7 @@ export const formatReport = (
   const families = [...new Set(results.map((result) => result.family))].sort();
   const s = summarize(results);
   const failed = artifacts.filter((artifact) => artifact.status === "failed");
+  const unreranked = results.filter((result) => result.unreranked);
   return [
     "scope               n     MRR   nDCG  Recall  AllEv     FPR   AbstF1",
     row("all", results),
@@ -559,5 +551,6 @@ export const formatReport = (
     `latency ms  p50 ${s.latency.p50?.toFixed(0)}  p90 ${s.latency.p90?.toFixed(0)}  p95 ${s.latency.p95?.toFixed(0)}  max ${s.latency.max?.toFixed(0)}   (v1 final: p50 ${V1_FINAL.overall.p50}, p95 ${V1_FINAL.overall.p95})`,
     `corpus  ${artifacts.length - failed.length}/${artifacts.length} searchable, ${artifacts.filter((artifact) => artifact.status === "partial").length} with incomplete graphs; ${s.missingEvidenceQueries} queries with unmaterialized evidence; ${s.failedQueries} failed queries`,
     ...failed.map((artifact) => `  failed ${artifact.id}: ${artifact.reason ?? "unknown"}`),
+    ...unreranked.map((result) => `  unreranked ${result.id}`),
   ].join("\n");
 };

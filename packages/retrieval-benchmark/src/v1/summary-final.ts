@@ -55,6 +55,8 @@ export const summarizeFinalRun = (run: BenchmarkRunFile) => {
       datasetVersion: run.datasetVersion,
       config: run.config,
       providerCalls: run.providerCalls,
+      models: run.models,
+      unrerankedQueries: run.results.filter((result) => result.unreranked).map(({ id }) => id),
     },
     overall: summarize(run.results),
     v1: summarizeSplit(v1),

@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { DatabaseLive } from "@avenire/database/client";
-import { EmbedderLive, EmbedderTest } from "@avenire/ingestion/embed";
+import { Embedder, EmbedderLive, EmbedderTest } from "@avenire/ingestion/embed";
 import { ImageDescriberLive } from "@avenire/ingestion/extract/describe";
 import { MediaProcessorLive } from "@avenire/ingestion/extract/media";
 import { OcrLive } from "@avenire/ingestion/extract/ocr";
@@ -16,11 +16,15 @@ import { GraphExtractorLive, GraphExtractorTest } from "@avenire/ingestion/graph
 import { GraphIndexerLive } from "@avenire/ingestion/graph/indexer";
 import { GraphSearchLive } from "@avenire/ingestion/graph/search";
 import { ItemIndexerLive } from "@avenire/ingestion/indexer";
-import { IngestionModelsLive } from "@avenire/ingestion/models";
+import {
+  INGESTION_MODEL_DEFAULTS,
+  INGESTION_MODEL_NAMES,
+  IngestionModelsLive,
+} from "@avenire/ingestion/models";
 import { RetrievalLive } from "@avenire/ingestion/retrieval";
 import { SemanticCacheLive } from "@avenire/ingestion/retrieval/cache";
 import { QueryPlannerLive, QueryPlannerTest } from "@avenire/ingestion/retrieval/planner";
-import { RerankerLive, RerankerTest } from "@avenire/ingestion/retrieval/rerank";
+import { Reranker, RerankerLive, RerankerTest } from "@avenire/ingestion/retrieval/rerank";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -99,6 +103,23 @@ const merge = (a: BenchmarkDataset, b: BenchmarkDataset): BenchmarkDataset => ({
   judgments: [...a.judgments, ...b.judgments],
 });
 
+/** Model ids as the layers resolve them: `INGESTION_MODEL_<NAME>` overrides, else defaults. */
+const modelIds = Effect.gen(function* () {
+  const embedding = yield* Embedder;
+  const rerank = yield* Reranker;
+  const languageModels = yield* Effect.forEach(INGESTION_MODEL_NAMES, (name) =>
+    Config.String(`INGESTION_MODEL_${name.slice("ingest-".length).toUpperCase()}`).pipe(
+      Config.withDefault(INGESTION_MODEL_DEFAULTS[name]),
+      Effect.map((id) => [name, id] as const),
+    ),
+  );
+  return {
+    embedding: embedding.model,
+    rerank: rerank.model,
+    ...Object.fromEntries(languageModels),
+  };
+});
+
 const program = Effect.gen(function* () {
   const minRelevance = yield* Config.Number("RETRIEVAL_MIN_RELEVANCE").pipe(
     Config.withDefault(0.1),
@@ -138,6 +159,7 @@ const program = Effect.gen(function* () {
       planner,
       minRelevance,
     },
+    models: yield* modelIds,
     summary: summarize(run.results),
     materializedEvidence: run.materializedEvidence,
     evidence: run.evidence,

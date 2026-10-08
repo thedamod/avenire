@@ -49,6 +49,7 @@ export const RunFile = Schema.Struct({
       }),
     }),
   ),
+  models: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
   summary: Schema.optionalKey(Schema.Unknown),
   artifacts: Schema.Array(
     Schema.Struct({
@@ -73,6 +74,7 @@ export const RunFile = Schema.Struct({
       missingEvidenceIds: Schema.Array(Schema.String),
       evaluation: Evaluation,
       error: Schema.optionalKey(Schema.String),
+      unreranked: Schema.optionalKey(Schema.Literal(true)),
     }),
   ),
 });
