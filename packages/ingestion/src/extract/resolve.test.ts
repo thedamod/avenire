@@ -49,6 +49,23 @@ describe("resolveFormat", () => {
     ).toBe("html");
   });
 
+  it("routes caption content and MIME before plain text", () => {
+    expect(
+      resolveFormat(
+        source({
+          bytes: bytesOf("WEBVTT\n\n00:01.000 --> 00:02.000\nHello"),
+          mimeType: "text/plain",
+        }),
+      ),
+    ).toBe("captions");
+    expect(
+      resolveFormat(source({ bytes: bytesOf("1\n00:00:01,000 --> 00:00:02,000\nHello") })),
+    ).toBe("captions");
+    expect(
+      resolveFormat(source({ bytes: bytesOf("caption"), mimeType: "application/x-subrip" })),
+    ).toBe("captions");
+  });
+
   it("routes URLs without stored bytes", () => {
     expect(resolveFormat(source({ kind: "video", sourceUrl: "https://youtu.be/abc" }))).toBe(
       "youtube",

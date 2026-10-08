@@ -1,9 +1,10 @@
 import * as Effect from "effect/Effect";
 import type * as HttpClient from "effect/http/HttpClient";
 
+import { extractMedia } from "./av.ts";
+import { extractCaptions } from "./captions.ts";
 import type { ImageDescriber } from "./describe.ts";
 import { extractImage } from "./image.ts";
-import { extractMedia } from "./av.ts";
 import type { MediaProcessor } from "./media.ts";
 import type { Ocr } from "./ocr.ts";
 import { extractOffice } from "./office.ts";
@@ -47,6 +48,8 @@ export const extract = (
         return extractImage(bytes, source);
       case "media":
         return extractMedia(bytes, source);
+      case "captions":
+        return Effect.succeed(extractCaptions(bytes, source));
       case "text":
         return Effect.succeed(extractTextDocument(bytes, source));
       case "html":

@@ -5,6 +5,7 @@
  *
  * - `ingest-graph`: entity and relation extraction from chunks
  * - `ingest-planner`: splitting multi-part questions into aspects for deep search
+ * - `ingest-vision`: searchable descriptions and visible text from images
  */
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type { LanguageModel } from "ai";
@@ -14,12 +15,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
-export const INGESTION_MODEL_NAMES = ["ingest-graph", "ingest-planner"] as const;
+export const INGESTION_MODEL_NAMES = ["ingest-graph", "ingest-planner", "ingest-vision"] as const;
 export type IngestionModelName = (typeof INGESTION_MODEL_NAMES)[number];
 
 export const INGESTION_MODEL_DEFAULTS: Record<IngestionModelName, string> = {
   "ingest-graph": "gemini-3.5-flash-lite",
   "ingest-planner": "gemini-3.5-flash-lite",
+  "ingest-vision": "gemini-3.5-flash-lite",
 };
 
 export class IngestionModels extends Context.Service<

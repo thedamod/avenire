@@ -10,6 +10,7 @@ export type SourceFormat =
   | "office"
   | "image"
   | "media"
+  | "captions"
   | "text"
   | "html"
   | "youtube"
@@ -72,6 +73,10 @@ export const resolveFormat = (source: SourceInput): SourceFormat | undefined => 
     const sniffed = sniff(source.bytes);
     if (sniffed === "zip") return isOfficeMime(mime ?? null) ? "office" : undefined;
     if (sniffed !== undefined) return sniffed;
+    if (mime === "text/vtt" || mime === "application/x-subrip") return "captions";
+    const head = new TextDecoder().decode(source.bytes.subarray(0, 256)).replace(/^\uFEFF/, "");
+    if (/^WEBVTT(?:\s|$)/.test(head) || /^\d+\s*\n\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->/.test(head))
+      return "captions";
     if (mime === "text/html" || mime === "application/xhtml+xml") return "html";
     if (
       mime?.startsWith("text/") ||
