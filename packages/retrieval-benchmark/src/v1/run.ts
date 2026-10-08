@@ -13,11 +13,13 @@ import {
 } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { chunk, item, user } from "@avenire/database/schema";
+import { type ChunkSection, chunkSections } from "@avenire/ingestion/chunk";
 import { extract } from "@avenire/ingestion/extract";
 import { ItemIndexer } from "@avenire/ingestion/indexer";
 import { Retrieval } from "@avenire/ingestion/retrieval";
 import { SemanticCache } from "@avenire/ingestion/retrieval/cache";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -83,7 +85,7 @@ export interface QueryResult {
 /** The innermost messages of a failure chain, for logs and run files. */
 const describeFailure = (failure: unknown): string => {
   const messages: Array<string> = [];
-  let current: unknown = failure;
+  let current: unknown = Cause.isCause(failure) ? Cause.squash(failure) : failure;
   for (let depth = 0; depth < 5 && typeof current === "object" && current !== null; depth++) {
     if (current instanceof Error) messages.push(current.message);
     current = "cause" in current ? current.cause : undefined;
@@ -92,8 +94,12 @@ const describeFailure = (failure: unknown): string => {
   return messages.join(": ").slice(0, 400);
 };
 
+const isQuotaExhausted = (failure: unknown) =>
+  /monthly|per month|trial key.*limit|embedding quota/i.test(describeFailure(failure));
+
 const isRateLimited = (failure: unknown) =>
-  /rate limit|too many requests|429|trial key|high demand/i.test(describeFailure(failure));
+  !isQuotaExhausted(failure) &&
+  /rate limit|too many requests|429|high demand/i.test(describeFailure(failure));
 
 const kindOf = (sourceType: BenchmarkArtifact["sourceType"]): ItemKind =>
   sourceType === "markdown" ? "note" : sourceType === "link" ? "web-page" : sourceType;
@@ -129,6 +135,60 @@ const ensureUser = Effect.flatMap(Effect.service(Database), (database) =>
   ),
 );
 
+/** Rebuilds the exact stored chunk sequence before asking the indexer to retry graphing. */
+const savedSections = Effect.fn("V1Benchmark.savedSections")(function* (
+  id: ItemId,
+  expectedChunks: number,
+) {
+  const database = yield* Database;
+  const rows = yield* database.use((db) =>
+    db
+      .select({
+        ordinal: chunk.ordinal,
+        content: chunk.content,
+        kind: chunk.kind,
+        location: chunk.location,
+      })
+      .from(chunk)
+      .where(and(eq(chunk.userId, BENCH_USER_ID), eq(chunk.itemId, id)))
+      .orderBy(asc(chunk.ordinal)),
+  );
+  const sections: ReadonlyArray<ChunkSection> = rows.map((row) => ({
+    text: row.content,
+    kind: row.kind,
+    location: row.location,
+  }));
+  const replayed = chunkSections(sections);
+  return rows.length === expectedChunks &&
+    replayed.length === rows.length &&
+    rows.every(
+      (row, index) =>
+        row.ordinal === index &&
+        replayed[index]?.content === row.content &&
+        replayed[index]?.kind === row.kind,
+    )
+    ? sections
+    : null;
+});
+
+const indexSections = Effect.fn("V1Benchmark.indexSections")(function* (
+  id: ItemId,
+  title: string,
+  sections: ReadonlyArray<ChunkSection>,
+) {
+  const indexer = yield* ItemIndexer;
+  return yield* indexer.index({ userId: BENCH_USER_ID, itemId: id, title, sections }).pipe(
+    Effect.retry({ ...RATE_LIMIT_RETRY, while: isRateLimited }),
+    Effect.as(false),
+    Effect.catchTags({
+      IndexError: (error) =>
+        error.stage === "graphing" && !isRateLimited(error)
+          ? Effect.succeed(true)
+          : Effect.fail(error),
+    }),
+  );
+});
+
 /** Indexes one artifact, or reuses its index when the stored bytes are unchanged. */
 const ingestOne = Effect.fn("V1Benchmark.ingestOne")(function* (
   artifact: BenchmarkArtifact,
@@ -136,20 +196,27 @@ const ingestOne = Effect.fn("V1Benchmark.ingestOne")(function* (
   reingest: boolean,
 ) {
   const database = yield* Database;
-  const indexer = yield* ItemIndexer;
   const id = itemIdOf(artifact);
   const [stored] = yield* database.use((db) =>
     db
-      .select({ contentHash: item.contentHash })
+      .select({ contentHash: item.contentHash, title: item.title })
       .from(item)
       .where(and(eq(item.userId, BENCH_USER_ID), eq(item.id, id))),
   );
   const before = yield* chunkStats(id);
   if (!reingest && stored?.contentHash === artifact.sha256 && before.chunks > 0) {
-    return {
-      status: before.graphPending > 0 ? "partial" : "reused",
-      chunks: before.chunks,
-    } as const;
+    if (before.graphPending === 0) return { status: "reused", chunks: before.chunks } as const;
+    if (stored.title === artifact.title) {
+      const sections = yield* savedSections(id, before.chunks);
+      if (sections !== null) {
+        const graphFailed = yield* indexSections(id, artifact.title, sections);
+        const after = yield* chunkStats(id);
+        return {
+          status: graphFailed || after.graphPending > 0 ? "partial" : "indexed",
+          chunks: after.chunks,
+        } as const;
+      }
+    }
   }
 
   const bytes = yield* Effect.tryPromise({
@@ -188,21 +255,7 @@ const ingestOne = Effect.fn("V1Benchmark.ingestOne")(function* (
   );
   // A failed graph stage leaves the chunks searchable (graph_indexed = false); the
   // benchmark records that as partial rather than losing the artifact.
-  const graphFailed = yield* indexer
-    .index({
-      userId: BENCH_USER_ID,
-      itemId: id,
-      title: artifact.title,
-      sections: document.sections,
-    })
-    .pipe(
-      Effect.retry({ ...RATE_LIMIT_RETRY, while: isRateLimited }),
-      Effect.as(false),
-      Effect.catchTags({
-        IndexError: (error) =>
-          error.stage === "graphing" ? Effect.succeed(true) : Effect.fail(error),
-      }),
-    );
+  const graphFailed = yield* indexSections(id, artifact.title, document.sections);
   yield* database.use((db) =>
     db
       .update(item)
@@ -233,14 +286,17 @@ const ingestCorpus = Effect.fn("V1Benchmark.ingestCorpus")(function* (
           sourceType: artifact.sourceType,
           ...outcome,
         })),
-        Effect.catchCause((cause) =>
-          Effect.succeed<Omit<ArtifactResult, "wallMs">>({
-            id: artifact.id,
-            sourceType: artifact.sourceType,
-            status: "failed",
-            reason: describeFailure(cause),
-          }),
-        ),
+        Effect.catchCause((cause) => {
+          const failure = Cause.squash(cause);
+          return isQuotaExhausted(failure) || isRateLimited(failure)
+            ? Effect.fail(failure)
+            : Effect.succeed<Omit<ArtifactResult, "wallMs">>({
+                id: artifact.id,
+                sourceType: artifact.sourceType,
+                status: "failed",
+                reason: describeFailure(failure),
+              });
+        }),
         Effect.timed,
         Effect.map(([elapsed, result]): ArtifactResult => ({
           ...result,
@@ -362,6 +418,12 @@ const evaluate = Effect.fn("V1Benchmark.evaluate")(function* (
   for (const query of queries) {
     const startedMs = yield* Clock.currentTimeMillis;
     const [elapsed, outcome] = yield* Effect.timed(Effect.result(search(query.text)));
+    if (
+      outcome._tag === "Failure" &&
+      (isQuotaExhausted(outcome.failure) || isRateLimited(outcome.failure))
+    ) {
+      return yield* Effect.fail(outcome.failure);
+    }
     const latencyMs = Duration.toMillis(elapsed);
     const scored =
       outcome._tag === "Success"

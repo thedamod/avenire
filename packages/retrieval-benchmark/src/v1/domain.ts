@@ -13,6 +13,7 @@ const QueryFamily = Schema.Literals([
   "direct-fact",
   "paraphrase",
   "exact-identifier",
+  "exact-value",
   "table-cell",
   "formula-chart",
   "timestamp",

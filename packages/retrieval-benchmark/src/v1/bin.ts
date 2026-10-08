@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -21,6 +22,7 @@ import { SemanticCacheLive } from "@avenire/ingestion/retrieval/cache";
 import { QueryPlannerLive, QueryPlannerTest } from "@avenire/ingestion/retrieval/planner";
 import { RerankerLive, RerankerTest } from "@avenire/ingestion/retrieval/rerank";
 import * as Clock from "effect/Clock";
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as Layer from "effect/Layer";
@@ -28,6 +30,7 @@ import * as Schema from "effect/Schema";
 
 import { dataRoot, defaultCorpusDir, readContracts } from "./corpus.ts";
 import { type BenchmarkDataset, Dataset } from "./domain.ts";
+import { countCohereCalls } from "./provider-calls.ts";
 import { formatReport, runV1Benchmark, summarize } from "./run.ts";
 
 const args = process.argv.slice(2);
@@ -52,6 +55,15 @@ const datasetName = choice("--dataset", ["v1", "extension", "all"], "v1");
 const corpusDir = resolve(option("--corpus-dir") ?? defaultCorpusDir);
 const reingest = args.includes("--reingest");
 const gitSha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+const callsPath = resolve(
+  corpusDir,
+  "runs",
+  `provider-calls-${datasetName}-${depth}-${process.pid}.json`,
+);
+mkdirSync(resolve(corpusDir, "runs"), { recursive: true });
+const providerCalls = countCohereCalls((calls) => {
+  writeFileSync(callsPath, `${JSON.stringify(calls, null, 2)}\n`);
+});
 
 const Providers = Layer.mergeAll(
   embedder === "test" ? EmbedderTest : EmbedderLive,
@@ -88,6 +100,9 @@ const merge = (a: BenchmarkDataset, b: BenchmarkDataset): BenchmarkDataset => ({
 });
 
 const program = Effect.gen(function* () {
+  const minRelevance = yield* Config.Number("RETRIEVAL_MIN_RELEVANCE").pipe(
+    Config.withDefault(0.1),
+  );
   const contracts = yield* Effect.promise(() => readContracts());
   const dataset =
     datasetName === "v1"
@@ -113,10 +128,20 @@ const program = Effect.gen(function* () {
     datasetHash: contracts.datasetHash,
     manifestHash: contracts.manifestHash,
     datasetVersion: dataset.version,
-    config: { dataset: datasetName, depth, split, embedder, reranker, graph, planner },
+    config: {
+      dataset: datasetName,
+      depth,
+      split,
+      embedder,
+      reranker,
+      graph,
+      planner,
+      minRelevance,
+    },
     summary: summarize(run.results),
     materializedEvidence: run.materializedEvidence,
     evidence: run.evidence,
+    providerCalls: providerCalls(),
     artifacts: run.artifacts,
     results: run.results,
   };
@@ -124,7 +149,9 @@ const program = Effect.gen(function* () {
     await mkdir(resolve(corpusDir, "runs"), { recursive: true });
     await writeFile(path, `${JSON.stringify(record, null, 2)}\n`);
   });
-  yield* Effect.logInfo(`\n${formatReport(run.artifacts, run.results)}\nRun: ${path}`);
+  yield* Effect.logInfo(
+    `\n${formatReport(run.artifacts, run.results)}\nRun: ${path}\nCohere calls: ${JSON.stringify(providerCalls())}`,
+  );
 }).pipe(Effect.provide(AppLive));
 
 NodeRuntime.runMain(program);
