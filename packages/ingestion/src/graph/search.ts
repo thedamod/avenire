@@ -74,22 +74,21 @@ export const GraphSearchLive = Layer.effect(
       database
         .useTransaction(async (tx) => {
           // Iterative scans keep the HNSW search going past other users' entities.
-          await tx.execute(sql`SET LOCAL hnsw.iterative_scan = relaxed_order`);
-          await tx.execute(sql`SET LOCAL hnsw.ef_search = 200`);
-          const named = await tx.execute(sql`
-            SELECT e.id, 1.0::float8 AS score FROM entity AS e
-            WHERE e.user_id = ${userId} AND length(e.key) >= 3
-              AND position(' ' || e.key || ' ' in ${` ${entityKey(text)} `}) > 0`);
-          const similar = await tx.execute(sql`
+          await tx.execute(sql`SELECT set_config('hnsw.iterative_scan', 'relaxed_order', true),
+            set_config('hnsw.ef_search', '200', true)`);
+          return tx.execute(sql`
             WITH nearest AS MATERIALIZED (
               SELECT e.id, e.embedding <=> ${toVectorLiteral(vector)}::vector AS distance
               FROM entity AS e
               WHERE e.user_id = ${userId} AND e.embedding IS NOT NULL
               ORDER BY distance LIMIT ${SEMANTIC_SEEDS}
             )
+            SELECT e.id, 1.0::float8 AS score FROM entity AS e
+            WHERE e.user_id = ${userId} AND length(e.key) >= 3
+              AND position(' ' || e.key || ' ' in ${` ${entityKey(text)} `}) > 0
+            UNION ALL
             SELECT id, (1 - distance)::float8 AS score FROM nearest
             WHERE 1 - distance >= ${MIN_SEED_SIMILARITY}`);
-          return [...named, ...similar];
         })
         .pipe(
           Effect.flatMap(decodeSeeds),

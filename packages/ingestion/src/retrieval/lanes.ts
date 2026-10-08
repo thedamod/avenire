@@ -70,8 +70,8 @@ const none = Effect.succeed<ReadonlyArray<CandidateRow>>([]);
 export const semanticLane = (where: SQL, model: string, vector: ReadonlyArray<number>) =>
   Effect.flatMap(Effect.service(Database), (database) =>
     database.useTransaction(async (tx) => {
-      await tx.execute(sql`SET LOCAL hnsw.iterative_scan = relaxed_order`);
-      await tx.execute(sql`SET LOCAL hnsw.ef_search = 200`);
+      await tx.execute(sql`SELECT set_config('hnsw.iterative_scan', 'relaxed_order', true),
+        set_config('hnsw.ef_search', '200', true)`);
       return tx.execute(sql`
         WITH nearest AS MATERIALIZED (
           SELECT ${COLUMNS}, c.embedding <=> ${toVectorLiteral(vector)}::vector AS distance
