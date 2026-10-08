@@ -14,6 +14,7 @@ export type SourceFormat =
   | "text"
   | "html"
   | "youtube"
+  | "remote"
   | "web";
 
 const OFFICE_TYPES = new Set([
@@ -33,6 +34,13 @@ export const isOfficeMime = (mimeType: string | null): boolean => {
   const mime = mimeEssence(mimeType);
   return mime !== undefined && OFFICE_TYPES.has(mime);
 };
+
+/** Direct media files and video platforms yt-dlp handles; other pages are articles. */
+export const isLikelyMediaUrl = (url: string): boolean =>
+  /\.(?:mp4|m4v|mov|webm|mkv|m3u8|mpd|mp3|m4a|ogg|opus|wav|flac)(?:[?#]|$)/i.test(url) ||
+  /^https?:\/\/(?:[\w-]+\.)*(?:vimeo\.com|dailymotion\.com|twitch\.tv|ted\.com|panopto\.\w+|kaltura\.com|archive\.org|commons\.wikimedia\.org)\//i.test(
+    url,
+  );
 
 export const isYouTubeUrl = (url: string | null): boolean =>
   url !== null && /(?:^|\.)(?:youtube\.com|youtu\.be)\//i.test(url.replace(/^https?:\/\//i, ""));
@@ -90,5 +98,8 @@ export const resolveFormat = (source: SourceInput): SourceFormat | undefined => 
   }
   if (source.sourceUrl === null) return undefined;
   if (isYouTubeUrl(source.sourceUrl)) return "youtube";
-  return source.kind === "web-page" ? "web" : undefined;
+  if (source.kind === "video" || source.kind === "audio") return "remote";
+  if (source.kind !== "web-page") return undefined;
+  // yt-dlp costs a subprocess and seconds; only try it where media is likely.
+  return isLikelyMediaUrl(source.sourceUrl) ? "remote" : "web";
 };

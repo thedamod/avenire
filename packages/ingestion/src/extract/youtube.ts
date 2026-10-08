@@ -17,13 +17,16 @@ export const toTimedCues = (
   }));
 };
 
-export const extractYouTube = (url: string): Effect.Effect<ExtractedDocument, ExtractionError> =>
+export const fetchYouTubeCues = (url: string) =>
   Effect.tryPromise({
     try: () => fetchTranscript(url),
     catch: (cause) => new ExtractionError({ source: "youtube", cause }),
-  }).pipe(
+  }).pipe(Effect.map(toTimedCues));
+
+export const extractYouTube = (url: string): Effect.Effect<ExtractedDocument, ExtractionError> =>
+  fetchYouTubeCues(url).pipe(
     Effect.map((cues) => {
-      const sections = groupCues(toTimedCues(cues));
+      const sections = groupCues(cues);
       return {
         sections,
         coverage: sections.length

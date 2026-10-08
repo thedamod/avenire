@@ -70,11 +70,19 @@ describe("resolveFormat", () => {
     expect(resolveFormat(source({ kind: "video", sourceUrl: "https://youtu.be/abc" }))).toBe(
       "youtube",
     );
-    expect(resolveFormat(source({ kind: "web-page", sourceUrl: "https://example.com" }))).toBe(
-      "web",
-    );
     expect(
-      resolveFormat(source({ kind: "video", sourceUrl: "https://example.com/a.mp4" })),
-    ).toBeUndefined();
+      resolveFormat(source({ kind: "web-page", sourceUrl: "https://example.com/article" })),
+    ).toBe("web");
+    expect(
+      resolveFormat(source({ kind: "web-page", sourceUrl: "https://vimeo.com/76979871" })),
+    ).toBe("remote");
+    expect(
+      resolveFormat(
+        source({ kind: "web-page", sourceUrl: "https://cdn.example.com/talk.m3u8?t=1" }),
+      ),
+    ).toBe("remote");
+    expect(resolveFormat(source({ kind: "video", sourceUrl: "https://example.com/a.mp4" }))).toBe(
+      "remote",
+    );
   });
 });

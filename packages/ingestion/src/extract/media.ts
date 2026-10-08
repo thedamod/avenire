@@ -10,7 +10,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Schema from "effect/Schema";
 
 export class MediaError extends Schema.TaggedError<MediaError>()("MediaError", {
-  operation: Schema.Literals(["probe", "audio", "frames"]),
+  operation: Schema.Literals(["probe", "audio", "frames", "captions"]),
   cause: Schema.Defect(),
 }) {
   override get message(): string {
@@ -35,9 +35,19 @@ export class MediaProcessor extends Context.Service<
   MediaProcessor,
   {
     /** Duration in seconds, and whether there is a video stream. */
-    readonly probe: (
+    readonly probe: (media: Uint8Array) => Effect.Effect<
+      {
+        readonly durationSec: number;
+        readonly hasVideo: boolean;
+        readonly subtitleStreamIndex?: number;
+      },
+      MediaError
+    >;
+    /** Converts the first supported subtitle stream to WebVTT. */
+    readonly embeddedCaptions: (
       media: Uint8Array,
-    ) => Effect.Effect<{ readonly durationSec: number; readonly hasVideo: boolean }, MediaError>;
+      streamIndex: number,
+    ) => Effect.Effect<string, MediaError>;
     /** Mono 16 kHz compressed audio in overlapping segments, up to `maxSec` of the source. */
     readonly audioSegments: (
       media: Uint8Array,
@@ -58,13 +68,20 @@ export class MediaProcessor extends Context.Service<
 const Probe = Schema.fromJsonString(
   Schema.Struct({
     format: Schema.Struct({ duration: Schema.optional(Schema.String) }),
-    streams: Schema.Array(Schema.Struct({ codec_type: Schema.String })),
+    streams: Schema.Array(
+      Schema.Struct({
+        index: Schema.Number,
+        codec_type: Schema.String,
+        codec_name: Schema.optionalKey(Schema.String),
+      }),
+    ),
   }),
 );
 
 /** Wall-clock limits per subprocess; v1 had none and could hang a worker. */
 const PROBE_TIMEOUT = "20 seconds";
 const SEGMENT_TIMEOUT = "90 seconds";
+const CAPTIONS_TIMEOUT = "2 minutes";
 const FRAMES_TIMEOUT = "5 minutes";
 /** A frame is taken at a scene change, or at the latest this long after the previous one. */
 const MAX_FRAME_GAP_SEC = 30;
@@ -151,7 +168,15 @@ export const MediaProcessorLive = Layer.effect(
     const probeFile = (path: string) =>
       run(
         "ffprobe",
-        ["-v", "error", "-show_entries", "format=duration:stream=codec_type", "-of", "json", path],
+        [
+          "-v",
+          "error",
+          "-show_entries",
+          "format=duration:stream=index,codec_type,codec_name",
+          "-of",
+          "json",
+          path,
+        ],
         PROBE_TIMEOUT,
       ).pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(Probe)),
@@ -162,6 +187,11 @@ export const MediaProcessorLive = Layer.effect(
                 durationSec,
                 hasAudio: streams.some((stream) => stream.codec_type === "audio"),
                 hasVideo: streams.some((stream) => stream.codec_type === "video"),
+                subtitleStreamIndex: streams.find(
+                  (stream) =>
+                    stream.codec_type === "subtitle" &&
+                    ["mov_text", "subrip", "webvtt", "ass"].includes(stream.codec_name ?? ""),
+                )?.index,
               })
             : Effect.fail("Missing media duration");
         }),
@@ -169,10 +199,43 @@ export const MediaProcessorLive = Layer.effect(
 
     const probe = Effect.fn("MediaProcessor.probe")(
       function* (media: Uint8Array) {
-        const { durationSec, hasVideo } = yield* withFile(media, probeFile);
-        return { durationSec, hasVideo };
+        const { durationSec, hasVideo, subtitleStreamIndex } = yield* withFile(media, probeFile);
+        return {
+          durationSec,
+          hasVideo,
+          ...(subtitleStreamIndex === undefined ? {} : { subtitleStreamIndex }),
+        };
       },
       Effect.mapError((cause) => new MediaError({ operation: "probe", cause })),
+    );
+
+    const embeddedCaptions = Effect.fn("MediaProcessor.embeddedCaptions")(
+      function* (media: Uint8Array, streamIndex: number) {
+        return yield* withFile(media, (path, directory) =>
+          Effect.gen(function* () {
+            const output = `${directory}/captions.vtt`;
+            yield* run(
+              "ffmpeg",
+              [
+                "-nostdin",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                path,
+                "-map",
+                `0:${streamIndex}`,
+                "-c:s",
+                "webvtt",
+                output,
+              ],
+              CAPTIONS_TIMEOUT,
+            );
+            return new TextDecoder().decode(yield* fs.readFile(output));
+          }),
+        );
+      },
+      Effect.mapError((cause) => new MediaError({ operation: "captions", cause })),
     );
 
     const audioSegments = Effect.fn("MediaProcessor.audioSegments")(
@@ -287,6 +350,6 @@ export const MediaProcessorLive = Layer.effect(
       Effect.mapError((cause) => new MediaError({ operation: "frames", cause })),
     );
 
-    return MediaProcessor.of({ probe, audioSegments, sceneFrames });
+    return MediaProcessor.of({ probe, embeddedCaptions, audioSegments, sceneFrames });
   }),
 );

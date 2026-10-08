@@ -69,6 +69,7 @@ export const ChunkKind = Schema.Literals([
   "proof",
   "derivation",
   "transcript",
+  "outline",
   /** On-screen text of a lecture slide or video frame. */
   "slide",
   /** A figure, chart or image, as its description and any text in it. */

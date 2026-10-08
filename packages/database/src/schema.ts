@@ -26,7 +26,7 @@ import {
   unique,
   vector,
 } from "drizzle-orm/pg-core";
-import { relations, sql } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 
 const timestamptz = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
@@ -232,6 +232,22 @@ export const embeddingCache = pgTable(
     model: text("model").notNull(),
     contentHash: text("content_hash").notNull(),
     embedding: vector("embedding", { dimensions: 1536 }).notNull(),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.model, t.contentHash] })],
+);
+
+/** Whisper segments by model and exact audio clip bytes, reused across retries. */
+export const transcriptCache = pgTable(
+  "transcript_cache",
+  {
+    model: text("model").notNull(),
+    contentHash: text("content_hash").notNull(),
+    segments: jsonb("segments")
+      .$type<
+        ReadonlyArray<{ readonly text: string; readonly startSec: number; readonly endSec: number }>
+      >()
+      .notNull(),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.model, t.contentHash] })],
@@ -481,6 +497,7 @@ export const schema = {
   ingestionJob,
   chunk,
   embeddingCache,
+  transcriptCache,
   entity,
   entityMention,
   entityRelation,

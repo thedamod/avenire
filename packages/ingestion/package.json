@@ -78,6 +78,14 @@
     "./extract/media": {
       "types": "./src/extract/media.ts",
       "import": "./src/extract/media.ts"
+    },
+    "./extract/remote": {
+      "types": "./src/extract/remote.ts",
+      "import": "./src/extract/remote.ts"
+    },
+    "./extract/transcript-cache": {
+      "types": "./src/extract/transcript-cache.ts",
+      "import": "./src/extract/transcript-cache.ts"
     }
   },
   "scripts": {
