@@ -1,0 +1,1776 @@
+{
+  "schemaVersion": 1,
+  "version": "v2-extension-0.2",
+  "evidence": [
+    {
+      "id": "x-exact-00-e",
+      "artifactId": "external-arxiv-expansion-2607-19319v1",
+      "locator": {
+        "kind": "text",
+        "needle": "Phys. Rev. X 14 , 041005 (2024)"
+      }
+    },
+    {
+      "id": "x-exact-01-e",
+      "artifactId": "external-arxiv-expansion-2607-19313v1",
+      "locator": {
+        "kind": "text",
+        "needle": "hard if π ref is unable to solve it in 64 attempts"
+      }
+    },
+    {
+      "id": "x-exact-02-e",
+      "artifactId": "external-arxiv-expansion-2607-19045v1",
+      "locator": {
+        "kind": "text",
+        "needle": "Springer International Publishing, 2015, p. 1–38"
+      }
+    },
+    {
+      "id": "x-exact-03-e",
+      "artifactId": "external-arxiv-expansion-2607-18756v1",
+      "locator": {
+        "kind": "text",
+        "needle": "for 96% of tickets"
+      }
+    },
+    {
+      "id": "x-exact-04-e",
+      "artifactId": "external-colbertv2-paper",
+      "locator": {
+        "kind": "text",
+        "needle": "On 22 of 28 out-of-domain tests, ColBERTv2 achieves the highest quality"
+      }
+    },
+    {
+      "id": "x-exact-05-e",
+      "artifactId": "external-arxiv-expansion-2607-19278v1",
+      "locator": {
+        "kind": "text",
+        "needle": "seven-site Floquet-antisymmetric network"
+      }
+    },
+    {
+      "id": "x-exact-06-e",
+      "artifactId": "external-arxiv-expansion-2607-19333v1",
+      "locator": {
+        "kind": "text",
+        "needle": "the best empirical performance is attained at η 0 = 0"
+      }
+    },
+    {
+      "id": "x-exact-07-e",
+      "artifactId": "external-arxiv-expansion-2607-19334v1",
+      "locator": {
+        "kind": "text",
+        "needle": "for every finite d ≥ 2"
+      }
+    },
+    {
+      "id": "x-exact-08-e",
+      "artifactId": "external-arxiv-expansion-2607-18825v1",
+      "locator": {
+        "kind": "text",
+        "needle": "Table 6 compares model correctness across 100 evaluation questions."
+      }
+    },
+    {
+      "id": "x-exact-09-e",
+      "artifactId": "external-arxiv-expansion-2607-19189v1",
+      "locator": {
+        "kind": "text",
+        "needle": "biclustering takes 1.78 seconds"
+      }
+    },
+    {
+      "id": "x-exact-10-e",
+      "artifactId": "external-arxiv-expansion-2607-19253v1",
+      "locator": {
+        "kind": "text",
+        "needle": "online user study ( n = 31 )"
+      }
+    },
+    {
+      "id": "x-exact-11-e",
+      "artifactId": "external-arxiv-expansion-2607-19286v1",
+      "locator": {
+        "kind": "text",
+        "needle": "crossover occurring at $\\Gamma_{\\text{eff}}/B = 2$"
+      }
+    },
+    {
+      "id": "x-exact-12-e",
+      "artifactId": "external-arxiv-expansion-2607-19312v1",
+      "locator": {
+        "kind": "text",
+        "needle": "36 candidate combinations"
+      }
+    },
+    {
+      "id": "x-exact-13-e",
+      "artifactId": "external-arxiv-expansion-2607-19164v1",
+      "locator": {
+        "kind": "text",
+        "needle": "where c k and d k are as in Lemma 4.18"
+      }
+    },
+    {
+      "id": "x-exact-14-e",
+      "artifactId": "external-arxiv-expansion-2607-19302v1",
+      "locator": {
+        "kind": "text",
+        "needle": "6 ROM latent variables"
+      }
+    },
+    {
+      "id": "x-exact-15-e",
+      "artifactId": "external-arxiv-expansion-2607-19335v1",
+      "locator": {
+        "kind": "text",
+        "needle": "Both denoisers are trained for 100 epochs in float64"
+      }
+    },
+    {
+      "id": "x-exact-16-e",
+      "artifactId": "external-arxiv-expansion-2607-19286v1",
+      "locator": {
+        "kind": "text",
+        "needle": "We collect approximately $10,000$ reset profiles for each value of $\\Gamma_{\\text{eff}}/B$."
+      }
+    },
+    {
+      "id": "x-exact-17-e",
+      "artifactId": "external-arxiv-expansion-2607-18689v1",
+      "locator": {
+        "kind": "text",
+        "needle": "Placement 54.73 (03.51)"
+      }
+    },
+    {
+      "id": "x-exact-18-e",
+      "artifactId": "external-arxiv-expansion-2607-19281v1",
+      "locator": {
+        "kind": "text",
+        "needle": "Award Number DE-SC0023463"
+      }
+    },
+    {
+      "id": "x-exact-19-e",
+      "artifactId": "external-arxiv-expansion-2607-19321v1",
+      "locator": {
+        "kind": "text",
+        "needle": "Suspicion: 88 , the highest of any retained baseline"
+      }
+    },
+    {
+      "id": "x-exact-20-e",
+      "artifactId": "external-arxiv-expansion-2607-19075v1",
+      "locator": {
+        "kind": "text",
+        "needle": "Kulenovic et al. (2025) [20]"
+      }
+    },
+    {
+      "id": "x-exact-21-e",
+      "artifactId": "external-arxiv-expansion-2607-19144v1",
+      "locator": {
+        "kind": "text",
+        "needle": "d ∈ L 2 loc (0 , ∞ ; U )"
+      }
+    },
+    {
+      "id": "x-exact-22-e",
+      "artifactId": "external-arxiv-expansion-2607-19240v1",
+      "locator": {
+        "kind": "text",
+        "needle": "optimal fixed h 0 , . . . , h N − 1 must depend on the horizon N"
+      }
+    },
+    {
+      "id": "x-exact-23-e",
+      "artifactId": "external-arxiv-expansion-2607-19208v1",
+      "locator": {
+        "kind": "text",
+        "needle": "maximum final times t 2 = 18"
+      }
+    },
+    {
+      "id": "x-exact-24-e",
+      "artifactId": "external-arxiv-expansion-2607-18904v1",
+      "locator": {
+        "kind": "text",
+        "needle": "median live-web ARSD 80 is 1.5 queries"
+      }
+    },
+    {
+      "id": "x-exact-25-e",
+      "artifactId": "external-arxiv-expansion-2607-19287v1",
+      "locator": {
+        "kind": "text",
+        "needle": "Informational completeness is therefore necessary, but not sufficient, for stable reconstruction."
+      }
+    },
+    {
+      "id": "x-exact-26-e",
+      "artifactId": "external-arxiv-expansion-2607-18786v1",
+      "locator": {
+        "kind": "text",
+        "needle": "NVIDIA GeForce RTX 4090 GPU (24 GB)"
+      }
+    },
+    {
+      "id": "x-exact-27-e",
+      "artifactId": "external-arxiv-expansion-2607-19010v1",
+      "locator": {
+        "kind": "text",
+        "needle": "preliminary version presented at the 2026 International Conference"
+      }
+    },
+    {
+      "id": "x-exact-28-e",
+      "artifactId": "external-arxiv-expansion-2607-18951v1",
+      "locator": {
+        "kind": "text",
+        "needle": "As a first step toward addressing this gap, we focus on constant attacks."
+      }
+    },
+    {
+      "id": "x-exact-29-e",
+      "artifactId": "external-arxiv-expansion-2607-19317v1",
+      "locator": {
+        "kind": "text",
+        "needle": "freezing 70% of the model bounds how far the update can drift"
+      }
+    },
+    {
+      "id": "x-exact-30-e",
+      "artifactId": "external-arxiv-expansion-2607-18796v1",
+      "locator": {
+        "kind": "text",
+        "needle": "gains of +0.43% in IPV"
+      }
+    },
+    {
+      "id": "x-exact-31-e",
+      "artifactId": "external-arxiv-expansion-2607-19318v1",
+      "locator": {
+        "kind": "text",
+        "needle": "five noise-calibrated IBM backends"
+      }
+    },
+    {
+      "id": "x-exact-32-e",
+      "artifactId": "external-arxiv-expansion-2607-18712v1",
+      "locator": {
+        "kind": "text",
+        "needle": "SIGIR ’26, July 20–24, 2026"
+      }
+    },
+    {
+      "id": "x-exact-33-e",
+      "artifactId": "external-arxiv-expansion-2607-19074v1",
+      "locator": {
+        "kind": "text",
+        "needle": "|| M i − m i || ∞ ≤ 1"
+      }
+    },
+    {
+      "id": "x-exact-34-e",
+      "artifactId": "external-arxiv-expansion-2607-19317v1",
+      "locator": {
+        "kind": "text",
+        "needle": "Advances in Neural Information Processing Systems (NeurIPS) , 2025"
+      }
+    },
+    {
+      "id": "x-exact-35-e",
+      "artifactId": "external-arxiv-expansion-2607-19271v1",
+      "locator": {
+        "kind": "text",
+        "needle": "arXiv preprint arXiv:2605.22513 , 2026"
+      }
+    },
+    {
+      "id": "x-exact-36-e",
+      "artifactId": "external-arxiv-expansion-2607-19279v1",
+      "locator": {
+        "kind": "text",
+        "needle": "Using S&P 500 stock price data [35]"
+      }
+    },
+    {
+      "id": "x-exact-37-e",
+      "artifactId": "external-arxiv-expansion-2607-19020v1",
+      "locator": {
+        "kind": "text",
+        "needle": "Run B (0.800 vs. XGBoost 0.467)"
+      }
+    },
+    {
+      "id": "x-exact-38-e",
+      "artifactId": "external-arxiv-expansion-2607-19309v1",
+      "locator": {
+        "kind": "text",
+        "needle": "Example 3.12"
+      }
+    },
+    {
+      "id": "x-exact-39-e",
+      "artifactId": "external-arxiv-expansion-2607-19332v1",
+      "locator": {
+        "kind": "text",
+        "needle": "FID of 2.56 on ImageNet 256"
+      }
+    },
+    {
+      "id": "x-exact-40-e",
+      "artifactId": "external-arxiv-expansion-2607-19263v1",
+      "locator": {
+        "kind": "text",
+        "needle": "dense factorization or conjugate gradient, at 𝑂 ( 𝑛 3 )"
+      }
+    },
+    {
+      "id": "x-exact-41-e",
+      "artifactId": "external-arxiv-expansion-2607-19301v1",
+      "locator": {
+        "kind": "text",
+        "needle": "contains 125 public global sensemaking questions"
+      }
+    },
+    {
+      "id": "x-exact-42-e",
+      "artifactId": "external-arxiv-expansion-2607-19212v1",
+      "locator": {
+        "kind": "text",
+        "needle": "the case where an agent is designed to generate 8-note sequences"
+      }
+    },
+    {
+      "id": "x-exact-43-e",
+      "artifactId": "external-arxiv-expansion-2607-19035v1",
+      "locator": {
+        "kind": "text",
+        "needle": "points of discontinuity form a set of dimension at most q − 1"
+      }
+    },
+    {
+      "id": "x-time-00-e",
+      "artifactId": "mit-18065-lecture-1-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 452040,
+        "endMs": 477670
+      }
+    },
+    {
+      "id": "x-time-01-e",
+      "artifactId": "mit-18065-lecture-1-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 690220,
+        "endMs": 714410
+      }
+    },
+    {
+      "id": "x-time-02-e",
+      "artifactId": "mit-18065-lecture-1-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 1021690,
+        "endMs": 1044220
+      }
+    },
+    {
+      "id": "x-time-03-e",
+      "artifactId": "mit-18065-lecture-1-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 1171110,
+        "endMs": 1198360
+      }
+    },
+    {
+      "id": "x-time-04-e",
+      "artifactId": "mit-18065-lecture-1-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 1232090,
+        "endMs": 1259310
+      }
+    },
+    {
+      "id": "x-time-05-e",
+      "artifactId": "mit-18065-lecture-1-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 1803820,
+        "endMs": 1827050
+      }
+    },
+    {
+      "id": "x-time-06-e",
+      "artifactId": "mit-18065-lecture-6-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 932040,
+        "endMs": 958190
+      }
+    },
+    {
+      "id": "x-time-07-e",
+      "artifactId": "mit-18065-lecture-6-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 1290420,
+        "endMs": 1314590
+      }
+    },
+    {
+      "id": "x-time-08-e",
+      "artifactId": "mit-18065-lecture-6-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 1682580,
+        "endMs": 1704100
+      }
+    },
+    {
+      "id": "x-time-09-e",
+      "artifactId": "mit-18065-lecture-6-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 2822635,
+        "endMs": 2847600
+      }
+    },
+    {
+      "id": "x-time-10-e",
+      "artifactId": "mit-18065-lecture-6-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 2853380,
+        "endMs": 2879530
+      }
+    },
+    {
+      "id": "x-time-11-e",
+      "artifactId": "mit-18065-lecture-6-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 3120550,
+        "endMs": 3149580
+      }
+    },
+    {
+      "id": "x-time-12-e",
+      "artifactId": "mit-18065-lecture-25-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 212400,
+        "endMs": 239880
+      }
+    },
+    {
+      "id": "x-time-13-e",
+      "artifactId": "mit-18065-lecture-25-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 570980,
+        "endMs": 599560
+      }
+    },
+    {
+      "id": "x-time-14-e",
+      "artifactId": "mit-18065-lecture-25-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 1500560,
+        "endMs": 1528300
+      }
+    },
+    {
+      "id": "x-time-15-e",
+      "artifactId": "mit-18065-lecture-25-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 1650660,
+        "endMs": 1680000
+      }
+    },
+    {
+      "id": "x-time-16-e",
+      "artifactId": "mit-18065-lecture-25-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 1891030,
+        "endMs": 1918960
+      }
+    },
+    {
+      "id": "x-time-17-e",
+      "artifactId": "mit-18065-lecture-25-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 2280310,
+        "endMs": 2308930
+      }
+    },
+    {
+      "id": "x-time-18-e",
+      "artifactId": "mit-18065-lecture-25-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 2970880,
+        "endMs": 2999800
+      }
+    },
+    {
+      "id": "x-time-19-e",
+      "artifactId": "mit-18065-lecture-6-captions",
+      "locator": {
+        "kind": "time",
+        "startMs": 483460,
+        "endMs": 522740
+      }
+    }
+  ],
+  "queries": [
+    {
+      "id": "x-exact-00",
+      "text": "According to the reference list in the document \"Dark matter searches with a 13 meV threshold superconducting sensor array\", what year was the paper by S., Stevenson et al. on a 25‑micrometer single‑photon‑sensitive kinetic inductance detector published?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-00-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-01",
+      "text": "According to the Off-Context GRPO paper, how many attempts must the reference model fail on for a MATH dataset problem to be considered hard?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-01-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-02",
+      "text": "In the document titled \"Industrial Application of a Multi-Disciplinary Design Optimization with Uncertainties to a Pair of Telecommunication Satellites,\" what year was the OpenTURNS reference by Baudin et al. published?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-02-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-03",
+      "text": "According to the RAGAL study, what percentage of tickets was the assistant’s proposal rated at least partially aligned with the real resolution?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-03-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-04",
+      "text": "ColBERTv2 reduces late-interaction storage while retaining retrieval quality. Across how many of the 28 out-of-domain tests did it achieve the highest quality?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-04-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-05",
+      "text": "In the study titled \"Efficient quantum transport in disordered Floquet networks,\" how many sites are in the randomly generated network shown in Figure 2?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-05-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-06",
+      "text": "In the Posterior-DDIM study of diffusion-based image restoration, which value of the fine-tuning parameter η₀ gives the best empirical performance?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-06-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-07",
+      "text": "According to the paper titled \"Fundamental limits of distributed multiclass classification from simple binary decisions\", what is the smallest integer value of the dimension d for which the limiting probability of error is strictly positive?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-07-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-08",
+      "text": "In the study \"AILQA: Evaluating AI-Driven Legal Question Answering Systems for the Indian Legal System\", how many evaluation questions were used to compare model correctness?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-08-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-09",
+      "text": "In the study \"Spectral Biclustering-Driven Scalability for Post-Hoc Explainability in Recommender Systems,\" how many seconds does the biclustering stage take when the clustering resolution is set to K = L = 12?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-09-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-10",
+      "text": "In the MR-ConceptGCN sequential learner modeling study, how many participants were in the online user study?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-10-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-11",
+      "text": "According to “Steady States of a Single Trapped-Ion Spin Coupled to an Engineered Non-Markovian Bath,” at what Γ_eff/B value does the crossover between the Zeno-polarized and steady-state depolarized regimes occur?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-11-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-12",
+      "text": "In the experiment described in \"Staypoint Detection from Noisy Trajectory Data,\" how many candidate combinations were initially evaluated?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-12-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-13",
+      "text": "In the paper titled \"A relaxed-inertial proximal point algorithm for strongly quasiconvex equilibrium problems on Hadamard manifolds,\" which lemma defines the terms cₖ and dₖ that are used to show dₖ−cₖ=0?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-13-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-14",
+      "text": "In the paper titled \"Real-time optimal control with shallow recurrent decoder networks\", how many ROM latent variables are mentioned?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-14-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-15",
+      "text": "In the document titled \"1-Lipschitz Neural Networks on Hadamard Manifolds\", for how many epochs are both denoisers trained before being frozen for the Plug-and-Play reconstruction?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-15-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-16",
+      "text": "In the trapped-ion study of steady states under an engineered non-Markovian bath, approximately how many reset profiles did the researchers collect for each Γ_eff/B value?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-16-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-17",
+      "text": "What test-set loss value does the Placement baseline achieve for L frac‑fair with N = 2 on the MLSR‑Web30k dataset?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-17-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-18",
+      "text": "What is the Department of Energy award number acknowledged in the paper titled \"A Reinforcement-Learning-Augmented Liquid-Fueled Reactor Network Model for Predicting Lean Blowout in Gas Turbine Combustors\"?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-18-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-19",
+      "text": "In the ResearchArena report, what suspicion score was assigned to the baseline that read the hidden evaluator code?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-19-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-20",
+      "text": "In which year did Kulenovic et al. publish their Polypharmacy Optimization Case Study referenced in the review?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-20-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-21",
+      "text": "In the document titled \"Active Disturbance Rejection for Boundary Control Systems\", what function space is the unknown external disturbance signal d assumed to belong to?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-21-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-22",
+      "text": "In the optimal subgradient methods paper, what must the optimal fixed step sizes depend on?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-22-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-23",
+      "text": "In the study titled \"Dynamical correlation functions of extensive charges after global quantum quenches,\" what is the maximum final time t₂ that the authors were able to reach while keeping good precision?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-23-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-24",
+      "text": "According to the study \"Answer-Reconstruction Search Density: Measuring the Query and Source Work Compressed by Conversational Answers\", what is the median live-web ARSD 80 value?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-24-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-25",
+      "text": "In the continuous-variable estimation framework, what property is necessary but insufficient for stable reconstruction?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-25-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-26",
+      "text": "In the study \"Beyond Noisy Signals: Dual-Level Denoising for Multi-modal Sequential Recommendation,\" what is the memory capacity of the GPU used for experiments?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-26-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-27",
+      "text": "In which year was the preliminary version of the paper presented at the International Conference on Quantum Communications, Networking, and Computing (QCNC) according to the document \"Evaluating DV/CV-QKD Architectures for SAFE Long-Term Secure Storage: A Risk Model and ILP-Based Cost Optimization Approach\"?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-27-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-28",
+      "text": "In the online sparse observers study, what attack behavior do the authors focus on first?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-28-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-29",
+      "text": "In the CircuitKIT study, what fraction of the model is frozen to bound how far the update can drift?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-29-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-30",
+      "text": "According to the TSGR: Taobao Search Generative Retrieval study, what percentage gain did TSGR achieve in IPV during the production A/B test?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-30-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-31",
+      "text": "In the SoK titled \"Adversarial Robustness of the Variational Quantum Eigensolver via Red-Teaming\", how many noise‑calibrated IBM backends were used in the experiments?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-31-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-32",
+      "text": "According to the paper titled \"An Epistemic Position-Based Click Model: From Interactions to Epistemic Distributions of Relevance and Bias\", what are the dates of the SIGIR ’26 conference?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-32-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-33",
+      "text": "According to the paper \"Decentralized Linearized Consensus ADMM with Efficient Quantized Communication\", what is the upper bound on the infinity norm of \\|M_i - m_i\\|_∞ guaranteed by Algorithm 2?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-33-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-34",
+      "text": "In the CircuitKIT documentation, which year is associated with the reference to the paper titled “EAP‑GP: Mitigating saturation effect in gradient‑based automated circuit identification”?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-34-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-35",
+      "text": "In the document titled Model-Agnostic Meta Learning for Differentiable MPC, what year is the arXiv preprint by Yan, Chakrabarty, Schmid, Lygeros, and Rupenyan listed?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-35-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-36",
+      "text": "In the paper titled \"Gaussian Boson Sampling for Asset Clustering in Statistical Arbitrage Portfolios,\" which stock index data set is used for benchmarking the hybrid clustering algorithms?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-36-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-37",
+      "text": "According to the study \"Biological Amnesia in ICU Time-Series Prediction: A Drift-Adaptive Two-Stream Architecture with Temporal Retrieval\", what clinician‑rated P@5 score did Run B achieve?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-37-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-38",
+      "text": "In the document titled \"Perfect state transfer in Grover walks on normal Cayley graphs,\" which example is cited as providing a Cayley graph that exhibits perfect state transfer?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-38-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-39",
+      "text": "What Fréchet Inception Distance (FID) score does the ROMS-IMLE model report on ImageNet 256?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-39-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-40",
+      "text": "In the paper on limits of quantum computers for power flow, what asymptotic complexity does it give for dense factorization?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-40-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-41",
+      "text": "According to the PAGE‑RAG paper, how many public global sensemaking questions are included in the UltraDomain‑Mix benchmark?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-41-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-42",
+      "text": "In the document titled \"Teleportation Game: Quantum Teleportation in Multi-Agent Systems for Interactive Music\", how many notes does the single quantum agent generate per sequence?",
+      "family": "exact-value",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-42-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-exact-43",
+      "text": "In the paper on graphical stability of set-valued integrals, for a semialgebraic outer semicontinuous map on R^q, what is the stated dimension bound on its discontinuity set?",
+      "family": "exact-value",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-exact-43-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-00",
+      "text": "In the MIT 18.065 lecture 1, at about 7:32, what does the professor describe as the next step after recognizing that Ax represents a combination of A's columns?",
+      "family": "timestamp",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-00-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-01",
+      "text": "At about 11:30 in MIT 18.065 lecture 1, what does the instructor say the rank of the matrix represents?",
+      "family": "timestamp",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-01-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-02",
+      "text": "At about 17:01 in MIT 18.065 lecture 1, why does the instructor say he will review before moving on to something new?",
+      "family": "timestamp",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-02-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-03",
+      "text": "At about 19:31 in the MIT 18.065 lecture 1, what does the speaker conclude about the columns after identifying which ones are independent?",
+      "family": "timestamp",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-03-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-04",
+      "text": "At about 20:32 in the MIT 18.065 lecture 1 on the column space of A, what dimensions does the speaker say the matrix Rx must have?",
+      "family": "timestamp",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-04-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-05",
+      "text": "At about 30:03 in the MIT 18.065 lecture 1, why does the speaker say that the column rank and row rank are both two?",
+      "family": "timestamp",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-05-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-06",
+      "text": "In the MIT 18.065 lecture 6 on singular value decomposition, what does the speaker say at about 15:32 regarding the relationship between sigma transpose sigma and the eigenvalues of A transpose A?",
+      "family": "timestamp",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-06-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-07",
+      "text": "In the MIT 18.065 lecture 6 on singular value decomposition, at about 21:30, why does the speaker need to prove that the vectors u obtained as Av/σ are orthogonal?",
+      "family": "timestamp",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-07-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-08",
+      "text": "At about 28:02 in MIT 18.065 lecture 6, what does the instructor say about the condition number and why it should be avoided?",
+      "family": "timestamp",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-08-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-09",
+      "text": "At about 47:02 in MIT 18.065 lecture 6, what does the professor say about how any matrix can be factored?",
+      "family": "timestamp",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-09-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-10",
+      "text": "At about 47:33 in MIT 18.065 lecture 6, what matrix does the speaker say they need to find after using the SVD?",
+      "family": "timestamp",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-10-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-11",
+      "text": "At about 52:00 in MIT 18.065 lecture 6, what does the speaker say about the relative magnitudes of the orthonormal components?",
+      "family": "timestamp",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-11-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-12",
+      "text": "In the MIT 18.065 lecture 25, what type of problem is described at about 3:32 when the speaker says we are trying to find an x over a cost?",
+      "family": "timestamp",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-12-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-13",
+      "text": "At about 9:30 in the MIT 18.065 lecture 25, what does the speaker say deep neural networks illustrate regarding the finite‑sum problem?",
+      "family": "timestamp",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-13-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-14",
+      "text": "At about 25:00 in MIT 18.065 lecture 25, what kind of example does the speaker say will give insight into why stochastic gradient methods work well initially?",
+      "family": "timestamp",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-14-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-15",
+      "text": "At about 27:30 in the MIT 18.065 lecture 25, what does the speaker say we will use instead of the full gradient?",
+      "family": "timestamp",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-15-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-16",
+      "text": "At about 31:31 in the MIT 18.065 lecture 25 on stochastic gradient descent, what does the speaker say about how the stochastic gradient relates to the true gradient when far from the optimum?",
+      "family": "timestamp",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-16-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-17",
+      "text": "In the MIT 18.065 lecture 25, what reason does the speaker give at about 38:00 for why unbiasedness alone isn’t enough for stochastic gradient descent to work well?",
+      "family": "timestamp",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-17-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-18",
+      "text": "In the MIT 18.065 lecture 25 excerpt at about 49:30, what components of stochastic gradient descent are identified as the moving parts that need careful selection?",
+      "family": "timestamp",
+      "split": "development",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-18-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-time-19",
+      "text": "At about 8:15 in MIT 18.065 lecture 6, what relation replaces Av = λv for a rectangular matrix A?",
+      "family": "timestamp",
+      "split": "test",
+      "requiredEvidenceGroups": [
+        [
+          "x-time-19-e"
+        ]
+      ]
+    },
+    {
+      "id": "x-none-00",
+      "text": "In the Bayes lesson, which prior family does it recommend as the default for estimating a Bernoulli rate?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-01",
+      "text": "Which MCMC algorithm does the Bayes lesson recommend for drawing from a posterior that cannot be normalized analytically?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-02",
+      "text": "Which information criterion does the Bayes lesson tell students to use to compare fitted models?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-03",
+      "text": "What amino-acid residue does the membrane lesson identify as the phosphorylation site regulating AQP2 trafficking?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-04",
+      "text": "Which named ATPase does the membrane lesson use as its example of primary active transport?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-05",
+      "text": "Which glucose transporter does the membrane lesson use as an example of insulin-regulated translocation?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-06",
+      "text": "Which phospholipid does the lesson identify as enriched in the outer leaflet of a resting plasma membrane?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-07",
+      "text": "Which named Antarctic ice-core site does the climate lesson use for its gas-age versus ice-age example?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-08",
+      "text": "Which isotope ratio does the climate lesson use as its worked example for reconstructing past temperature?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-09",
+      "text": "Which alkenone index does the lesson name as a marine-sediment temperature proxy?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-10",
+      "text": "Which tree species does the climate lesson use as its worked example of a temperature-limited high-elevation site?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-11",
+      "text": "What time complexity does the graph lesson state for breadth-first search with adjacency lists?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-12",
+      "text": "When equal tentative distances occur, what tie-breaking rule does the graph lesson prescribe for Dijkstra’s priority queue?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-13",
+      "text": "How many edge-relaxation passes does the graph lesson prescribe as Bellman-Ford’s exact fixed iteration count?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-14",
+      "text": "What runtime bound does the graph lesson give for Floyd-Warshall on a dense graph?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-15",
+      "text": "Which named historical event is used as the lesson’s case study for comparing primary and secondary sources?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-16",
+      "text": "Which historiographical school does the lesson credit with establishing the modern practice of source criticism?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-17",
+      "text": "Which medieval record does the lesson use as its example of an administrative source with incomplete coverage?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-18",
+      "text": "Which ancient law code does the lesson identify as an example of a primary source?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-19",
+      "text": "Which named repository does the lesson recommend searching for original government records?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-20",
+      "text": "What working fluid does the thermodynamics lesson specify for a Carnot heat-engine example?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-21",
+      "text": "What efficiency does the thermodynamics lesson calculate for an Otto-cycle engine?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-22",
+      "text": "What molar heat capacity of copper does the thermodynamics lesson use in its entropy example?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-23",
+      "text": "What entropy change does the thermodynamics lesson give for melting one mole of ice at 0 °C?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-24",
+      "text": "What coefficient of performance does the lesson calculate for a refrigerator operating between specified reservoirs?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-25",
+      "text": "What bootstrap confidence interval does the retrieval lecture recommend reporting for nDCG@10?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-26",
+      "text": "What reciprocal-rank-fusion constant does the retrieval lecture recommend for combining ranked lists?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-27",
+      "text": "What minimum Recall@100 threshold does the retrieval lecture require before comparing rerankers?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-28",
+      "text": "What date does the Quarterly Allocation Memo give for release of the operating-budget reserve?",
+      "family": "unanswerable",
+      "split": "development",
+      "requiredEvidenceGroups": []
+    },
+    {
+      "id": "x-none-29",
+      "text": "How many dollars does the Quarterly Allocation Memo approve for staff training in the quarter?",
+      "family": "unanswerable",
+      "split": "test",
+      "requiredEvidenceGroups": []
+    }
+  ],
+  "judgments": [
+    {
+      "queryId": "x-exact-00",
+      "evidenceId": "x-exact-00-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-01",
+      "evidenceId": "x-exact-01-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-02",
+      "evidenceId": "x-exact-02-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-03",
+      "evidenceId": "x-exact-03-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-04",
+      "evidenceId": "x-exact-04-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-05",
+      "evidenceId": "x-exact-05-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-06",
+      "evidenceId": "x-exact-06-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-07",
+      "evidenceId": "x-exact-07-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-08",
+      "evidenceId": "x-exact-08-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-09",
+      "evidenceId": "x-exact-09-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-10",
+      "evidenceId": "x-exact-10-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-11",
+      "evidenceId": "x-exact-11-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-12",
+      "evidenceId": "x-exact-12-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-13",
+      "evidenceId": "x-exact-13-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-14",
+      "evidenceId": "x-exact-14-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-15",
+      "evidenceId": "x-exact-15-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-16",
+      "evidenceId": "x-exact-16-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-17",
+      "evidenceId": "x-exact-17-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-18",
+      "evidenceId": "x-exact-18-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-19",
+      "evidenceId": "x-exact-19-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-20",
+      "evidenceId": "x-exact-20-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-21",
+      "evidenceId": "x-exact-21-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-22",
+      "evidenceId": "x-exact-22-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-23",
+      "evidenceId": "x-exact-23-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-24",
+      "evidenceId": "x-exact-24-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-25",
+      "evidenceId": "x-exact-25-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-26",
+      "evidenceId": "x-exact-26-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-27",
+      "evidenceId": "x-exact-27-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-28",
+      "evidenceId": "x-exact-28-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-29",
+      "evidenceId": "x-exact-29-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-30",
+      "evidenceId": "x-exact-30-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-31",
+      "evidenceId": "x-exact-31-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-32",
+      "evidenceId": "x-exact-32-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-33",
+      "evidenceId": "x-exact-33-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-34",
+      "evidenceId": "x-exact-34-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-35",
+      "evidenceId": "x-exact-35-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-36",
+      "evidenceId": "x-exact-36-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-37",
+      "evidenceId": "x-exact-37-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-38",
+      "evidenceId": "x-exact-38-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-39",
+      "evidenceId": "x-exact-39-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-40",
+      "evidenceId": "x-exact-40-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-41",
+      "evidenceId": "x-exact-41-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-42",
+      "evidenceId": "x-exact-42-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-exact-43",
+      "evidenceId": "x-exact-43-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-00",
+      "evidenceId": "x-time-00-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-01",
+      "evidenceId": "x-time-01-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-02",
+      "evidenceId": "x-time-02-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-03",
+      "evidenceId": "x-time-03-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-04",
+      "evidenceId": "x-time-04-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-05",
+      "evidenceId": "x-time-05-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-06",
+      "evidenceId": "x-time-06-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-07",
+      "evidenceId": "x-time-07-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-08",
+      "evidenceId": "x-time-08-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-09",
+      "evidenceId": "x-time-09-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-10",
+      "evidenceId": "x-time-10-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-11",
+      "evidenceId": "x-time-11-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-12",
+      "evidenceId": "x-time-12-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-13",
+      "evidenceId": "x-time-13-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-14",
+      "evidenceId": "x-time-14-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-15",
+      "evidenceId": "x-time-15-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-16",
+      "evidenceId": "x-time-16-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-17",
+      "evidenceId": "x-time-17-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-18",
+      "evidenceId": "x-time-18-e",
+      "grade": 3
+    },
+    {
+      "queryId": "x-time-19",
+      "evidenceId": "x-time-19-e",
+      "grade": 3
+    }
+  ]
+}
