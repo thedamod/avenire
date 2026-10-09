@@ -14,6 +14,7 @@ const nextConfig: NextConfig = {
     "@avenire/shared",
     "@avenire/storage",
     "@avenire/ui",
+    "@avenire/viz",
   ],
   typescript: { ignoreBuildErrors: true },
 };
