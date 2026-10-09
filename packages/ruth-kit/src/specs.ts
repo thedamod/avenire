@@ -202,3 +202,5 @@ export const ruthKitSpecs = {
   archive_file: tool(archiveFileSpec),
   render_widget: tool(renderWidgetSpec),
 };
+
+export * from "./sandbox-specs.ts";

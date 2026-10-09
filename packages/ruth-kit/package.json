@@ -42,6 +42,18 @@
     "./sandbox-meter": {
       "types": "./src/sandbox-meter.ts",
       "import": "./src/sandbox-meter.ts"
+    },
+    "./sandbox-tools": {
+      "types": "./src/sandbox-tools.ts",
+      "import": "./src/sandbox-tools.ts"
+    },
+    "./artifacts": {
+      "types": "./src/artifacts.ts",
+      "import": "./src/artifacts.ts"
+    },
+    "./sandbox-specs": {
+      "types": "./src/sandbox-specs.ts",
+      "import": "./src/sandbox-specs.ts"
     }
   },
   "scripts": {
@@ -49,6 +61,7 @@
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
+    "@avenire/cloud": "workspace:*",
     "@avenire/contracts": "workspace:*",
     "@avenire/database": "workspace:*",
     "@avenire/ingestion": "workspace:*",

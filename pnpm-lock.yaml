@@ -667,6 +667,9 @@ importers:
 
   packages/ruth-kit:
     dependencies:
+      '@avenire/cloud':
+        specifier: workspace:*
+        version: link:../cloud
       '@avenire/contracts':
         specifier: workspace:*
         version: link:../contracts

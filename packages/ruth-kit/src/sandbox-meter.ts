@@ -6,17 +6,8 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
+import { SandboxMeter, SandboxQuotaExceeded } from "@avenire/cloud/chat-sandbox";
 
-/** Mirrors Cloud's quota tag without introducing a dependency; dedupe when wiring the next slice. */
-export class SandboxQuotaExceeded extends Schema.TaggedError<SandboxQuotaExceeded>()(
-  "SandboxQuotaExceeded",
-  { reason: Schema.String },
-) {
-  override get message(): string {
-    return this.reason;
-  }
-}
 export interface SandboxMeterDb {
   readonly ensureAllowance: (userId: string) => Effect.Effect<void, SandboxQuotaExceeded>;
   readonly record: (userId: string, seconds: number) => Effect.Effect<void>;
@@ -35,7 +26,7 @@ export const SandboxMeterSettingsLive = Layer.effect(
   }),
 );
 
-/** Config is supplied by a layer so the factory can be wired to Cloud's independently owned tag. */
+/** Settings are supplied by a layer so tests can control the daily allowance. */
 export const makeSandboxMeter = Effect.fn("SandboxMeter.make")(function* (): Effect.fn.Return<
   SandboxMeterDb,
   never,
@@ -76,3 +67,7 @@ export const makeSandboxMeter = Effect.fn("SandboxMeter.make")(function* (): Eff
     }),
   };
 });
+
+export const SandboxMeterLive = Layer.effect(SandboxMeter, makeSandboxMeter()).pipe(
+  Layer.provide(SandboxMeterSettingsLive),
+);
