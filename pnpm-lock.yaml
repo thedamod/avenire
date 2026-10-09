@@ -282,6 +282,9 @@ importers:
       '@avenire/ingestion':
         specifier: workspace:*
         version: link:../../packages/ingestion
+      '@avenire/ruth-kit':
+        specifier: workspace:*
+        version: link:../../packages/ruth-kit
       '@avenire/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -291,6 +294,9 @@ importers:
       '@avenire/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@avenire/viz':
+        specifier: workspace:*
+        version: link:../../packages/viz
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0(effect@4.0.0)(redis@6.3.0(@opentelemetry/api@1.9.1))
@@ -370,12 +376,21 @@ importers:
       '@avenire/ingestion':
         specifier: workspace:*
         version: link:../ingestion
+      '@avenire/ruth-kit':
+        specifier: workspace:*
+        version: link:../ruth-kit
       '@avenire/shared':
         specifier: workspace:*
         version: link:../shared
       '@avenire/storage':
         specifier: workspace:*
         version: link:../storage
+      '@avenire/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@avenire/viz':
+        specifier: workspace:*
+        version: link:../viz
       ai:
         specifier: 'catalog:'
         version: 7.0.127(zod@4.6.5)
