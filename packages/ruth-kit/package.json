@@ -1,0 +1,68 @@
+{
+  "name": "@avenire/ruth-kit",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./schema": {
+      "types": "./src/schema.ts",
+      "import": "./src/schema.ts"
+    },
+    "./specs": {
+      "types": "./src/specs.ts",
+      "import": "./src/specs.ts"
+    },
+    "./core": {
+      "types": "./src/core.ts",
+      "import": "./src/core.ts"
+    },
+    "./tools": {
+      "types": "./src/tools.ts",
+      "import": "./src/tools.ts"
+    },
+    "./selectors": {
+      "types": "./src/selectors.ts",
+      "import": "./src/selectors.ts"
+    },
+    "./ai-sdk": {
+      "types": "./src/ai-sdk.ts",
+      "import": "./src/ai-sdk.ts"
+    },
+    "./widgets": {
+      "types": "./src/widgets.ts",
+      "import": "./src/widgets.ts"
+    },
+    "./run-tokens": {
+      "types": "./src/run-tokens.ts",
+      "import": "./src/run-tokens.ts"
+    },
+    "./gateway": {
+      "types": "./src/gateway.ts",
+      "import": "./src/gateway.ts"
+    },
+    "./sandbox-meter": {
+      "types": "./src/sandbox-meter.ts",
+      "import": "./src/sandbox-meter.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
+  },
+  "dependencies": {
+    "@avenire/contracts": "workspace:*",
+    "@avenire/database": "workspace:*",
+    "@avenire/ingestion": "workspace:*",
+    "@avenire/shared": "workspace:*",
+    "@avenire/storage": "workspace:*",
+    "@avenire/ui": "workspace:*",
+    "@avenire/viz": "workspace:*",
+    "ai": "catalog:",
+    "drizzle-orm": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

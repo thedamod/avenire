@@ -650,6 +650,49 @@ importers:
         specifier: 'catalog:'
         version: 1.0.0(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(@vitest/ui@5.0.1)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1)
 
+  packages/ruth-kit:
+    dependencies:
+      '@avenire/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@avenire/database':
+        specifier: workspace:*
+        version: link:../database
+      '@avenire/ingestion':
+        specifier: workspace:*
+        version: link:../ingestion
+      '@avenire/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@avenire/storage':
+        specifier: workspace:*
+        version: link:../storage
+      '@avenire/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@avenire/viz':
+        specifier: workspace:*
+        version: link:../viz
+      ai:
+        specifier: 'catalog:'
+        version: 7.0.127(zod@4.6.5)
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.3(@opentelemetry/api@1.9.1)(kysely@0.29.6)(postgres@3.4.9)
+      effect:
+        specifier: 4.0.0
+        version: 4.0.0
+    devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0(patch_hash=112dee14dee02dffa6238fd0ea63584c27dca8b6162351b448f3f03f41a8c1b8)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(@vitest/ui@5.0.1(vitest@5.0.1))(effect@4.0.0)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(typescript@7.0.2)(vitest@5.0.1)(yaml@2.9.1)
+      '@types/node':
+        specifier: 24.12.4
+        version: 24.12.4
+      vite-plus:
+        specifier: 'catalog:'
+        version: 1.0.0(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(@vitest/ui@5.0.1)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1)
+
   packages/shared:
     dependencies:
       '@avenire/contracts':
