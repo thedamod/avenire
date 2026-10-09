@@ -22,6 +22,10 @@
     "./snapshots": {
       "types": "./src/snapshots.ts",
       "import": "./src/snapshots.ts"
+    },
+    "./cloud-box": {
+      "types": "./src/cloudBox.ts",
+      "import": "./src/cloudBox.ts"
     }
   },
   "scripts": {
