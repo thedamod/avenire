@@ -11,11 +11,13 @@
     "./components/*": {
       "types": "./src/components/*.tsx",
       "import": "./src/components/*.tsx"
-    }
+    },
+    "./tokens": "./src/styles/tokens.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
+    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests",
+    "tokens:generate": "node scripts/generate-tokens.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
