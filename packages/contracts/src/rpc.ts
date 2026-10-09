@@ -11,7 +11,6 @@ import {
   ApprovalDecision,
   Artifact,
   CloudRun,
-  CloudSchedule,
   CloudTask,
   CloudTaskInput,
   PendingApproval,
@@ -154,13 +153,6 @@ export class CloudRpcs extends RpcGroup.make(
     success: Schema.Array(CloudRun),
     error: ApiError,
   }),
-  Rpc.make("cloud.getSchedule", { success: CloudSchedule, error: ApiError }),
-  Rpc.make("cloud.setSchedule", {
-    payload: CloudSchedule,
-    success: CloudSchedule,
-    error: ApiError,
-  }),
-  Rpc.make("cloud.runNow", { success: CloudRun, error: ApiError }),
   Rpc.make("cloud.cancelRun", {
     payload: { runId: CloudRunId },
     success: CloudRun,

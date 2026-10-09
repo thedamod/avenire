@@ -440,17 +440,6 @@ export const ruthMessage = pgTable(
   (t) => [index("ruth_message_thread_created_idx").on(t.threadId, t.createdAt)],
 );
 
-export const cloudSchedule = pgTable("cloud_schedule", {
-  userId: text("user_id")
-    .primaryKey()
-    .references(() => user.id, { onDelete: "cascade" }),
-  enabled: boolean("enabled").notNull().default(true),
-  runAt: text("run_at").notNull().default("03:00"),
-  timeZone: text("time_zone").notNull().default("UTC"),
-  artifactKinds: jsonb("artifact_kinds").$type<ReadonlyArray<ArtifactKind>>().notNull(),
-  updatedAt: timestamptz("updated_at").notNull().defaultNow(),
-});
-
 /** Scheduled work in the user's persistent Ruth Cloud workspace. */
 export const cloudTask = pgTable(
   "cloud_task",
@@ -491,16 +480,19 @@ export const cloudRun = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    taskId: text("task_id").references(() => cloudTask.id, { onDelete: "cascade" }),
+    taskId: text("task_id")
+      .notNull()
+      .references(() => cloudTask.id, { onDelete: "cascade" }),
     clusterId: text("cluster_id").references(() => cluster.id, { onDelete: "set null" }),
-    scheduledFor: timestamptz("scheduled_for"),
+    scheduledFor: timestamptz("scheduled_for").notNull(),
+    /** When a worker claimed the run; a run active long past this belongs to a dead worker. */
+    claimedAt: timestamptz("claimed_at"),
+    notBefore: timestamptz("not_before").notNull().defaultNow(),
     attempt: integer("attempt").notNull().default(1),
     summary: text("summary"),
     reportMessageId: text("report_message_id"),
     logTail: text("log_tail"),
     status: text("status").$type<CloudRunStatus>().notNull(),
-    windowStart: timestamptz("window_start").notNull(),
-    windowEnd: timestamptz("window_end").notNull(),
     startedAt: timestamptz("started_at"),
     finishedAt: timestamptz("finished_at"),
     error: text("error"),
@@ -508,7 +500,8 @@ export const cloudRun = pgTable(
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [
-    unique("cloud_run_user_window_start_unique").on(t.userId, t.windowStart),
+    index("cloud_run_status_not_before_idx").on(t.status, t.notBefore),
+    index("cloud_run_user_status_idx").on(t.userId, t.status),
     uniqueIndex("cloud_run_task_scheduled_attempt_unique").on(t.taskId, t.scheduledFor, t.attempt),
   ],
 );
@@ -705,7 +698,6 @@ export const schema = {
   searchCache,
   ruthThread,
   ruthMessage,
-  cloudSchedule,
   cloudRun,
   cloudTask,
   cloudRunToken,
@@ -740,7 +732,6 @@ export type EntityRow = typeof entity.$inferSelect;
 export type EntityRelationRow = typeof entityRelation.$inferSelect;
 export type RuthThreadRow = typeof ruthThread.$inferSelect;
 export type RuthMessageRow = typeof ruthMessage.$inferSelect;
-export type CloudScheduleRow = typeof cloudSchedule.$inferSelect;
 export type CloudRunRow = typeof cloudRun.$inferSelect;
 export type ArtifactRow = typeof artifact.$inferSelect;
 export type EmailOutboxRow = typeof emailOutbox.$inferSelect;

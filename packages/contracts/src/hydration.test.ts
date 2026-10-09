@@ -33,7 +33,7 @@ describe("hydration selectors", () => {
   });
 });
 
-describe("additive Cloud contracts", () => {
+describe("Cloud task contracts", () => {
   it("uses tagged cron and once schedules", () => {
     const decode = Schema.decodeUnknownSync(CloudTaskSchedule);
     expect(decode({ _tag: "cron", expression: "0 3 * * *" })).toEqual({
@@ -54,17 +54,27 @@ describe("additive Cloud contracts", () => {
     expect(() => Schema.decodeUnknownSync(CloudTaskInput)({ enabled: false })).toThrow();
   });
 
-  it("continues decoding legacy Cloud runs without task fields", () => {
+  it("requires task occurrence fields on every Cloud run", () => {
     const input = {
       id: "run-1",
       status: "scheduled",
-      windowStart: "2026-10-09T00:00:00Z",
-      windowEnd: "2026-10-10T00:00:00Z",
+      taskId: "task-1",
+      taskTitle: "Nightly study digest",
+      scheduledFor: "2026-10-10T03:00:00Z",
+      attempt: 1,
+      summary: null,
       startedAt: null,
       finishedAt: null,
       error: null,
       artifacts: [],
     };
     expect(Schema.decodeUnknownSync(CloudRun)(input)).toEqual(input);
+    for (const field of ["taskId", "taskTitle", "scheduledFor", "attempt", "summary"]) {
+      const legacy: Record<string, unknown> = { ...input };
+      delete legacy[field];
+      expect(() => Schema.decodeUnknownSync(CloudRun)(legacy)).toThrow();
+    }
+    for (const name of ["cloud.getSchedule", "cloud.setSchedule", "cloud.runNow"])
+      expect(CloudRpcs.requests.has(name)).toBe(false);
   });
 });

@@ -1,7 +1,6 @@
 /**
  * Ruth Cloud - scheduled sandboxed work that produces study artifacts and proposed syncs.
  *
- * Legacy nightly schedules and material windows remain supported during the task transition.
  * Changes to existing material are represented as pending approvals.
  */
 import * as Schema from "effect/Schema";
@@ -53,30 +52,18 @@ export type Artifact = typeof Artifact.Type;
 export const CloudRun = Schema.Struct({
   id: CloudRunId,
   status: CloudRunStatus,
-  /** Optional while legacy nightly runs remain supported. */
-  taskId: Schema.optionalKey(Schema.NullOr(CloudTaskId)),
+  taskId: CloudTaskId,
+  taskTitle: Schema.String,
   /** Scheduled occurrence (ISO), shared by retries. */
-  scheduledFor: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  attempt: Schema.optionalKey(Schema.Int),
-  summary: Schema.optionalKey(Schema.NullOr(Schema.String)),
-  /** Start of the material window this run covers (ISO). */
-  windowStart: Schema.String,
-  windowEnd: Schema.String,
+  scheduledFor: Schema.String,
+  attempt: Schema.Int,
+  summary: Schema.NullOr(Schema.String),
   startedAt: Schema.NullOr(Schema.String),
   finishedAt: Schema.NullOr(Schema.String),
   error: Schema.NullOr(Schema.String),
   artifacts: Schema.Array(Artifact),
 });
 export type CloudRun = typeof CloudRun.Type;
-
-export const CloudSchedule = Schema.Struct({
-  enabled: Schema.Boolean,
-  /** Local wall-clock time, `HH:mm`. */
-  runAt: Schema.String.check(Schema.isPattern(/^([01]\d|2[0-3]):[0-5]\d$/)),
-  timeZone: Schema.String,
-  artifactKinds: Schema.Array(ArtifactKind),
-});
-export type CloudSchedule = typeof CloudSchedule.Type;
 
 /** Task schedules use Effect's `_tag` discriminator. Times are ISO strings. */
 export const CloudTaskSchedule = Schema.Union([
