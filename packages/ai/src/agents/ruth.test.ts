@@ -1,5 +1,11 @@
+import { ThreadId, UserId } from "@avenire/contracts";
+import { MockLanguageModelV4 } from "ai/test";
+import * as Context from "effect/Context";
+import { RuthModels } from "../models/index.ts";
+import { ruthToolSpecs } from "../tools/index.ts";
+import type { RuthToolServices } from "../tools/ruth.ts";
 import { describe, expect, it } from "@effect/vitest";
-import { appendIncoming } from "./ruth.ts";
+import { appendIncoming, createRuthAgent } from "./ruth.ts";
 import type { RuthUIMessage } from "../message-types.ts";
 import { findVisuals } from "../tools/page.ts";
 
@@ -46,3 +52,48 @@ describe("appendIncoming", () => {
     expect(next.at(-1)).toMatchObject({ id: "fresh", metadata: { createdAt: options.createdAt } });
   });
 });
+
+for (const fullAccess of [false, true]) {
+  it(`uses shared approval policy ${fullAccess ? "with" : "without"} Full access`, () => {
+    // Creating a toolset does not execute services; all live providers remain absent.
+    const services = Context.empty() as Context.Context<RuthToolServices>;
+    const agent = createRuthAgent({
+      models: RuthModels.of({ languageModel: () => new MockLanguageModelV4() }),
+      services,
+      fullAccess,
+      turn: {
+        userId: UserId.make("user"),
+        threadId: ThreadId.make("thread"),
+        fullAccess,
+        timeZone: "UTC",
+        page: {
+          surface: "chat",
+          platform: "web",
+          contentWidthPx: 480,
+          colorScheme: "light",
+          themeTokens: {},
+          fonts: { body: "sans-serif", mono: "monospace" },
+        },
+        existingVisuals: [],
+      },
+    });
+    for (const name of ["write_file", "move_file", "rename_file", "archive_file"]) {
+      expect(agent.tools[name]?.needsApproval).toBe(!fullAccess);
+      expect(agent.toolApproval[name]).toBe(fullAccess ? "approved" : undefined);
+    }
+    for (const name of [
+      "render_widget",
+      "sandbox_exec",
+      "sandbox_write",
+      "sandbox_read",
+      "sandbox_download_artifact",
+      "sandbox_close",
+    ]) {
+      expect(agent.tools[name]?.needsApproval).toBe(false);
+      expect(agent.toolApproval[name]).toBeUndefined();
+    }
+    for (const name of ["run_python", "read_item", "propose_file_action"])
+      expect(agent.tools).not.toHaveProperty(name);
+    expect(Object.keys(agent.tools).sort()).toEqual(Object.keys(ruthToolSpecs).sort());
+  });
+}

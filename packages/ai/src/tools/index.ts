@@ -3,88 +3,13 @@
  * server-side `execute` (see `ruth.ts`, `skills.ts`). Kept free of server
  * dependencies so clients can derive their message types from it.
  */
-import {
-  ArtifactId,
-  ChunkId,
-  ChunkLocation,
-  FileAction,
-  ItemId,
-  PageContext,
-  GraphFact,
-  SearchAspect,
-  SearchDepth,
-  SearchHit,
-} from "@avenire/contracts";
+import { PageContext } from "@avenire/contracts";
+import { ruthKitSpecs, ruthSandboxSpecs } from "@avenire/ruth-kit/specs";
 import { tool } from "ai";
 import * as Schema from "effect/Schema";
 
 import { AVAILABLE_SKILLS } from "../skills/index.ts";
 import { standardSchema } from "./schema.ts";
-
-const ChunkResult = Schema.Struct({
-  chunkId: ChunkId,
-  itemId: ItemId,
-  title: Schema.String,
-  location: ChunkLocation,
-  content: Schema.String,
-});
-
-export const searchMaterialsSpec = {
-  description:
-    "Search the user's study material before explaining a concept. Use deep depth for comparisons, multi-step, or relationship questions. Abstained means the materials do not cover the question; facts are graph relations with chunk citations.",
-  inputSchema: standardSchema(
-    Schema.Struct({
-      query: Schema.NonEmptyString,
-      limit: Schema.optionalKey(Schema.Int),
-      depth: Schema.optionalKey(SearchDepth),
-    }),
-  ),
-  outputSchema: standardSchema(
-    Schema.Struct({
-      hits: Schema.Array(
-        Schema.Struct({
-          ...ChunkResult.fields,
-          relevance: Schema.NullOr(Schema.Number),
-          context: SearchHit.fields.context,
-        }),
-      ),
-      facts: Schema.Array(GraphFact),
-      aspects: Schema.Array(SearchAspect),
-      abstained: Schema.Boolean,
-    }),
-  ),
-};
-
-export const readItemSpec = {
-  description: "Read consecutive chunks of one item, e.g. to see the context around a search hit.",
-  inputSchema: standardSchema(
-    Schema.Struct({
-      itemId: ItemId,
-      fromOrdinal: Schema.optionalKey(Schema.Int),
-      count: Schema.optionalKey(Schema.Int),
-    }),
-  ),
-  outputSchema: standardSchema(Schema.Array(ChunkResult)),
-};
-
-export const runPythonSpec = {
-  description:
-    "Run Python once in a fresh sandbox for real computation (brute force, statistics, " +
-    "symbolic math, data processing). Matplotlib figures are saved and returned as figures.",
-  inputSchema: standardSchema(
-    Schema.Struct({
-      code: Schema.String,
-      packages: Schema.optionalKey(Schema.Array(Schema.String)),
-    }),
-  ),
-  outputSchema: standardSchema(
-    Schema.Struct({
-      stdout: Schema.String,
-      exitCode: Schema.Number,
-      figures: Schema.Array(Schema.Struct({ artifactId: ArtifactId, title: Schema.String })),
-    }),
-  ),
-};
 
 export const PageContextResult = Schema.Struct({
   ...PageContext.fields,
@@ -102,17 +27,9 @@ export const getPageContextSpec = {
   description:
     "Describe the page an inline visual will render into: surface, platform, width, colour " +
     "scheme, theme tokens, fonts, available runtime kits, budgets and visuals already in this " +
-    "thread. Call this before writing an <avenire-chart> or <avenire-sim>.",
+    "thread. Call this before render_widget.",
   inputSchema: standardSchema(Schema.Struct({ purpose: Schema.optionalKey(Schema.String) })),
   outputSchema: standardSchema(PageContextResult),
-};
-
-export const proposeFileActionSpec = {
-  description:
-    "Change the user's files: move an item to a cluster, rename it, archive it (delete " +
-    "archives) or create a note. The user may have to approve it first.",
-  inputSchema: standardSchema(Schema.Struct({ action: FileAction })),
-  outputSchema: standardSchema(Schema.Struct({ itemId: ItemId, summary: Schema.String })),
 };
 
 export const askUserSpec = {
@@ -144,12 +61,10 @@ export const loadSkillSpec = {
 
 /** Ruth's toolset as the model and the UI see it; `ask_user` is answered by the client. */
 export const ruthToolSpecs = {
+  ...ruthKitSpecs,
+  ...ruthSandboxSpecs,
   load_skill: tool(loadSkillSpec),
-  search_materials: tool(searchMaterialsSpec),
-  read_item: tool(readItemSpec),
-  run_python: tool(runPythonSpec),
   get_page_context: tool(getPageContextSpec),
-  propose_file_action: tool(proposeFileActionSpec),
   ask_user: tool(askUserSpec),
 };
 export type RuthTools = typeof ruthToolSpecs;

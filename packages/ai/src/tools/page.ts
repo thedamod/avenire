@@ -1,27 +1,14 @@
 import type { PageContextResult } from "./index.ts";
 
-/**
- * Server-side facts about the visual runtime that renders Ruth's inline
- * `<avenire-chart>` / `<avenire-sim>` widgets. `get_page_context` merges these
- * with the page facts the client sends.
- */
+/** Stored HTML widgets run in an isolated iframe; chart/simulation kits are coming later. */
 export const VISUAL_RUNTIME = {
   version: "0.1.0",
-  kits: [
-    "kinematics",
-    "mechanics",
-    "fields",
-    "geometry",
-    "stochastic",
-    "systems",
-    "plot",
-    "signals",
-  ],
-  capabilities: ["canvas2d", "webgl", "worker", "pointer", "params", "readouts", "data"],
+  kits: [],
+  capabilities: ["html", "svg", "canvas2d", "pointer", "params", "readouts"],
 } as const;
 
 export const VISUAL_BUDGETS = {
-  maxSourceBytes: 200_000,
+  maxSourceBytes: 512 * 1024,
   frameBudgetMs: 8,
 } as const;
 

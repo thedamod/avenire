@@ -16,6 +16,6 @@ describe("skills", () => {
   });
 
   it("describe themselves for the prompt catalog", () => {
-    expect(describeSkills(["python"])).toMatch(/^- `python`: Use run_python/);
+    expect(describeSkills(["python"])).toMatch(/^- `python`: Use sandbox tools/);
   });
 });
