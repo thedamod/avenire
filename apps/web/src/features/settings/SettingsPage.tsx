@@ -1,55 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { ArtifactKind, CloudSchedule } from "@avenire/contracts";
+import { useState } from "react";
+import type { CloudTask } from "@avenire/contracts";
 import { call } from "@avenire/client-runtime/rpc";
 import { Button } from "@avenire/ui/components/button";
 import { Input } from "@avenire/ui/components/input";
 import { useApi, useQuery, errorMessage } from "~/lib/rpc";
 
-const artifactKinds: ReadonlyArray<ArtifactKind> = [
-  "notes",
-  "quiz",
-  "flashcards",
-  "research",
-  "summary",
-  "recording",
-  "plot",
-  "video",
-];
 const localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const timeZones = [...new Set([localTimeZone, "UTC", ...Intl.supportedValuesOf("timeZone")])];
 
 export function SettingsPage() {
   const api = useApi();
   const { data, loading, error, refetch } = useQuery(
-    (client) => client["cloud.getSchedule"](),
-    "cloud-schedule",
+    (client) => client["cloud.listTasks"](),
+    "cloud-tasks",
   );
-  const [schedule, setSchedule] = useState<CloudSchedule>();
+  const [schedule, setSchedule] = useState<CloudTask>();
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string>();
   const [shortcut, setShortcut] = useState("CommandOrControl+Shift+Space");
   const [shortcutMessage, setShortcutMessage] = useState<string>();
-  const effective = schedule ?? data;
-
-  useEffect(() => {
-    if (data) setSchedule({ ...data, timeZone: data.timeZone || localTimeZone });
-  }, [data]);
+  const defaultTask = data?.find((task) => task.builtin === "nightly-digest");
+  const effective = schedule ?? defaultTask;
 
   async function saveSchedule() {
     if (!effective) return;
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(effective.runAt)) {
-      setMessage("Enter a time in 24-hour format, such as 07:00.");
-      return;
-    }
     setSaving(true);
     setMessage(undefined);
     try {
       const saved = await call(api, (client) =>
-        client["cloud.setSchedule"]({
-          ...effective,
-          timeZone: effective.timeZone || localTimeZone,
+        client["cloud.updateTask"]({
+          taskId: effective.id,
+          patch: {
+            schedule: effective.schedule,
+            enabled: effective.enabled,
+            timeZone: effective.timeZone || localTimeZone,
+          },
         }),
       );
       setSchedule(saved);
@@ -59,16 +46,6 @@ export function SettingsPage() {
     } finally {
       setSaving(false);
     }
-  }
-
-  function toggleKind(kind: ArtifactKind, checked: boolean) {
-    if (!effective) return;
-    setSchedule({
-      ...effective,
-      artifactKinds: checked
-        ? [...effective.artifactKinds, kind]
-        : effective.artifactKinds.filter((entry) => entry !== kind),
-    });
   }
 
   async function saveShortcut() {
@@ -115,11 +92,15 @@ export function SettingsPage() {
               Enable nightly Ruth Cloud run
             </label>
             <label className="grid max-w-xs gap-1.5 text-sm">
-              Run time
+              Cron expression
               <Input
-                type="time"
-                value={effective.runAt}
-                onChange={(event) => setSchedule({ ...effective, runAt: event.target.value })}
+                value={effective.schedule._tag === "cron" ? effective.schedule.expression : ""}
+                onChange={(event) =>
+                  setSchedule({
+                    ...effective,
+                    schedule: { _tag: "cron", expression: event.target.value },
+                  })
+                }
               />
             </label>
             <label className="grid max-w-md gap-1.5 text-sm">
@@ -136,19 +117,6 @@ export function SettingsPage() {
                 ))}
               </select>
             </label>
-            <fieldset className="grid gap-2">
-              <legend className="mb-1 text-sm font-medium">Artifacts to prepare</legend>
-              {artifactKinds.map((kind) => (
-                <label key={kind} className="flex items-center gap-3 text-sm capitalize">
-                  <input
-                    type="checkbox"
-                    checked={effective.artifactKinds.includes(kind)}
-                    onChange={(event) => toggleKind(kind, event.target.checked)}
-                  />
-                  {kind}
-                </label>
-              ))}
-            </fieldset>
             <div className="flex items-center gap-3">
               <Button onClick={() => void saveSchedule()} disabled={saving}>
                 {saving ? "Saving…" : "Save schedule"}

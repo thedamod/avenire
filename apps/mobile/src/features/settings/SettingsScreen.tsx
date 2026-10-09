@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Switch, Text, TextInput, View } from "react-native";
 import { call } from "@avenire/client-runtime/rpc";
-import type { CloudSchedule } from "@avenire/contracts";
+import type { CloudTask } from "@avenire/contracts";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { ErrorState, errorMessage } from "../../components/ErrorState";
@@ -11,7 +11,7 @@ import { authClient } from "../../state/auth";
 
 export function SettingsScreen() {
   const api = useApi();
-  const [schedule, setSchedule] = useState<CloudSchedule>();
+  const [schedule, setSchedule] = useState<CloudTask>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -21,7 +21,8 @@ export function SettingsScreen() {
     setLoading(true);
     setError(undefined);
     try {
-      setSchedule(await call(api, (client) => client["cloud.getSchedule"]()));
+      const tasks = await call(api, (client) => client["cloud.listTasks"]());
+      setSchedule(tasks.find((task) => task.builtin === "nightly-digest"));
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -30,16 +31,24 @@ export function SettingsScreen() {
   }, [api]);
 
   useEffect(() => {
+    // eslint-disable-next-line react/set-state-in-effect -- Fetch the persisted task when the authenticated API changes.
     void loadSchedule();
   }, [loadSchedule]);
 
-  const saveSchedule = async (next: CloudSchedule) => {
+  const saveSchedule = async (next: CloudTask) => {
     const previous = schedule;
     setSchedule(next);
     setSaving(true);
     setError(undefined);
     try {
-      setSchedule(await call(api, (client) => client["cloud.setSchedule"](next)));
+      setSchedule(
+        await call(api, (client) =>
+          client["cloud.updateTask"]({
+            taskId: next.id,
+            patch: { enabled: next.enabled, schedule: next.schedule, timeZone: next.timeZone },
+          }),
+        ),
+      );
     } catch (cause) {
       if (previous) setSchedule(previous);
       setError(errorMessage(cause));
@@ -79,19 +88,14 @@ export function SettingsScreen() {
                 accessibilityLabel="Enable nightly Ruth Cloud run"
               />
             </View>
-            <Text className="text-sm font-medium text-foreground">Run time</Text>
+            <Text className="text-sm font-medium text-foreground">Cron expression</Text>
             <TextInput
-              value={schedule.runAt}
-              onChangeText={(runAt) => setSchedule({ ...schedule, runAt })}
-              onEndEditing={() => {
-                if (/^([01]\d|2[0-3]):[0-5]\d$/.test(schedule.runAt)) {
-                  void saveSchedule(schedule);
-                } else {
-                  setError("Enter a time in 24-hour format, such as 07:00.");
-                }
-              }}
-              keyboardType="numbers-and-punctuation"
-              placeholder="07:00"
+              value={schedule.schedule._tag === "cron" ? schedule.schedule.expression : ""}
+              onChangeText={(expression) =>
+                setSchedule({ ...schedule, schedule: { _tag: "cron", expression } })
+              }
+              onEndEditing={() => void saveSchedule(schedule)}
+              placeholder="0 3 * * *"
               className="rounded-xl border border-border bg-background px-4 py-3 text-foreground"
             />
             {saving ? <Text className="text-sm text-muted-foreground">Saving…</Text> : null}
