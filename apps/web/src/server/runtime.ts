@@ -1,6 +1,8 @@
 import { RuthLive } from "@avenire/ai/ruth";
 import { AuthLive } from "@avenire/auth/server";
 import { ChatSandboxesLive, ChatSandboxSweeperLive } from "@avenire/cloud/chat-sandbox";
+import { CloudBoxesLive } from "@avenire/cloud/cloud-box";
+import { CloudReviewLive } from "@avenire/ruth-kit/review";
 import { DaytonaClientLive } from "@avenire/cloud/daytona";
 import { DatabaseLive } from "@avenire/database/client";
 import { EmbedderLive } from "@avenire/ingestion/embed";
@@ -46,10 +48,12 @@ const ToolsLive = Layer.mergeAll(
   ArtifactStoreLive,
   RunTokensLive,
   AuthLive,
+  CloudBoxesLive,
   ChatSandboxesLive.pipe(Layer.provideMerge(SandboxMeterLive)),
 ).pipe(Layer.provideMerge(InfrastructureLive));
 export const ServerLive = Layer.mergeAll(
   RuthLive,
+  CloudReviewLive,
   ChatSandboxSweeperLive,
   ArtifactSweeperLive,
 ).pipe(Layer.provideMerge(ToolsLive));

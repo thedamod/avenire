@@ -1,11 +1,9 @@
-import { makeGateway } from "@avenire/ruth-kit/gateway";
 import { RunTokens } from "@avenire/ruth-kit/run-tokens";
 import * as Effect from "effect/Effect";
-import { cloudRegistry } from "~/server/cloudTools";
+import { cloudGateway as gateway } from "~/server/cloudTools";
 import { runRoute } from "~/server/runtime";
 
 export const runtime = "nodejs";
-const gateway = makeGateway(cloudRegistry);
 export const GET = (request: Request) =>
   runRoute(
     Effect.gen(function* () {
