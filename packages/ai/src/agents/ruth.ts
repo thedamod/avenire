@@ -144,6 +144,7 @@ export const appendIncoming = (
 
 const toThread = (row: RuthThreadRow): RuthThread => ({
   id: ThreadId.make(row.id),
+  kind: row.kind,
   title: row.title,
   fullAccess: row.fullAccess,
   createdAt: row.createdAt.toISOString(),

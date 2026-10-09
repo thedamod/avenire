@@ -6,6 +6,7 @@
 import {
   ArtifactId,
   CloudRunId,
+  CloudTaskId,
   type CloudRun as CloudRunContract,
   Conflict,
   ItemId,
@@ -44,6 +45,10 @@ const isoOrNull = (value: Date | null): string | null =>
 const toContract = (row: CloudRunRow, artifacts: ReadonlyArray<ArtifactRow>): CloudRunContract => ({
   id: CloudRunId.make(row.id),
   status: row.status,
+  taskId: row.taskId === null ? null : CloudTaskId.make(row.taskId),
+  scheduledFor: isoOrNull(row.scheduledFor),
+  attempt: row.attempt,
+  summary: row.summary,
   windowStart: row.windowStart.toISOString(),
   windowEnd: row.windowEnd.toISOString(),
   startedAt: isoOrNull(row.startedAt),

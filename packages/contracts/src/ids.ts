@@ -36,3 +36,18 @@ export type ArtifactId = typeof ArtifactId.Type;
 /** Object key inside the user's storage bucket, e.g. `users/<id>/items/<id>/source.pdf`. */
 export const StorageKey = Schema.NonEmptyString.pipe(Schema.brand("StorageKey"));
 export type StorageKey = typeof StorageKey.Type;
+
+export const CloudTaskId = Schema.NonEmptyString.pipe(Schema.brand("CloudTaskId"));
+export type CloudTaskId = typeof CloudTaskId.Type;
+
+export const PendingApprovalId = Schema.NonEmptyString.pipe(Schema.brand("PendingApprovalId"));
+export type PendingApprovalId = typeof PendingApprovalId.Type;
+
+export const WidgetId = Schema.NonEmptyString.pipe(Schema.brand("WidgetId"));
+export type WidgetId = typeof WidgetId.Type;
+
+export const HydrationId = Schema.NonEmptyString.pipe(Schema.brand("HydrationId"));
+export type HydrationId = typeof HydrationId.Type;
+
+export const ItemEventId = Schema.NonEmptyString.pipe(Schema.brand("ItemEventId"));
+export type ItemEventId = typeof ItemEventId.Type;

@@ -7,6 +7,15 @@ import type {
   ChunkLocation,
   ExtractionCoverage,
   ItemKind,
+  ItemSource,
+  ItemEventKind,
+  RuthThreadKind,
+  CloudTaskSchedule,
+  CloudTaskDelivery,
+  HydrationRule,
+  FileSelector,
+  HydratedFile,
+  PendingApprovalStatus,
   IngestionStatus,
   ItemPlacement,
   SearchResult,
@@ -15,6 +24,7 @@ import {
   bigint,
   boolean,
   customType,
+  date,
   index,
   integer,
   jsonb,
@@ -24,9 +34,10 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   vector,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 const timestamptz = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
@@ -102,6 +113,13 @@ export const item = pgTable(
     kind: text("kind").$type<ItemKind>().notNull(),
     title: text("title").notNull(),
     placement: text("placement").$type<ItemPlacement>().notNull().default("inbox"),
+    source: text("source").$type<ItemSource>().notNull().default("upload"),
+    contentModifiedAt: timestamptz("content_modified_at"),
+    tags: text("tags")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    archivedAt: timestamptz("archived_at"),
     sourceUrl: text("source_url"),
     storageKey: text("storage_key"),
     mimeType: text("mime_type"),
@@ -120,6 +138,28 @@ export const item = pgTable(
   (t) => [
     unique("item_user_dedupe_key_unique").on(t.userId, t.dedupeKey),
     index("item_user_placement_idx").on(t.userId, t.placement),
+    index("item_user_content_modified_idx").on(t.userId, t.contentModifiedAt),
+  ],
+);
+
+/** Library activity used by time-based selectors. */
+export const itemEvent = pgTable(
+  "item_event",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => item.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<ItemEventKind>().notNull(),
+    at: timestamptz("at").notNull().defaultNow(),
+    metadata: jsonb("metadata"),
+  },
+  (t) => [
+    index("item_event_user_at_idx").on(t.userId, t.at),
+    index("item_event_user_item_at_idx").on(t.userId, t.itemId, t.at),
   ],
 );
 
@@ -360,17 +400,26 @@ export const searchCache = pgTable(
   ],
 );
 
-export const ruthThread = pgTable("ruth_thread", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  title: text("title").notNull(),
-  /** Full access: Ruth applies file actions without asking for approval. */
-  fullAccess: boolean("full_access").notNull().default(false),
-  createdAt: timestamptz("created_at").notNull().defaultNow(),
-  updatedAt: timestamptz("updated_at").notNull().defaultNow(),
-});
+export const ruthThread = pgTable(
+  "ruth_thread",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<RuthThreadKind>().notNull().default("chat"),
+    title: text("title").notNull(),
+    /** Full access: Ruth applies file actions without asking for approval. */
+    fullAccess: boolean("full_access").notNull().default(false),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+    updatedAt: timestamptz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("ruth_thread_user_cloud_unique")
+      .on(t.userId)
+      .where(sql`${t.kind} = 'ruth-cloud'`),
+  ],
+);
 
 /** One AI SDK `UIMessage`; approvals live in its tool parts. */
 export const ruthMessage = pgTable(
@@ -402,6 +451,39 @@ export const cloudSchedule = pgTable("cloud_schedule", {
   updatedAt: timestamptz("updated_at").notNull().defaultNow(),
 });
 
+/** Scheduled work in the user's persistent Ruth Cloud workspace. */
+export const cloudTask = pgTable(
+  "cloud_task",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    prompt: text("prompt").notNull(),
+    schedule: jsonb("schedule").$type<CloudTaskSchedule>().notNull(),
+    timeZone: text("time_zone").notNull().default("UTC"),
+    preHydration: jsonb("pre_hydration")
+      .$type<ReadonlyArray<HydrationRule>>()
+      .notNull()
+      .default([]),
+    delivery: jsonb("delivery").$type<CloudTaskDelivery>().notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    builtin: text("builtin").$type<"nightly-digest">(),
+    maxAttempts: integer("max_attempts").notNull().default(2),
+    nextRunAt: timestamptz("next_run_at"),
+    lastRunAt: timestamptz("last_run_at"),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+    updatedAt: timestamptz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("cloud_task_enabled_next_run_idx").on(t.enabled, t.nextRunAt),
+    uniqueIndex("cloud_task_user_builtin_unique")
+      .on(t.userId, t.builtin)
+      .where(sql`${t.builtin} is not null`),
+  ],
+);
+
 export const cloudRun = pgTable(
   "cloud_run",
   {
@@ -409,6 +491,12 @@ export const cloudRun = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    taskId: text("task_id").references(() => cloudTask.id, { onDelete: "cascade" }),
+    scheduledFor: timestamptz("scheduled_for"),
+    attempt: integer("attempt").notNull().default(1),
+    summary: text("summary"),
+    reportMessageId: text("report_message_id"),
+    logTail: text("log_tail"),
     status: text("status").$type<CloudRunStatus>().notNull(),
     windowStart: timestamptz("window_start").notNull(),
     windowEnd: timestamptz("window_end").notNull(),
@@ -418,7 +506,118 @@ export const cloudRun = pgTable(
     sandboxId: text("sandbox_id"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
-  (t) => [unique("cloud_run_user_window_start_unique").on(t.userId, t.windowStart)],
+  (t) => [
+    unique("cloud_run_user_window_start_unique").on(t.userId, t.windowStart),
+    uniqueIndex("cloud_run_task_scheduled_attempt_unique").on(t.taskId, t.scheduledFor, t.attempt),
+  ],
+);
+
+/** Hashed bearer credentials for one Cloud run. */
+export const cloudRunToken = pgTable("cloud_run_token", {
+  id: text("id").primaryKey(),
+  runId: text("run_id")
+    .notNull()
+    .references(() => cloudRun.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  scopes: jsonb("scopes")
+    .$type<ReadonlyArray<"retrieval" | "download" | "hydrate" | "publish">>()
+    .notNull(),
+  expiresAt: timestamptz("expires_at").notNull(),
+  revokedAt: timestamptz("revoked_at"),
+  createdAt: timestamptz("created_at").notNull().defaultNow(),
+});
+
+/** Audit manifest for one workspace hydration call. */
+export const cloudHydration = pgTable(
+  "cloud_hydration",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => cloudRun.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    trigger: text("trigger").$type<"pre-hydration" | "agent">().notNull(),
+    selector: jsonb("selector").$type<FileSelector>().notNull(),
+    maxFiles: integer("max_files").notNull(),
+    maxBytes: bigint("max_bytes", { mode: "number" }).notNull(),
+    files: jsonb("files").$type<ReadonlyArray<HydratedFile>>().notNull(),
+    totalBytes: bigint("total_bytes", { mode: "number" }).notNull(),
+    truncated: jsonb("truncated").$type<{ byCount: boolean; byBytes: boolean }>().notNull(),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("cloud_hydration_run_idx").on(t.runId)],
+);
+
+/** Cached originals in the persistent workspace, tracked for reuse and eviction. */
+export const cloudWorkspaceFile = pgTable(
+  "cloud_workspace_file",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => item.id, { onDelete: "cascade" }),
+    sandboxPath: text("sandbox_path").notNull(),
+    contentHash: text("content_hash").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    hydratedAt: timestamptz("hydrated_at").notNull(),
+    lastUsedAt: timestamptz("last_used_at").notNull(),
+    lastRunId: text("last_run_id"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.itemId] }),
+    index("cloud_workspace_file_user_last_used_idx").on(t.userId, t.lastUsedAt),
+  ],
+);
+
+/** Proposed changes to originals; applied only after morning review. */
+export const pendingApproval = pgTable(
+  "pending_approval",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    runId: text("run_id")
+      .notNull()
+      .references(() => cloudRun.id, { onDelete: "cascade" }),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => item.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"sync">().notNull().default("sync"),
+    status: text("status").$type<PendingApprovalStatus>().notNull().default("pending"),
+    baseHash: text("base_hash").notNull(),
+    proposedKey: text("proposed_key").notNull(),
+    proposedHash: text("proposed_hash").notNull(),
+    proposedSize: bigint("proposed_size", { mode: "number" }).notNull(),
+    conflict: text("conflict"),
+    summary: text("summary").notNull(),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+    resolvedAt: timestamptz("resolved_at"),
+  },
+  (t) => [
+    index("pending_approval_user_status_idx").on(t.userId, t.status),
+    index("pending_approval_run_idx").on(t.runId),
+  ],
+);
+
+export const sandboxUsage = pgTable(
+  "sandbox_usage",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    day: date("day", { mode: "string" }).notNull(),
+    chatSeconds: integer("chat_seconds").notNull().default(0),
+    cloudSeconds: integer("cloud_seconds").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })],
 );
 
 export const artifact = pgTable(
@@ -491,6 +690,7 @@ export const schema = {
   verification,
   capture,
   item,
+  itemEvent,
   cluster,
   itemCluster,
   canvasNode,
@@ -506,6 +706,12 @@ export const schema = {
   ruthMessage,
   cloudSchedule,
   cloudRun,
+  cloudTask,
+  cloudRunToken,
+  cloudHydration,
+  cloudWorkspaceFile,
+  pendingApproval,
+  sandboxUsage,
   artifact,
   emailOutbox,
   itemRelations,
@@ -537,3 +743,11 @@ export type CloudScheduleRow = typeof cloudSchedule.$inferSelect;
 export type CloudRunRow = typeof cloudRun.$inferSelect;
 export type ArtifactRow = typeof artifact.$inferSelect;
 export type EmailOutboxRow = typeof emailOutbox.$inferSelect;
+
+export type ItemEventRow = typeof itemEvent.$inferSelect;
+export type CloudTaskRow = typeof cloudTask.$inferSelect;
+export type CloudRunTokenRow = typeof cloudRunToken.$inferSelect;
+export type CloudHydrationRow = typeof cloudHydration.$inferSelect;
+export type CloudWorkspaceFileRow = typeof cloudWorkspaceFile.$inferSelect;
+export type PendingApprovalRow = typeof pendingApproval.$inferSelect;
+export type SandboxUsageRow = typeof sandboxUsage.$inferSelect;

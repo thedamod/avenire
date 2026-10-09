@@ -1,12 +1,21 @@
 /**
- * Ruth Cloud - the nightly sandboxed run that turns the day's material into study artifacts.
+ * Ruth Cloud - scheduled sandboxed work that produces study artifacts and proposed syncs.
  *
- * One run per user per day. A run only sees items touched in its window and
- * writes artifacts; it never edits or deletes the user's existing material.
+ * Legacy nightly schedules and material windows remain supported during the task transition.
+ * Changes to existing material are represented as pending approvals.
  */
 import * as Schema from "effect/Schema";
 
-import { ArtifactId, CloudRunId, ItemId, StorageKey } from "./ids.ts";
+import {
+  ArtifactId,
+  CloudRunId,
+  CloudTaskId,
+  ItemId,
+  PendingApprovalId,
+  StorageKey,
+} from "./ids.ts";
+
+import { HydrationRule } from "./hydration.ts";
 
 export const CloudRunStatus = Schema.Literals([
   "scheduled",
@@ -44,6 +53,12 @@ export type Artifact = typeof Artifact.Type;
 export const CloudRun = Schema.Struct({
   id: CloudRunId,
   status: CloudRunStatus,
+  /** Optional while legacy nightly runs remain supported. */
+  taskId: Schema.optionalKey(Schema.NullOr(CloudTaskId)),
+  /** Scheduled occurrence (ISO), shared by retries. */
+  scheduledFor: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  attempt: Schema.optionalKey(Schema.Int),
+  summary: Schema.optionalKey(Schema.NullOr(Schema.String)),
   /** Start of the material window this run covers (ISO). */
   windowStart: Schema.String,
   windowEnd: Schema.String,
@@ -62,3 +77,61 @@ export const CloudSchedule = Schema.Struct({
   artifactKinds: Schema.Array(ArtifactKind),
 });
 export type CloudSchedule = typeof CloudSchedule.Type;
+
+/** Task schedules use Effect's `_tag` discriminator. Times are ISO strings. */
+export const CloudTaskSchedule = Schema.Union([
+  Schema.TaggedStruct("cron", { expression: Schema.String }),
+  Schema.TaggedStruct("once", { at: Schema.String }),
+]);
+export type CloudTaskSchedule = typeof CloudTaskSchedule.Type;
+
+export const CloudTaskDelivery = Schema.Struct({ email: Schema.Boolean });
+export type CloudTaskDelivery = typeof CloudTaskDelivery.Type;
+
+export const CloudTaskInput = Schema.Struct({
+  title: Schema.NonEmptyString,
+  prompt: Schema.NonEmptyString,
+  schedule: CloudTaskSchedule,
+  timeZone: Schema.String,
+  preHydration: Schema.Array(HydrationRule),
+  delivery: CloudTaskDelivery,
+  enabled: Schema.Boolean,
+});
+export type CloudTaskInput = typeof CloudTaskInput.Type;
+
+export const CloudTask = Schema.Struct({
+  id: CloudTaskId,
+  ...CloudTaskInput.fields,
+  builtin: Schema.NullOr(Schema.Literal("nightly-digest")),
+  nextRunAt: Schema.NullOr(Schema.String),
+  lastRunAt: Schema.NullOr(Schema.String),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+});
+export type CloudTask = typeof CloudTask.Type;
+
+export const PendingApprovalStatus = Schema.Literals([
+  "pending",
+  "accepted",
+  "skipped",
+  "conflict",
+]);
+export type PendingApprovalStatus = typeof PendingApprovalStatus.Type;
+
+export const PendingApproval = Schema.Struct({
+  id: PendingApprovalId,
+  runId: CloudRunId,
+  itemId: ItemId,
+  itemTitle: Schema.String,
+  kind: Schema.Literal("sync"),
+  status: PendingApprovalStatus,
+  conflict: Schema.NullOr(Schema.String),
+  summary: Schema.String,
+  proposedSize: Schema.Int,
+  createdAt: Schema.String,
+  resolvedAt: Schema.NullOr(Schema.String),
+});
+export type PendingApproval = typeof PendingApproval.Type;
+
+export const ApprovalDecision = Schema.Literals(["accept", "skip"]);
+export type ApprovalDecision = typeof ApprovalDecision.Type;

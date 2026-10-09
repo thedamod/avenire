@@ -13,8 +13,12 @@ import { ItemId, MessageId, ThreadId } from "./ids.ts";
 /** Path the chat stream endpoint is mounted on, relative to the web server origin. */
 export const RUTH_CHAT_PATH = "/api/ruth/chat";
 
+export const RuthThreadKind = Schema.Literals(["chat", "ruth-cloud"]);
+export type RuthThreadKind = typeof RuthThreadKind.Type;
+
 export const RuthThread = Schema.Struct({
   id: ThreadId,
+  kind: RuthThreadKind,
   title: Schema.String,
   /** When on, Ruth applies file actions without asking (still logged and undoable). */
   fullAccess: Schema.Boolean,
