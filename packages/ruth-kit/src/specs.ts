@@ -204,3 +204,5 @@ export const ruthKitSpecs = {
 };
 
 export * from "./sandbox-specs.ts";
+
+export * from "./cloud-specs.ts";

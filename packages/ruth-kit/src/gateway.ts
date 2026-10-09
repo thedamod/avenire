@@ -54,10 +54,10 @@ const baseRegistry: Record<string, GatewayTool> = Object.fromEntries(
 );
 
 /** Cloud extensions cannot replace built-in schemas or policies; dispatch retains auth and scope enforcement. */
-export const makeGateway = <R = never>(
+export const makeGateway = <R = never, T = never>(
   registry: Readonly<Record<string, GatewayTool<R>>> = {},
   options: {
-    readonly resolveTimeZone?: (run: VerifiedRunToken) => Effect.Effect<string>;
+    readonly resolveTimeZone?: (run: VerifiedRunToken) => Effect.Effect<string, never, T>;
   } = {},
 ) => {
   const all: Readonly<Record<string, GatewayTool<R | RuthKitServices>>> = {
@@ -67,7 +67,7 @@ export const makeGateway = <R = never>(
   const handleToolCall = Effect.fn("RuthGateway.handleToolCall")(
     (
       request: ToolCallRequest,
-    ): Effect.Effect<GatewayResponse, never, R | RuthKitServices | RunTokens> =>
+    ): Effect.Effect<GatewayResponse, never, R | T | RuthKitServices | RunTokens> =>
       Effect.gen(function* () {
         const match = /^Bearer\s+(\S+)$/i.exec(request.authorization ?? "");
         if (!match)

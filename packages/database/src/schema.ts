@@ -492,6 +492,7 @@ export const cloudRun = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     taskId: text("task_id").references(() => cloudTask.id, { onDelete: "cascade" }),
+    clusterId: text("cluster_id").references(() => cluster.id, { onDelete: "set null" }),
     scheduledFor: timestamptz("scheduled_for"),
     attempt: integer("attempt").notNull().default(1),
     summary: text("summary"),

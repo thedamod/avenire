@@ -54,6 +54,18 @@
     "./sandbox-specs": {
       "types": "./src/sandbox-specs.ts",
       "import": "./src/sandbox-specs.ts"
+    },
+    "./cloud-specs": {
+      "types": "./src/cloud-specs.ts",
+      "import": "./src/cloud-specs.ts"
+    },
+    "./cloud-tools": {
+      "types": "./src/cloud-tools.ts",
+      "import": "./src/cloud-tools.ts"
+    },
+    "./review": {
+      "types": "./src/review.ts",
+      "import": "./src/review.ts"
     }
   },
   "scripts": {
