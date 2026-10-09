@@ -1,9 +1,10 @@
 "use client";
 
+import { call } from "@avenire/client-runtime/rpc";
 import type { Item } from "@avenire/contracts";
 import { Badge } from "@avenire/ui/components/badge";
 import { useEffect, useState } from "react";
-import { useStream } from "~/lib/rpc";
+import { useApi, useStream } from "~/lib/rpc";
 
 export function ItemDetail({
   item,
@@ -12,6 +13,12 @@ export function ItemDetail({
   readonly item: Item;
   readonly onClose: () => void;
 }) {
+  const api = useApi();
+  useEffect(() => {
+    void call(api, (client) =>
+      client["library.recordItemEvent"]({ itemId: item.id, kind: "opened" }),
+    ).catch(() => {});
+  }, [api, item.id]);
   const [ingestionStatus, setIngestionStatus] = useState("Waiting for a live status update");
   useEffect(() => setIngestionStatus("Waiting for a live status update"), [item.id]);
   useStream(
