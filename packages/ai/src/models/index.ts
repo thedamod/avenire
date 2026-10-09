@@ -5,7 +5,6 @@
  * - `ruth-sprint`: fast and cheap (chat with Fast on, summaries, routing)
  * - `ruth-core`: the default for interactive chat
  * - `ruth-apex`: strongest reasoning (hard analysis, long video plans)
- * - `ruth-agent`: tool-heavy loops (Ruth Cloud runs)
  */
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { customProvider, type LanguageModel } from "ai";
@@ -15,7 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
-export const RUTH_MODEL_NAMES = ["ruth-sprint", "ruth-core", "ruth-apex", "ruth-agent"] as const;
+export const RUTH_MODEL_NAMES = ["ruth-sprint", "ruth-core", "ruth-apex"] as const;
 export type RuthModelName = (typeof RUTH_MODEL_NAMES)[number];
 
 /** Underlying model ids; each is overridable with `RUTH_MODEL_<NAME>`, e.g. `RUTH_MODEL_CORE`. */
@@ -23,12 +22,10 @@ export const RUTH_MODEL_DEFAULTS: Record<RuthModelName, string> = {
   "ruth-sprint": "claude-haiku-4-5-20251001",
   "ruth-core": "claude-sonnet-5-5",
   "ruth-apex": "claude-opus-5-5",
-  "ruth-agent": "claude-opus-5-5",
 };
 
 export const RUTH_DEFAULT_MODEL: RuthModelName = "ruth-core";
 export const RUTH_FAST_MODEL: RuthModelName = "ruth-sprint";
-export const RUTH_CLOUD_MODEL: RuthModelName = "ruth-agent";
 
 export class RuthModels extends Context.Service<
   RuthModels,
