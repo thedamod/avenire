@@ -248,7 +248,10 @@ export const RetrievalLive = Layer.effect(
     ) =>
       graph.search(input).pipe(
         Effect.flatMap(({ chunkIds, facts }) =>
-          Effect.map(hydrate(where, chunkIds), (rows) => ({ rows, facts })),
+          Effect.map(hydrate(where, chunkIds), (rows) => ({
+            rows,
+            facts: facts.filter((fact) => rows.some((row) => row.chunkId === fact.chunkId)),
+          })),
         ),
         Effect.catchTags({
           GraphError: (error) =>
@@ -287,7 +290,11 @@ export const RetrievalLive = Layer.effect(
             );
 
     /** Before/after snippets for hits cut mid-sentence; without them on failure. */
-    const withContext = (userId: UserId, hits: SearchResult["hits"], rows: Candidates["rows"]) => {
+    const withContext = (
+      where: Parameters<typeof hydrate>[0],
+      hits: SearchResult["hits"],
+      rows: Candidates["rows"],
+    ) => {
       const wanted = hits.flatMap(({ chunkId, itemId, content }) => {
         const ordinal = rows.get(chunkId)?.ordinal;
         if (ordinal === undefined) return [];
@@ -296,7 +303,7 @@ export const RetrievalLive = Layer.effect(
           ...(endsMidSentence(content) ? [{ itemId, ordinal: ordinal + 1 }] : []),
         ];
       });
-      return neighbours(userId, wanted).pipe(
+      return neighbours(where, wanted).pipe(
         Effect.map((found) => {
           const byPosition = new Map(
             found.map((row) => [`${row.itemId}:${row.ordinal}`, row.content]),
@@ -369,6 +376,7 @@ export const RetrievalLive = Layer.effect(
             graphLane(where, {
               userId,
               text: analysis.text,
+              query,
               vector,
               hops: query.depth === "deep" ? 2 : 1,
               limit: LANE_LIMIT,
@@ -401,7 +409,7 @@ export const RetrievalLive = Layer.effect(
         });
         const result = {
           ...shaped,
-          hits: yield* withContext(userId, shaped.hits, candidates.rows),
+          hits: yield* withContext(where, shaped.hits, candidates.rows),
         };
         // A degraded (un-reranked) result is never cached.
         if (result.reranked) {
