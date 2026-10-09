@@ -217,6 +217,23 @@ it.effect("publish_report publishes artifacts and persists the markdown summary"
     ).toBe("America/Los_Angeles");
   }).pipe(Effect.provide(StorageMemory));
 });
+it.effect("publish_report exposes an agent failure without setting a terminal run status", () => {
+  const f = cloudFixture();
+  return Effect.gen(function* () {
+    const storage = yield* Storage;
+    yield* cloudTools
+      .publish_report({ markdown: "The quiz could not be completed.", status: "failed" }, cloudCtx)
+      .pipe(Effect.provide(f.services(storage)));
+    expect(f.rows("cloud_run")[0]).toMatchObject({
+      summary: "The quiz could not be completed.",
+      error: "The agent reported failure.",
+    });
+    yield* cloudTools
+      .publish_report({ markdown: "Recovered.", status: "succeeded" }, cloudCtx)
+      .pipe(Effect.provide(f.services(storage)));
+    expect(f.rows("cloud_run")[0]?.error).toBeNull();
+  }).pipe(Effect.provide(StorageMemory));
+});
 it.effect("identical titles and shared id prefixes cannot overwrite another hydrated input", () => {
   const f = cloudFixture();
   const secondId = ItemId.make("12345678-other");

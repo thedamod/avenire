@@ -49,6 +49,7 @@ export const publishReportSpec = {
     "Save this run's markdown report and publish up to twenty workspace artifacts as new library items.",
   inputSchema: standardSchema(
     Schema.Struct({
+      status: Schema.optionalKey(Schema.Literals(["succeeded", "failed"])),
       markdown: Schema.String.check(Schema.isMaxLength(100_000)),
       artifacts: Schema.optionalKey(Schema.Array(Schema.String).check(Schema.isMaxLength(20))),
     }),

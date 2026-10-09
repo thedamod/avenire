@@ -519,14 +519,11 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
   }
   const fileId = yield* newId(ItemId);
   const proposedClusterId = yield* newId(ClusterId);
-  const task =
-    run.taskId === null
-      ? undefined
-      : yield* database.use((db) =>
-          db.query.cloudTask.findFirst({
-            where: and(eq(cloudTask.id, run.taskId!), eq(cloudTask.userId, ctx.userId)),
-          }),
-        );
+  const task = yield* database.use((db) =>
+    db.query.cloudTask.findFirst({
+      where: and(eq(cloudTask.id, run.taskId), eq(cloudTask.userId, ctx.userId)),
+    }),
+  );
   const zoned = DateTime.makeZoned(now, { timeZone: ctx.timeZone });
   const day = Option.isSome(zoned)
     ? DateTime.formatIsoDate(zoned.value)
@@ -602,7 +599,10 @@ export const cloudTools: CloudImpls = {
     yield* database.use((db) =>
       db
         .update(cloudRun)
-        .set({ summary: input.markdown })
+        .set({
+          summary: input.markdown,
+          error: input.status === "failed" ? "The agent reported failure." : null,
+        })
         .where(and(eq(cloudRun.id, run.id), eq(cloudRun.userId, ctx.userId))),
     );
     return { published };
@@ -625,7 +625,7 @@ export const cloudGatewayTools = {
     execute: cloudTools.publish_report,
   }),
 };
-/** A taskless legacy run uses UTC. Ownership remains scoped to the verified token. */
+/** Ownership remains scoped to the verified token; UTC is the safe fallback for a missing task. */
 export const resolveRunTimeZone = Effect.fn("RuthCloud.resolveRunTimeZone")(
   function* (run: VerifiedRunToken) {
     const database = yield* Database;
