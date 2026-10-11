@@ -102,7 +102,9 @@ it.effect("publishes two new files into one run folder with events and ingestion
         ]),
       );
       expect(
-        f.statements.filter((statement) => statement.params.includes("uploaded")),
+        f.writes.filter(
+          (write) => write.table === "file_event" && write.values.kind === "uploaded",
+        ),
       ).toHaveLength(2);
       expect(f.rows("ingestion_job")).toHaveLength(2);
       expect(f.invalidated()).toBe(2);

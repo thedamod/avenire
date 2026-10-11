@@ -90,10 +90,6 @@
     "./events": {
       "types": "./src/events.ts",
       "import": "./src/events.ts"
-    },
-    "./archive": {
-      "types": "./src/archive.ts",
-      "import": "./src/archive.ts"
     }
   },
   "scripts": {

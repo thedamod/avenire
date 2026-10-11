@@ -274,7 +274,7 @@ const makeRuth = Effect.gen(function* () {
             .onConflictDoUpdate({
               target: ruthMessage.id,
               set: { parts: message.parts, metadata: message.metadata ?? null },
-              setWhere: sql`${ruthMessage.userId} = ${userId} and ${ruthMessage.threadId} = ${threadId}`,
+              setWhere: and(eq(ruthMessage.userId, userId), eq(ruthMessage.threadId, threadId))!,
             }),
         ),
       { discard: true },

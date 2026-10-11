@@ -2,11 +2,9 @@ import { FolderId, type FileId, type UserId } from "@avenire/contracts";
 import { Database, type DatabaseTransaction } from "@avenire/database/client";
 import { chunk, folder, fileFolder } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
-import { and, eq, sql } from "drizzle-orm";
+import { and, cosineDistance, eq, isNotNull, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-
-import { toVectorLiteral } from "./text.ts";
 
 export class FolderError extends Schema.TaggedError<FolderError>()("FolderError", {
   cause: Schema.Defect(),
@@ -41,8 +39,8 @@ const nearestFolder = (tx: DatabaseTransaction, userId: UserId, vector: Readonly
   tx
     .select({ id: folder.id, centroid: folder.centroid })
     .from(folder)
-    .where(and(eq(folder.userId, userId), sql`${folder.centroid} IS NOT NULL`))
-    .orderBy(sql`${folder.centroid} <=> ${toVectorLiteral(vector)}::vector`)
+    .where(and(eq(folder.userId, userId), isNotNull(folder.centroid)))
+    .orderBy(cosineDistance(folder.centroid, [...vector]))
     .limit(1)
     .then(([nearest]) => nearest);
 

@@ -2,7 +2,7 @@
 import type { ChunkId, FileId, UserId } from "@avenire/contracts";
 import { Database, type DatabaseTransaction } from "@avenire/database/client";
 import { entity, entityMention, entityRelation } from "@avenire/database/schema";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, exists, inArray, isNotNull, not, sql } from "drizzle-orm";
 import * as Arr from "effect/Array";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -10,6 +10,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { Embedder } from "../embed.ts";
+const excluded = (column: { readonly name: string }) =>
+  sql`${sql.identifier("excluded")}.${sql.identifier(column.name)}`;
 import {
   aggregateGraph,
   type AggregatedEntity,
@@ -92,10 +94,10 @@ const writeGraph = async (tx: DatabaseTransaction, input: GraphWrite) => {
           .onConflictDoUpdate({
             target: [entity.userId, entity.key],
             set: {
-              description: sql`CASE WHEN length(excluded.description) > length(${entity.description})
-                THEN excluded.description ELSE ${entity.description} END`,
-              embedding: sql`coalesce(excluded.embedding, ${entity.embedding})`,
-              embeddingModel: sql`coalesce(excluded.embedding_model, ${entity.embeddingModel})`,
+              description: sql`CASE WHEN length(${excluded(entity.description)}) > length(${entity.description})
+                THEN ${excluded(entity.description)} ELSE ${entity.description} END`,
+              embedding: sql`coalesce(${excluded(entity.embedding)}, ${entity.embedding})`,
+              embeddingModel: sql`coalesce(${excluded(entity.embeddingModel)}, ${entity.embeddingModel})`,
               updatedAt: sql`now()`,
             },
           })
@@ -117,9 +119,21 @@ const writeGraph = async (tx: DatabaseTransaction, input: GraphWrite) => {
   });
   if (relations.length > 0) await tx.insert(entityRelation).values(relations);
 
-  await tx.execute(sql`
-    DELETE FROM entity AS e WHERE e.user_id = ${userId}
-      AND NOT EXISTS (SELECT 1 FROM entity_mention AS m WHERE m.entity_id = e.id)`);
+  await tx
+    .delete(entity)
+    .where(
+      and(
+        eq(entity.userId, userId),
+        not(
+          exists(
+            tx
+              .select({ entityId: entityMention.entityId })
+              .from(entityMention)
+              .where(eq(entityMention.entityId, entity.id)),
+          ),
+        ),
+      ),
+    );
 };
 
 export const GraphIndexerLive = Layer.effect(

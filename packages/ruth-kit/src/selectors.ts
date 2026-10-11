@@ -8,9 +8,26 @@ import {
   type SearchHit,
   type UserId,
 } from "@avenire/contracts";
-import { Database } from "@avenire/database/client";
+import { Database, type DatabaseClient } from "@avenire/database/client";
+import { capture, file, fileEvent, fileFolder, folder } from "@avenire/database/schema";
 import { Retrieval } from "@avenire/ingestion/retrieval";
-import { sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNull,
+  lte,
+  lt,
+  max,
+  ne,
+  not,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -61,55 +78,87 @@ export const timeWindow = (
   };
 };
 
-const array = (values: ReadonlyArray<string>) =>
+const textArray = (values: ReadonlyArray<string>) =>
   sql`ARRAY[${sql.join(
-    values.map((v) => sql`${v}`),
+    values.map((value) => sql`${value}`),
     sql`, `,
   )}]::text[]`;
 const bounds = (column: SQL, window: TimeWindow) => [
-  ...(window.since === undefined ? [] : [sql`${column} >= ${window.since}::timestamptz`]),
-  ...(window.until === undefined ? [] : [sql`${column} <= ${window.until}::timestamptz`]),
+  ...(window.since === undefined ? [] : [gte(column, new Date(window.since))]),
+  ...(window.until === undefined ? [] : [lte(column, new Date(window.until))]),
 ];
-const conjunction = (clauses: ReadonlyArray<SQL>) =>
-  clauses.length === 0 ? sql`TRUE` : sql.join([...clauses], sql` AND `);
-const membership = (ids: ReadonlyArray<string>) => sql`EXISTS (
-  SELECT 1 FROM file_folder ic JOIN folder c ON c.id = ic.folder_id AND c.user_id = i.user_id
-  WHERE ic.file_id = i.id AND ic.user_id = i.user_id AND ic.folder_id = ANY(${array(ids)})
-)`;
+const contentDate = sql<Date>`coalesce(${file.contentModifiedAt}, ${file.createdAt})`;
+const membership = (db: DatabaseClient, ids: ReadonlyArray<string>) =>
+  exists(
+    db
+      .select({ fileId: fileFolder.fileId })
+      .from(fileFolder)
+      .innerJoin(folder, and(eq(folder.id, fileFolder.folderId), eq(folder.userId, file.userId)))
+      .where(
+        and(
+          eq(fileFolder.fileId, file.id),
+          eq(fileFolder.userId, file.userId),
+          inArray(fileFolder.folderId, ids),
+        ),
+      ),
+  );
+const eventMatch = (db: DatabaseClient, selector: FileSelector, window: TimeWindow) =>
+  exists(
+    db
+      .select({ id: fileEvent.id })
+      .from(fileEvent)
+      .where(
+        and(
+          eq(fileEvent.fileId, file.id),
+          eq(fileEvent.userId, file.userId),
+          ...bounds(sql<Date>`${fileEvent.at}`, window),
+          ...(selector.time?.events === undefined
+            ? []
+            : [inArray(fileEvent.kind, selector.time.events)]),
+        ),
+      ),
+  );
 
-/** All identifiers remain parameters, and related rows are scoped before they can match. */
-export const metadataFilter = (userId: UserId, selector: FileSelector, window: TimeWindow): SQL => {
-  const clauses = [
-    sql`i.user_id = ${userId}`,
-    sql`i.placement <> 'archived'`,
-    sql`i.archived_at IS NULL`,
+/** All related rows are scoped to the owner of the outer file. */
+export const metadataFilter = (
+  db: DatabaseClient,
+  userId: UserId,
+  selector: FileSelector,
+  window: TimeWindow,
+): SQL => {
+  const clauses: SQL[] = [
+    eq(file.userId, userId),
+    ne(file.placement, "archived"),
+    isNull(file.archivedAt),
   ];
   const filters = selector.filters;
-  if (filters?.kinds !== undefined) clauses.push(sql`i.kind = ANY(${array(filters.kinds)})`);
-  if (filters?.tags !== undefined) clauses.push(sql`i.tags && ${array(filters.tags)}`);
-  if (filters?.sources !== undefined) clauses.push(sql`i.source = ANY(${array(filters.sources)})`);
-  if (filters?.folderIds !== undefined) clauses.push(membership(filters.folderIds));
+  if (filters?.kinds !== undefined) clauses.push(inArray(file.kind, filters.kinds));
+  if (filters?.tags !== undefined) clauses.push(sql`${file.tags} && ${textArray(filters.tags)}`);
+  if (filters?.sources !== undefined) clauses.push(inArray(file.source, filters.sources));
+  if (filters?.folderIds !== undefined) clauses.push(membership(db, filters.folderIds));
   const explicit = selector.explicit;
-  if (explicit?.fileIds !== undefined) clauses.push(sql`i.id = ANY(${array(explicit.fileIds)})`);
-  if (explicit?.folderIds !== undefined) clauses.push(membership(explicit.folderIds));
+  if (explicit?.fileIds !== undefined) clauses.push(inArray(file.id, explicit.fileIds));
+  if (explicit?.folderIds !== undefined) clauses.push(membership(db, explicit.folderIds));
   if (explicit?.captureIds !== undefined)
     clauses.push(
-      sql`EXISTS (SELECT 1 FROM capture cap WHERE cap.id = i.capture_id AND cap.user_id = i.user_id AND cap.id = ANY(${array(explicit.captureIds)}))`,
+      exists(
+        db
+          .select({ id: capture.id })
+          .from(capture)
+          .where(
+            and(
+              eq(capture.id, file.captureId),
+              eq(capture.userId, file.userId),
+              inArray(capture.id, explicit.captureIds),
+            ),
+          ),
+      ),
     );
-  const eventClauses = [
-    sql`e.file_id = i.id`,
-    sql`e.user_id = i.user_id`,
-    ...bounds(sql`e.at`, window),
-  ];
-  if (selector.time?.events !== undefined)
-    eventClauses.push(sql`e.kind = ANY(${array(selector.time.events)})`);
-  const eventMatch = sql`EXISTS (SELECT 1 FROM file_event e WHERE ${conjunction(eventClauses)})`;
-  if (selector.time?.events !== undefined) clauses.push(eventMatch);
+  const matchedEvent = eventMatch(db, selector, window);
+  if (selector.time?.events !== undefined) clauses.push(matchedEvent);
   else if (window.since !== undefined || window.until !== undefined)
-    clauses.push(
-      sql`((${conjunction(bounds(sql`coalesce(i.content_modified_at, i.created_at)`, window))}) OR ${eventMatch})`,
-    );
-  return conjunction(clauses);
+    clauses.push(or(and(...bounds(contentDate, window)), matchedEvent)!);
+  return and(...clauses)!;
 };
 
 export interface CandidateOptions {
@@ -120,49 +169,99 @@ export interface CandidateOptions {
 }
 /** One extra row detects truncation; only the first 2,000 become retrieval candidates. */
 export const metadataCandidatesStatement = (
+  db: DatabaseClient,
   userId: UserId,
   selector: FileSelector,
   window: TimeWindow,
   options: CandidateOptions = {},
-): SQL => {
-  const extra: SQL[] = [metadataFilter(userId, selector, window)];
-  if (options.cursor !== undefined) extra.push(sql`i.id < ${options.cursor}`);
+) => {
+  const extra: SQL[] = [metadataFilter(db, userId, selector, window)];
+  if (options.cursor !== undefined) extra.push(lt(file.id, options.cursor));
   if (options.folderId === "inbox")
     extra.push(
-      sql`NOT EXISTS (SELECT 1 FROM file_folder ic WHERE ic.file_id = i.id AND ic.user_id = i.user_id)`,
+      not(
+        exists(
+          db
+            .select({ fileId: fileFolder.fileId })
+            .from(fileFolder)
+            .where(and(eq(fileFolder.fileId, file.id), eq(fileFolder.userId, file.userId))),
+        ),
+      ),
     );
-  else if (options.folderId !== undefined) extra.push(membership([options.folderId]));
-  const eventClauses = [
-    sql`e.user_id = i.user_id`,
-    sql`e.file_id = i.id`,
-    ...bounds(sql`e.at`, window),
-  ];
-  if (selector.time?.events !== undefined)
-    eventClauses.push(sql`e.kind = ANY(${array(selector.time.events)})`);
+  else if (options.folderId !== undefined) extra.push(membership(db, [options.folderId]));
+
   const preferred =
     options.folderId !== undefined && options.folderId !== "inbox"
-      ? sql`(c.id = ${options.folderId}) DESC, `
-      : sql``;
-  const order =
-    options.order === "id" ? sql`i.id DESC` : sql`activity."activityAt" DESC, i.id DESC`;
-  return sql`
-    SELECT i.id AS "fileId", i.title, i.kind, i.mime_type AS "mimeType", i.size_bytes::double precision AS size,
-      i.source, i.tags, i.created_at::text AS "createdAt", i.content_modified_at::text AS "contentModifiedAt",
-      folder.name AS "folderName", activity."activityAt"::text AS "activityAt", events.entries AS events
-    FROM file i
-    LEFT JOIN LATERAL (
-      SELECT c.name FROM file_folder ic JOIN folder c ON c.id = ic.folder_id AND c.user_id = i.user_id
-      WHERE ic.file_id = i.id AND ic.user_id = i.user_id ORDER BY ${preferred}c.name, c.id LIMIT 1
-    ) folder ON TRUE
-    LEFT JOIN LATERAL (
-      SELECT greatest(coalesce(i.content_modified_at, i.created_at), coalesce(max(e.at), i.created_at)) AS "activityAt"
-      FROM file_event e WHERE e.file_id = i.id AND e.user_id = i.user_id
-    ) activity ON TRUE
-    LEFT JOIN LATERAL (
-      SELECT coalesce(jsonb_agg(jsonb_build_object('kind', latest.kind, 'at', latest.at::text) ORDER BY latest.at DESC), '[]'::jsonb) AS entries
-      FROM (SELECT e.kind, max(e.at) AS at FROM file_event e WHERE ${conjunction(eventClauses)} GROUP BY e.kind) latest
-    ) events ON TRUE
-    WHERE ${conjunction(extra)} ORDER BY ${order} LIMIT ${options.limit ?? SELECTOR_CANDIDATE_CAP + 1}`;
+      ? [desc(sql`${folder.id} = ${options.folderId}`)]
+      : [];
+  const chosenFolder = db
+    .select({ name: folder.name })
+    .from(fileFolder)
+    .innerJoin(folder, and(eq(folder.id, fileFolder.folderId), eq(folder.userId, file.userId)))
+    .where(and(eq(fileFolder.fileId, file.id), eq(fileFolder.userId, file.userId)))
+    .orderBy(...preferred, folder.name, folder.id)
+    .limit(1)
+    .as("chosen_folder");
+  const activity = db
+    .select({
+      activityAt:
+        sql<Date>`greatest(${contentDate}, coalesce(max(${fileEvent.at}), ${file.createdAt}))`.as(
+          "activity_at",
+        ),
+    })
+    .from(fileEvent)
+    .where(and(eq(fileEvent.fileId, file.id), eq(fileEvent.userId, file.userId)))
+    .as("activity");
+  const latest = db
+    .select({ kind: fileEvent.kind, at: max(fileEvent.at).as("at") })
+    .from(fileEvent)
+    .where(
+      and(
+        eq(fileEvent.userId, file.userId),
+        eq(fileEvent.fileId, file.id),
+        ...bounds(sql<Date>`${fileEvent.at}`, window),
+        ...(selector.time?.events === undefined
+          ? []
+          : [inArray(fileEvent.kind, selector.time.events)]),
+      ),
+    )
+    .groupBy(fileEvent.kind)
+    .as("latest");
+  const events = db
+    .select({
+      entries: sql<
+        ReadonlyArray<{ kind: string; at: string }>
+      >`coalesce(jsonb_agg(jsonb_build_object('kind', ${latest.kind}, 'at', ${latest.at}::text) order by ${latest.at} desc), '[]'::jsonb)`.as(
+        "entries",
+      ),
+    })
+    .from(latest)
+    .as("events");
+  const base = db
+    .select({
+      fileId: file.id,
+      title: file.title,
+      kind: file.kind,
+      mimeType: file.mimeType,
+      size: sql<number | null>`${file.sizeBytes}::double precision`,
+      source: file.source,
+      tags: file.tags,
+      createdAt: sql<string>`${file.createdAt}::text`,
+      contentModifiedAt: sql<string | null>`${file.contentModifiedAt}::text`,
+      folderName: chosenFolder.name,
+      activityAt: sql<string>`${activity.activityAt}::text`,
+      events: events.entries,
+    })
+    .from(file)
+    .leftJoinLateral(chosenFolder, sql`true`)
+    .leftJoinLateral(activity, sql`true`)
+    .leftJoinLateral(events, sql`true`)
+    .where(and(...extra));
+  return options.order === "id"
+    ? base.orderBy(desc(file.id)).limit(options.limit ?? SELECTOR_CANDIDATE_CAP + 1)
+    : base
+        .orderBy(desc(activity.activityAt), desc(file.id))
+        .limit(options.limit ?? SELECTOR_CANDIDATE_CAP + 1);
 };
 
 export const MetadataCandidate = Schema.Struct({
@@ -294,7 +393,7 @@ export const resolveSelector = Effect.fn("Selectors.resolveSelector")(function* 
     return { files: [] as ResolvedFile[], truncated: false };
   const database = yield* Database;
   const rows = yield* database.use((db) =>
-    db.execute(metadataCandidatesStatement(ctx.userId, selector, window)),
+    metadataCandidatesStatement(db, ctx.userId, selector, window),
   );
   const candidates = yield* Schema.decodeUnknownEffect(Schema.Array(MetadataCandidate))(rows);
   const capped = candidates.slice(0, SELECTOR_CANDIDATE_CAP);

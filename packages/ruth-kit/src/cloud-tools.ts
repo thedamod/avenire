@@ -208,9 +208,12 @@ const extractedBytes = Effect.fn("RuthCloud.extractedBytes")(function* (
 ) {
   const database = yield* Database;
   const rows = yield* database.use((db) =>
-    db.execute<{ text: string }>(
-      sql`SELECT left(coalesce(string_agg(${chunk.content}, E'\n\n' ORDER BY ${chunk.ordinal}), ''), ${5 * 1024 * 1024}) AS text FROM ${chunk} WHERE ${chunk.fileId} = ${fileId} AND ${chunk.userId} = ${ctx.userId}`,
-    ),
+    db
+      .select({
+        text: sql<string>`left(coalesce(string_agg(${chunk.content}, E'\n\n' ORDER BY ${chunk.ordinal}), ''), ${5 * 1024 * 1024})`,
+      })
+      .from(chunk)
+      .where(and(eq(chunk.fileId, fileId), eq(chunk.userId, ctx.userId))),
   );
   const bytes = Buffer.from(rows[0]?.text ?? "");
   let end = Math.min(bytes.length, 5 * 1024 * 1024);

@@ -2,10 +2,11 @@
  * Drains the Postgres email outbox. Rows are leased (send_after pushed forward)
  * when claimed, so a crashed worker's rows become claimable again after the lease.
  */
-import { Database } from "@avenire/database/client";
+import { Database, type DatabaseClient } from "@avenire/database/client";
+import { emailOutbox } from "@avenire/database/schema";
 import { Mailer, type SendRequest } from "@avenire/emailer/mailer";
 import { type TemplateName, TemplatePropsSchema } from "@avenire/emailer/templates";
-import { type SQL, sql } from "drizzle-orm";
+import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
@@ -14,7 +15,6 @@ import * as Schema from "effect/Schema";
 const MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 20;
 const CONCURRENCY = 5;
-const LEASE = sql`interval '5 minutes'`;
 const IDLE_DELAY = "5 seconds";
 const OUTAGE_DELAY = "15 seconds";
 
@@ -22,7 +22,7 @@ const TemplateNameSchema = Schema.Literals(
   Object.keys(TemplatePropsSchema) as [TemplateName, ...Array<TemplateName>],
 );
 
-/** A row as returned by the claim query (raw SQL, so columns are snake_case). */
+/** A row returned by the claim update. */
 const ClaimedEmail = Schema.Struct({
   id: Schema.String,
   to_address: Schema.String,
@@ -44,18 +44,29 @@ export const nextState = (attempts: number, error: string): NextState =>
     ? { status: "failed", lastError: error }
     : { status: "pending", lastError: error, backoffMinutes: backoffMinutes(attempts) };
 
-const claimBatchSql = sql`
-  UPDATE email_outbox
-  SET send_after = now() + ${LEASE}, attempts = attempts + 1
-  WHERE id IN (
-    SELECT id FROM email_outbox
-    WHERE status = 'pending' AND send_after <= now()
-    ORDER BY send_after
-    FOR UPDATE SKIP LOCKED
-    LIMIT ${BATCH_SIZE}
-  )
-  RETURNING id, to_address, template, props, attempts
-`;
+export const claimBatchQuery = (db: DatabaseClient) => {
+  const due = db
+    .select({ id: emailOutbox.id })
+    .from(emailOutbox)
+    .where(and(eq(emailOutbox.status, "pending"), lte(emailOutbox.sendAfter, sql`now()`)))
+    .orderBy(emailOutbox.sendAfter)
+    .limit(BATCH_SIZE)
+    .for("update", { skipLocked: true });
+  return db
+    .update(emailOutbox)
+    .set({
+      sendAfter: sql`now() + interval '5 minutes'`,
+      attempts: sql`${emailOutbox.attempts} + 1`,
+    })
+    .where(inArray(emailOutbox.id, due))
+    .returning({
+      id: emailOutbox.id,
+      to_address: emailOutbox.toAddress,
+      template: emailOutbox.template,
+      props: emailOutbox.props,
+      attempts: emailOutbox.attempts,
+    });
+};
 
 const decodeRequest = (row: ClaimedEmail) =>
   Effect.gen(function* () {
@@ -70,34 +81,40 @@ export const OutboxWorker = Layer.effectDiscard(
     const database = yield* Database;
     const mailer = yield* Mailer;
 
-    const execute = (statement: SQL) => database.use((db) => db.execute(statement));
-
-    const claimBatch = execute(claimBatchSql).pipe(
-      Effect.flatMap(decodeClaimed),
-      Effect.withSpan("OutboxWorker.claimBatch"),
-    );
+    const claimBatch = database
+      .use(claimBatchQuery)
+      .pipe(Effect.flatMap(decodeClaimed), Effect.withSpan("OutboxWorker.claimBatch"));
 
     const markSent = (id: string) =>
-      execute(sql`
-        UPDATE email_outbox SET status = 'sent', sent_at = now(), last_error = NULL
-        WHERE id = ${id}
-      `);
+      database.use((db) =>
+        db
+          .update(emailOutbox)
+          .set({ status: "sent", sentAt: sql`now()`, lastError: null })
+          .where(eq(emailOutbox.id, id)),
+      );
 
     const markFailed = (id: string, error: string) =>
-      execute(
-        sql`UPDATE email_outbox SET status = 'failed', last_error = ${error} WHERE id = ${id}`,
+      database.use((db) =>
+        db
+          .update(emailOutbox)
+          .set({ status: "failed", lastError: error })
+          .where(eq(emailOutbox.id, id)),
       );
 
     const markRetry = (row: ClaimedEmail, error: string) => {
       const state = nextState(row.attempts, error);
       return state.status === "failed"
         ? markFailed(row.id, error)
-        : execute(sql`
-            UPDATE email_outbox
-            SET status = 'pending', last_error = ${error},
-                send_after = now() + (${state.backoffMinutes} * interval '1 minute')
-            WHERE id = ${row.id}
-          `);
+        : database.use((db) =>
+            db
+              .update(emailOutbox)
+              .set({
+                status: "pending",
+                lastError: error,
+                sendAfter: sql`now() + (${state.backoffMinutes} * interval '1 minute')`,
+              })
+              .where(eq(emailOutbox.id, row.id)),
+          );
     };
 
     /** Malformed rows will never succeed, so they fail immediately instead of retrying. */

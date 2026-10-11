@@ -1,7 +1,7 @@
 import { RuthCloudLive } from "@avenire/ai/ruth-cloud";
 import { CloudRunsLive, CloudSchedulerLive } from "@avenire/ai/scheduler";
 import { ChatSandboxSweeperLive } from "@avenire/cloud/chat-sandbox";
-import { ArchivePurgeLive } from "@avenire/ingestion/archive";
+import { ArchivePurgeLive } from "@avenire/storage/archive";
 import { ImageDescriberLive } from "@avenire/ingestion/extract/describe";
 import { MediaProcessorLive } from "@avenire/ingestion/extract/media";
 import { OcrLive } from "@avenire/ingestion/extract/ocr";

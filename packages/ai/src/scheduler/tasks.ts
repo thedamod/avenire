@@ -22,7 +22,7 @@ import {
   type CloudTaskRow,
 } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -176,7 +176,7 @@ export const CloudTasksLive = Layer.effect(
           })
           .onConflictDoNothing({
             target: [cloudTask.userId, cloudTask.builtin],
-            where: sql`${cloudTask.builtin} is not null`,
+            where: isNotNull(cloudTask.builtin),
           }),
       );
     });

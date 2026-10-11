@@ -52,56 +52,72 @@ export const user = pgTable("user", {
   updatedAt: timestamptz("updated_at").notNull(),
 });
 
-export const session = pgTable("session", {
-  id: text("id").primaryKey(),
-  expiresAt: timestamptz("expires_at").notNull(),
-  token: text("token").notNull().unique(),
-  createdAt: timestamptz("created_at").notNull(),
-  updatedAt: timestamptz("updated_at").notNull(),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-});
+export const session = pgTable(
+  "session",
+  {
+    id: text("id").primaryKey(),
+    expiresAt: timestamptz("expires_at").notNull(),
+    token: text("token").notNull().unique(),
+    createdAt: timestamptz("created_at").notNull(),
+    updatedAt: timestamptz("updated_at").notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+  },
+  (t) => [index("session_user_id_idx").on(t.userId)],
+);
 
-export const account = pgTable("account", {
-  id: text("id").primaryKey(),
-  accountId: text("account_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  accessToken: text("access_token"),
-  refreshToken: text("refresh_token"),
-  idToken: text("id_token"),
-  accessTokenExpiresAt: timestamptz("access_token_expires_at"),
-  refreshTokenExpiresAt: timestamptz("refresh_token_expires_at"),
-  scope: text("scope"),
-  password: text("password"),
-  createdAt: timestamptz("created_at").notNull(),
-  updatedAt: timestamptz("updated_at").notNull(),
-});
+export const account = pgTable(
+  "account",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    idToken: text("id_token"),
+    accessTokenExpiresAt: timestamptz("access_token_expires_at"),
+    refreshTokenExpiresAt: timestamptz("refresh_token_expires_at"),
+    scope: text("scope"),
+    password: text("password"),
+    createdAt: timestamptz("created_at").notNull(),
+    updatedAt: timestamptz("updated_at").notNull(),
+  },
+  (t) => [index("account_user_id_idx").on(t.userId)],
+);
 
-export const verification = pgTable("verification", {
-  id: text("id").primaryKey(),
-  identifier: text("identifier").notNull(),
-  value: text("value").notNull(),
-  expiresAt: timestamptz("expires_at").notNull(),
-  createdAt: timestamptz("created_at"),
-  updatedAt: timestamptz("updated_at"),
-});
+export const verification = pgTable(
+  "verification",
+  {
+    id: text("id").primaryKey(),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: timestamptz("expires_at").notNull(),
+    createdAt: timestamptz("created_at"),
+    updatedAt: timestamptz("updated_at"),
+  },
+  (t) => [index("verification_identifier_idx").on(t.identifier)],
+);
 
-export const capture = pgTable("capture", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  deviceId: text("device_id").notNull(),
-  capturedAt: timestamptz("captured_at").notNull(),
-  snapshot: jsonb("snapshot").$type<CaptureSnapshot>().notNull(),
-  createdAt: timestamptz("created_at").notNull().defaultNow(),
-});
+export const capture = pgTable(
+  "capture",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    deviceId: text("device_id").notNull(),
+    capturedAt: timestamptz("captured_at").notNull(),
+    snapshot: jsonb("snapshot").$type<CaptureSnapshot>().notNull(),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("capture_user_captured_at_idx").on(t.userId, t.capturedAt)],
+);
 
 export const file = pgTable(
   "file",
@@ -139,6 +155,8 @@ export const file = pgTable(
     unique("file_user_dedupe_key_unique").on(t.userId, t.dedupeKey),
     index("file_user_placement_idx").on(t.userId, t.placement),
     index("file_user_content_modified_idx").on(t.userId, t.contentModifiedAt),
+    index("file_capture_id_idx").on(t.captureId),
+    index("file_placement_archived_at_idx").on(t.placement, t.archivedAt),
   ],
 );
 
@@ -160,20 +178,25 @@ export const fileEvent = pgTable(
   (t) => [
     index("file_event_user_at_idx").on(t.userId, t.at),
     index("file_event_user_file_at_idx").on(t.userId, t.fileId, t.at),
+    index("file_event_file_id_idx").on(t.fileId),
   ],
 );
 
-export const folder = pgTable("folder", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  suggested: boolean("suggested").notNull().default(false),
-  centroid: vector("centroid", { dimensions: 1536 }),
-  createdAt: timestamptz("created_at").notNull().defaultNow(),
-  updatedAt: timestamptz("updated_at").notNull().defaultNow(),
-});
+export const folder = pgTable(
+  "folder",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    suggested: boolean("suggested").notNull().default(false),
+    centroid: vector("centroid", { dimensions: 1536 }),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+    updatedAt: timestamptz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("folder_user_id_idx").on(t.userId)],
+);
 
 export const fileFolder = pgTable(
   "file_folder",
@@ -189,21 +212,29 @@ export const fileFolder = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.fileId, t.folderId] })],
+  (t) => [
+    primaryKey({ columns: [t.fileId, t.folderId] }),
+    index("file_folder_folder_id_idx").on(t.folderId),
+    index("file_folder_user_id_idx").on(t.userId),
+  ],
 );
 
-export const canvasNode = pgTable("canvas_node", {
-  id: text("id").primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  ref: jsonb("ref").$type<CanvasNodeRef>().notNull(),
-  x: real("x").notNull(),
-  y: real("y").notNull(),
-  width: real("width").notNull(),
-  height: real("height").notNull(),
-  updatedAt: timestamptz("updated_at").notNull().defaultNow(),
-});
+export const canvasNode = pgTable(
+  "canvas_node",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    ref: jsonb("ref").$type<CanvasNodeRef>().notNull(),
+    x: real("x").notNull(),
+    y: real("y").notNull(),
+    width: real("width").notNull(),
+    height: real("height").notNull(),
+    updatedAt: timestamptz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("canvas_node_user_id_idx").on(t.userId)],
+);
 
 export const ingestionJob = pgTable(
   "ingestion_job",
@@ -226,7 +257,14 @@ export const ingestionJob = pgTable(
     createdAt: timestamptz("created_at").notNull().defaultNow(),
     updatedAt: timestamptz("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("ingestion_job_status_locked_until_idx").on(t.status, t.lockedUntil)],
+  (t) => [
+    index("ingestion_job_status_locked_until_created_at_idx").on(
+      t.status,
+      t.lockedUntil,
+      t.createdAt,
+    ),
+    index("ingestion_job_user_id_idx").on(t.userId),
+  ],
 );
 
 export const chunk = pgTable(
@@ -337,6 +375,8 @@ export const entityMention = pgTable(
   (t) => [
     primaryKey({ columns: [t.entityId, t.chunkId] }),
     index("entity_mention_chunk_id_idx").on(t.chunkId),
+    index("entity_mention_file_id_idx").on(t.fileId),
+    index("entity_mention_user_id_idx").on(t.userId),
   ],
 );
 
@@ -369,6 +409,9 @@ export const entityRelation = pgTable(
     index("entity_relation_source_idx").on(t.userId, t.sourceId),
     index("entity_relation_target_idx").on(t.userId, t.targetId),
     index("entity_relation_chunk_id_idx").on(t.chunkId),
+    index("entity_relation_source_id_idx").on(t.sourceId),
+    index("entity_relation_target_id_idx").on(t.targetId),
+    index("entity_relation_file_id_idx").on(t.fileId),
   ],
 );
 
@@ -418,6 +461,7 @@ export const ruthThread = pgTable(
     uniqueIndex("ruth_thread_user_cloud_unique")
       .on(t.userId)
       .where(sql`${t.kind} = 'ruth-cloud'`),
+    index("ruth_thread_user_updated_at_idx").on(t.userId, t.updatedAt),
   ],
 );
 
@@ -437,7 +481,10 @@ export const ruthMessage = pgTable(
     metadata: jsonb("metadata").$type<unknown>(),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
-  (t) => [index("ruth_message_thread_created_idx").on(t.threadId, t.createdAt)],
+  (t) => [
+    index("ruth_message_thread_created_idx").on(t.threadId, t.createdAt),
+    index("ruth_message_user_id_idx").on(t.userId),
+  ],
 );
 
 /** Scheduled work in the user's persistent Ruth Cloud workspace. */
@@ -467,6 +514,7 @@ export const cloudTask = pgTable(
   },
   (t) => [
     index("cloud_task_enabled_next_run_idx").on(t.enabled, t.nextRunAt),
+    index("cloud_task_user_updated_at_idx").on(t.userId, t.updatedAt),
     uniqueIndex("cloud_task_user_builtin_unique")
       .on(t.userId, t.builtin)
       .where(sql`${t.builtin} is not null`),
@@ -502,27 +550,36 @@ export const cloudRun = pgTable(
   (t) => [
     index("cloud_run_status_not_before_idx").on(t.status, t.notBefore),
     index("cloud_run_user_status_idx").on(t.userId, t.status),
+    index("cloud_run_status_scheduled_for_idx").on(t.status, t.scheduledFor),
+    index("cloud_run_folder_id_idx").on(t.folderId),
     uniqueIndex("cloud_run_task_scheduled_attempt_unique").on(t.taskId, t.scheduledFor, t.attempt),
   ],
 );
 
 /** Hashed bearer credentials for one Cloud run. */
-export const cloudRunToken = pgTable("cloud_run_token", {
-  id: text("id").primaryKey(),
-  runId: text("run_id")
-    .notNull()
-    .references(() => cloudRun.id, { onDelete: "cascade" }),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  tokenHash: text("token_hash").notNull().unique(),
-  scopes: jsonb("scopes")
-    .$type<ReadonlyArray<"retrieval" | "download" | "hydrate" | "publish">>()
-    .notNull(),
-  expiresAt: timestamptz("expires_at").notNull(),
-  revokedAt: timestamptz("revoked_at"),
-  createdAt: timestamptz("created_at").notNull().defaultNow(),
-});
+export const cloudRunToken = pgTable(
+  "cloud_run_token",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => cloudRun.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    scopes: jsonb("scopes")
+      .$type<ReadonlyArray<"retrieval" | "download" | "hydrate" | "publish">>()
+      .notNull(),
+    expiresAt: timestamptz("expires_at").notNull(),
+    revokedAt: timestamptz("revoked_at"),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("cloud_run_token_run_id_idx").on(t.runId),
+    index("cloud_run_token_user_id_idx").on(t.userId),
+  ],
+);
 
 /** Audit manifest for one workspace hydration call. */
 export const cloudHydration = pgTable(
@@ -544,7 +601,10 @@ export const cloudHydration = pgTable(
     truncated: jsonb("truncated").$type<{ byCount: boolean; byBytes: boolean }>().notNull(),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
-  (t) => [index("cloud_hydration_run_idx").on(t.runId)],
+  (t) => [
+    index("cloud_hydration_run_idx").on(t.runId),
+    index("cloud_hydration_user_id_idx").on(t.userId),
+  ],
 );
 
 /** Cached originals in the persistent workspace, tracked for reuse and eviction. */
@@ -567,6 +627,7 @@ export const cloudWorkspaceFile = pgTable(
   (t) => [
     primaryKey({ columns: [t.userId, t.fileId] }),
     index("cloud_workspace_file_user_last_used_idx").on(t.userId, t.lastUsedAt),
+    index("cloud_workspace_file_file_id_idx").on(t.fileId),
   ],
 );
 
@@ -598,6 +659,7 @@ export const pendingApproval = pgTable(
   (t) => [
     index("pending_approval_user_status_idx").on(t.userId, t.status),
     index("pending_approval_run_idx").on(t.runId),
+    index("pending_approval_file_id_idx").on(t.fileId),
   ],
 );
 
@@ -630,7 +692,11 @@ export const artifact = pgTable(
     sourceFileIds: jsonb("source_file_ids").$type<ReadonlyArray<string>>().notNull(),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
-  (t) => [index("artifact_user_created_idx").on(t.userId, t.createdAt)],
+  (t) => [
+    index("artifact_user_created_idx").on(t.userId, t.createdAt),
+    index("artifact_cloud_run_id_idx").on(t.cloudRunId),
+    index("artifact_thread_id_idx").on(t.threadId),
+  ],
 );
 
 export const emailOutbox = pgTable(
@@ -648,7 +714,10 @@ export const emailOutbox = pgTable(
     sentAt: timestamptz("sent_at"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
-  (t) => [index("email_outbox_status_send_after_idx").on(t.status, t.sendAfter)],
+  (t) => [
+    index("email_outbox_status_send_after_idx").on(t.status, t.sendAfter),
+    index("email_outbox_user_id_idx").on(t.userId),
+  ],
 );
 
 export const fileRelations = relations(file, ({ many }) => ({

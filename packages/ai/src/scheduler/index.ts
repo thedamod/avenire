@@ -3,7 +3,7 @@ import { CloudRunId } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { cloudRun, cloudTask, user } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
-import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as Config from "effect/Config";
@@ -68,7 +68,7 @@ export const CloudRunsLive = Layer.effect(
                         and(
                           eq(cloudRun.id, runId),
                           eq(cloudRun.status, "provisioning"),
-                          sql`${cloudRun.startedAt} is null`,
+                          isNull(cloudRun.startedAt),
                         ),
                       ),
                   )

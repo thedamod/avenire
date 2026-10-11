@@ -3,7 +3,8 @@ import { Database } from "@avenire/database/client";
 import { Retrieval } from "@avenire/ingestion/retrieval";
 import { describe, expect, it } from "@effect/vitest";
 import { type SQL } from "drizzle-orm";
-import { PgDialect } from "drizzle-orm/pg-core";
+import { drizzle } from "drizzle-orm/postgres-js";
+import * as dbSchema from "@avenire/database/schema";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
@@ -76,8 +77,10 @@ describe("timeWindow", () => {
     ).toEqual({ since: "2026-11-01T07:00:00.000Z", until: "2026-11-01T10:30:00.000Z" });
   });
 });
+const builder = drizzle.mock({ schema: dbSchema });
 it("renders owned metadata, overlap, activity and explicit filters with parameters", () => {
-  const statement = metadataCandidatesStatement(
+  const { sql, params } = metadataCandidatesStatement(
+    builder,
     ctx.userId,
     {
       filters: {
@@ -94,18 +97,23 @@ it("renders owned metadata, overlap, activity and explicit filters with paramete
       time: { events: ["opened", "edited"] },
     },
     { since: "2026-10-08T00:00:00Z", until: "2026-10-09T00:00:00Z" },
-  );
-  const { sql, params } = new PgDialect().sqlToQuery(statement);
-  expect(sql).toContain("i.user_id = $");
-  expect(sql).toContain("i.placement <> 'archived'");
-  expect(sql).toContain("i.archived_at IS NULL");
-  expect(sql).toContain("i.kind = ANY(ARRAY[");
-  expect(sql).toContain("i.tags && ARRAY[");
-  expect(sql).toContain("e.kind = ANY(ARRAY[");
-  expect(sql).toContain("ic.user_id = i.user_id");
-  expect(sql).toContain("cap.user_id = i.user_id");
-  expect(sql).toContain("EXISTS (SELECT 1 FROM file_event e");
-  expect(sql).not.toContain("OR EXISTS (SELECT 1 FROM file_event");
+  ).toSQL();
+  for (const name of [
+    "file_folder",
+    "capture",
+    "file_event",
+    "chosen_folder",
+    "activity",
+    "events",
+  ])
+    expect(sql).toContain(name);
+  expect(sql).toContain('"file"."user_id" =');
+  expect(sql).toContain('"file"."placement" <>');
+  expect(sql).toContain('"file"."archived_at" is null');
+  expect(sql).toContain('"file"."tags" &&');
+  expect(sql).toContain('"file_event"."kind" in');
+  expect(sql).toContain("jsonb_agg");
+  expect(sql).toContain("greatest");
   for (const value of [
     "user",
     "pdf",
@@ -116,24 +124,31 @@ it("renders owned metadata, overlap, activity and explicit filters with paramete
     "capture",
     "opened",
     "edited",
-    "2026-10-08T00:00:00Z",
-    "2026-10-09T00:00:00Z",
     2001,
   ])
     expect(params).toContain(value);
+  expect(
+    params.some((value) => value instanceof Date && value.toISOString().startsWith("2026-10-08")),
+  ).toBe(true);
 });
 it("time without explicit event kinds includes content OR activity", () => {
-  const { sql } = new PgDialect().sqlToQuery(
-    metadataCandidatesStatement(ctx.userId, {}, { since: "2026-10-08T00:00:00Z" }),
-  );
-  expect(sql).toContain("coalesce(i.content_modified_at, i.created_at) >=");
-  expect(sql).toContain("OR EXISTS (SELECT 1 FROM file_event e");
+  const { sql } = metadataCandidatesStatement(
+    builder,
+    ctx.userId,
+    {},
+    { since: "2026-10-08T00:00:00Z" },
+  ).toSQL();
+  expect(sql).toContain('coalesce("file"."content_modified_at", "file"."created_at") >=');
+  expect(sql).toContain("or exists");
 });
 it("empty explicit ids select no candidates", () => {
-  const { sql } = new PgDialect().sqlToQuery(
-    metadataCandidatesStatement(ctx.userId, { explicit: { fileIds: [] } }, {}),
-  );
-  expect(sql).toContain("i.id = ANY(ARRAY[]::text[])");
+  const { sql } = metadataCandidatesStatement(
+    builder,
+    ctx.userId,
+    { explicit: { fileIds: [] } },
+    {},
+  ).toSQL();
+  expect(sql).toContain("false");
 });
 it("drive paths preserve extensions and safely append missing ones", () => {
   expect(toFileEntry(candidate("a")).drivePath).toBe("Thermodynamics/Heat.pdf");
@@ -163,7 +178,7 @@ for (const abstained of [false, true])
       const statements: SQL[] = [];
       const searches: Array<{ fileIds?: ReadonlyArray<FileId> | undefined; text: string }> = [];
       const database = fakeDatabase({
-        execute: async (statement: SQL) => {
+        recordStatement: async (statement: SQL) => {
           statements.push(statement);
           return [candidate("a"), candidate("b"), candidate("c")];
         },
@@ -214,7 +229,7 @@ it.effect("no topic preserves recent activity order without invoking retrieval",
   }).pipe(
     Effect.provideService(
       Database,
-      fakeDatabase({ execute: async () => [candidate("recent"), candidate("old")] }),
+      fakeDatabase({ recordStatement: async () => [candidate("recent"), candidate("old")] }),
     ),
     Effect.provideService(
       Retrieval,
@@ -233,7 +248,7 @@ it.effect("caps candidates and batches restricted retrieval ids", () => {
     Effect.provideService(
       Database,
       fakeDatabase({
-        execute: async () => Array.from({ length: 2001 }, (_, i) => candidate(String(i))),
+        recordStatement: async () => Array.from({ length: 2001 }, (_, i) => candidate(String(i))),
       }),
     ),
     Effect.provideService(
@@ -269,7 +284,7 @@ it.effect("rejects invalid timestamps and zones before touching the database", (
       ).toMatchObject({ failure: { code: "invalid_input" } });
     }
   }).pipe(
-    Effect.provideService(Database, fakeDatabase({ execute: async () => [] })),
+    Effect.provideService(Database, fakeDatabase({ recordStatement: async () => [] })),
     Effect.provideService(Retrieval, Retrieval.of({ search: () => Effect.die("must not run") })),
   ),
 );

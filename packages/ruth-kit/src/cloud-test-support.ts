@@ -8,6 +8,8 @@ import { SemanticCache } from "@avenire/ingestion/retrieval/cache";
 import { Storage } from "@avenire/storage/storage";
 import { getTableName, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
+import { drizzle } from "drizzle-orm/postgres-js";
+import * as schema from "@avenire/database/schema";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -116,34 +118,39 @@ export const cloudFixture = () => {
   };
   const database = fakeDatabase({
     query,
-    select: (selection?: Row) => ({
-      from: (table: Parameters<typeof getTableName>[0]) => {
-        const name = getTableName(table);
-        const select = (where?: SQL) =>
-          rows(name)
-            .filter((row) => matches(row, where))
-            .map((row) => (selection?.name ? { name: row.name } : { ...row }));
-        return {
-          where: (where?: SQL) => chain(() => select(where)),
-          innerJoin: () => ({
-            where: (where?: SQL) => ({
-              orderBy: async () =>
+    select: (selection?: Row) =>
+      selection?.text !== undefined
+        ? drizzle.mock({ schema }).select(selection as { text: SQL })
+        : {
+            from: (table: Parameters<typeof getTableName>[0]) => {
+              const name = getTableName(table);
+              const select = (where?: SQL) =>
                 rows(name)
                   .filter((row) => matches(row, where))
-                  .map((row) => ({
-                    approval: { ...row },
-                    fileTitle:
-                      rows("file").find((file) => file.id === row.fileId)?.title ?? "Missing",
-                  }))
-                  .sort((a, b) => Number(b.approval.createdAt) - Number(a.approval.createdAt)),
-            }),
-          }),
-          leftJoin: () => ({
-            where: async () => [{ timeZone: rows("cloud_task")[0]?.timeZone ?? null }],
-          }),
-        };
-      },
-    }),
+                  .map((row) => (selection?.name ? { name: row.name } : { ...row }));
+              return {
+                where: (where?: SQL) => chain(() => select(where)),
+                innerJoin: () => ({
+                  where: (where?: SQL) => ({
+                    orderBy: async () =>
+                      rows(name)
+                        .filter((row) => matches(row, where))
+                        .map((row) => ({
+                          approval: { ...row },
+                          fileTitle:
+                            rows("file").find((file) => file.id === row.fileId)?.title ?? "Missing",
+                        }))
+                        .sort(
+                          (a, b) => Number(b.approval.createdAt) - Number(a.approval.createdAt),
+                        ),
+                  }),
+                }),
+                leftJoin: () => ({
+                  where: async () => [{ timeZone: rows("cloud_task")[0]?.timeZone ?? null }],
+                }),
+              };
+            },
+          },
     insert: (table: Parameters<typeof getTableName>[0]) => ({
       values: (values: Row) => {
         const name = getTableName(table);
@@ -190,7 +197,7 @@ export const cloudFixture = () => {
         );
       },
     }),
-    execute: async (statement: SQL) => {
+    recordStatement: async (statement: SQL) => {
       const rendered = dialect.sqlToQuery(statement);
       statements.push(rendered);
       if (rendered.sql.includes("string_agg")) return [{ text: "# extracted text" }];

@@ -20,7 +20,7 @@ packages/
   client-runtime/    RPC client wiring shared by web, desktop and mobile
   database/          Drizzle schema, migrations and the `Database` service
   auth/              better-auth server + clients
-  storage/           files-sdk wrapped as the `Storage` service
+  storage/           files-sdk `Storage` service, file archive/restore, and retention purge
   cloud/             Daytona sandboxes (ephemeral compute + persistent Ruth Cloud boxes)
   ingestion/         Extract -> chunk -> embed -> graph -> folder, the job queue worker, and retrieval
                      (multi-lane RRF, rerank, graph RAG, semantic cache)

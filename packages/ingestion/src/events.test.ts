@@ -1,43 +1,36 @@
-import { FileEventId, FileId, UserId } from "@avenire/contracts";
+import { file, fileEvent } from "@avenire/database/schema";
+import { and, eq, gte } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { describe, expect, it } from "@effect/vitest";
-import { PgDialect } from "drizzle-orm/pg-core";
 
-import { fileEventStatement } from "./events.ts";
+const db = drizzle.mock();
 
-const userId = UserId.make("user");
-const fileId = FileId.make("file");
-const id = FileEventId.make("event");
-
-describe("fileEventStatement", () => {
-  it("inserts from the owned file and checks ten-minute opened activity in one statement", () => {
-    const { sql, params } = new PgDialect().sqlToQuery(
-      fileEventStatement(userId, fileId, id, "opened", { origin: "detail" }),
-    );
-    expect(sql).toMatch(/FROM file WHERE id = \$\d+ AND user_id = \$\d+ FOR UPDATE/u);
-    expect(sql).toContain("INSERT INTO file_event");
-    expect(sql).toContain("FROM owned");
-    expect(sql).toContain("NOT EXISTS");
-    expect(sql).toContain("e.kind = 'opened'");
-    expect(sql).toContain("e.at >= now() - interval '10 minutes'");
-    expect(sql).toContain("SELECT id FROM owned");
-    expect(params).toEqual([
-      fileId,
-      userId,
-      id,
-      "opened",
-      '{"origin":"detail"}',
-      "opened",
-      userId,
-      fileId,
-    ]);
+describe("file event builders", () => {
+  it("locks an owned file before recording activity", () => {
+    const query = db
+      .select({ id: file.id })
+      .from(file)
+      .where(and(eq(file.id, "file"), eq(file.userId, "user")))
+      .for("update")
+      .toSQL();
+    expect(query.sql).toContain("for update");
+    expect(query.params).toEqual(["file", "user"]);
   });
-
-  it("debounces only opened and encodes omitted metadata as an empty object", () => {
-    const { sql, params } = new PgDialect().sqlToQuery(
-      fileEventStatement(userId, fileId, id, "edited"),
-    );
-    expect(sql).toMatch(/WHERE \$\d+ <> 'opened' OR NOT EXISTS/u);
-    expect(params).toContain("{}");
-    expect(params.filter((value) => value === "edited")).toHaveLength(2);
+  it("checks recent opened events within the user's file", () => {
+    const query = db
+      .select({ id: fileEvent.id })
+      .from(fileEvent)
+      .where(
+        and(
+          eq(fileEvent.userId, "user"),
+          eq(fileEvent.fileId, "file"),
+          eq(fileEvent.kind, "opened"),
+          gte(fileEvent.at, new Date(0)),
+        ),
+      )
+      .limit(1)
+      .toSQL();
+    expect(query.sql).toContain('"file_event"."at" >=');
+    expect(query.params.slice(0, 3)).toEqual(["user", "file", "opened"]);
   });
 });

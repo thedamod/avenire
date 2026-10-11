@@ -278,7 +278,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
             .values({ id: proposedThreadId, userId, kind: "ruth-cloud", title: "Ruth Cloud" })
             .onConflictDoNothing({
               target: ruthThread.userId,
-              where: sql`${ruthThread.kind} = 'ruth-cloud'`,
+              where: eq(ruthThread.kind, "ruth-cloud"),
             }),
         );
         const thread = yield* database.use((db) =>

@@ -71,7 +71,8 @@ it.effect("writes a Ruth note, folder membership, uploaded event and ingestion j
         return Object.assign(result, { onConflictDoUpdate: async () => [] });
       },
     }),
-    execute: async (statement: SQL) => {
+    select: () => ({ from: () => ({ where: () => ({ for: async () => [{ id: fileId }] }) }) }),
+    recordStatement: async (statement: SQL) => {
       statements.push(new PgDialect().sqlToQuery(statement));
       return [{ id: fileId }];
     },
@@ -107,8 +108,11 @@ it.effect("writes a Ruth note, folder membership, uploaded event and ingestion j
       fileId: result.fileId,
       folderId: folder,
     });
-    expect(statements[0]?.sql).toContain("INSERT INTO file_event");
-    expect(statements[0]?.params).toContain("uploaded");
+    expect(writes.find((write) => write.table === "file_event")?.values).toMatchObject({
+      fileId: result.fileId,
+      userId: ctx.userId,
+      kind: "uploaded",
+    });
     expect(writes.find((write) => write.table === "ingestion_job")?.values).toMatchObject({
       fileId: result.fileId,
       userId: ctx.userId,
@@ -143,10 +147,10 @@ it.effect(
     const services = Context.make(
       Database,
       fakeDatabase({
-        execute: async (statement: SQL) => {
+        recordStatement: async (statement: SQL) => {
           const rendered = new PgDialect().sqlToQuery(statement);
           statements.push(rendered);
-          if (rendered.sql.includes("count(i.id)::int"))
+          if (rendered.sql.includes('count("file"."id")::int'))
             return [{ folderId: folder, name: "Folder", fileCount: 2 }];
           return [row("b"), row("a")];
         },
@@ -162,7 +166,7 @@ it.effect(
       );
       expect(inbox.folders).toEqual([]);
       expect(statements).toHaveLength(3);
-      expect(statements[2]?.sql).toContain("NOT EXISTS (SELECT 1 FROM file_folder");
+      expect(statements[2]?.sql.toLowerCase()).toContain("not exists");
       expect(statements[2]?.params).toContain("b");
       expect(
         statements.every(

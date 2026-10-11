@@ -1,15 +1,15 @@
 /** Reversible library archival and storage-first retention cleanup. */
 import { FileId, NotFound, type UserId, UserId as UserIdSchema } from "@avenire/contracts";
-import { Database } from "@avenire/database/client";
-import { file } from "@avenire/database/schema";
-import { filePrefix } from "@avenire/storage/keys";
-import { Storage, type StorageError } from "@avenire/storage/storage";
-import { and, eq, sql } from "drizzle-orm";
+import { Database, type DatabaseClient } from "@avenire/database/client";
+import { file, fileFolder } from "@avenire/database/schema";
+import { and, eq, exists, lt, sql } from "drizzle-orm";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 
-import { SemanticCache } from "./retrieval/cache.ts";
+import { filePrefix } from "./keys.ts";
+import { Storage, type StorageError } from "./storage.ts";
 
 export const ARCHIVE_RETENTION_DAYS = 30;
 const PURGE_BATCH_SIZE = 100;
@@ -18,13 +18,12 @@ const PURGE_BATCH_SIZE = 100;
 export const archiveCutoff = (nowMillis: number): number =>
   nowMillis - ARCHIVE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
-/** Archives the user's file and discards its cached retrieval results. */
+/** Archives the user's file. Callers invalidate retrieval caches. */
 export const archiveFile = Effect.fn("Archive.archiveFile")(function* (
   userId: UserId,
   fileId: FileId,
 ) {
   const database = yield* Database;
-  const cache = yield* SemanticCache;
   const rows = yield* database.use((db) =>
     db
       .update(file)
@@ -33,25 +32,32 @@ export const archiveFile = Effect.fn("Archive.archiveFile")(function* (
       .returning({ id: file.id }),
   );
   if (rows.length === 0) return yield* new NotFound({ entity: "File", id: fileId });
-  yield* cache.invalidate(userId);
 });
 
 /** Restores membership-bearing files to filed and other files to inbox. */
-export const restoreStatement = (userId: UserId, fileId: FileId) => sql`
-  UPDATE file i SET placement = CASE WHEN EXISTS (
-    SELECT 1 FROM file_folder ic WHERE ic.file_id = i.id AND ic.user_id = i.user_id
-  ) THEN 'filed' ELSE 'inbox' END, archived_at = NULL, updated_at = now()
-  WHERE i.id = ${fileId} AND i.user_id = ${userId} RETURNING i.id`;
+export const restoreStatement = (db: DatabaseClient, userId: UserId, fileId: FileId) =>
+  db
+    .update(file)
+    .set({
+      placement: sql`case when ${exists(
+        db
+          .select({ fileId: fileFolder.fileId })
+          .from(fileFolder)
+          .where(and(eq(fileFolder.fileId, file.id), eq(fileFolder.userId, file.userId))),
+      )} then 'filed' else 'inbox' end`,
+      archivedAt: null,
+      updatedAt: sql`now()`,
+    })
+    .where(and(eq(file.id, fileId), eq(file.userId, userId)))
+    .returning({ id: file.id });
 
 export const restoreFile = Effect.fn("Archive.restoreFile")(function* (
   userId: UserId,
   fileId: FileId,
 ) {
   const database = yield* Database;
-  const cache = yield* SemanticCache;
-  const rows = yield* database.use((db) => db.execute(restoreStatement(userId, fileId)));
+  const rows = yield* database.use((db) => restoreStatement(db, userId, fileId));
   if (rows.length === 0) return yield* new NotFound({ entity: "File", id: fileId });
-  yield* cache.invalidate(userId);
 });
 
 /** Deletes a row only after all of its objects have been removed. Storage failures retain it. */
@@ -81,12 +87,16 @@ export const purgeFile = Effect.fn("Archive.purgeFile")(function* <E, R>(
 /** At most one hundred expired files per tick; cascading deletes clean up their metadata. */
 export const purgeArchived = Effect.fn("Archive.purgeArchived")(function* () {
   const database = yield* Database;
+  const now = yield* DateTime.now;
   const expired = yield* database.use((db) =>
     db
       .select({ id: file.id, userId: file.userId })
       .from(file)
       .where(
-        sql`${file.placement} = 'archived' AND ${file.archivedAt} < now() - ${ARCHIVE_RETENTION_DAYS} * interval '24 hours'`,
+        and(
+          eq(file.placement, "archived"),
+          lt(file.archivedAt, new Date(archiveCutoff(DateTime.toEpochMillis(now)))),
+        ),
       )
       .orderBy(file.archivedAt, file.id)
       .limit(PURGE_BATCH_SIZE),

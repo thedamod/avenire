@@ -2,7 +2,8 @@ import { FileId, UserId } from "@avenire/contracts";
 import { fileDocumentKey, filePrefix, fileSourceKey } from "@avenire/storage/keys";
 import { Storage, StorageError, StorageMemory } from "@avenire/storage/storage";
 import { describe, expect, it } from "@effect/vitest";
-import { PgDialect } from "drizzle-orm/pg-core";
+import { drizzle } from "drizzle-orm/postgres-js";
+import * as schema from "@avenire/database/schema";
 import * as Effect from "effect/Effect";
 
 import { ARCHIVE_RETENTION_DAYS, archiveCutoff, purgeFile, restoreStatement } from "./archive.ts";
@@ -19,11 +20,11 @@ describe("archive", () => {
   });
 
   it("restores using owned folder membership and clears the archive timestamp", () => {
-    const rendered = new PgDialect().sqlToQuery(restoreStatement(userId, fileId));
-    expect(rendered.sql).toContain("ic.file_id = i.id AND ic.user_id = i.user_id");
-    expect(rendered.sql).toContain("THEN 'filed' ELSE 'inbox' END");
-    expect(rendered.sql).toContain("archived_at = NULL");
-    expect(rendered.params).toEqual([fileId, userId]);
+    const rendered = restoreStatement(drizzle.mock({ schema }), userId, fileId).toSQL();
+    expect(rendered.sql).toContain("file_folder");
+    expect(rendered.sql).toContain("case when exists");
+    expect(rendered.sql).toContain("archived_at");
+    expect(rendered.params).toEqual([null, fileId, userId]);
   });
 
   it.effect("removes all file objects before its row and leaves other files alone", () =>

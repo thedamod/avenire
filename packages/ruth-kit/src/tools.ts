@@ -1,7 +1,7 @@
 import { ChunkId, FolderId, FileId, NotFound } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { chunk, folder, file, fileFolder } from "@avenire/database/schema";
-import { archiveFile } from "@avenire/ingestion/archive";
+import { archiveFile } from "@avenire/storage/archive";
 import { recordFileEvent } from "@avenire/ingestion/events";
 import { Retrieval } from "@avenire/ingestion/retrieval";
 import { SemanticCache } from "@avenire/ingestion/retrieval/cache";
@@ -116,18 +116,17 @@ export const ruthKitTools: RuthToolImplementations = {
     }
     const limit = Math.min(100, Math.max(1, input.limit ?? 50));
     const rows = yield* database.use((db) =>
-      db.execute(
-        metadataCandidatesStatement(
-          ctx.userId,
-          input.kinds === undefined ? {} : { filters: { kinds: input.kinds } },
-          {},
-          {
-            limit: limit + 1,
-            order: "id",
-            ...(cursor === undefined ? {} : { cursor }),
-            ...(input.folderId === undefined ? {} : { folderId: input.folderId }),
-          },
-        ),
+      metadataCandidatesStatement(
+        db,
+        ctx.userId,
+        input.kinds === undefined ? {} : { filters: { kinds: input.kinds } },
+        {},
+        {
+          limit: limit + 1,
+          order: "id",
+          ...(cursor === undefined ? {} : { cursor }),
+          ...(input.folderId === undefined ? {} : { folderId: input.folderId }),
+        },
       ),
     );
     const candidates = yield* Schema.decodeUnknownEffect(Schema.Array(MetadataCandidate))(rows);
@@ -136,11 +135,29 @@ export const ruthKitTools: RuthToolImplementations = {
       input.folderId !== undefined
         ? []
         : yield* database.use((db) =>
-            db.execute(sql`
-      SELECT c.id AS "folderId", c.name, count(i.id)::int AS "fileCount"
-      FROM folder c LEFT JOIN file_folder ic ON ic.folder_id = c.id AND ic.user_id = c.user_id
-      LEFT JOIN file i ON i.id = ic.file_id AND i.user_id = c.user_id AND i.placement <> 'archived' AND i.archived_at IS NULL
-      WHERE c.user_id = ${ctx.userId} GROUP BY c.id, c.name ORDER BY c.name, c.id`),
+            db
+              .select({
+                folderId: folder.id,
+                name: folder.name,
+                fileCount: sql<number>`count(${file.id})::int`,
+              })
+              .from(folder)
+              .leftJoin(
+                fileFolder,
+                and(eq(fileFolder.folderId, folder.id), eq(fileFolder.userId, folder.userId)),
+              )
+              .leftJoin(
+                file,
+                and(
+                  eq(file.id, fileFolder.fileId),
+                  eq(file.userId, folder.userId),
+                  ne(file.placement, "archived"),
+                  isNull(file.archivedAt),
+                ),
+              )
+              .where(eq(folder.userId, ctx.userId))
+              .groupBy(folder.id, folder.name)
+              .orderBy(folder.name, folder.id),
           );
     return {
       folders: yield* Schema.decodeUnknownEffect(Schema.Array(FolderEntry))(folders),
@@ -283,6 +300,8 @@ export const ruthKitTools: RuthToolImplementations = {
   }),
   archive_file: Effect.fn("RuthKit.archiveFile")(function* (input, ctx) {
     yield* archiveFile(ctx.userId, input.fileId);
+    const cache = yield* SemanticCache;
+    yield* cache.invalidate(ctx.userId);
     return { fileId: input.fileId, summary: "Archived the file. You can undo this for 30 days." };
   }),
   render_widget: Effect.fn("RuthKit.renderWidget")(function* (input, ctx) {
