@@ -1,11 +1,10 @@
 /** Declarative image only. Importing this module never builds or publishes a snapshot. */
 import { DaytonaNotFoundError, Image, type Daytona } from "@daytonaio/sdk";
 import * as Effect from "effect/Effect";
-import { fileURLToPath } from "node:url";
 
 import { attempt } from "./daytona.ts";
 
-export const AVENIRE_SNAPSHOT = "avenire-sandbox-v2";
+export const AVENIRE_SNAPSHOT = "avenire-sandbox-v3";
 /** Daytona 0.220.0 fixes resources on the snapshot; create-from-snapshot has no override.
  * 10 GB is the per-sandbox disk maximum on the current Daytona plan. */
 export const SANDBOX_RESOURCES = { cpu: 4, memory: 8, disk: 10 } as const;
@@ -13,14 +12,6 @@ export const SANDBOX_RESOURCES = { cpu: 4, memory: 8, disk: 10 } as const;
 export const PYTHON_VERSION = "3.13";
 /** Retained until the server-agent migration removes the Pi imports. */
 export const PI_VERSION = "0.83.0";
-
-/** xfdesktop has no SVG loader in this image, so the wallpaper ships as a PNG rendered from wallpaper.svg. */
-const wallpaper = fileURLToPath(new URL("../assets/wallpaper.png", import.meta.url));
-const desktopSettings = fileURLToPath(new URL("../assets/xfce4-desktop.xml", import.meta.url));
-const wallpaperScript = fileURLToPath(new URL("../assets/set-wallpaper.sh", import.meta.url));
-const wallpaperAutostart = fileURLToPath(
-  new URL("../assets/avenire-wallpaper.desktop", import.meta.url),
-);
 
 /** Support the Debian variants used by Daytona's base; fail on unknown distributions. */
 export const avenireSandboxImage = Image.base("daytonaio/sandbox:0.9.0-slim")
@@ -41,16 +32,6 @@ export const avenireSandboxImage = Image.base("daytonaio/sandbox:0.9.0-slim")
     // pnpm installed globally (not via Corepack) so every user gets the pinned version offline.
     "set -eu; curl -fsSL https://deb.nodesource.com/setup_24.x | bash -; DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nodejs; npm install -g pnpm@11.17.0; node --version | grep -q '^v24\\.'; pnpm --version | grep -qx '11.17.0'; rm -rf /var/lib/apt/lists/*",
     "set -eu; PLAYWRIGHT_BROWSERS_PATH=/opt/avenire/browsers /opt/avenire/python/bin/python -m playwright install --with-deps chromium; chmod -R a+rX /opt/avenire; mkdir -p /home/daytona/workspace; chown -R daytona:daytona /home/daytona/workspace",
-  )
-  .addLocalFile(wallpaper, "/usr/share/backgrounds/avenire/wallpaper.png")
-  .addLocalFile(
-    desktopSettings,
-    "/home/daytona/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml",
-  )
-  .addLocalFile(wallpaperScript, "/usr/local/bin/avenire-set-wallpaper")
-  .addLocalFile(wallpaperAutostart, "/home/daytona/.config/autostart/avenire-wallpaper.desktop")
-  .runCommands(
-    "chmod 0755 /usr/local/bin/avenire-set-wallpaper; chown daytona:daytona /home/daytona/.config; chown -R daytona:daytona /home/daytona/.config/autostart; chown -R daytona:daytona /home/daytona/.config/xfce4; chmod 0644 /home/daytona/.config/autostart/avenire-wallpaper.desktop /home/daytona/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml /usr/share/backgrounds/avenire/wallpaper.png",
   )
   .env({
     PLAYWRIGHT_BROWSERS_PATH: "/opt/avenire/browsers",

@@ -1,6 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Avenire preset wallpaper
-Exec=/usr/local/bin/avenire-set-wallpaper
-OnlyShowIn=XFCE;
-X-GNOME-Autostart-enabled=true

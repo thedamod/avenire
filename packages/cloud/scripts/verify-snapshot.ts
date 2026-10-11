@@ -9,7 +9,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 
 import { AVENIRE_SNAPSHOT } from "../src/snapshots.ts";
 
-const OUT_DIR = process.env.OUT_DIR ?? "/tmp/avenire-snapshot";
+const OUT_DIR = process.env.OUT_DIR ?? `/tmp/avenire-snapshot/${AVENIRE_SNAPSHOT}`;
 const results: { check: string; ok: boolean; detail: string }[] = [];
 const log = (line: string) => process.stdout.write(`${line}\n`);
 
@@ -95,6 +95,13 @@ try {
     "manimgx render scene.py -r 640x360 --fps 15; ls -la *.mp4 || find . -name '*.mp4' -ls",
     900,
   );
+  for (const name of ["Check.mp4", "Check.storyboard.png", "check.storyboard.png"]) {
+    const found = await sandbox.process.executeCommand(
+      `find /home/daytona/work -name '${name}' | head -1`,
+    );
+    const path = found.result.trim();
+    if (path) await writeFile(`${OUT_DIR}/manimgx-${name}`, await sandbox.fs.downloadFile(path));
+  }
   await sandbox.fs.uploadFile(Buffer.from(PAGE), "/home/daytona/work/page.html");
   await sandbox.fs.uploadFile(Buffer.from(SHOT), "/home/daytona/work/shot.py");
   const shot = await run("playwright screenshot", "python shot.py && ls -la page.png");
@@ -129,10 +136,6 @@ try {
   await writeFile(`${OUT_DIR}/recording.mp4`, await sandbox.fs.downloadFile(stopped.filePath));
   const tree = await sandbox.computerUse.display.getWindows();
   log(`windows: ${JSON.stringify(tree).slice(0, 400)}`);
-  await run(
-    "wallpaper property",
-    "xfconf-query -c xfce4-desktop -lv 2>/dev/null | grep last-image || echo 'no xfconf session for exec user'",
-  );
 } catch (error) {
   results.push({
     check: "script",

@@ -1,6 +1,4 @@
 import { expect, it } from "@effect/vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 
 import { CHAT_SANDBOX_LIMITS } from "./chatSandbox.ts";
 import { CLOUD_LIMITS } from "./cloudBox.ts";
@@ -9,7 +7,7 @@ import { AVENIRE_SNAPSHOT, SANDBOX_RESOURCES, avenireSandboxImage } from "./snap
 const dockerfile = avenireSandboxImage.dockerfile;
 
 it("defines one Daytona desktop image with all runtime stacks", () => {
-  expect(AVENIRE_SNAPSHOT).toBe("avenire-sandbox-v2");
+  expect(AVENIRE_SNAPSHOT).toBe("avenire-sandbox-v3");
   expect(dockerfile).toContain("FROM daytonaio/sandbox");
   for (const packageName of [
     "numpy",
@@ -68,33 +66,9 @@ it("defines one Daytona desktop image with all runtime stacks", () => {
   expect(dockerfile).not.toContain("bun install");
 });
 
-it("bakes the wallpaper and an idempotent Xfce autostart", () => {
-  expect(dockerfile).toContain("/usr/share/backgrounds/avenire/wallpaper.png");
-  expect(dockerfile).toContain("xfce-perchannel-xml/xfce4-desktop.xml");
-  expect(dockerfile).toContain("/usr/local/bin/avenire-set-wallpaper");
-  expect(dockerfile).toContain("/home/daytona/.config/autostart/avenire-wallpaper.desktop");
-  expect(dockerfile).toContain("ENV VNC_RESOLUTION=1024x768");
-  const script = readFileSync(
-    fileURLToPath(new URL("../assets/set-wallpaper.sh", import.meta.url)),
-    "utf8",
-  );
-  expect(script).toContain("xfconf-query -c xfce4-desktop -lv");
-  expect(script).toContain("/last-image$");
-  const autostart = readFileSync(
-    fileURLToPath(new URL("../assets/avenire-wallpaper.desktop", import.meta.url)),
-    "utf8",
-  );
-  expect(autostart).toContain("Exec=/usr/local/bin/avenire-set-wallpaper");
-  // The PNG is the baked render of wallpaper.svg at the 1024x768 desktop size.
-  const png = readFileSync(fileURLToPath(new URL("../assets/wallpaper.png", import.meta.url)));
-  expect(png.subarray(1, 4).toString()).toBe("PNG");
-  expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1024, 768]);
-  const settings = readFileSync(
-    fileURLToPath(new URL("../assets/xfce4-desktop.xml", import.meta.url)),
-    "utf8",
-  );
-  expect(settings).toContain('name="monitorscreen"');
-  expect(settings).toContain("/usr/share/backgrounds/avenire/wallpaper.png");
+it("keeps Daytona's default black desktop (no custom wallpaper)", () => {
+  expect(dockerfile).not.toContain("wallpaper");
+  expect(dockerfile).not.toContain("autostart");
 });
 
 it("keeps both sandbox allocations aligned to their one snapshot", () => {
