@@ -19,6 +19,7 @@ import {
   SandboxInputRejected,
   SandboxTimeout,
 } from "./daytona.ts";
+import { AVENIRE_SNAPSHOT, SANDBOX_RESOURCES } from "./snapshots.ts";
 
 export interface SandboxOwner {
   readonly userId: string;
@@ -68,7 +69,7 @@ export const CHAT_SANDBOX_LIMITS = {
   lifetimeMinutes: 60,
   idleStopMinutes: 15,
   maxPerUser: 3,
-  resources: { cpu: 2, memory: 4, disk: 5 },
+  resources: SANDBOX_RESOURCES,
 } as const;
 export const CHAT_WORKDIR = "/home/daytona/work";
 export type ChatSandboxError =
@@ -149,9 +150,6 @@ export const ChatSandboxesLive: Layer.Layer<ChatSandboxes, never, DaytonaClient 
     Effect.gen(function* () {
       const daytona = yield* DaytonaClient;
       const meter = yield* SandboxMeter;
-      const snapshot = yield* Config.option(Config.String("DAYTONA_CHAT_SNAPSHOT")).pipe(
-        Effect.orDie,
-      );
       const allowList = yield* Config.option(Config.String("CHAT_SANDBOX_NETWORK_ALLOW_LIST")).pipe(
         Effect.orDie,
       );
@@ -249,14 +247,7 @@ export const ChatSandboxesLive: Layer.Layer<ChatSandboxes, never, DaytonaClient 
           }),
         };
         const sandbox = yield* attempt("createChatSandbox", () =>
-          Option.isSome(snapshot)
-            ? // Snapshot resources are fixed when the snapshot is built, never at sandbox creation.
-              daytona.create({ ...common, snapshot: snapshot.value })
-            : daytona.create({
-                ...common,
-                image: "daytonaio/sandbox",
-                resources: CHAT_SANDBOX_LIMITS.resources,
-              }),
+          daytona.create({ ...common, snapshot: AVENIRE_SNAPSHOT }),
         ).pipe(
           Effect.catchTag("CloudError", (error) =>
             Effect.fail(

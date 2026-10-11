@@ -17,12 +17,12 @@ import {
   SandboxInputRejected,
   SandboxTimeout,
 } from "./daytona.ts";
-import { avenireRuthCloudImage } from "./snapshots.ts";
+import { AVENIRE_SNAPSHOT, SANDBOX_RESOURCES } from "./snapshots.ts";
 
 export const CLOUD_WORKSPACE = "/home/daytona/workspace";
 export const CLOUD_INPUTS = `${CLOUD_WORKSPACE}/inputs`;
 export const CLOUD_LIMITS = {
-  resources: { cpu: 4, memory: 8, disk: 20 },
+  resources: SANDBOX_RESOURCES,
   idleStopMinutes: 15,
   autoArchiveMinutes: 7 * 24 * 60,
   maxReadBytes: 100 * 1024 * 1024,
@@ -195,7 +195,6 @@ export const CloudBoxesLive: Layer.Layer<CloudBoxes, never, DaytonaClient> = Lay
   Effect.gen(function* () {
     const daytona = yield* DaytonaClient;
     const config = yield* Config.all({
-      snapshot: Config.option(Config.String("DAYTONA_RUTH_CLOUD_SNAPSHOT")),
       modelSecret: Config.String("RUTH_CLOUD_MODEL_SECRET").pipe(
         Config.withDefault("ruth-cloud-model-key"),
       ),
@@ -324,13 +323,7 @@ export const CloudBoxesLive: Layer.Layer<CloudBoxes, never, DaytonaClient> = Lay
                 },
               };
               sandbox = yield* attempt("createCloudBox", () =>
-                Option.isSome(config.snapshot)
-                  ? daytona.create({ ...common, snapshot: config.snapshot.value })
-                  : daytona.create({
-                      ...common,
-                      image: avenireRuthCloudImage,
-                      resources: CLOUD_LIMITS.resources,
-                    }),
+                daytona.create({ ...common, snapshot: AVENIRE_SNAPSHOT }),
               ).pipe(
                 Effect.catchTag(
                   "CloudError",

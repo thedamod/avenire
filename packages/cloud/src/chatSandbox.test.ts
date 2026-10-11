@@ -17,6 +17,7 @@ import {
   SandboxQuotaExceeded,
   type SandboxOwner,
 } from "./chatSandbox.ts";
+import { AVENIRE_SNAPSHOT } from "./snapshots.ts";
 
 const owner: SandboxOwner = { userId: "user", threadId: "thread" };
 type Params = {
@@ -490,19 +491,15 @@ describe("ChatSandboxes", () => {
             if (allow === undefined) {
               expect(params.networkBlockAll).toBe(true);
               expect(params.networkAllowList).toBeUndefined();
-              expect(params.resources).toEqual(limits.resources);
-              expect(params.image).toBe("daytonaio/sandbox");
             } else {
               expect(params.networkAllowList).toBe(allow);
               expect(params.networkBlockAll).toBeUndefined();
-              expect(params.snapshot).toBe("avenire-chat");
-              expect(params.resources).toBeUndefined();
-              expect(params.image).toBeUndefined();
             }
+            expect(params.snapshot).toBe(AVENIRE_SNAPSHOT);
+            expect(params.resources).toBeUndefined();
+            expect(params.image).toBeUndefined();
           }),
-          allow === undefined
-            ? {}
-            : { CHAT_SANDBOX_NETWORK_ALLOW_LIST: allow, DAYTONA_CHAT_SNAPSHOT: "avenire-chat" },
+          allow === undefined ? {} : { CHAT_SANDBOX_NETWORK_ALLOW_LIST: allow },
         );
       },
     );

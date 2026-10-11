@@ -1,0 +1,47 @@
+# Avenire sandbox snapshot
+
+`avenire-sandbox-v1` is the sole snapshot for ephemeral Ruth chat sandboxes and persistent Ruth Cloud boxes. It derives from `daytonaio/sandbox` so Daytona's desktop/toolbox setup is retained. `ensureSnapshot` is declarative until the build script is run; it reads an existing snapshot by name or creates it if absent. Change the snapshot name when changing its contents: an existing name is never rebuilt in place.
+
+## Contents
+
+| Component      | Selection                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Python science | Python 3.13 installed by uv (prebuilt, no compile) as the venv `/opt/avenire/python`, first on PATH as `python`: numpy, scipy, pandas, openpyxl, sympy, matplotlib, networkx, scikit-learn, polars, Pillow, imageio, Playwright and **manimgx** (Manim CE's API on a Rust/wgpu engine; on a GPU-less box it renders on the CPU through the lavapipe driver bundled in its Linux wheels, and it ships its own LaTeX/Typst typesetting and video encoder). Package versions resolve at build time. |
+| KiCad          | KiCad 9 or newer via Debian package: Bookworm backports or Trixie main. `--no-install-recommends` omits demo, symbol/footprint libraries, documentation, and 3D models. `kicad-cli` and `pcbnew` come from the same package.                                                                                                                                                                                                                                                                     |
+| KiCad Python   | The `pcbnew` binding is built for the distro interpreter: run KiCad scripts with `/usr/bin/python3`. `kicad-cli` works from any shell.                                                                                                                                                                                                                                                                                                                                                           |
+| Browser        | Python Playwright with its downloaded Chromium and browser dependencies; shared browser path `/opt/avenire/browsers`.                                                                                                                                                                                                                                                                                                                                                                            |
+| Node           | Node.js 24 from NodeSource, Corepack 0.34.5, pnpm 11.17.0 matching the repo `packageManager`. Bun and Pi are absent.                                                                                                                                                                                                                                                                                                                                                                             |
+| Rendering      | FFmpeg (Daytona screen recording, matplotlib GIF/MP4 writers) and TeX Live base/extra/recommended fonts for report generation. Manim CE and its Cairo/Pango build dependencies are not installed.                                                                                                                                                                                                                                                                                                |
+| Desktop        | Daytona base plus any missing Xvfb, Xfce, Xfce terminal, x11vnc, noVNC, D-Bus/X11 and specified X11 libraries. `VNC_RESOLUTION=1024x768`. Xfce autostart sets every existing monitor/workspace `last-image` key to the baked SVG wallpaper.                                                                                                                                                                                                                                                      |
+
+The distro check accepts Debian Bookworm and Trixie and fails explicitly on another base. The current base image's exact Python and package inventory has **not** been measured in a live image; the Dockerfile checks the distribution and imports every Python package at build time. The KiCad package from Bookworm backports was listed as 9.0.8 when this spec was written; the selected patch version can change. The Debian package itself is about 162 MB installed on amd64; its runtime dependencies add more. Omitting libraries and 3D models avoids their separate large packages. Docker Hub reports roughly **7.4 GB** for the `daytonaio/sandbox:latest` amd64 image before these additions. Budget roughly **10–15 GB compressed** and **20–30 GB unpacked** for the combined image, then measure the actual snapshot; these totals are estimates, not a live build result.
+
+## Resources and build
+
+The installed Daytona SDK 0.220.0 has `resources` in `CreateSnapshotParams` and in image-based sandbox creation, but not in `CreateSandboxFromSnapshotParams`. Both sandbox types therefore use **4 vCPU, 8 GB RAM, 30 GB disk** fixed on the snapshot. This raises chat compute cost compared with its old 2/4/5 allocation and gives Cloud less RAM/disk than the 4/16/40 target. Measure live manimgx, browser, KiCad, hydration, and recording workloads before changing the shared allocation.
+
+Set `DAYTONA_API_KEY` and optionally `DAYTONA_API_URL` and `DAYTONA_TARGET`, then run from the repo root:
+
+```sh
+pnpm --filter @avenire/cloud snapshot:build
+```
+
+This publishes a Daytona snapshot and can incur charges. It has not been run here. After publishing, deploy code that uses `avenire-sandbox-v1`; any existing chat/Cloud sandboxes continue with their original images until recreated.
+
+The older `DAYTONA_CHAT_SNAPSHOT` and `DAYTONA_RUTH_CLOUD_SNAPSHOT` entries in the root `.env.example` are outside this package's edit scope and are ignored by the new creation paths.
+
+## Live verification after the build
+
+Create a chat sandbox and a Cloud box from `avenire-sandbox-v1`, then check both:
+
+1. `python --version` (3.13) and `python -c 'import numpy, scipy, pandas, openpyxl, sympy, matplotlib, networkx, sklearn, polars, PIL, imageio, manimgx; from playwright.sync_api import sync_playwright'`.
+2. `python -c 'import pcbnew; print(pcbnew.GetBuildVersion())'` and `kicad-cli version`; create a simple board with `pcbnew`, then export it with `kicad-cli pcb export`.
+3. `manimgx inspect scene.py` and `manimgx render scene.py -r 1280x720 --fps 30` on a minimal scene with a `MathTex`; confirm it renders on the CPU (no `no GPU adapter` error) and time it. Check `ffmpeg -version` and `pdflatex --version`.
+4. `node --version` and `pnpm --version` (expect Node 24 and pnpm 11.17.0).
+5. Render a local HTML widget page with Playwright's Chromium in headless mode, capture a screenshot, and collect console messages.
+6. Call `sandbox.computerUse.start()`, then `display.getInfo()` and `screenshot.takeFullScreen()`; check 1024×768, visible wallpaper, and `xfconf-query -c xfce4-desktop -lv` for every monitor/workspace key. Test mouse and keyboard input.
+7. Start a recording, perform a few desktop actions, stop it, download the returned file, and play the MP4. Test longer runs separately because recorder duration/size limits are not documented.
+8. Open the sandbox's **VNC** action in the Daytona Dashboard and confirm the same desktop/wallpaper is visible.
+9. Check actual image size, build time, and free disk/RAM on each workload. Confirm package versions and that no unexpected recommended KiCad libraries or 3D models were installed.
+
+Daytona's [VNC package list](https://www.daytona.io/docs/en/vnc-access/) and [Computer Use guide](https://www.daytona.io/docs/en/computer-use/) define the desktop/recording checks. Debian lists the [Bookworm backports KiCad package](https://packages.debian.org/bookworm-backports/kicad) and its [installed files](https://packages.debian.org/bookworm-backports/amd64/kicad/filelist), including `kicad-cli`, `pcbnew.py`, and `_pcbnew.so`.

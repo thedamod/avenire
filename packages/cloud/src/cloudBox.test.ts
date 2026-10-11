@@ -13,7 +13,12 @@ import {
   tokenSecretName,
 } from "./cloudBox.ts";
 import { DaytonaClient } from "./daytona.ts";
-import { avenireRuthCloudImage, ensureSnapshot, PI_VERSION } from "./snapshots.ts";
+import {
+  AVENIRE_SNAPSHOT,
+  SANDBOX_RESOURCES,
+  avenireSandboxImage,
+  ensureSnapshot,
+} from "./snapshots.ts";
 
 type Params = { labels: Record<string, string>; [key: string]: unknown };
 const fake = () => {
@@ -190,7 +195,7 @@ describe("CloudBoxes", () => {
         expect(f.created).toHaveLength(1);
         expect(f.created[0]).toMatchObject({
           labels: { app: "ruth-cloud", userId: "user" },
-          resources: CLOUD_LIMITS.resources,
+          snapshot: AVENIRE_SNAPSHOT,
           autoStopInterval: 15,
           autoArchiveInterval: 10080,
           autoDeleteInterval: -1,
@@ -214,11 +219,10 @@ describe("CloudBoxes", () => {
       f,
       Effect.gen(function* () {
         yield* (yield* CloudBoxes).ensure("user");
-        expect(f.created[0]).toHaveProperty("snapshot", "custom");
+        expect(f.created[0]).toHaveProperty("snapshot", AVENIRE_SNAPSHOT);
         expect(f.created[0]).not.toHaveProperty("resources");
         expect(f.created[0]).not.toHaveProperty("image");
       }),
-      { DAYTONA_RUTH_CLOUD_SNAPSHOT: "custom" },
     );
   });
   for (const state of ["stopped", "archived"])
@@ -348,14 +352,6 @@ describe("CloudBoxes", () => {
     ).pipe(Effect.asVoid);
   });
 });
-it("cloud image retains desktop base and pins Pi/Node", () => {
-  expect(avenireRuthCloudImage.dockerfile).toContain("FROM daytonaio/sandbox");
-  expect(avenireRuthCloudImage.dockerfile).toContain(
-    `@earendil-works/pi-coding-agent@${PI_VERSION}`,
-  );
-  expect(avenireRuthCloudImage.dockerfile).toContain("setup_24.x");
-  expect(avenireRuthCloudImage.dockerfile).toContain("playwright install --with-deps chromium");
-});
 it.effect("ensureSnapshot uses the requested allocation", () => {
   let params: unknown;
   const daytona = {
@@ -370,8 +366,8 @@ it.effect("ensureSnapshot uses the requested allocation", () => {
     },
   } as unknown as Daytona;
   return Effect.gen(function* () {
-    yield* ensureSnapshot(daytona, "cloud", avenireRuthCloudImage, CLOUD_LIMITS.resources);
-    expect(params).toMatchObject({ name: "cloud", resources: CLOUD_LIMITS.resources });
+    yield* ensureSnapshot(daytona, AVENIRE_SNAPSHOT, avenireSandboxImage, SANDBOX_RESOURCES);
+    expect(params).toMatchObject({ name: AVENIRE_SNAPSHOT, resources: SANDBOX_RESOURCES });
   });
 });
 it.effect("recording returns None when computer use is unavailable", () => {
