@@ -1,8 +1,9 @@
 /** Bind the shared tool backbone to one request; local tools supply skills and page context. */
 import type { PageContext, ThreadId, UserId } from "@avenire/contracts";
 import type { ChatSandboxes } from "@avenire/cloud/chat-sandbox";
+import type { ImageTransport } from "./images.ts";
 import { toAiSdkTools } from "./ai-sdk.ts";
-import type { ArtifactStore } from "../outputs/artifacts.ts";
+import type { AssetStore } from "../outputs/assets.ts";
 import type { AgentContext } from "./core.ts";
 import { sandboxToolRegistry } from "./sandbox-tools.ts";
 import type { RuthKitServices } from "./library.ts";
@@ -12,7 +13,8 @@ import { askUserSpec, getPageContextSpec, type PageContextResult, ruthToolSpecs 
 import { VISUAL_BUDGETS, VISUAL_RUNTIME } from "./page.ts";
 import { loadSkillTool } from "./skills.ts";
 
-export type RuthToolServices = RuthKitServices | ChatSandboxes | ArtifactStore;
+import type { WidgetPreview } from "./preview.ts";
+export type RuthToolServices = WidgetPreview | RuthKitServices | ChatSandboxes | AssetStore;
 export interface RuthTurn {
   readonly userId: UserId;
   readonly threadId: ThreadId;
@@ -24,7 +26,11 @@ export interface RuthTurn {
 export const chatToolNames = Object.keys(ruthToolSpecs).filter(
   (name) => !["load_skill", "get_page_context", "ask_user"].includes(name),
 );
-export const createRuthTools = (services: Context.Context<RuthToolServices>, turn: RuthTurn) => {
+export const createRuthTools = (
+  services: Context.Context<RuthToolServices>,
+  turn: RuthTurn,
+  images?: ImageTransport,
+) => {
   const ctx: AgentContext = {
     agent: "ruth",
     userId: turn.userId,
@@ -38,6 +44,7 @@ export const createRuthTools = (services: Context.Context<RuthToolServices>, tur
     ctx,
     services,
     sandboxToolRegistry,
+    images,
   );
   const boundTools: ToolSet = {
     ...tools,

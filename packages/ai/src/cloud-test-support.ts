@@ -118,7 +118,7 @@ export const recordingDatabase = (events: string[] = []) => {
     );
   const mock = {
     query: Object.fromEntries(
-      ["cloudTask", "cloudRun", "artifact", "cloudHydration", "ruthThread", "user"].map((key) => {
+      ["cloudTask", "cloudRun", "asset", "cloudHydration", "ruthThread", "user"].map((key) => {
         const name = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
         const find = (where?: SQL) =>
           rows(name)

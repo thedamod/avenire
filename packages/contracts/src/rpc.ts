@@ -1,3 +1,4 @@
+import { Asset } from "./assets.ts";
 /**
  * The typed API every client (web, desktop, mobile) uses to talk to the Avenire server.
  * Handlers live in `apps/web/src/server`; clients in `@avenire/client-runtime`.
@@ -7,17 +8,10 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 
 import { CaptureSnapshot } from "./capture.ts";
-import {
-  ApprovalDecision,
-  Artifact,
-  CloudRun,
-  CloudTask,
-  CloudTaskInput,
-  PendingApproval,
-} from "./cloud.ts";
+import { ApprovalDecision, CloudRun, CloudTask, CloudTaskInput, PendingApproval } from "./cloud.ts";
 import { ApiError } from "./errors.ts";
 import {
-  ArtifactId,
+  AssetId,
   FolderId,
   CloudRunId,
   CloudTaskId,
@@ -158,14 +152,18 @@ export class CloudRpcs extends RpcGroup.make(
     success: CloudRun,
     error: ApiError,
   }),
-  Rpc.make("cloud.artifactUrl", {
-    payload: { artifactId: ArtifactId },
-    success: Schema.Struct({ artifact: Artifact, url: Schema.String }),
+).middleware(Authenticated) {}
+
+export class AssetsRpcs extends RpcGroup.make(
+  Rpc.make("assets.get", { payload: { assetId: AssetId }, success: Asset, error: ApiError }),
+  Rpc.make("assets.list", {
+    payload: { threadId: Schema.optionalKey(ThreadId), runId: Schema.optionalKey(CloudRunId) },
+    success: Schema.Array(Asset),
     error: ApiError,
   }),
 ).middleware(Authenticated) {}
 
-export const AvenireRpcs = LibraryRpcs.merge(SearchRpcs, RuthRpcs, CloudRpcs);
+export const AvenireRpcs = LibraryRpcs.merge(SearchRpcs, RuthRpcs, CloudRpcs, AssetsRpcs);
 export type AvenireRpcs = typeof AvenireRpcs;
 
 /** Path the RPC endpoint is mounted on, relative to the web server origin. */

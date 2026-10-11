@@ -21,7 +21,7 @@ export const widgetHostDecision = (
   path: string,
   widgetHost: string,
 ): "widget" | "app" | "reject" => {
-  const widgetPath = path.startsWith("/w/");
+  const widgetPath = path.startsWith("/w/") || path.startsWith("/kits/");
   if (host.toLowerCase() === widgetHost.toLowerCase()) return widgetPath ? "widget" : "reject";
   return widgetPath ? "reject" : "app";
 };

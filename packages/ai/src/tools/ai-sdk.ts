@@ -1,3 +1,4 @@
+import type { ImageTransport } from "./images.ts";
 import { tool, type ToolSet } from "ai";
 import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -18,6 +19,7 @@ export const toAiSdkTools = <R = never>(
   ctx: AgentContext,
   services: Context.Context<RuthKitServices | R>,
   extra: AiSdkExtraTools<R> = {},
+  images?: ImageTransport,
 ) => {
   const tools: ToolSet = Object.create(null);
   const toolApproval: Record<string, "approved"> = Object.create(null);
@@ -43,10 +45,17 @@ export const toAiSdkTools = <R = never>(
       inputSchema: standardSchema(spec.inputSchema),
       outputSchema: standardSchema(spec.outputSchema),
       needsApproval: policy.approval === "unless-full-access" && !ctx.fullAccess,
-      execute: (input, { abortSignal }) =>
-        Effect.runPromiseWith(services)(runTool(name, ctx, execute(input, ctx)), {
-          signal: abortSignal,
-        }),
+      ...(images ? { toModelOutput: images.toModelOutput } : {}),
+      execute: async (input, { abortSignal }) => {
+        const result = await Effect.runPromiseWith(services)(
+          runTool(name, ctx, execute(input, ctx)),
+          {
+            signal: abortSignal,
+          },
+        );
+        images?.attach(result);
+        return result;
+      },
     });
     // Under Full access gated tools still pass through approval, as approved, so they show in the stream.
     if (ctx.fullAccess && policy.approval === "unless-full-access") toolApproval[name] = "approved";

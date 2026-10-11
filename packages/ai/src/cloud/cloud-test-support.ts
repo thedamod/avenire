@@ -1,3 +1,12 @@
+import {
+  AssetStore,
+  makeAssetStore,
+  assetRepository,
+  signAssetToken,
+  verifyAssetToken,
+} from "../outputs/assets.ts";
+import { assetSettings } from "../outputs/asset-test-support.ts";
+import * as Redacted from "effect/Redacted";
 /** Recording database and sandbox doubles; real StorageMemory exercises object semantics. */
 import { CloudRunId, FileId, WORKSPACE_CAP_BYTES } from "@avenire/contracts";
 import { CLOUD_WORKSPACE, CloudBoxes, type CloudBox } from "@avenire/cloud/cloud-box";
@@ -93,20 +102,22 @@ export const cloudFixture = () => {
     return true;
   };
   const query = Object.fromEntries(
-    ["file", "cloudRun", "cloudTask", "cloudWorkspaceFile", "pendingApproval"].map((name) => {
-      const table = name.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`);
-      return [
-        name,
-        {
-          findFirst: async ({ where }: { where?: SQL } = {}) =>
-            rows(table).find((row) => matches(row, where)),
-          findMany: async ({ where }: { where?: SQL } = {}) =>
-            rows(table)
-              .filter((row) => matches(row, where))
-              .map((row) => ({ ...row })),
-        },
-      ];
-    }),
+    ["file", "cloudRun", "asset", "cloudTask", "cloudWorkspaceFile", "pendingApproval"].map(
+      (name) => {
+        const table = name.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`);
+        return [
+          name,
+          {
+            findFirst: async ({ where }: { where?: SQL } = {}) =>
+              rows(table).find((row) => matches(row, where)),
+            findMany: async ({ where }: { where?: SQL } = {}) =>
+              rows(table)
+                .filter((row) => matches(row, where))
+                .map((row) => ({ ...row })),
+          },
+        ];
+      },
+    ),
   );
   const chain = (run: () => Row[]) => {
     const promise = Promise.resolve().then(run);
@@ -265,8 +276,24 @@ export const cloudFixture = () => {
         invalidated++;
       }),
   });
+  const assetService = (storage: Storage["Service"]): AssetStore["Service"] => {
+    const make = makeAssetStore({ ...assetSettings, repository: assetRepository(database) }).pipe(
+      Effect.provideService(Storage, storage),
+    );
+    return AssetStore.of({
+      put: (owner, input) => make.pipe(Effect.flatMap((service) => service.put(owner, input))),
+      get: (id) => make.pipe(Effect.flatMap((service) => service.get(id))),
+      list: (owner, filters) =>
+        make.pipe(Effect.flatMap((service) => service.list(owner, filters))),
+      load: (entry) => storage.get(entry.storageKey),
+      url: (entry) =>
+        `${assetSettings.appUrl}/a/${signAssetToken(entry.id, Redacted.value(assetSettings.secret))}`,
+      resolve: (token) => verifyAssetToken(token, Redacted.value(assetSettings.secret)),
+    });
+  };
   const services = (storage: Storage["Service"]) =>
     Context.make(Database, database).pipe(
+      Context.add(AssetStore, assetService(storage)),
       Context.add(Storage, {
         ...storage,
         put: (key, bytes, options) =>

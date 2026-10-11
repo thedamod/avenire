@@ -58,7 +58,11 @@ for (const fullAccess of [false, true]) {
     // Creating a toolset does not execute services; all live providers remain absent.
     const services = Context.empty() as Context.Context<RuthToolServices>;
     const agent = createRuthAgent({
-      models: RuthModels.of({ languageModel: () => new MockLanguageModelV4() }),
+      models: RuthModels.of({
+        languageModel: () => new MockLanguageModelV4(),
+        capabilities: () => ({ vision: true, toolResultImages: true }),
+        maxImages: 3,
+      }),
       services,
       fullAccess,
       turn: {
@@ -83,10 +87,11 @@ for (const fullAccess of [false, true]) {
     }
     for (const name of [
       "render_widget",
+      "preview_widget",
       "sandbox_exec",
       "sandbox_write",
       "sandbox_read",
-      "sandbox_download_artifact",
+      "publish_asset",
       "sandbox_close",
     ]) {
       expect(agent.tools[name]?.needsApproval).toBe(false);

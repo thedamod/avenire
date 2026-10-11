@@ -1,128 +1,138 @@
-import {
-  MAX_WIDGET_HTML_BYTES,
-  StorageKey,
-  UserId,
-  WidgetId,
-  type Widget,
-} from "@avenire/contracts";
-import { newId } from "@avenire/shared/id";
-import { userPrefix } from "@avenire/storage/keys";
-import { ObjectNotFound, Storage, type StorageError } from "@avenire/storage/storage";
+import { AssetId, MAX_WIDGET_HTML_BYTES, type Widget } from "@avenire/contracts";
+import { ObjectNotFound, type StorageError } from "@avenire/storage/storage";
 import { THEME_TOKENS } from "@avenire/ui/tokens";
 import { buildWidgetDocument } from "@avenire/ui/widget-protocol";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import type * as PlatformError from "effect/PlatformError";
 import * as Redacted from "effect/Redacted";
-
+import { AssetStore, type StoredAsset } from "./assets.ts";
 import { type AgentContext, RuthToolError } from "../tools/core.ts";
 
-/** Widgets are permanent objects outside the indexed file namespace. */
-export const widgetKey = (userId: UserId, widgetId: WidgetId): StorageKey =>
-  StorageKey.make(`${userPrefix(userId)}.avenire/widgets/${encodeURIComponent(widgetId)}.html`);
-export interface ResolvedWidget {
-  readonly userId: UserId;
-  readonly widgetId: WidgetId;
-  readonly key: StorageKey;
-}
+export const WIDGET_TOKEN_LIFETIME_MS = 10 * 60_000;
+export const signWidgetToken = (id: AssetId, expiresAt: number, secret: string): string => {
+  const payload = `${Buffer.from(id).toString("base64url")}.${expiresAt}`;
+  return `${payload}.${createHmac("sha256", secret).update(`widget:${payload}`).digest("base64url")}`;
+};
+export const verifyWidgetToken = (
+  token: string,
+  now: number,
+  secret: string,
+): Option.Option<AssetId> => {
+  const parts = token.split(".");
+  if (parts.length !== 3) return Option.none();
+  const [encoded, expiry, signature] = parts as [string, string, string];
+  if (!/^[\w-]+$/.test(encoded) || !/^\d+$/.test(expiry) || !/^[\w-]+$/.test(signature))
+    return Option.none();
+  const expires = Number(expiry);
+  if (!Number.isSafeInteger(expires) || expires <= now || expires > now + WIDGET_TOKEN_LIFETIME_MS)
+    return Option.none();
+  const id = Buffer.from(encoded, "base64url").toString("utf8");
+  const expected = createHmac("sha256", secret).update(`widget:${encoded}.${expiry}`).digest();
+  const supplied = Buffer.from(signature, "base64url");
+  return id &&
+    Buffer.from(id).toString("base64url") === encoded &&
+    supplied.toString("base64url") === signature &&
+    supplied.length === expected.length &&
+    timingSafeEqual(supplied, expected)
+    ? Option.some(AssetId.make(id))
+    : Option.none();
+};
+/** Preview and render share the exact validation, CSP and first-paint bootstrap. */
+export const wrapWidget = Effect.fn("WidgetStore.wrap")(function* (
+  ctx: AgentContext,
+  input: { readonly html: string; readonly title: string },
+  kitsOrigin: string,
+  appearance?: "light" | "dark",
+) {
+  if (Buffer.byteLength(input.html) > MAX_WIDGET_HTML_BYTES)
+    return yield* new RuthToolError({
+      tool: "render_widget",
+      code: "invalid_input",
+      message: `Widget HTML must be at most ${MAX_WIDGET_HTML_BYTES} bytes.`,
+      recoverable: true,
+    });
+  const scheme = appearance ?? ctx.page?.colorScheme ?? "light";
+  return yield* Effect.try({
+    try: () =>
+      buildWidgetDocument({
+        html: input.html,
+        title: input.title,
+        colorScheme: scheme,
+        tokens: ctx.page?.colorScheme === scheme ? ctx.page.themeTokens : THEME_TOKENS[scheme],
+        kitsOrigin,
+      }),
+    catch: () =>
+      new RuthToolError({
+        tool: "render_widget",
+        code: "invalid_input",
+        message: "The widget configuration is invalid.",
+        recoverable: false,
+      }),
+  });
+});
+type AssetPutError = Effect.Error<ReturnType<AssetStore["Service"]["put"]>>;
+type AssetGetError = Effect.Error<ReturnType<AssetStore["Service"]["get"]>>;
 export class WidgetStore extends Context.Service<
   WidgetStore,
   {
+    readonly origin: string;
     readonly frameAncestors: ReadonlyArray<string>;
     readonly render: (
       ctx: AgentContext,
       input: { readonly title: string; readonly html: string },
-    ) => Effect.Effect<
-      Widget,
-      RuthToolError | StorageError | PlatformError.PlatformError,
-      Crypto.Crypto
-    >;
-    readonly resolve: (token: string) => Effect.Effect<Option.Option<ResolvedWidget>>;
-    readonly load: (token: string) => Effect.Effect<Uint8Array, ObjectNotFound | StorageError>;
+    ) => Effect.Effect<Widget, RuthToolError | AssetPutError, Crypto.Crypto>;
+    readonly url: (asset: StoredAsset) => Effect.Effect<string>;
+    readonly load: (
+      token: string,
+    ) => Effect.Effect<Uint8Array, ObjectNotFound | StorageError | AssetGetError>;
   }
 >()("avenire/ai/WidgetStore") {}
-
-/** Injectable settings keep signing/theming tests independent of production config. */
 export const makeWidgetStore = Effect.fn("WidgetStore.make")(function* (options: {
   readonly origin: string;
   readonly secret: Redacted.Redacted<string>;
   readonly frameAncestors: ReadonlyArray<string>;
 }) {
-  const storage = yield* Storage;
-  const signature = (userId: string, widgetId: string) =>
-    createHmac("sha256", Redacted.value(options.secret)).update(`${userId}:${widgetId}`).digest();
-  const resolve = Effect.fn("WidgetStore.resolve")((token: string) =>
-    Effect.sync(() => {
-      const parts = token.split(".");
-      if (parts.length !== 3) return Option.none<ResolvedWidget>();
-      const [encodedUser, widget, signed] = parts as [string, string, string];
-      if (!/^[\w-]+$/.test(encodedUser) || !/^[\w-]+$/.test(widget) || !/^[\w-]+$/.test(signed))
-        return Option.none<ResolvedWidget>();
-      const userBytes = Buffer.from(encodedUser, "base64url");
-      const user = userBytes.toString("utf8");
-      // Reject noncanonical encodings rather than allowing several URLs for one signature.
-      if (!user || Buffer.from(user, "utf8").toString("base64url") !== encodedUser)
-        return Option.none<ResolvedWidget>();
-      const supplied = Buffer.from(signed, "base64url");
-      const expected = signature(user, widget);
-      if (
-        supplied.toString("base64url") !== signed ||
-        supplied.length !== expected.length ||
-        !timingSafeEqual(supplied, expected)
-      )
-        return Option.none<ResolvedWidget>();
-      const userId = UserId.make(user);
-      const widgetId = WidgetId.make(widget);
-      return Option.some({ userId, widgetId, key: widgetKey(userId, widgetId) });
-    }),
-  );
+  const assets = yield* AssetStore;
   return WidgetStore.of({
+    origin: options.origin,
     frameAncestors: options.frameAncestors,
-    resolve,
+    url: Effect.fn("WidgetStore.url")(function* (asset) {
+      const now = yield* Clock.currentTimeMillis;
+      return `${options.origin}/w/${signWidgetToken(asset.id, now + WIDGET_TOKEN_LIFETIME_MS, Redacted.value(options.secret))}`;
+    }),
     load: Effect.fn("WidgetStore.load")(function* (token) {
-      const resolved = yield* resolve(token);
-      if (Option.isNone(resolved)) return yield* new ObjectNotFound({ key: "widget" });
-      return yield* storage.get(resolved.value.key);
+      const id = verifyWidgetToken(
+        token,
+        yield* Clock.currentTimeMillis,
+        Redacted.value(options.secret),
+      );
+      if (Option.isNone(id)) return yield* new ObjectNotFound({ key: "widget" });
+      const resolved = yield* assets.get(id.value);
+      if (Option.isNone(resolved) || resolved.value.kind !== "widget")
+        return yield* new ObjectNotFound({ key: "widget" });
+      return yield* assets.load(resolved.value);
     }),
     render: Effect.fn("WidgetStore.render")(function* (ctx, input) {
-      if (new TextEncoder().encode(input.html).byteLength > MAX_WIDGET_HTML_BYTES) {
-        return yield* new RuthToolError({
-          tool: "render_widget",
-          code: "invalid_input",
-          message: `Widget HTML must be at most ${MAX_WIDGET_HTML_BYTES} bytes.`,
-          recoverable: true,
-        });
-      }
-      const widgetId = yield* newId(WidgetId);
-      const document = yield* Effect.sync(() =>
-        buildWidgetDocument({
-          html: input.html,
-          title: input.title,
-          colorScheme: ctx.page?.colorScheme ?? "light",
-          tokens: ctx.page?.themeTokens ?? THEME_TOKENS.light,
-        }),
-      );
-      yield* storage.put(widgetKey(ctx.userId, widgetId), new TextEncoder().encode(document), {
-        contentType: "text/html",
-      });
-      const token = yield* Effect.sync(
-        () =>
-          `${Buffer.from(ctx.userId).toString("base64url")}.${widgetId}.${signature(ctx.userId, widgetId).toString("base64url")}`,
-      );
-      return {
-        widgetId,
-        url: `${options.origin.replace(/\/$/, "")}/w/${token}`,
+      const document = yield* wrapWidget(ctx, input, options.origin);
+      const stored = yield* assets.put(ctx.userId, {
+        name: "widget.html",
         title: input.title,
-      };
+        kind: "widget",
+        bytes: new TextEncoder().encode(document),
+        mediaType: "text/html",
+        ...(ctx.threadId ? { threadId: ctx.threadId } : {}),
+        ...(ctx.runId ? { runId: ctx.runId } : {}),
+      });
+      return { assetId: stored.id, title: stored.title, url: stored.url };
     }),
   });
 });
-
 export const WidgetStoreLive = Layer.effect(
   WidgetStore,
   Effect.gen(function* () {
@@ -130,15 +140,15 @@ export const WidgetStoreLive = Layer.effect(
       Config.withDefault("https://widgets.avenire.space"),
     );
     const secret = yield* Config.Redacted("WIDGET_SIGNING_SECRET");
-    const origins = yield* Config.String("APP_ORIGINS").pipe(
+    const ancestors = yield* Config.String("APP_ORIGINS").pipe(
       Config.withDefault("https://avenire.space"),
     );
     return yield* makeWidgetStore({
-      origin,
+      origin: origin.replace(/\/$/, ""),
       secret,
-      frameAncestors: origins
+      frameAncestors: ancestors
         .split(",")
-        .map((s) => s.trim())
+        .map((x) => x.trim())
         .filter(Boolean),
     });
   }),

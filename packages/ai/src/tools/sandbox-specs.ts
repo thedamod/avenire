@@ -1,5 +1,5 @@
 /** Sandbox contracts are client-safe; implementations and storage live in separate modules. */
-import { ArtifactId } from "@avenire/contracts";
+import { AssetId, AssetKind } from "@avenire/contracts";
 import { tool } from "ai";
 import * as Schema from "effect/Schema";
 import { standardSchema } from "./schema.ts";
@@ -8,7 +8,7 @@ const encoding = Schema.Literals(["utf8", "base64"]);
 export const sandboxExecSpec = {
   name: "sandbox_exec",
   description:
-    "Run a command in the thread's ephemeral Linux box: Python 3.12, scientific stack, Manim, ffmpeg and LaTeX are preinstalled. Network is blocked; lifetime is capped at 60 minutes. Write a script with sandbox_write, then run it here. For Manim, render with manim -ql to a file, then sandbox_download_artifact.",
+    "Run a command in the thread's ephemeral Linux box: Python 3.13, scientific stack, manimgx and document tools are preinstalled. Network is blocked; lifetime is capped at 60 minutes. Write a script with sandbox_write, then run it here. For manimgx, inspect then render to a file, then publish_asset.",
   inputSchema: standardSchema(
     Schema.Struct({
       command: Schema.NonEmptyString,
@@ -61,21 +61,21 @@ export const sandboxReadSpec = {
     }),
   ),
 };
-export const sandboxDownloadArtifactSpec = {
-  name: "sandbox_download_artifact",
+export const publishAssetSpec = {
+  name: "publish_asset",
   description:
-    "Publish a sandbox file (up to 50 MB) as a signed download lasting seven days. Use for figures, videos and documents.",
+    "Publish a sandbox file (up to 50 MB) as a permanent, private asset. Use for figures, videos and documents.",
   inputSchema: standardSchema(
     Schema.Struct({ path: Schema.NonEmptyString, title: Schema.optionalKey(Schema.String) }),
   ),
   outputSchema: standardSchema(
     Schema.Struct({
-      artifactId: ArtifactId,
+      assetId: AssetId,
+      kind: AssetKind,
       name: Schema.String,
       url: Schema.String,
       mediaType: Schema.String,
-      size: Schema.Int,
-      expiresAt: Schema.String,
+      sizeBytes: Schema.Int,
     }),
   ),
 };
@@ -88,17 +88,51 @@ export const sandboxCloseSpec = {
     Schema.Struct({ closed: Schema.Boolean, lifetimeSeconds: Schema.Number }),
   ),
 };
+export const previewWidgetSpec = {
+  name: "preview_widget",
+  description:
+    "Preview standalone widget HTML in the chat sandbox. Inspect the full-page screenshot, height and console, revise, then render_widget. Kits at /kits/math.js and /kits/iso.js are available. Never requires approval.",
+  inputSchema: standardSchema(
+    Schema.Struct({
+      html: Schema.String,
+      width: Schema.optionalKey(Schema.Int),
+      appearance: Schema.optionalKey(Schema.Literals(["light", "dark"])),
+    }),
+  ),
+  outputSchema: standardSchema(
+    Schema.Struct({
+      width: Schema.Int,
+      contentHeight: Schema.Int,
+      consoleMessages: Schema.Array(
+        Schema.Struct({
+          level: Schema.Literals(["log", "info", "warning", "error", "uncaught"]),
+          text: Schema.String,
+        }),
+      ),
+      screenshot: Schema.Struct({
+        id: Schema.String,
+        data: Schema.String,
+        mediaType: Schema.Literal("image/png"),
+        sizeBytes: Schema.Int,
+        width: Schema.Int,
+        height: Schema.Int,
+      }),
+    }),
+  ),
+};
 export const SANDBOX_TOOL_SPECS = {
+  preview_widget: previewWidgetSpec,
   sandbox_exec: sandboxExecSpec,
   sandbox_write: sandboxWriteSpec,
   sandbox_read: sandboxReadSpec,
-  sandbox_download_artifact: sandboxDownloadArtifactSpec,
+  publish_asset: publishAssetSpec,
   sandbox_close: sandboxCloseSpec,
 };
 export const ruthSandboxSpecs = {
+  preview_widget: tool(previewWidgetSpec),
   sandbox_exec: tool(sandboxExecSpec),
   sandbox_write: tool(sandboxWriteSpec),
   sandbox_read: tool(sandboxReadSpec),
-  sandbox_download_artifact: tool(sandboxDownloadArtifactSpec),
+  publish_asset: tool(publishAssetSpec),
   sandbox_close: tool(sandboxCloseSpec),
 };

@@ -1,11 +1,9 @@
+import { AssetStore } from "../outputs/assets.ts";
 import {
-  ArtifactId,
   CloudRunId,
   CloudTaskId,
   Conflict,
-  FileId,
   NotFound,
-  StorageKey,
   type CloudRun as ContractRun,
   type CloudTask as ContractTask,
   type CloudTaskInput,
@@ -13,11 +11,9 @@ import {
 } from "@avenire/contracts";
 import { Database, type DatabaseError } from "@avenire/database/client";
 import {
-  artifact,
   cloudRun,
   cloudTask,
   user,
-  type ArtifactRow,
   type CloudRunRow,
   type CloudTaskRow,
 } from "@avenire/database/schema";
@@ -87,7 +83,7 @@ export const taskToContract = (row: CloudTaskRow): ContractTask => ({
 export const runToContract = (
   row: CloudRunRow,
   taskTitle: string,
-  artifacts: readonly ArtifactRow[],
+  assets: ContractRun["assets"],
 ): ContractRun => ({
   id: CloudRunId.make(row.id),
   taskId: CloudTaskId.make(row.taskId),
@@ -99,15 +95,7 @@ export const runToContract = (
   startedAt: iso(row.startedAt),
   finishedAt: iso(row.finishedAt),
   error: row.error,
-  artifacts: artifacts.map((entry) => ({
-    id: ArtifactId.make(entry.id),
-    kind: entry.kind,
-    title: entry.title,
-    storageKey: StorageKey.make(entry.storageKey),
-    mimeType: entry.mimeType,
-    sourceFileIds: entry.sourceFileIds.map((id) => FileId.make(id)),
-    createdAt: entry.createdAt.toISOString(),
-  })),
+  assets,
 });
 const nextDate = (next: Option.Option<DateTime.Utc>) =>
   Option.match(next, {
@@ -120,6 +108,7 @@ export const CloudTasksLive = Layer.effect(
   Effect.gen(function* () {
     const database = yield* Database;
     const crypto = yield* Crypto.Crypto;
+    const assets = yield* AssetStore;
     const ownedTask = (userId: UserId, taskId: CloudTaskId) =>
       database
         .use((db) =>
@@ -142,13 +131,7 @@ export const CloudTasksLive = Layer.effect(
       );
       if (!row) return yield* new NotFound({ entity: "CloudRun", id: runId });
       const task = yield* ownedTask(userId, CloudTaskId.make(row.taskId));
-      const artifacts = yield* database.use((db) =>
-        db.query.artifact.findMany({
-          where: and(eq(artifact.cloudRunId, runId), eq(artifact.userId, userId)),
-          orderBy: [asc(artifact.createdAt)],
-        }),
-      );
-      return runToContract(row, task.title, artifacts);
+      return runToContract(row, task.title, yield* assets.list(userId, { runId }));
     });
     const ensureDefaultTask = Effect.fn("CloudTasks.ensureDefaultTask")(function* (
       userId: UserId,
@@ -360,14 +343,9 @@ export const CloudTasksLive = Layer.effect(
             .limit(Math.max(1, Math.min(100, Math.floor(limit)))),
         );
         return yield* Effect.forEach(rows, ({ run, taskTitle }) =>
-          database
-            .use((db) =>
-              db.query.artifact.findMany({
-                where: and(eq(artifact.cloudRunId, run.id), eq(artifact.userId, userId)),
-                orderBy: [asc(artifact.createdAt)],
-              }),
-            )
-            .pipe(Effect.map((artifacts) => runToContract(run, taskTitle, artifacts))),
+          assets
+            .list(userId, { runId: CloudRunId.make(run.id) })
+            .pipe(Effect.map((entries) => runToContract(run, taskTitle, entries))),
         );
       }),
     });

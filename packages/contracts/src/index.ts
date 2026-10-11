@@ -10,3 +10,5 @@ export * from "./rpc.ts";
 export * from "./ruth.ts";
 export * from "./session.ts";
 export * from "./widget.ts";
+
+export * from "./assets.ts";

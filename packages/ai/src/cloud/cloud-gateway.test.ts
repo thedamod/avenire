@@ -70,7 +70,7 @@ it.effect("cloud schemas enforce hydration, report and artifact caps", () =>
       ).toBe("Failure");
     for (const input of [
       { markdown: "x".repeat(100001) },
-      { markdown: "ok", artifacts: Array(21).fill("report.md") },
+      { markdown: "ok", assets: Array(21).fill("report.md") },
     ])
       expect(
         (yield* Schema.decodeUnknownEffect(CLOUD_TOOL_SPECS.publish_report.inputSchema)(input).pipe(

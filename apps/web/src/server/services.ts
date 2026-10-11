@@ -11,9 +11,10 @@ import { RetrievalLive } from "@avenire/ingestion/retrieval";
 import { SemanticCacheLive } from "@avenire/ingestion/retrieval/cache";
 import { QueryPlannerLive } from "@avenire/ingestion/retrieval/planner";
 import { RerankerLive } from "@avenire/ingestion/retrieval/rerank";
-import { ArtifactStoreLive } from "@avenire/ai/outputs/artifacts";
+import { AssetStoreLive } from "@avenire/ai/outputs/assets";
 import { RunTokensLive } from "@avenire/ai/cloud/run-tokens";
 import { SandboxMeterLive } from "@avenire/ai/tools/sandbox-meter";
+import { WidgetPreviewLive } from "@avenire/ai/tools/preview";
 import { WidgetStoreLive } from "@avenire/ai/outputs/widgets";
 import { AnalyticsLive } from "@avenire/shared/observability";
 import { StorageLive } from "@avenire/storage/storage";
@@ -43,9 +44,11 @@ const RetrievalServicesLive = RetrievalLive.pipe(
 );
 const ToolsLive = Layer.mergeAll(
   RetrievalServicesLive,
-  WidgetStoreLive,
-  ArtifactStoreLive,
+  WidgetStoreLive.pipe(Layer.provideMerge(AssetStoreLive)),
   RunTokensLive,
+  WidgetPreviewLive.pipe(
+    Layer.provide(ChatSandboxesLive.pipe(Layer.provideMerge(SandboxMeterLive))),
+  ),
   AuthLive,
   CloudBoxesLive,
   ChatSandboxesLive.pipe(Layer.provideMerge(SandboxMeterLive)),

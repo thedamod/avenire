@@ -43,7 +43,7 @@ flowchart LR
   Kit --> Retrieval
   Kit --> Storage
   Kit --> DB
-  Ruth -- "render_widget → {widgetId,url}" --> Chat
+  Ruth -- "render_widget → {assetId,url}" --> Chat
   Frame -- "iframe src (opaque origin)" --> WidgetHost --> Storage
   Cloud -- "start, secrets, pi -p --mode json" --> Box
   Box -- "retrieve / download / hydrate / publish<br/>(Bearer run token)" --> Gateway --> Kit
@@ -55,8 +55,8 @@ flowchart LR
 
 Tool core, client-safe specs, selectors and the AI SDK adapter live in `src/tools/`.
 `@avenire/ai/tools` remains the client-safe chat spec entry point; execution modules
-are imported separately. Widget and artifact stores live in `src/outputs/` and are
-exported as `@avenire/ai/outputs/widgets` and `@avenire/ai/outputs/artifacts`.
+are imported separately. Widget wrapping and the shared asset store live in `src/outputs/` and are
+exported as `@avenire/ai/outputs/widgets` and `@avenire/ai/outputs/assets`.
 Cloud hydration, publishing, review, run tokens and the gateway live in `src/cloud/`.
 
 A tool is defined once:
@@ -98,21 +98,21 @@ inputJsonSchema }[]` for the Pi extension.
 
 ### Tools
 
-| Tool                                                                                          | Ruth | Cloud         | Approval                                                                 | Notes                                                                |
-| --------------------------------------------------------------------------------------------- | ---- | ------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| `search_materials`                                                                            | ✓    | ✓ (retrieval) | never                                                                    | multi-lane retrieval, unchanged ranking                              |
-| `list_files`                                                                                  | ✓    | ✓ (retrieval) | never                                                                    | folders act as folders; `inbox` pseudo-folder                        |
-| `find_files`                                                                                  | ✓    | ✓ (retrieval) | never                                                                    | metadata + time + topic via the shared `FileSelector` resolver       |
-| `read_file`                                                                                   | ✓    | ✓ (download)  | never                                                                    | extracted text by chunk range (replaces `read_file`)                 |
-| `write_file`                                                                                  | ✓    | —             | unless-full-access                                                       | new note file in a folder                                            |
-| `move_file`, `rename_file`                                                                    | ✓    | —             | unless-full-access                                                       |                                                                      |
-| `archive_file`                                                                                | ✓    | —             | unless-full-access                                                       | "delete" = archive; purged after 30 days. No permanent delete exists |
-| `sandbox_exec`, `sandbox_write`, `sandbox_read`, `sandbox_download_artifact`, `sandbox_close` | ✓    | —             | never                                                                    | ephemeral chat sandbox                                               |
-| `render_widget`                                                                               | ✓    | —             | never                                                                    | → `{ widgetId, url }`                                                |
-| `get_page_context`, `load_skill`, `ask_user`                                                  | ✓    | —             | never                                                                    | unchanged                                                            |
-| `hydrate_files`                                                                               | —    | ✓ (hydrate)   | never                                                                    | selector → files pushed into `/workspace/inputs`                     |
-| `publish_output`                                                                              | —    | ✓ (publish)   | never (outputs are new files; changes to originals become pending syncs) |
-| `publish_report`                                                                              | —    | ✓ (publish)   | never                                                                    | the run's report markdown + artifact paths                           |
+| Tool                                                                              | Ruth | Cloud         | Approval                                                                 | Notes                                                                |
+| --------------------------------------------------------------------------------- | ---- | ------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `search_materials`                                                                | ✓    | ✓ (retrieval) | never                                                                    | multi-lane retrieval, unchanged ranking                              |
+| `list_files`                                                                      | ✓    | ✓ (retrieval) | never                                                                    | folders act as folders; `inbox` pseudo-folder                        |
+| `find_files`                                                                      | ✓    | ✓ (retrieval) | never                                                                    | metadata + time + topic via the shared `FileSelector` resolver       |
+| `read_file`                                                                       | ✓    | ✓ (download)  | never                                                                    | extracted text by chunk range (replaces `read_file`)                 |
+| `write_file`                                                                      | ✓    | —             | unless-full-access                                                       | new note file in a folder                                            |
+| `move_file`, `rename_file`                                                        | ✓    | —             | unless-full-access                                                       |                                                                      |
+| `archive_file`                                                                    | ✓    | —             | unless-full-access                                                       | "delete" = archive; purged after 30 days. No permanent delete exists |
+| `sandbox_exec`, `sandbox_write`, `sandbox_read`, `publish_asset`, `sandbox_close` | ✓    | —             | never                                                                    | ephemeral chat sandbox                                               |
+| `render_widget`                                                                   | ✓    | —             | never                                                                    | → `{ assetId, url }`                                                 |
+| `get_page_context`, `load_skill`, `ask_user`                                      | ✓    | —             | never                                                                    | unchanged                                                            |
+| `hydrate_files`                                                                   | —    | ✓ (hydrate)   | never                                                                    | selector → files pushed into `/workspace/inputs`                     |
+| `publish_output`                                                                  | —    | ✓ (publish)   | never (outputs are new files; changes to originals become pending syncs) |
+| `publish_report`                                                                  | —    | ✓ (publish)   | never                                                                    | the run's report markdown + asset paths                              |
 
 Ruth Cloud has no write/move/rename/archive tool: it **never writes to originals**. A changed
 copy of an original is published with `publish_output({ sandboxPath, replaces: fileId })` and
@@ -125,18 +125,22 @@ becomes a `pending_approval` sync that the user accepts or skips in the morning.
 
 - **Sandbox (`@avenire/cloud/chat-sandbox`, `ChatSandboxes`).** One sandbox per thread,
   created lazily on the first `sandbox_*` call (labels `app=ruth-chat, userId, threadId`).
-  Resources 2 vCPU / 4 GB / 5 GB disk; network blocked except the package-index allow list
+  Resources come from `@avenire/cloud/snapshots` (shared with the snapshot build); network blocked except the package-index allow list
   (`CHAT_SANDBOX_NETWORK_ALLOW_LIST`); `autoStopInterval` 15 min + `autoDeleteInterval` 0 as
   the safety net; a **hard wall-clock cap** (60 min from creation) after which a sweeper
   deletes it regardless (the sweeper lists by label, so it survives restarts). Per command:
   120 s default, 900 s max; tool output to the model capped at 64 KB, `sandbox_read` at 1 MB,
-  artifacts at 50 MB. The prompt tells Ruth to call `sandbox_close` when the task is done
+  published assets at 50 MB. The prompt tells Ruth to call `sandbox_close` when the task is done
   unless it is waiting for the user, and to close it after that follow-up.
   Daily quota: 60 sandbox-minutes per user (`sandbox_usage`), 3 concurrent chat sandboxes.
   Nothing a sandbox produces is written to the database.
-- **Downloads.** `sandbox_download_artifact({ path })` copies the file to
-  `users/<id>/.avenire/tmp/artifacts/<expiresOn>/<artifactId>/<name>` (7-day TTL, swept
-  nightly) and returns a signed URL plus a `file` part for the message.
+- **Assets.** `publish_asset({ path, title? })` copies a sandbox output (up to 50 MB) into
+  `users/<id>/.avenire/assets/<assetId>/<safe-name>`, creates a private `asset` row, and
+  returns `{ assetId, url, kind, mediaType, name, sizeBytes }`. These are permanent outputs,
+  separate from indexed library files. The tool result is the chat UI part: web displays
+  images, videos with controls, and PDF/file download links; mobile displays authenticated
+  native images and opens other links in an external browser. No expiry folders, TTL or
+  output sweeper remain.
 - **Files.** The library is files in folders; folders act as folders. Tools work on files,
   not raw bucket keys (the Files SDK's own AI tools address raw keys, which would bypass files
   and indexing and expose the storage layout); the Files SDK remains the storage layer, and
@@ -250,30 +254,108 @@ visible), and the same retrieval engine and benchmark as chat Ruth.
 - **Egress:** `networkAllowList` = model provider + API host CIDRs (`RUTH_CLOUD_EGRESS_CIDRS`).
 - Pi is pinned (`@earendil-works/pi-coding-agent@0.83.0`) in the box snapshot.
 
-## 4. Widgets
+## 4. Assets, links and widgets
 
-- `render_widget({ title, html })` validates size (≤ 512 KB), wraps the document with the
-  **widget bootstrap** (theme variables for first paint, the theme-update listener, the height
-  reporter, a CSP `<meta>`), stores it at `users/<id>/.avenire/widgets/<widgetId>.html`
-  (never expires; not an file) and returns `{ widgetId, url }` where `url` is
-  `https://widgets.<domain>/w/<token>` and `token` is an HMAC-signed `(userId, widgetId)`.
-- The widget origin serves only `/w/:token` (and later `/kits/*`), with
-  `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src
-'unsafe-inline' <widget-origin>/kits/; style-src 'unsafe-inline'; img-src data: blob:;
-font-src data:; media-src data: blob:; connect-src 'none'; frame-ancestors <app origins>`.
-- `<WidgetFrame>` (`@avenire/ui/widget-frame`) renders it in an iframe with `sandbox="allow-scripts"`
-  (opaque origin), reserves height, accepts messages only from its own `contentWindow` and
-  only if they decode against the protocol schema, posts theme updates when the app theme
-  changes, and shows an error state (load timeout, runtime error) instead of a blank frame.
-  The React-free `@avenire/ui/widget-protocol` supplies the wire schemas, document
-  builder and response CSP for server code as well as the frame. Mobile opens widget
-  URLs in the system browser until a native WebView renderer is added.
-- **Tokens** are defined once in `packages/ui/src/styles/globals.css` (colours, fonts,
-  spacing, type scale, chart palette, radius) and generated into `tokens.ts` for the server
-  (tool description, first-paint injection) and the client.
-- Later, chart/simulation kits are served from `<widget-origin>/kits/*` and inline
-  `<avenire-chart>` / `<avenire-sim>` compile to the same stored-widget path: one frame, one
-  security model.
+### Permanent private outputs
+
+`Asset { id, kind, title, mediaType, sizeBytes, createdAt, threadId?, runId?, url }` is the
+client contract. Kinds are `widget | image | video | pdf | file`. `AssetVisibility` currently
+accepts `private`; extend it with `link` and `people` when sharing is implemented. The
+`asset` table replaces `artifact`, with owner, storage key, SHA-256 content hash, byte size,
+optional thread/message/run links, private visibility and creation time. User/thread/run
+indexes support `assets.get({ assetId })` and `assets.list({ threadId?, runId? })`.
+
+`AssetStore` in `outputs/assets.ts` owns `put`, `get`, `list`, `url` and storage reads.
+`WidgetStore` owns only document wrapping and short widget tokens; it calls AssetStore
+with `kind: "widget"`. Cloud recordings and `publish_report({ markdown, assets?: paths })`
+attachments use the same store. `publish_output` continues to create indexed library files
+or pending syncs, preserving the current Cloud workflow.
+
+Every output has a permanent `${APP_URL}/a/<token>` link. The token signs the asset id with
+a domain-separated HMAC and has no expiry; keep `ASSET_SIGNING_SECRET` stable (blank falls
+back to `WIDGET_SIGNING_SECRET`). Possessing this token does not grant access. The `/a/`
+route resolves it, reads the real session, and calls **`authorizeAsset(asset, viewer)`**.
+Today that hook permits only the owner; missing/other-owner assets return 404 and missing
+sessions return 401. RPC get uses the same hook and lists are scoped by session owner.
+
+Future sharing adds an `asset_share` list keyed by asset id and grantee/link permission.
+Extend `authorizeAsset` to consult that list rather than adding authorization checks to
+individual routes or tools; broaden listing queries for granted assets at the same time.
+There is no sharing UI or share-grant bearer token today.
+
+For images/videos/PDFs/files `/a/` redirects to a 10-minute presigned storage URL. The
+filesystem driver streams authenticated bytes. `?download=1` binds
+`Content-Disposition: attachment` in the presigner or streamed response; widgets can be
+downloaded as HTML too. Redirects and responses use private/no-store caching. HTML files
+are downloaded by default, and streamed output responses are CSP sandboxed.
+
+For a widget `/a/` issues a domain-separated HMAC token containing the asset id and expiry,
+then redirects to `${WIDGET_ORIGIN}/w/<shortToken>`. `/w/` verifies the 10-minute expiry,
+checks that the asset kind is widget and serves the stored document on the isolated host.
+It keeps its sandbox CSP, nosniff/referrer/CORP headers and no-store caching so an expired
+short token cannot keep serving from the browser cache. The permanent `/a/` link can always
+issue a fresh short token after authorization.
+
+**Mobile follow-up:** external browsers lack the native app's session cookie; widget/video/
+PDF/file links may require a separate browser sign-in. Native image requests attach the
+mobile cookie. A native authenticated WebView or session handoff is future work.
+
+### Preview, render and kits
+
+1. Load `visuals` (and the relevant chart/simulation/anatomy and kit-api skills), then call
+   `get_page_context` for width, appearance and tokens.
+2. `preview_widget({ html, width?, appearance? })` clamps width to 240–1600 px (default: chat
+   column, then 640 px), reuses the thread's ChatSandboxes service and uploads the built kits
+   only when the sandbox's manifest hash differs. It uses Python 3.13 Playwright/Chromium at
+   `/opt/avenire/browsers` with a localhost HTTP server, the same theme/bootstrap/CSP wrapper,
+   a load plus one-second wait and a full-page PNG (20,000 px capture cap).
+3. Inspect `{ width, contentHeight, consoleMessages, screenshot }`, revise, and preview again.
+   Console levels log/info/warning/error/uncaught are capped at 100 entries and 2,000 UTF-8
+   bytes per entry. Page errors remain results; browser/infrastructure/quota errors become
+   recoverable tool errors. Preview never requires approval; sandbox lifetime/quotas apply.
+4. `render_widget({ title, html })` validates raw HTML ≤512 KB and stores the wrapped widget
+   through AssetStore, returning `{ assetId, title, url }`. Explain the result in chat prose.
+
+The widget bootstrap applies first-paint theme tokens, receives validated theme updates,
+reports height and reports runtime errors. WidgetFrame uses `sandbox="allow-scripts"`, an
+opaque origin, its own contentWindow message filter and an error/retry state.
+
+Build `@avenire/widget-kit` before web dev/build (explicit build commands in web `dev`/`build` scripts). Production
+serves only manifest-listed kit files on the widget host. `/kits/math.js`, `/kits/iso.js` and
+`/kits/iso-gl.js` redirect to `/kits/<manifest-sha256>/<name>`; only those hashed responses
+use one-year immutable caching. Next output tracing includes the built kits for deployment.
+Kit responses set `Access-Control-Allow-Origin: *` for opaque module `Origin: null` requests,
+`Cross-Origin-Resource-Policy: cross-origin` and nosniff. The app host rejects `/w/` and
+`/kits/`; the widget host rejects every other route.
+
+Both the document CSP meta and `/w/` response CSP allow `${WIDGET_ORIGIN}/kits/` scripts.
+Inline scripts/styles, data/blob images/media and data fonts remain allowed, while
+`connect-src 'none'`, `base-uri 'none'`, `form-action 'none'` and frame-ancestor restrictions
+keep the document isolated. Tokens come from `@avenire/ui/tokens`; kits expose math,
+`kitScript()`/iso CSS, and iso WebGL through the documented API.
+
+### OpenRouter models and image feedback
+
+Ruth chat uses `@openrouter/ai-sdk-provider@3.1.0` (`ai@7` compatible). Registry names and
+`RUTH_MODEL_SPRINT/CORE/APEX` overrides remain; defaults are
+`anthropic/claude-haiku-4.5`, `anthropic/claude-sonnet-5.5`, `anthropic/claude-opus-5.5`, verified
+against OpenRouter's public catalog. The server key is `OPENROUTER_API_KEY`.
+The provider changelog introduced v7 support in 3.0.0 and fixed flattened multimodal tool
+results in 2.3.2; 3.1.0 retains structured V4 file/tool content.
+
+The per-model capability registry derives `vision` from catalog
+`architecture.input_modalities`. `toolResultImages` defaults true for Anthropic/OpenAI/Google
+ids and false otherwise. `RUTH_MODEL_<SLOT>_VISION` and
+`RUTH_MODEL_<SLOT>_TOOL_RESULT_IMAGES` override those decisions. Catalog failure warns and
+uses verified default metadata; unknown overrides conservatively become text-only.
+
+`tools/images.ts` accepts PNG bytes plus id/size/dimensions and produces AI SDK V4 text+file
+tool content when supported. Otherwise it keeps diagnostics in the tool result and queues
+the image as a following user message using `prepareStep`. Text-only models receive text
+only. `RUTH_MODEL_MAX_IMAGES` defaults to 3; pruning removes older image payloads across
+user/tool messages while retaining diagnostics, text, tool call ids and non-image files.
+The helper is exported for future Cloud computer use. Cloud's existing Pi provider/secret
+flow remains a separate migration in the next Cloud rewrite.
 
 ## 5. Library metadata
 
@@ -284,12 +366,12 @@ font-src data:; media-src data: blob:; connect-src 'none'; frame-ancestors <app 
 
 ## 6. Limits (defaults; plan tiers later)
 
-|           | Chat sandbox                              | Ruth Cloud                                      |
-| --------- | ----------------------------------------- | ----------------------------------------------- |
-| Resources | 2 vCPU · 4 GB · 5 GB                      | 4 vCPU · 8 GB · 20 GB                           |
-| Time      | 120 s/command (900 max), 60 min hard cap  | 4 h/run, auto-stop after 15 min idle            |
-| Output    | 64 KB to model, 1 MB read, 50 MB artifact | 200 files / 1 GB per hydration, 10 GB workspace |
-| Per user  | 60 sandbox-minutes/day, 3 concurrent      | 1 active run (others queue)                     |
+|           | Chat sandbox                             | Ruth Cloud                                      |
+| --------- | ---------------------------------------- | ----------------------------------------------- |
+| Resources | 2 vCPU · 4 GB · 5 GB                     | 4 vCPU · 8 GB · 20 GB                           |
+| Time      | 120 s/command (900 max), 60 min hard cap | 4 h/run, auto-stop after 15 min idle            |
+| Output    | 64 KB to model, 1 MB read, 50 MB asset   | 200 files / 1 GB per hydration, 10 GB workspace |
+| Per user  | 60 sandbox-minutes/day, 3 concurrent     | 1 active run (others queue)                     |
 
 ## 7. Decisions where the spec, the vision doc or t3code disagreed
 
@@ -297,7 +379,7 @@ font-src data:; media-src data: blob:; connect-src 'none'; frame-ancestors <app 
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Vision doc: visuals are inline `<avenire-*>` tags with no upload. Spec: `render_widget` stores a file | Stored file on a separate widget origin (owner's call). Inline tags and the chart/simulation kits will compile to the same stored-widget path: one frame, one security model                                                                     |
 | t3code serves rendered HTML from the app origin and allows remote resources                           | Separate origin, `sandbox allow-scripts` CSP header plus an opaque-origin iframe, `connect-src 'none'`, no remote scripts; messages checked for source window and schema (t3code checks only the source)                                         |
-| Spec: hidden widget path with TTL cleanup                                                             | Widgets never expire (owner's call); only sandbox downloads have a 7-day TTL                                                                                                                                                                     |
+| Spec: hidden widget path with TTL cleanup                                                             | Widgets never expire (owner's call); all sandbox outputs are permanent private assets                                                                                                                                                            |
 | Spec: file control through the Files SDK AI tools                                                     | The Files SDK stays the storage layer, but tools work on files and folders (folders act as folders) using the same AI SDK `needsApproval` flow. The SDK's tools address raw bucket keys, which would skip indexing and expose the storage layout |
 | Spec: deletes go through approval                                                                     | Delete is archive with a 30-day purge; the permanent `deleteFile` is never exposed (owner's call, matching AGENTS.md's "undoable")                                                                                                               |
 | AGENTS.md: Ruth Cloud never edits existing material. Spec: changes to originals as queued approvals   | Ruth Cloud writes copies; changes become `pending_approval` syncs, applied only on accept; AGENTS.md rule updated                                                                                                                                |
@@ -309,13 +391,27 @@ font-src data:; media-src data: blob:; connect-src 'none'; frame-ancestors <app 
 | Spec: the four `sandbox_*` tools                                                                      | Added `sandbox_close` so the agent can close the sandbox when done; a hard 60-minute cap deletes it regardless                                                                                                                                   |
 | Spec: `publish_output({ sandboxPath, drivePath })`                                                    | `publish_output({ sandboxPath, title?, replaces? })`: no paths exist, so outputs go to the run's folder and `replaces` proposes a sync                                                                                                           |
 | No Pi setup existed in the repo                                                                       | Built fresh (owner's call), pinned at 0.83.0, extension modelled on t3code's Pi provider (file extension + HTTP tool calls)                                                                                                                      |
-| Repo has no server layer                                                                              | Added only the routes this feature needs (chat, artifacts, widget origin, gateway) and the worker entry; the RPC server for the whole app is out of scope                                                                                        |
+| Repo has no server layer                                                                              | Added only the routes this feature needs (chat, assets, widget origin, kits, asset RPCs, gateway) and the worker entry; the RPC server for the whole app is out of scope                                                                         |
 
 ## 8. Not yet verified live
 
-Everything above is unit-tested against fakes (347 tests). Before relying on it:
-generate and apply migrations to a separate dev database (never v1's); build the
-`avenire-chat` and `avenire-ruth-cloud` snapshots; create the Daytona model-key secret;
+Most behavior is tested against fakes. The asset migration is generated and applied to
+`avenirev2` (never the v1 `avenire` database). Before relying on all Cloud behavior, build the
+required snapshots; create the Daytona model-key secret;
 point `RUTH_CLOUD_API_BASE_URL` at a tunnel; then run one chat turn that renders a widget
 and one Ruth Cloud run end to end. Specifically check that a rotated Daytona secret value is
 seen by a running box, and that Pi 0.83 accepts the command line above.
+
+### Asset migration and preview validation (2026-10-11)
+
+Migration `0002_mighty_colonel_america.sql` was applied after both the configured URL and
+`current_database()` confirmed `avenirev2`. `psql \d asset` confirmed all columns, indexes and
+foreign keys; the old `artifact` table is dropped. The v1 database was not contacted.
+One real `preview_widget` ran the double-pendulum HTML from widget-kit/API.md on
+`avenire-sandbox-v3`: 640 × 367 PNG, 4,600 bytes, zero console messages. The temporary chat
+sandbox was deleted and a separate Daytona list confirmed zero remaining smoke sandboxes.
+The screenshot and diagnostics are at `/tmp/avenire-preview/`. This validates preview and kit
+loading in that snapshot; it does not establish production S3/R2 redirects or a live
+OpenRouter chat turn. Asset routes, ownership, short-token expiry and provider message
+shapes are tested with fakes. The wider app RPC groups are still outside this transport
+slice; the new `/api/rpc` handler currently registers the asset group.

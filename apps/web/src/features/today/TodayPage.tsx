@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Artifact, ArtifactId } from "@avenire/contracts";
+import type { Asset, AssetId } from "@avenire/contracts";
 import { call } from "@avenire/client-runtime/rpc";
 import { Button } from "@avenire/ui/components/button";
 import { useApi, useQuery, errorMessage } from "~/lib/rpc";
@@ -18,19 +18,19 @@ export function TodayPage() {
   const [running, setRunning] = useState(false);
   const run = runs?.[0];
   const grouped = useMemo(() => {
-    const groups = new Map<string, Artifact[]>();
-    for (const artifact of run?.artifacts ?? []) {
-      const list = groups.get(artifact.kind) ?? [];
-      list.push(artifact);
-      groups.set(artifact.kind, list);
+    const groups = new Map<string, Asset[]>();
+    for (const asset of run?.assets ?? []) {
+      const list = groups.get(asset.kind) ?? [];
+      list.push(asset);
+      groups.set(asset.kind, list);
     }
     return [...groups.entries()];
   }, [run]);
 
-  async function openArtifact(artifactId: ArtifactId) {
+  async function openAsset(assetId: AssetId) {
     setActionError(undefined);
     try {
-      const result = await call(api, (client) => client["cloud.artifactUrl"]({ artifactId }));
+      const result = await call(api, (client) => client["assets.get"]({ assetId }));
       window.open(result.url, "_blank", "noopener,noreferrer");
     } catch (cause) {
       setActionError(errorMessage(cause));
@@ -82,7 +82,7 @@ export function TodayPage() {
       ) : null}
       {!loading && !error && !run ? (
         <p className="py-8 text-sm text-muted-foreground">
-          No Ruth Cloud run yet. Your study artifacts will appear here after the next run.
+          No Ruth Cloud run yet. Your study assets will appear here after the next run.
         </p>
       ) : null}
       {run ? (
@@ -96,18 +96,14 @@ export function TodayPage() {
             </p>
             {run.error ? <p className="mt-2 text-sm text-destructive">{run.error}</p> : null}
           </section>
-          {grouped.map(([kind, artifacts]) => (
+          {grouped.map(([kind, assets]) => (
             <section key={kind} className="border-b border-border py-5">
               <h2 className="font-medium capitalize">{kind}</h2>
               <ul className="mt-2 divide-y divide-border">
-                {artifacts.map((artifact) => (
-                  <li key={artifact.id} className="flex items-center justify-between py-3">
-                    <span className="text-sm">{artifact.title}</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void openArtifact(artifact.id)}
-                    >
+                {assets.map((asset) => (
+                  <li key={asset.id} className="flex items-center justify-between py-3">
+                    <span className="text-sm">{asset.title}</span>
+                    <Button variant="outline" size="sm" onClick={() => void openAsset(asset.id)}>
                       Open
                     </Button>
                   </li>

@@ -52,6 +52,7 @@ import {
   RuthModels,
   RuthModelsLive,
 } from "../models/index.ts";
+import { createImageTransport } from "../tools/images.ts";
 import { RUTH_PROMPT } from "../prompts/ruth.ts";
 import { ruthToolSpecs } from "../tools/index.ts";
 import { findVisuals } from "../tools/page.ts";
@@ -173,10 +174,16 @@ export const createRuthAgent = (options: {
   readonly fullAccess: boolean;
   readonly fast?: boolean | undefined;
 }) => {
-  const { tools, toolApproval } = createRuthTools(options.services, {
-    ...options.turn,
-    fullAccess: options.fullAccess,
-  });
+  const name = options.fast === true ? RUTH_FAST_MODEL : RUTH_DEFAULT_MODEL;
+  const images = createImageTransport(options.models.capabilities(name), options.models.maxImages);
+  const { tools, toolApproval } = createRuthTools(
+    options.services,
+    {
+      ...options.turn,
+      fullAccess: options.fullAccess,
+    },
+    images,
+  );
   return {
     model: options.models.languageModel(
       options.fast === true ? RUTH_FAST_MODEL : RUTH_DEFAULT_MODEL,
@@ -185,6 +192,9 @@ export const createRuthAgent = (options: {
     tools,
     toolApproval,
     stopWhen: stepCountIs(MAX_STEPS),
+    prepareStep: ({ messages }: { messages: import("ai").ModelMessage[] }) => ({
+      messages: images.prepareMessages(messages),
+    }),
   };
 };
 

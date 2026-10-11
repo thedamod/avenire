@@ -19,7 +19,9 @@ const nextConfig: NextConfig = {
     "@avenire/shared",
     "@avenire/storage",
     "@avenire/ui",
+    "@avenire/widget-kit",
   ],
+  outputFileTracingIncludes: { "/*": ["../../packages/widget-kit/dist/kits/**/*"] },
   typescript: { ignoreBuildErrors: true },
 };
 

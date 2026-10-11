@@ -200,15 +200,20 @@ it.effect(
     }).pipe(Effect.provide(StorageMemory));
   },
 );
-it.effect("publish_report publishes artifacts and persists the markdown summary", () => {
+it.effect("publish_report publishes private assets and persists the markdown summary", () => {
   const f = cloudFixture();
   return Effect.gen(function* () {
     const storage = yield* Storage;
     const result = yield* cloudTools
-      .publish_report({ markdown: "Finished", artifacts: ["report.md"] }, cloudCtx)
+      .publish_report({ markdown: "Finished", assets: ["report.md"] }, cloudCtx)
       .pipe(Effect.provide(f.services(storage)));
     expect(result.published).toHaveLength(1);
     expect(result.published[0]?.sandboxPath).toBe("report.md");
+    expect(result.published[0]?.url).toContain("/a/");
+    expect(f.rows("asset")[0]).toMatchObject({ kind: "file", runId: "run", visibility: "private" });
+    const key = String(f.rows("asset")[0]?.storageKey);
+    expect(key).toContain("/.avenire/assets/");
+    expect((yield* storage.head(StorageKey.make(key))).contentType).toBe("text/markdown");
     expect(f.rows("cloud_run")[0]?.summary).toBe("Finished");
     expect(
       yield* resolveRunTimeZone({

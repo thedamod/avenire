@@ -1,57 +1,115 @@
-/**
- * Ruth's model registry. Call sites use `ruth-*` names and never a provider or
- * model id, so models change through `RUTH_MODEL_*` without code changes:
- *
- * - `ruth-sprint`: fast and cheap (chat with Fast on, summaries, routing)
- * - `ruth-core`: the default for interactive chat
- * - `ruth-apex`: strongest reasoning (hard analysis, long video plans)
- */
-import { createAnthropic } from "@ai-sdk/anthropic";
+/** Call sites resolve Ruth registry names; only this module knows OpenRouter ids. */
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { customProvider, type LanguageModel } from "ai";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 
 export const RUTH_MODEL_NAMES = ["ruth-sprint", "ruth-core", "ruth-apex"] as const;
 export type RuthModelName = (typeof RUTH_MODEL_NAMES)[number];
-
-/** Underlying model ids; each is overridable with `RUTH_MODEL_<NAME>`, e.g. `RUTH_MODEL_CORE`. */
 export const RUTH_MODEL_DEFAULTS: Record<RuthModelName, string> = {
-  "ruth-sprint": "claude-haiku-4-5-20251001",
-  "ruth-core": "claude-sonnet-5-5",
-  "ruth-apex": "claude-opus-5-5",
+  "ruth-sprint": "anthropic/claude-haiku-4.5",
+  "ruth-core": "anthropic/claude-sonnet-5.5",
+  "ruth-apex": "anthropic/claude-opus-5.5",
 };
-
 export const RUTH_DEFAULT_MODEL: RuthModelName = "ruth-core";
 export const RUTH_FAST_MODEL: RuthModelName = "ruth-sprint";
-
+export interface ModelCapabilities {
+  readonly vision: boolean;
+  readonly toolResultImages: boolean;
+}
+export const modelCapabilities = (
+  id: string,
+  inputModalities: ReadonlyArray<string>,
+  override: Partial<ModelCapabilities> = {},
+): ModelCapabilities => ({
+  vision: inputModalities.includes("image"),
+  toolResultImages: /^(anthropic|openai|google)\//.test(id),
+  ...override,
+});
 export class RuthModels extends Context.Service<
   RuthModels,
-  { readonly languageModel: (name: RuthModelName) => LanguageModel }
+  {
+    readonly languageModel: (name: RuthModelName) => LanguageModel;
+    readonly capabilities: (name: RuthModelName) => ModelCapabilities;
+    readonly maxImages: number;
+  }
 >()("avenire/ai/RuthModels") {}
-
-const envName = (name: RuthModelName) => `RUTH_MODEL_${name.slice("ruth-".length).toUpperCase()}`;
-
-/** Reads `ANTHROPIC_API_KEY` and the `RUTH_MODEL_*` overrides. */
+const envName = (name: RuthModelName) => `RUTH_MODEL_${name.slice(5).toUpperCase()}`;
+const Catalog = Schema.Struct({
+  data: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      architecture: Schema.Struct({ input_modalities: Schema.Array(Schema.String) }),
+    }),
+  ),
+});
+class ModelCatalogError extends Schema.TaggedError<ModelCatalogError>()("ModelCatalogError", {
+  cause: Schema.Defect(),
+}) {}
 export const RuthModelsLive = Layer.effect(
   RuthModels,
   Effect.gen(function* () {
-    const apiKey = yield* Config.Redacted("ANTHROPIC_API_KEY");
-    const anthropic = createAnthropic({ apiKey: Redacted.value(apiKey) });
-    const ids = yield* Config.all(
-      Object.fromEntries(
-        RUTH_MODEL_NAMES.map((name) => [
-          name,
-          Config.String(envName(name)).pipe(Config.withDefault(RUTH_MODEL_DEFAULTS[name])),
-        ]),
+    const apiKey = yield* Config.Redacted("OPENROUTER_API_KEY");
+    const provider = createOpenRouter({ apiKey: Redacted.value(apiKey) });
+    const catalog = yield* Effect.tryPromise({
+      try: () =>
+        fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(10_000) }).then(
+          (r) => r.json(),
+        ),
+      catch: (cause) => new ModelCatalogError({ cause }),
+    }).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(Catalog)),
+      Effect.catchCause(() =>
+        Effect.logWarning(
+          "OpenRouter catalog unavailable; unknown models default to text only",
+        ).pipe(
+          Effect.as({
+            data: Object.values(RUTH_MODEL_DEFAULTS).map((id) => ({
+              id,
+              architecture: { input_modalities: ["text", "image"] },
+            })),
+          }),
+        ),
       ),
     );
-    const languageModels = Object.fromEntries(
-      Object.entries(ids).map(([name, id]) => [name, anthropic(id)]),
+    const metadata = new Map(catalog.data.map((m) => [m.id, m.architecture.input_modalities]));
+    const configured = yield* Effect.forEach(
+      RUTH_MODEL_NAMES,
+      Effect.fn("RuthModels.configure")(function* (name) {
+        const id = yield* Config.String(envName(name)).pipe(
+          Config.withDefault(RUTH_MODEL_DEFAULTS[name]),
+        );
+        const override = yield* Config.option(
+          Config.Boolean(`${envName(name)}_TOOL_RESULT_IMAGES`),
+        );
+        const vision = yield* Config.option(Config.Boolean(`${envName(name)}_VISION`));
+        return {
+          name,
+          id,
+          capabilities: modelCapabilities(id, metadata.get(id) ?? [], {
+            ...(Option.isSome(override) ? { toolResultImages: override.value } : {}),
+            ...(Option.isSome(vision) ? { vision: vision.value } : {}),
+          }),
+        };
+      }),
     );
-    const ruth = customProvider({ languageModels });
-    return RuthModels.of({ languageModel: (name) => ruth.languageModel(name) });
+    const ruth = customProvider({
+      languageModels: Object.fromEntries(configured.map((m) => [m.name, provider.chat(m.id)])),
+    });
+    const registry = new Map(configured.map((m) => [m.name, m.capabilities]));
+    const maxImages = Math.max(
+      0,
+      yield* Config.Int("RUTH_MODEL_MAX_IMAGES").pipe(Config.withDefault(3)),
+    );
+    return RuthModels.of({
+      languageModel: (name) => ruth.languageModel(name),
+      capabilities: (name) => registry.get(name)!,
+      maxImages,
+    });
   }),
 );

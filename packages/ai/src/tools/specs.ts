@@ -153,7 +153,7 @@ export const archiveFileSpec = {
 export const renderWidgetSpec = {
   name: "render_widget",
   description:
-    "Render a standalone, self-contained HTML widget with inline CSS/JS only. No network or external scripts, fonts, or images: CSP blocks them; data: URIs are allowed. Respond to the container width and provide accessible text alternatives and labels. Keep HTML under 512 KB. Explain the visual in chat prose.\n\n" +
+    "Render a standalone, self-contained HTML widget with inline CSS/JS only. Preview first with preview_widget; import bundled /kits/math.js and /kits/iso.js. No network or other external scripts, fonts, or images: CSP blocks them; data: URIs are allowed. Respond to the container width and provide accessible text alternatives and labels. Keep HTML under 512 KB. Explain the visual in chat prose.\n\n" +
     WIDGET_TOKEN_SHEET +
     (() => {
       const missing = THEME_TOKEN_NAMES.filter((name) => !WIDGET_TOKEN_SHEET.includes(name));

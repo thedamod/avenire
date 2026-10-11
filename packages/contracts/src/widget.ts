@@ -1,9 +1,9 @@
 import * as Schema from "effect/Schema";
 
-import { WidgetId } from "./ids.ts";
+import { AssetId } from "./ids.ts";
 
 export const Widget = Schema.Struct({
-  widgetId: WidgetId,
+  assetId: AssetId,
   url: Schema.String,
   title: Schema.String,
 });

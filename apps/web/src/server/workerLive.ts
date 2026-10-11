@@ -14,7 +14,6 @@ import { FileIndexerLive } from "@avenire/ingestion/indexer";
 import { IngestionModelsLive } from "@avenire/ingestion/models";
 import { IngestionPipelineLive } from "@avenire/ingestion/pipeline";
 import { IngestionWorkerLive } from "@avenire/ingestion/worker";
-import { ArtifactSweeperLive } from "@avenire/ai/outputs/artifacts";
 import * as Layer from "effect/Layer";
 import { ServicesLive } from "./services.ts";
 
@@ -41,5 +40,4 @@ export const WorkerLive = Layer.mergeAll(
   ArchivePurgeLive,
   CloudSchedulerLive.pipe(Layer.provideMerge(ExecutorLive)),
   ChatSandboxSweeperLive,
-  ArtifactSweeperLive,
 ).pipe(Layer.provideMerge(ServicesLive));

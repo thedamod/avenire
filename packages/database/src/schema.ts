@@ -1,5 +1,6 @@
 import type {
-  ArtifactKind,
+  AssetKind,
+  AssetVisibility,
   ChunkKind,
   CloudRunStatus,
   CaptureSnapshot,
@@ -676,26 +677,29 @@ export const sandboxUsage = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.day] })],
 );
 
-export const artifact = pgTable(
-  "artifact",
+export const asset = pgTable(
+  "asset",
   {
     id: text("id").primaryKey(),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    cloudRunId: text("cloud_run_id").references(() => cloudRun.id, { onDelete: "set null" }),
-    threadId: text("thread_id").references(() => ruthThread.id, { onDelete: "set null" }),
-    kind: text("kind").$type<ArtifactKind>().notNull(),
+    kind: text("kind").$type<AssetKind>().notNull(),
     title: text("title").notNull(),
+    mediaType: text("media_type").notNull(),
     storageKey: text("storage_key").notNull(),
-    mimeType: text("mime_type").notNull(),
-    sourceFileIds: jsonb("source_file_ids").$type<ReadonlyArray<string>>().notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    contentHash: text("content_hash").notNull(),
+    threadId: text("thread_id").references(() => ruthThread.id, { onDelete: "set null" }),
+    messageId: text("message_id").references(() => ruthMessage.id, { onDelete: "set null" }),
+    runId: text("run_id").references(() => cloudRun.id, { onDelete: "set null" }),
+    visibility: text("visibility").$type<AssetVisibility>().notNull().default("private"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [
-    index("artifact_user_created_idx").on(t.userId, t.createdAt),
-    index("artifact_cloud_run_id_idx").on(t.cloudRunId),
-    index("artifact_thread_id_idx").on(t.threadId),
+    index("asset_user_created_idx").on(t.userId, t.createdAt, t.id),
+    index("asset_user_thread_created_idx").on(t.userId, t.threadId, t.createdAt),
+    index("asset_user_run_created_idx").on(t.userId, t.runId, t.createdAt),
   ],
 );
 
@@ -774,7 +778,7 @@ export const schema = {
   cloudWorkspaceFile,
   pendingApproval,
   sandboxUsage,
-  artifact,
+  asset,
   emailOutbox,
   fileRelations,
   chunkRelations,
@@ -802,7 +806,7 @@ export type EntityRelationRow = typeof entityRelation.$inferSelect;
 export type RuthThreadRow = typeof ruthThread.$inferSelect;
 export type RuthMessageRow = typeof ruthMessage.$inferSelect;
 export type CloudRunRow = typeof cloudRun.$inferSelect;
-export type ArtifactRow = typeof artifact.$inferSelect;
+export type AssetRow = typeof asset.$inferSelect;
 export type EmailOutboxRow = typeof emailOutbox.$inferSelect;
 
 export type FileEventRow = typeof fileEvent.$inferSelect;

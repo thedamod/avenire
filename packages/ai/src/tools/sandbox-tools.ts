@@ -2,12 +2,14 @@ import { ChatSandboxes, type SandboxOwner } from "@avenire/cloud/chat-sandbox";
 import { posix } from "node:path";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import { ArtifactStore, artifactMediaType, safeArtifactName } from "../outputs/artifacts.ts";
+import { AssetStore, assetMediaType, safeAssetName } from "../outputs/assets.ts";
 import { type AgentContext, RuthToolError, type ToolImpl } from "./core.ts";
 import { gatewayTool } from "../cloud/gateway.ts";
 import { SANDBOX_TOOL_SPECS } from "./sandbox-specs.ts";
 
-type SandboxServices = ChatSandboxes | ArtifactStore | Crypto.Crypto;
+import { WidgetPreview } from "./preview.ts";
+
+type SandboxServices = WidgetPreview | ChatSandboxes | AssetStore | Crypto.Crypto;
 type SandboxImpls = {
   [K in keyof typeof SANDBOX_TOOL_SPECS]: ToolImpl<
     (typeof SANDBOX_TOOL_SPECS)[K]["inputSchema"]["Type"],
@@ -28,6 +30,10 @@ const ownerFor = (tool: string, ctx: AgentContext): Effect.Effect<SandboxOwner, 
       );
 
 export const sandboxTools: SandboxImpls = {
+  preview_widget: Effect.fn("RuthKit.previewWidget")(function* (input, ctx) {
+    const previews = yield* WidgetPreview;
+    return yield* previews.preview(input, ctx);
+  }),
   sandbox_exec: Effect.fn("RuthKit.sandboxExec")(function* (input, ctx) {
     const owner = yield* ownerFor("sandbox_exec", ctx);
     const sandboxes = yield* ChatSandboxes;
@@ -71,26 +77,32 @@ export const sandboxTools: SandboxImpls = {
       truncated: result.truncated,
     };
   }),
-  sandbox_download_artifact: Effect.fn("RuthKit.sandboxDownloadArtifact")(function* (input, ctx) {
-    const owner = yield* ownerFor("sandbox_download_artifact", ctx);
+  publish_asset: Effect.fn("RuthKit.publishAsset")(function* (input, ctx) {
+    const owner = yield* ownerFor("publish_asset", ctx);
     const sandboxes = yield* ChatSandboxes;
-    const store = yield* ArtifactStore;
+    const store = yield* AssetStore;
     const file = yield* sandboxes.readArtifact(owner, { path: input.path });
-    const mediaType = artifactMediaType(file.name);
+    const mediaType = assetMediaType(file.name);
     // Preserve the extension when a title supplies a friendlier download filename.
     const extension = posix.extname(file.name);
     const title = input.title?.trim();
-    const name = safeArtifactName(
+    const name = safeAssetName(
       title ? (title.endsWith(extension) ? title : `${title}${extension}`) : file.name,
     );
-    const stored = yield* store.put(ctx.userId, { name, bytes: file.bytes, mediaType });
+    const stored = yield* store.put(ctx.userId, {
+      name,
+      title: input.title ?? name,
+      bytes: file.bytes,
+      mediaType,
+      ...(ctx.threadId ? { threadId: ctx.threadId } : {}),
+    });
     return {
-      artifactId: stored.artifactId,
+      assetId: stored.id,
+      kind: stored.kind,
       name,
       url: stored.url,
       mediaType,
-      size: file.bytes.byteLength,
-      expiresAt: stored.expiresAt,
+      sizeBytes: file.bytes.byteLength,
     };
   }),
   sandbox_close: Effect.fn("RuthKit.sandboxClose")(function* (_input, ctx) {
@@ -101,6 +113,11 @@ export const sandboxTools: SandboxImpls = {
 };
 const policy = { agents: ["ruth"], approval: "never" } as const;
 export const sandboxToolRegistry = {
+  preview_widget: gatewayTool({
+    spec: SANDBOX_TOOL_SPECS.preview_widget,
+    policy,
+    execute: sandboxTools.preview_widget,
+  }),
   sandbox_exec: gatewayTool({
     spec: SANDBOX_TOOL_SPECS.sandbox_exec,
     policy,
@@ -116,10 +133,10 @@ export const sandboxToolRegistry = {
     policy,
     execute: sandboxTools.sandbox_read,
   }),
-  sandbox_download_artifact: gatewayTool({
-    spec: SANDBOX_TOOL_SPECS.sandbox_download_artifact,
+  publish_asset: gatewayTool({
+    spec: SANDBOX_TOOL_SPECS.publish_asset,
     policy,
-    execute: sandboxTools.sandbox_download_artifact,
+    execute: sandboxTools.publish_asset,
   }),
   sandbox_close: gatewayTool({
     spec: SANDBOX_TOOL_SPECS.sandbox_close,

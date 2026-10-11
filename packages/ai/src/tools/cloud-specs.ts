@@ -1,5 +1,11 @@
 /** Cloud schemas can be imported by clients without pulling in Daytona, storage or the database. */
-import { FileSelector, HydrationResult, FileId, PendingApprovalId } from "@avenire/contracts";
+import {
+  FileSelector,
+  HydrationResult,
+  FileId,
+  PendingApprovalId,
+  AssetId,
+} from "@avenire/contracts";
 import { tool } from "ai";
 import * as Schema from "effect/Schema";
 import { standardSchema } from "./schema.ts";
@@ -46,17 +52,19 @@ export const publishOutputSpec = {
 export const publishReportSpec = {
   name: "publish_report",
   description:
-    "Save this run's markdown report and publish up to twenty workspace artifacts as new library files.",
+    "Save this run's markdown report and publish up to twenty workspace outputs as permanent private assets.",
   inputSchema: standardSchema(
     Schema.Struct({
       status: Schema.optionalKey(Schema.Literals(["succeeded", "failed"])),
       markdown: Schema.String.check(Schema.isMaxLength(100_000)),
-      artifacts: Schema.optionalKey(Schema.Array(Schema.String).check(Schema.isMaxLength(20))),
+      assets: Schema.optionalKey(Schema.Array(Schema.String).check(Schema.isMaxLength(20))),
     }),
   ),
   outputSchema: standardSchema(
     Schema.Struct({
-      published: Schema.Array(Schema.Struct({ sandboxPath: Schema.String, fileId: FileId })),
+      published: Schema.Array(
+        Schema.Struct({ sandboxPath: Schema.String, assetId: AssetId, url: Schema.String }),
+      ),
     }),
   ),
 };

@@ -1,19 +1,13 @@
 /**
- * Ruth Cloud - scheduled sandboxed work that produces study artifacts and proposed syncs.
+ * Ruth Cloud - scheduled sandboxed work that produces study assets and proposed syncs.
  *
  * Changes to existing material are represented as pending approvals.
  */
 import * as Schema from "effect/Schema";
 
-import {
-  ArtifactId,
-  CloudRunId,
-  CloudTaskId,
-  FileId,
-  PendingApprovalId,
-  StorageKey,
-} from "./ids.ts";
+import { CloudRunId, CloudTaskId, FileId, PendingApprovalId } from "./ids.ts";
 
+import { Asset } from "./assets.ts";
 import { HydrationRule } from "./hydration.ts";
 
 export const CloudRunStatus = Schema.Literals([
@@ -25,29 +19,6 @@ export const CloudRunStatus = Schema.Literals([
   "cancelled",
 ]);
 export type CloudRunStatus = typeof CloudRunStatus.Type;
-
-export const ArtifactKind = Schema.Literals([
-  "notes",
-  "quiz",
-  "flashcards",
-  "research",
-  "summary",
-  "recording",
-  "plot",
-  "video",
-]);
-export type ArtifactKind = typeof ArtifactKind.Type;
-
-export const Artifact = Schema.Struct({
-  id: ArtifactId,
-  kind: ArtifactKind,
-  title: Schema.String,
-  storageKey: StorageKey,
-  mimeType: Schema.String,
-  sourceFileIds: Schema.Array(FileId),
-  createdAt: Schema.String,
-});
-export type Artifact = typeof Artifact.Type;
 
 export const CloudRun = Schema.Struct({
   id: CloudRunId,
@@ -61,7 +32,7 @@ export const CloudRun = Schema.Struct({
   startedAt: Schema.NullOr(Schema.String),
   finishedAt: Schema.NullOr(Schema.String),
   error: Schema.NullOr(Schema.String),
-  artifacts: Schema.Array(Artifact),
+  assets: Schema.Array(Asset),
 });
 export type CloudRun = typeof CloudRun.Type;
 

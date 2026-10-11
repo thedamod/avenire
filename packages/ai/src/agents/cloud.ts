@@ -1,7 +1,6 @@
 /** Pi owns the agent loop; this service owns provisioning, audit, delivery and cleanup. */
 import { CloudBoxes, type CloudBox } from "@avenire/cloud/cloud-box";
 import {
-  ArtifactId,
   CloudRunId,
   MessageId,
   NotFound,
@@ -11,7 +10,6 @@ import {
 } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import {
-  artifact,
   cloudHydration,
   cloudRun,
   cloudTask,
@@ -28,7 +26,7 @@ import {
 import { hydrate, type CloudToolServices } from "../cloud/tools.ts";
 import { RunTokens } from "../cloud/run-tokens.ts";
 import { newId } from "@avenire/shared/id";
-import { artifactKey } from "@avenire/storage/keys";
+import { AssetStore } from "../outputs/assets.ts";
 import { Storage } from "@avenire/storage/storage";
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
@@ -126,6 +124,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
   const boxes = yield* CloudBoxes;
   const tokens = yield* RunTokens;
   const storage = yield* Storage;
+  const assets = yield* AssetStore;
   const crypto = yield* Crypto.Crypto;
   const hydrationServices = yield* Effect.context<CloudToolServices>();
   const hydrateRule = options.hydrate ?? hydrate;
@@ -158,7 +157,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
       let box: CloudBox | undefined;
       let token = "";
       let recordingId: string | undefined;
-      let recording: { id: string } | null = null;
+      let recording: { id: string; url: string } | null = null;
       let boxStartedAt: number | undefined;
       let piStarted = false;
       let sessionEnded = false;
@@ -184,29 +183,16 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         const bytes = yield* box.stopRecording(id);
         recordingId = undefined;
         if (Option.isNone(bytes)) return;
-        const artifactId = yield* newId(ArtifactId).pipe(
-          Effect.provideService(Crypto.Crypto, crypto),
-        );
-        const key = artifactKey(userId, artifactId, "recording.mp4");
-        yield* storage.put(key, bytes.value, { contentType: "video/mp4" });
-        const manifests = yield* database.use((db) =>
-          db.query.cloudHydration.findMany({
-            where: and(eq(cloudHydration.runId, runId), eq(cloudHydration.userId, userId)),
-          }),
-        );
-        yield* database.use((db) =>
-          db.insert(artifact).values({
-            id: artifactId,
-            userId,
-            cloudRunId: runId,
-            kind: "recording",
+        const stored = yield* assets
+          .put(userId, {
+            name: "recording.mp4",
             title: "Ruth Cloud session recording",
-            storageKey: key,
-            mimeType: "video/mp4",
-            sourceFileIds: readFiles(manifests).map((file) => file.fileId),
-          }),
-        );
-        recording = { id: artifactId };
+            bytes: bytes.value,
+            mediaType: "video/mp4",
+            runId,
+          })
+          .pipe(Effect.provideService(Crypto.Crypto, crypto));
+        recording = { id: stored.id, url: stored.url };
       });
       const finishReport = Effect.fn("RuthCloud.finishReport")(function* (
         status: "succeeded" | "failed" | "cancelled",

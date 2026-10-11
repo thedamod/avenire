@@ -79,10 +79,6 @@
       "types": "./src/tools/sandbox-tools.ts",
       "import": "./src/tools/sandbox-tools.ts"
     },
-    "./outputs/artifacts": {
-      "types": "./src/outputs/artifacts.ts",
-      "import": "./src/outputs/artifacts.ts"
-    },
     "./tools/sandbox-specs": {
       "types": "./src/tools/sandbox-specs.ts",
       "import": "./src/tools/sandbox-specs.ts"
@@ -98,15 +94,26 @@
     "./cloud/review": {
       "types": "./src/cloud/review.ts",
       "import": "./src/cloud/review.ts"
+    },
+    "./outputs/assets": {
+      "types": "./src/outputs/assets.ts",
+      "import": "./src/outputs/assets.ts"
+    },
+    "./tools/images": {
+      "types": "./src/tools/images.ts",
+      "import": "./src/tools/images.ts"
+    },
+    "./tools/preview": {
+      "types": "./src/tools/preview.ts",
+      "import": "./src/tools/preview.ts"
     }
   },
   "scripts": {
     "skills:generate": "node src/skills/scripts/generator.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
+    "test": "pnpm --filter @avenire/widget-kit build && vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "catalog:",
     "@avenire/cloud": "workspace:*",
     "@avenire/contracts": "workspace:*",
     "@avenire/database": "workspace:*",
@@ -114,6 +121,8 @@
     "@avenire/shared": "workspace:*",
     "@avenire/storage": "workspace:*",
     "@avenire/ui": "workspace:*",
+    "@avenire/widget-kit": "workspace:*",
+    "@openrouter/ai-sdk-provider": "3.1.0",
     "ai": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"

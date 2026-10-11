@@ -1,3 +1,5 @@
+import { AssetStore, assetRepository, makeAssetStore } from "../outputs/assets.ts";
+import { assetSettings } from "../outputs/asset-test-support.ts";
 import { describe, expect, it } from "@effect/vitest";
 import { CloudRunId, HydrationId, FileId, UserId, type HydrationResult } from "@avenire/contracts";
 import { CloudBoxes, type CloudBox } from "@avenire/cloud/cloud-box";
@@ -232,7 +234,13 @@ const run = (f: ReturnType<typeof fixture>) =>
           }).pipe(Effect.andThen(storage.put(key, bytes, options))),
       }),
     );
-    const cloud = yield* makeRuthCloud(f.config).pipe(Effect.provideContext(services));
+    const assets = yield* makeAssetStore({
+      ...assetSettings,
+      repository: assetRepository(f.database),
+    }).pipe(Effect.provideContext(services));
+    const cloud = yield* makeRuthCloud(f.config).pipe(
+      Effect.provideContext(Context.add(services, AssetStore, assets)),
+    );
     yield* cloud.execute(runId);
   }).pipe(Effect.provide(StorageMemory));
 const validate = (message: unknown) =>
@@ -265,7 +273,7 @@ describe("RuthCloud Pi orchestrator", () => {
         summary: "Published study notes.",
         finishedAt: new Date(0),
       });
-      expect(f.rows("artifact")[0]).toMatchObject({ kind: "recording", sourceFileIds: ["source"] });
+      expect(f.rows("asset")[0]).toMatchObject({ kind: "video", runId });
       expect(f.rows("email_outbox")[0]).toMatchObject({
         template: "morning-digest",
         props: {

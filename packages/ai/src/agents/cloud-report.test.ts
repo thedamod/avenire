@@ -31,7 +31,7 @@ const input: ReportInput = {
       conflict: "Original changed since hydration",
     },
   ],
-  recording: { id: "video" },
+  recording: { id: "video", url: "https://app.example.test/a/video-token" },
   summary: "I created study notes.",
   appUrl: "https://app.example.test/",
   error: "A quiz could not be completed.",
@@ -49,7 +49,7 @@ describe("buildReport", () => {
     expect(report).toContain("https://app.example.test/cloud/review?run=run");
     expect(report).toContain("Lecture: Copy corrected");
     expect(report).toContain("Conflict: Original changed since hydration");
-    expect(report).toContain("https://app.example.test/artifacts/video");
+    expect(report).toContain("https://app.example.test/a/video-token");
     expect(report).toContain("A quiz could not be completed");
     expect(report).toContain("One source could not be downloaded");
   });

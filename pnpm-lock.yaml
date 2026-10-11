@@ -6,9 +6,6 @@ settings:
 
 catalogs:
   default:
-    '@ai-sdk/anthropic':
-      specifier: 4.0.71
-      version: 4.0.71
     '@ai-sdk/cohere':
       specifier: 4.0.57
       version: 4.0.57
@@ -300,6 +297,9 @@ importers:
       '@avenire/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@avenire/widget-kit':
+        specifier: workspace:*
+        version: link:../../packages/widget-kit
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0(effect@4.0.0)(redis@6.3.0(@opentelemetry/api@1.9.1))
@@ -364,9 +364,6 @@ importers:
 
   packages/ai:
     dependencies:
-      '@ai-sdk/anthropic':
-        specifier: 'catalog:'
-        version: 4.0.71(zod@4.6.5)
       '@avenire/cloud':
         specifier: workspace:*
         version: link:../cloud
@@ -388,6 +385,12 @@ importers:
       '@avenire/ui':
         specifier: workspace:*
         version: link:../ui
+      '@avenire/widget-kit':
+        specifier: workspace:*
+        version: link:../widget-kit
+      '@openrouter/ai-sdk-provider':
+        specifier: 3.1.0
+        version: 3.1.0(ai@7.0.127(zod@4.6.5))(zod@4.6.5)
       ai:
         specifier: 'catalog:'
         version: 7.0.127(zod@4.6.5)
@@ -798,12 +801,6 @@ importers:
         version: 1.0.0(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(@vitest/ui@5.0.1)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1)
 
 packages:
-
-  '@ai-sdk/anthropic@4.0.71':
-    resolution: {integrity: sha512-wiv3jhUH0RrvGzSolJMZfZ2cI9As45LhwYmcAoWvNivXjC7wzJ4W/Udq9/u7EGnGsT8lpmFKEKBrMXVeUO97Dg==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
 
   '@ai-sdk/cohere@4.0.57':
     resolution: {integrity: sha512-z69YVdHtTg0bKlCOB9VzxEce1XzC/wY3ATsE7oQMeTmXBjvjAvwpCMh/iz06lFo2qZtEgIJPTokitLxVWBDuRg==}
@@ -2737,6 +2734,13 @@ packages:
   '@nodelib/fs.walk@1.2.8':
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
+
+  '@openrouter/ai-sdk-provider@3.1.0':
+    resolution: {integrity: sha512-BQy1TA9fKrh47s9ivsO6FY5QimN7GUF0i8Qon3pkxQclEgShso0dClpcWn8OIyPLEZZPFaFKgI8TW4S/O0p0Dw==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      ai: ^7.0.0
+      zod: ^3.25.76 || ^4.1.8
 
   '@opentelemetry/api-logs@0.222.0':
     resolution: {integrity: sha512-9mb1If+IF6u0ZVXkHQ6ogEae5HwA6ajIVUgpSDQyRASxft6BSXHvBvPooRle3yFN/fKnCdSOnuu0OC3PLcF6+g==}
@@ -9423,12 +9427,6 @@ packages:
 
 snapshots:
 
-  '@ai-sdk/anthropic@4.0.71(zod@4.6.5)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.21
-      '@ai-sdk/provider-utils': 5.0.53(zod@4.6.5)
-      zod: 4.6.5
-
   '@ai-sdk/cohere@4.0.57(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.24
@@ -11666,6 +11664,11 @@ snapshots:
     dependencies:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.20.3
+
+  '@openrouter/ai-sdk-provider@3.1.0(ai@7.0.127(zod@4.6.5))(zod@4.6.5)':
+    dependencies:
+      ai: 7.0.127(zod@4.6.5)
+      zod: 4.6.5
 
   '@opentelemetry/api-logs@0.222.0':
     dependencies:

@@ -1,4 +1,4 @@
-import { type ArtifactId, type FileId, StorageKey, type UserId } from "@avenire/contracts";
+import { type AssetId, type FileId, StorageKey, type UserId } from "@avenire/contracts";
 
 const safeFilename = (filename: string): string =>
   filename.replace(/[\\/]/g, "_").replace(/\0/g, "").slice(0, 180) || "file";
@@ -20,7 +20,7 @@ export const fileDocumentKey = (userId: UserId, fileId: FileId, version: number)
     `${userPrefix(userId)}files/${encodeURIComponent(fileId)}/document.v${version}.json.gz`,
   );
 
-export const artifactKey = (userId: UserId, artifactId: ArtifactId, filename: string): StorageKey =>
+export const assetKey = (userId: UserId, assetId: AssetId, filename: string): StorageKey =>
   StorageKey.make(
-    `${userPrefix(userId)}artifacts/${encodeURIComponent(artifactId)}/${safeFilename(filename)}`,
+    `${userPrefix(userId)}.avenire/assets/${encodeURIComponent(assetId)}/${safeFilename(filename)}`,
   );

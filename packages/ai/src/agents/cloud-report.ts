@@ -15,7 +15,7 @@ export interface ReportInput {
     readonly summary: string;
     readonly conflict: string | null;
   }>;
-  readonly recording: { readonly id: string } | null;
+  readonly recording: { readonly id: string; readonly url: string } | null;
   readonly summary: string;
   readonly appUrl: string;
   readonly error?: string;
@@ -56,12 +56,7 @@ export const buildReport = (input: ReportInput): string => {
       (approval) =>
         `- ${label(approval.fileTitle)}: ${label(approval.summary)}${approval.conflict ? ` — Conflict: ${label(approval.conflict)}` : ""}`,
     ),
-    ...(input.recording
-      ? [
-          "## Recording",
-          `[Watch the session](${base}/artifacts/${encodeURIComponent(input.recording.id)})`,
-        ]
-      : []),
+    ...(input.recording ? ["## Recording", `[Watch the session](${input.recording.url})`] : []),
     ...(input.error || input.hydrationFailures?.length
       ? [
           "## Failures",

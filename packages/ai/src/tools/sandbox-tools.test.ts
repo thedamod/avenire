@@ -1,4 +1,5 @@
-import { ArtifactId, StorageKey, ThreadId } from "@avenire/contracts";
+import { WidgetPreview } from "./preview.ts";
+import { AssetId, StorageKey, ThreadId } from "@avenire/contracts";
 import {
   ChatSandboxes,
   SandboxQuotaExceeded,
@@ -11,7 +12,7 @@ import { expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { ArtifactStore } from "../outputs/artifacts.ts";
+import { AssetStore } from "../outputs/assets.ts";
 import { runTool, type TaggedToolError } from "./core.ts";
 import { sandboxTools } from "./sandbox-tools.ts";
 import { ctx, recordingAnalytics, testCrypto } from "./test-support.ts";
@@ -60,29 +61,39 @@ const fake = () => {
   return { sandboxes, owners, files, commands };
 };
 const stored: Array<{ userId: string; name: string; bytes: Uint8Array; mediaType: string }> = [];
-const artifacts = ArtifactStore.of({
+const artifacts = AssetStore.of({
   put: (userId, input) =>
     Effect.sync(() => {
       stored.push({ userId, ...input });
       return {
-        artifactId: ArtifactId.make("artifact"),
-        key: StorageKey.make("key"),
+        id: AssetId.make("asset"),
+        storageKey: StorageKey.make("key"),
+        userId,
+        kind: "image" as const,
+        title: input.title ?? input.name,
+        mediaType: input.mediaType,
+        sizeBytes: input.bytes.byteLength,
+        createdAt: "1970-01-01T00:00:00Z",
+        contentHash: "hash",
+        visibility: "private" as const,
         url: "https://app.test/download",
-        expiresAt: "2026-10-16T00:00:00Z",
       };
     }),
-  resolve: () => Effect.succeed(Option.none()),
+  resolve: () => Option.none(),
+  get: () => Effect.succeed(Option.none()),
+  list: () => Effect.succeed([]),
+  url: () => "https://app.test/download",
   load: () => Effect.succeed(new Uint8Array()),
-  sweepExpired: Effect.succeed(0),
 });
 const provide = <A, E>(
-  effect: Effect.Effect<A, E, ChatSandboxes | ArtifactStore | Crypto.Crypto>,
+  effect: Effect.Effect<A, E, ChatSandboxes | AssetStore | Crypto.Crypto | WidgetPreview>,
   sandboxes: ChatSandboxes["Service"],
 ) =>
   effect.pipe(
     Effect.provideService(ChatSandboxes, sandboxes),
-    Effect.provideService(ArtifactStore, artifacts),
+    Effect.provideService(AssetStore, artifacts),
     Effect.provideService(Crypto.Crypto, testCrypto),
+    Effect.provideService(WidgetPreview, WidgetPreview.of({ preview: () => Effect.die("unused") })),
   );
 
 it.effect("derives ownership, preserves exec arguments and round-trips binary/text files", () => {
@@ -112,20 +123,20 @@ it.effect("derives ownership, preserves exec arguments and round-trips binary/te
         durationMs: 42,
       });
       expect(state.commands).toEqual([command]);
-      const result = yield* sandboxTools.sandbox_download_artifact({ path: "plot.png" }, turn);
+      const result = yield* sandboxTools.publish_asset({ path: "plot.png" }, turn);
       expect(result).toMatchObject({
         name: "plot.png",
         mediaType: "image/png",
-        size: 4,
+        sizeBytes: 4,
         url: "https://app.test/download",
       });
-      expect(stored.at(-1)).toEqual({
+      expect(stored.at(-1)).toMatchObject({
         userId: turn.userId,
         name: "plot.png",
         bytes,
         mediaType: "image/png",
       });
-      const titled = yield* sandboxTools.sandbox_download_artifact(
+      const titled = yield* sandboxTools.publish_asset(
         { path: "plot.png", title: "A labelled result" },
         turn,
       );
@@ -148,7 +159,7 @@ for (const [name, input] of [
   ["sandbox_exec", { command: "true" }],
   ["sandbox_write", { path: "x", content: "x" }],
   ["sandbox_read", { path: "x" }],
-  ["sandbox_download_artifact", { path: "x" }],
+  ["publish_asset", { path: "x" }],
   ["sandbox_close", {}],
 ] as const) {
   it.effect(`${name} requires a thread before touching the sandbox`, () => {
@@ -157,7 +168,7 @@ for (const [name, input] of [
     const program: Effect.Effect<
       unknown,
       TaggedToolError,
-      ChatSandboxes | ArtifactStore | Crypto.Crypto
+      ChatSandboxes | AssetStore | Crypto.Crypto | WidgetPreview
     > =
       name === "sandbox_exec"
         ? sandboxTools.sandbox_exec(input, ctx)
@@ -165,8 +176,8 @@ for (const [name, input] of [
           ? sandboxTools.sandbox_write(input, ctx)
           : name === "sandbox_read"
             ? sandboxTools.sandbox_read(input, ctx)
-            : name === "sandbox_download_artifact"
-              ? sandboxTools.sandbox_download_artifact(input, ctx)
+            : name === "publish_asset"
+              ? sandboxTools.publish_asset(input, ctx)
               : sandboxTools.sandbox_close(input, ctx);
     return provide(
       program.pipe(

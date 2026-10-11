@@ -15,6 +15,13 @@
       "when": 1791744906307,
       "tag": "0001_curvy_cerise",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791750059563,
+      "tag": "0002_mighty_colonel_america",
+      "breakpoints": true
     }
   ]
 }

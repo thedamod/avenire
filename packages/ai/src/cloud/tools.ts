@@ -1,4 +1,6 @@
 import {
+  CloudRunId,
+  type AssetId,
   FolderId,
   HydrationId,
   HYDRATION_DEFAULTS,
@@ -38,7 +40,7 @@ import type * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { artifactMediaType } from "../outputs/artifacts.ts";
+import { AssetStore, assetMediaType } from "../outputs/assets.ts";
 import { CLOUD_TOOL_POLICY, CLOUD_TOOL_SPECS } from "../tools/cloud-specs.ts";
 import { type AgentContext, RuthToolError, type ToolImpl, toToolError } from "../tools/core.ts";
 import { gatewayTool } from "./gateway.ts";
@@ -46,6 +48,7 @@ import type { VerifiedRunToken } from "./run-tokens.ts";
 import { resolveSelector, type ResolvedFile } from "../tools/selectors.ts";
 
 export type CloudToolServices =
+  | AssetStore
   | CloudBoxes
   | Database
   | Storage
@@ -445,7 +448,7 @@ const outputKind = (mime: string): FileKind =>
 const outputMime = (name: string) =>
   ({ mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4" })[
     posix.extname(name).slice(1).toLowerCase()
-  ] ?? artifactMediaType(name);
+  ] ?? assetMediaType(name);
 const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
   input: typeof CLOUD_TOOL_SPECS.publish_output.inputSchema.Type,
   ctx: AgentContext,
@@ -593,10 +596,28 @@ export const cloudTools: CloudImpls = {
   publish_output: publishOutput,
   publish_report: Effect.fn("RuthCloud.publishReport")(function* (input, ctx) {
     const run = yield* ownedRun(ctx, "publish_report");
-    const published: { sandboxPath: string; fileId: FileId }[] = [];
-    for (const path of input.artifacts ?? []) {
-      const result = yield* publishOutput({ sandboxPath: path }, ctx);
-      if (result.kind === "file") published.push({ sandboxPath: path, fileId: result.fileId });
+    const published: { sandboxPath: string; assetId: AssetId; url: string }[] = [];
+    const store = yield* AssetStore;
+    const box = yield* runningBox(ctx, "publish_report");
+    for (const sandboxPath of input.assets ?? []) {
+      const path = publishPath(sandboxPath);
+      if (path === null)
+        return yield* fail(
+          "publish_report",
+          "Publish a path inside the workspace and outside .avenire.",
+        );
+      const bytes = yield* box.readFile(path);
+      if (bytes.byteLength > 50 * 1024 * 1024)
+        return yield* fail("publish_report", "Publish an asset no larger than 50 MB.");
+      const name = posix.basename(path);
+      const stored = yield* store.put(ctx.userId, {
+        name,
+        bytes,
+        mediaType: outputMime(name),
+        runId: CloudRunId.make(run.id),
+        ...(ctx.threadId ? { threadId: ctx.threadId } : {}),
+      });
+      published.push({ sandboxPath, assetId: stored.id, url: stored.url });
     }
     const database = yield* Database;
     yield* database.use((db) =>

@@ -1,3 +1,4 @@
+import { AssetStoreTest } from "../outputs/asset-test-support.ts";
 import { describe, expect, it } from "@effect/vitest";
 import { CloudRunId, CloudTaskId, UserId, type CloudTaskInput } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
@@ -38,6 +39,7 @@ const fixture = () => {
   });
   const started: string[] = [];
   const services = Layer.mergeAll(
+    AssetStoreTest,
     Layer.succeed(Database, f.database),
     Layer.succeed(Crypto.Crypto, fakeCrypto),
     Layer.succeed(

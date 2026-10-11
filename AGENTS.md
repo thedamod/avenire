@@ -40,7 +40,7 @@ add `execute`), `skills/` (markdown in `sections/`, compiled into `skills.ts` by
 `pnpm --filter @avenire/ai skills:generate`; never edit `skills.ts` by hand), `agents/`
 (`createRuthAgent` and the Ruth Cloud Pi orchestrator), `scheduler/`, and `message-types.ts`.
 Shared tool core, specs, implementations, adapters and selectors live in `tools/`;
-widget and artifact stores live in `outputs/`; hydration, publishing, approval review,
+widget wrapping and the shared asset store live in `outputs/`; hydration, publishing, approval review,
 run tokens and the gateway live in `cloud/`. These modules have explicit subpath exports;
 keep specs client-safe and import server execution separately. The widget frame and
 React-free protocol live in `@avenire/ui/widget-frame` and `@avenire/ui/widget-protocol`
@@ -60,6 +60,7 @@ React-free protocol live in `@avenire/ui/widget-frame` and `@avenire/ui/widget-p
 - Anything Ruth does that changes the user's files requires an approval by default. The
   user can turn approvals off per thread ("Full access"); then actions apply directly but
   are still logged and undoable. Sandboxed compute and read-only tools never need approval.
+- Ruth chat models route through OpenRouter via `OPENROUTER_API_KEY`; keep provider ids in `models/`.
 - Model calls, tools and chat streaming use the AI SDK (`ai`, `@ai-sdk/*`), never
   `effect/ai`. Effect stays for services, errors, config and jobs; tool `execute` functions
   run Effect programs against the request's services.

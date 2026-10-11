@@ -239,28 +239,24 @@ export function RuthPanel() {
         />
       );
     }
-    if (part.type === "tool-sandbox_download_artifact" && part.state === "output-available") {
-      const artifact = part.output;
+    if (part.type === "tool-publish_asset" && part.state === "output-available") {
+      const asset = part.output;
       return (
         <div key={key} className="grid gap-2">
-          {artifact.mediaType.startsWith("image/") ? (
-            <img
-              src={artifact.url}
-              alt={artifact.name}
-              className="max-h-96 max-w-full object-contain"
-            />
+          {asset.mediaType.startsWith("image/") ? (
+            <img src={asset.url} alt={asset.name} className="max-h-96 max-w-full object-contain" />
           ) : null}
-          {artifact.mediaType.startsWith("video/") ? (
+          {asset.mediaType.startsWith("video/") ? (
             <video
               controls
-              src={artifact.url}
-              aria-label={artifact.name}
+              src={asset.url}
+              aria-label={asset.name}
               className="max-h-96 max-w-full"
             />
           ) : null}
-          <a href={artifact.url} download={artifact.name} className="text-sm underline">
-            {artifact.name} (
-            {(artifact.size / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} KB)
+          <a href={`${asset.url}?download=1`} download={asset.name} className="text-sm underline">
+            {asset.name} (
+            {(asset.sizeBytes / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} KB)
           </a>
         </div>
       );
