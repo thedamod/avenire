@@ -9,7 +9,7 @@ import { AVENIRE_SNAPSHOT, SANDBOX_RESOURCES, avenireSandboxImage } from "./snap
 const dockerfile = avenireSandboxImage.dockerfile;
 
 it("defines one Daytona desktop image with all runtime stacks", () => {
-  expect(AVENIRE_SNAPSHOT).toBe("avenire-sandbox-v1");
+  expect(AVENIRE_SNAPSHOT).toBe("avenire-sandbox-v2");
   expect(dockerfile).toContain("FROM daytonaio/sandbox");
   for (const packageName of [
     "numpy",
@@ -60,7 +60,8 @@ it("defines one Daytona desktop image with all runtime stacks", () => {
   expect(dockerfile).toContain("-t bookworm-backports kicad");
   expect(dockerfile).toContain("kicad-cli version");
   expect(dockerfile).toContain("setup_24.x");
-  expect(dockerfile).toContain("corepack prepare pnpm@11.17.0 --activate");
+  expect(dockerfile).toContain("npm install -g pnpm@11.17.0");
+  expect(dockerfile).not.toContain("corepack");
   expect(dockerfile).toContain("playwright install --with-deps chromium");
   expect(dockerfile).toContain("from playwright.sync_api import sync_playwright");
   expect(dockerfile).not.toContain("@earendil-works/pi-coding-agent");
@@ -68,7 +69,8 @@ it("defines one Daytona desktop image with all runtime stacks", () => {
 });
 
 it("bakes the wallpaper and an idempotent Xfce autostart", () => {
-  expect(dockerfile).toContain("/usr/share/backgrounds/avenire/wallpaper.svg");
+  expect(dockerfile).toContain("/usr/share/backgrounds/avenire/wallpaper.png");
+  expect(dockerfile).toContain("xfce-perchannel-xml/xfce4-desktop.xml");
   expect(dockerfile).toContain("/usr/local/bin/avenire-set-wallpaper");
   expect(dockerfile).toContain("/home/daytona/.config/autostart/avenire-wallpaper.desktop");
   expect(dockerfile).toContain("ENV VNC_RESOLUTION=1024x768");
@@ -83,12 +85,16 @@ it("bakes the wallpaper and an idempotent Xfce autostart", () => {
     "utf8",
   );
   expect(autostart).toContain("Exec=/usr/local/bin/avenire-set-wallpaper");
-  const wallpaper = readFileSync(
-    fileURLToPath(new URL("../assets/wallpaper.svg", import.meta.url)),
+  // The PNG is the baked render of wallpaper.svg at the 1024x768 desktop size.
+  const png = readFileSync(fileURLToPath(new URL("../assets/wallpaper.png", import.meta.url)));
+  expect(png.subarray(1, 4).toString()).toBe("PNG");
+  expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1024, 768]);
+  const settings = readFileSync(
+    fileURLToPath(new URL("../assets/xfce4-desktop.xml", import.meta.url)),
     "utf8",
   );
-  expect(wallpaper).toContain('viewBox="0 0 1024 768"');
-  expect(wallpaper).toContain("<path d=");
+  expect(settings).toContain('name="monitorscreen"');
+  expect(settings).toContain("/usr/share/backgrounds/avenire/wallpaper.png");
 });
 
 it("keeps both sandbox allocations aligned to their one snapshot", () => {

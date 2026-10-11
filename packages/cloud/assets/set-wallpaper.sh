@@ -1,6 +1,6 @@
 #!/bin/sh
 # Xfce creates monitor keys after its desktop process starts. Retry briefly on first login.
-wallpaper=/usr/share/backgrounds/avenire/wallpaper.svg
+wallpaper=/usr/share/backgrounds/avenire/wallpaper.png
 attempt=0
 while [ "$attempt" -lt 20 ]; do
   if command -v xfconf-query >/dev/null 2>&1; then

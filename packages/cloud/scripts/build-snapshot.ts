@@ -10,7 +10,9 @@ import {
 
 const build = Effect.gen(function* () {
   const daytona = yield* DaytonaClient;
-  yield* ensureSnapshot(daytona, AVENIRE_SNAPSHOT, avenireSandboxImage, SANDBOX_RESOURCES);
+  yield* ensureSnapshot(daytona, AVENIRE_SNAPSHOT, avenireSandboxImage, SANDBOX_RESOURCES, {
+    onLogs: (chunk) => process.stdout.write(chunk.endsWith("\n") ? chunk : `${chunk}\n`),
+  });
   return AVENIRE_SNAPSHOT;
 }).pipe(Effect.provide(DaytonaClientLive));
 

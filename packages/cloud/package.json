@@ -23,7 +23,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests",
-    "snapshot:build": "tsx scripts/build-snapshot.ts"
+    "snapshot:build": "tsx --env-file-if-exists=../../.env.local scripts/build-snapshot.ts",
+    "snapshot:verify": "tsx --env-file-if-exists=../../.env.local scripts/verify-snapshot.ts"
   },
   "dependencies": {
     "@avenire/contracts": "workspace:*",
