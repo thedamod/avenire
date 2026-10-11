@@ -2,9 +2,9 @@ import { ChatSandboxes, type SandboxOwner } from "@avenire/cloud/chat-sandbox";
 import { posix } from "node:path";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import { ArtifactStore, artifactMediaType, safeArtifactName } from "./artifacts.ts";
+import { ArtifactStore, artifactMediaType, safeArtifactName } from "../outputs/artifacts.ts";
 import { type AgentContext, RuthToolError, type ToolImpl } from "./core.ts";
-import { gatewayTool } from "./gateway.ts";
+import { gatewayTool } from "../cloud/gateway.ts";
 import { SANDBOX_TOOL_SPECS } from "./sandbox-specs.ts";
 
 type SandboxServices = ChatSandboxes | ArtifactStore | Crypto.Crypto;

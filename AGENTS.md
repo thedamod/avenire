@@ -24,12 +24,10 @@ packages/
   cloud/             Daytona sandboxes (ephemeral compute + persistent Ruth Cloud boxes)
   ingestion/         Extract -> chunk -> embed -> graph -> folder, the job queue worker, and retrieval
                      (multi-lane RRF, rerank, graph RAG, semantic cache)
-  ai/                Ruth (AI SDK chat) and Ruth Cloud (Pi orchestrator + task scheduler)
-  ruth-kit/          Shared tools, hydration, publishing, run tokens and approval review
-  viz/               Widget protocol and WidgetFrame (sandboxed iframe for Ruth's visuals)
+  ai/                Ruth chat, shared tools and outputs, Ruth Cloud orchestration + scheduler
   emailer/           react-email templates + the `Mailer` service (Resend)
   retrieval-benchmark/  Dataset + runner for retrieval quality (recall@k, MRR, nDCG)
-  ui/                shadcn/ui primitives for web and desktop
+  ui/                shadcn/ui primitives, widget protocol and sandboxed WidgetFrame
 ```
 
 Packages are source-first: `exports` point at `./src/*.ts`, there is no build step, and each
@@ -40,9 +38,13 @@ folder entry points of `@avenire/ai`).
 at a call site), `prompts/`, `tools/` (`index.ts` holds client-safe specs, the other files
 add `execute`), `skills/` (markdown in `sections/`, compiled into `skills.ts` by
 `pnpm --filter @avenire/ai skills:generate`; never edit `skills.ts` by hand), `agents/`
-(`createRuthAgent` and the Ruth Cloud Pi orchestrator),
-`scheduler/`, and `message-types.ts`. Shared tools come from `@avenire/ruth-kit`;
-widgets and visual rendering come from `@avenire/viz`.
+(`createRuthAgent` and the Ruth Cloud Pi orchestrator), `scheduler/`, and `message-types.ts`.
+Shared tool core, specs, implementations, adapters and selectors live in `tools/`;
+widget and artifact stores live in `outputs/`; hydration, publishing, approval review,
+run tokens and the gateway live in `cloud/`. These modules have explicit subpath exports;
+keep specs client-safe and import server execution separately. The widget frame and
+React-free protocol live in `@avenire/ui/widget-frame` and `@avenire/ui/widget-protocol`
+(`src/widgets/`), respectively.
 
 ## Rules
 

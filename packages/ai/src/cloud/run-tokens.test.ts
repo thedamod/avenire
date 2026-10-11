@@ -10,7 +10,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
 import { makeRunTokens } from "./run-tokens.ts";
-import { ctx, fakeDatabase, testCrypto } from "./test-support.ts";
+import { ctx, fakeDatabase, testCrypto } from "../tools/test-support.ts";
 
 it.effect("mints hashed credentials, verifies, expires and revokes them", () => {
   let row: CloudRunTokenRow | undefined;

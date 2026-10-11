@@ -14,9 +14,9 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { ctx, fakeDatabase, testCrypto } from "./test-support.ts";
-import type { AgentContext } from "./core.ts";
-import type { MetadataCandidate } from "./selectors.ts";
+import { ctx, fakeDatabase, testCrypto } from "../tools/test-support.ts";
+import type { AgentContext } from "../tools/core.ts";
+import type { MetadataCandidate } from "../tools/selectors.ts";
 
 type Row = Record<string, unknown>;
 export const cloudCtx: AgentContext = {

@@ -1,11 +1,11 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { type AgentContext, type TaggedToolError, runTool } from "./core.ts";
+import { type AgentContext, type TaggedToolError, runTool } from "../tools/core.ts";
 import { RunTokens, type VerifiedRunToken } from "./run-tokens.ts";
-import { RUTH_TOOL_POLICY, RUTH_TOOL_SPECS, type ToolPolicy } from "./specs.ts";
-import { ruthKitTools, type RuthKitServices } from "./tools.ts";
-import { standardSchema } from "./schema.ts";
+import { RUTH_TOOL_POLICY, RUTH_TOOL_SPECS, type ToolPolicy } from "../tools/specs.ts";
+import { ruthKitTools, type RuthKitServices } from "../tools/library.ts";
+import { standardSchema } from "../tools/schema.ts";
 
 export interface GatewayTool<R = RuthKitServices> {
   readonly spec: {

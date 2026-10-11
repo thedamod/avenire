@@ -28,7 +28,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as PlatformError from "effect/PlatformError";
-import { detectConflict } from "./cloud-tools.ts";
+import { detectConflict } from "./tools.ts";
 
 export type CloudReviewError =
   | Conflict
@@ -56,7 +56,7 @@ export class CloudReview extends Context.Service<
       decision: ApprovalDecision,
     ) => Effect.Effect<void, CloudReviewError>;
   }
->()("avenire/ruth-kit/CloudReview") {}
+>()("avenire/ai/CloudReview") {}
 const wireApproval = (row: PendingApprovalRow & { fileTitle: string }): PendingApproval => ({
   id: PendingApprovalId.make(row.id),
   runId: CloudRunId.make(row.runId),

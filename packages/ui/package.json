@@ -12,7 +12,9 @@
       "types": "./src/components/*.tsx",
       "import": "./src/components/*.tsx"
     },
-    "./tokens": "./src/styles/tokens.ts"
+    "./tokens": "./src/styles/tokens.ts",
+    "./widget-protocol": "./src/widgets/protocol.ts",
+    "./widget-frame": "./src/widgets/WidgetFrame.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -23,6 +25,7 @@
     "@base-ui/react": "1.8.0",
     "class-variance-authority": "0.7.1",
     "clsx": "^2.1.1",
+    "effect": "catalog:",
     "lucide-react": "1.51.0",
     "radix-ui": "1.6.7",
     "tailwind-merge": "3.7.0",
@@ -30,9 +33,14 @@
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
+    "@testing-library/dom": "catalog:",
+    "@testing-library/react": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "happy-dom": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
     "tailwindcss": "catalog:",
     "vite-plus": "catalog:"
   },

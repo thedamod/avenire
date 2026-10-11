@@ -11,7 +11,7 @@ import { expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { ArtifactStore } from "./artifacts.ts";
+import { ArtifactStore } from "../outputs/artifacts.ts";
 import { runTool, type TaggedToolError } from "./core.ts";
 import { sandboxTools } from "./sandbox-tools.ts";
 import { ctx, recordingAnalytics, testCrypto } from "./test-support.ts";

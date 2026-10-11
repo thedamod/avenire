@@ -25,8 +25,8 @@ import {
   user,
   type CloudTaskRow,
 } from "@avenire/database/schema";
-import { hydrate, type CloudToolServices } from "@avenire/ruth-kit/cloud-tools";
-import { RunTokens } from "@avenire/ruth-kit/run-tokens";
+import { hydrate, type CloudToolServices } from "../cloud/tools.ts";
+import { RunTokens } from "../cloud/run-tokens.ts";
 import { newId } from "@avenire/shared/id";
 import { artifactKey } from "@avenire/storage/keys";
 import { Storage } from "@avenire/storage/storage";
@@ -84,7 +84,7 @@ export interface RuthCloudOptions {
   readonly apiBaseUrl: string;
   readonly appUrl: string;
   readonly model: string;
-  /** Tests replace hydration at this boundary; production always uses ruth-kit's audited implementation. */
+  /** Tests replace hydration at this boundary; production always uses the shared tools' audited implementation. */
   readonly hydrate?: typeof hydrate;
 }
 const textBytes = (text: string) => new TextEncoder().encode(text);

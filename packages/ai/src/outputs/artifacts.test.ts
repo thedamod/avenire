@@ -18,7 +18,7 @@ import {
   makeArtifactStore,
   safeArtifactName,
 } from "./artifacts.ts";
-import { ctx, fakeDatabase, testCrypto } from "./test-support.ts";
+import { ctx, fakeDatabase, testCrypto } from "../tools/test-support.ts";
 
 const settings = {
   appUrl: "https://app.test",

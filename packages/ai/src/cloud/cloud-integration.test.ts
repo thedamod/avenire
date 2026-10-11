@@ -5,7 +5,7 @@ import { Storage, StorageMemory } from "@avenire/storage/storage";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { cloudFixture, cloudCtx, fileId, candidate } from "./cloud-test-support.ts";
-import { cloudTools, hydrate, resolveRunTimeZone } from "./cloud-tools.ts";
+import { cloudTools, hydrate, resolveRunTimeZone } from "./tools.ts";
 
 it.effect("hydrates originals, touches skips, records the manifest and evicts old files", () => {
   const f = cloudFixture();

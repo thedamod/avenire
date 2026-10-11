@@ -1,5 +1,5 @@
-import { cloudGatewayTools, resolveRunTimeZone } from "@avenire/ruth-kit/cloud-tools";
-import { makeGateway } from "@avenire/ruth-kit/gateway";
+import { cloudGatewayTools, resolveRunTimeZone } from "@avenire/ai/cloud/tools";
+import { makeGateway } from "@avenire/ai/cloud/gateway";
 
 export const cloudRegistry = cloudGatewayTools;
 export const cloudGatewayOptions = { resolveTimeZone: resolveRunTimeZone };

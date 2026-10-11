@@ -18,9 +18,7 @@ const nextConfig: NextConfig = {
     "@avenire/ingestion",
     "@avenire/shared",
     "@avenire/storage",
-    "@avenire/ruth-kit",
     "@avenire/ui",
-    "@avenire/viz",
   ],
   typescript: { ignoreBuildErrors: true },
 };

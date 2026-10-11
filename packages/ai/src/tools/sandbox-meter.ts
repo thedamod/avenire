@@ -15,7 +15,7 @@ export interface SandboxMeterDb {
 export class SandboxMeterSettings extends Context.Service<
   SandboxMeterSettings,
   { readonly dailySeconds: number }
->()("avenire/ruth-kit/SandboxMeterSettings") {}
+>()("avenire/ai/SandboxMeterSettings") {}
 export const SandboxMeterSettingsLive = Layer.effect(
   SandboxMeterSettings,
   Effect.gen(function* () {

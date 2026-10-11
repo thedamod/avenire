@@ -1,4 +1,4 @@
-import { ArtifactStore, artifactMediaType } from "@avenire/ruth-kit/artifacts";
+import { ArtifactStore, artifactMediaType } from "@avenire/ai/outputs/artifacts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

@@ -7,7 +7,7 @@ import * as Effect from "effect/Effect";
 
 import { toAiSdkTools } from "./ai-sdk.ts";
 import { ctx, recordingAnalytics } from "./test-support.ts";
-import type { RuthKitServices } from "./tools.ts";
+import type { RuthKitServices } from "./library.ts";
 import { RUTH_TOOL_SPECS } from "./specs.ts";
 
 const usage = {
@@ -150,7 +150,7 @@ it("Cloud can never receive Ruth-only tools, including with Full access", () => 
 
 it.effect("additional paired specs inherit agent filtering and execution telemetry", () =>
   Effect.promise(async () => {
-    const { gatewayTool } = await import("./gateway.ts");
+    const { gatewayTool } = await import("../cloud/gateway.ts");
     const { standardSchema } = await import("./schema.ts");
     const Schema = await import("effect/Schema");
     let calls = 0;

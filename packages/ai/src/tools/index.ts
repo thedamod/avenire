@@ -4,7 +4,7 @@
  * dependencies so clients can derive their message types from it.
  */
 import { PageContext } from "@avenire/contracts";
-import { ruthKitSpecs, ruthSandboxSpecs } from "@avenire/ruth-kit/specs";
+import { ruthKitSpecs, ruthSandboxSpecs } from "./specs.ts";
 import { tool } from "ai";
 import * as Schema from "effect/Schema";
 

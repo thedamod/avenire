@@ -91,7 +91,7 @@ export class ArtifactStore extends Context.Service<
     readonly load: (key: StorageKey) => Effect.Effect<Uint8Array, StorageError | ObjectNotFound>;
     readonly sweepExpired: Effect.Effect<number, StorageError | DatabaseError>;
   }
->()("avenire/ruth-kit/ArtifactStore") {}
+>()("avenire/ai/ArtifactStore") {}
 
 /** User enumeration is injected so cleanup can be tested without a live database. */
 export const makeArtifactStore = Effect.fn("ArtifactStore.make")(function* (options: {

@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { makeGateway } from "@avenire/ruth-kit/gateway";
+import { makeGateway } from "../cloud/gateway.ts";
 import { readFile } from "node:fs/promises";
 import * as Effect from "effect/Effect";
 

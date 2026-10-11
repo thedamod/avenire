@@ -6,7 +6,7 @@ import {
   planHydration,
   publishPath,
   sandboxPathFor,
-} from "./cloud-tools.ts";
+} from "./tools.ts";
 
 const path = (overrides: Partial<Parameters<typeof sandboxPathFor>[0]> = {}) =>
   sandboxPathFor({ fileId: "12345678-rest", title: "Lecture", kind: "pdf", ...overrides });

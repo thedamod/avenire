@@ -1,5 +1,5 @@
-import { WidgetStore } from "@avenire/ruth-kit/widgets";
-import { WIDGET_RESPONSE_CSP } from "@avenire/viz/protocol";
+import { WidgetStore } from "@avenire/ai/outputs/widgets";
+import { WIDGET_RESPONSE_CSP } from "@avenire/ui/widget-protocol";
 import * as Effect from "effect/Effect";
 import { runRoute } from "~/server/runtime";
 import { WidgetHost, widgetHostDecision } from "~/server/widgetHost";

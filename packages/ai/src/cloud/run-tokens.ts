@@ -34,7 +34,7 @@ export class RunTokens extends Context.Service<
     ) => Effect.Effect<VerifiedRunToken, Unauthorized | DatabaseError>;
     readonly revokeRun: (runId: CloudRunId) => Effect.Effect<void, DatabaseError>;
   }
->()("avenire/ruth-kit/RunTokens") {}
+>()("avenire/ai/RunTokens") {}
 
 /** Only hashes reach the database; the clear bearer credential is returned once. */
 export const makeRunTokens = Effect.fn("RunTokens.make")(function* () {

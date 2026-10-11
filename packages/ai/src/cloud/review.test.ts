@@ -3,7 +3,7 @@ import { Storage, StorageMemory, StorageError } from "@avenire/storage/storage";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { cloudCtx, cloudFixture, fileId } from "./cloud-test-support.ts";
-import { cloudTools } from "./cloud-tools.ts";
+import { cloudTools } from "./tools.ts";
 import { CloudReview, CloudReviewLive } from "./review.ts";
 
 const setup = () => {

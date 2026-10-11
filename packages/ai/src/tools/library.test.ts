@@ -12,7 +12,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import { ctx, fakeDatabase, testCrypto } from "./test-support.ts";
-import { ruthKitTools, type RuthKitServices } from "./tools.ts";
+import { ruthKitTools, type RuthKitServices } from "./library.ts";
 import type { TaggedToolError } from "./core.ts";
 import type { MetadataCandidate } from "./selectors.ts";
 

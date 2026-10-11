@@ -11,7 +11,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { THEME_TOKEN_NAMES } from "@avenire/ui/tokens";
-import { WidgetFrame } from "@avenire/viz/widget-frame";
+import { WidgetFrame } from "@avenire/ui/widget-frame";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { RuthUIMessage } from "@avenire/ai/message-types";

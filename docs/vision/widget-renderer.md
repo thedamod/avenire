@@ -1,6 +1,6 @@
 # Widget Renderer 2.0 — vision
 
-How Ruth explains things *visually*. In v1 a "widget" meant one thing: model-written
+How Ruth explains things _visually_. In v1 a "widget" meant one thing: model-written
 HTML/JS in an iframe (plus a small primitive spec). In 2.0 a visual is an **artifact in one
 of several modalities**, and choosing the right modality is a first-class part of Ruth's
 reasoning.
@@ -15,14 +15,14 @@ Research notes: `context/_notes/{v1-widgets,math,animus}.md`.
 ## 1. Principles
 
 1. **The modality is a teaching decision, not a rendering detail.** Ruth picks how to show
-   something from what the learner needs to *do* with it: compare, follow, compute, or
+   something from what the learner needs to _do_ with it: compare, follow, compute, or
    manipulate.
 2. **Prose always wraps the visual.** Every artifact has a one-line learning objective,
    a caption, and an accessible text fallback. A visual never replaces the explanation.
 3. **Grounded in the user's material.** Artifacts carry `sourceChunkIds`, and numbers come
    from the material or from computation, never from the model's imagination.
 4. **Compute once on the server, interact on the client.** Ruth's `run_python` tool runs
-   real data work in a cloud sandbox *once* and throws the sandbox away. Everything the learner manipulates afterwards (sliders,
+   real data work in a cloud sandbox _once_ and throws the sandbox away. Everything the learner manipulates afterwards (sliders,
    drags, filters) runs on the client. A parameter change never starts a sandbox.
 5. **Nothing heavy on the main thread.** All client-side artifact code (simulation steps,
    chart layout and drawing, markdown/math/code highlighting) runs in Web Workers. The main
@@ -35,13 +35,13 @@ Research notes: `context/_notes/{v1-widgets,math,animus}.md`.
 This is the rule set Ruth is trained and validated against. It encodes the owner's three
 rules plus the cheap defaults around them.
 
-| The concept is… | Use | Why | Not |
-| --- | --- | --- | --- |
-| **A large amount of raw information**: many values, categories, time series, comparisons, distributions | **Chart** (declarative spec) | The value is in seeing the shape of the data; charts are cheap, exact and interactive (tooltips, filters, zoom) | Custom canvas code for something a bar/line/scatter covers |
-| **A large amount of raw information with an ordered story**: a process, a derivation, a history, "how X leads to Y" | **Video** (Manim, rendered in the sandbox by the video subagent) | Narrated, controlled reveals carry dense sequential information better than a static view | A wall of text, or a simulation the learner has to drive |
-| **Heavily mathematical, with many parts that need brute force**: enumeration, Monte Carlo, parameter sweeps, numerical solutions, statistics over real or generated data | Compute with **`run_python`** (a tool, not a modality), then show the result as a **chart**, a figure, or a **simulation** for whatever should stay interactive | Real computation produces trustworthy numbers | Hand-waved numbers; re-running the sandbox per slider move |
-| **Many moving parts that together determine the outcome**: linkages, inverse kinematics, mechanical systems, fields, feedback loops, population and market models, algorithms on changing input | **Simulation** (client-side, in a worker, built on `context/math`) | The insight comes from manipulating the inputs and watching the coupled system respond | A video, which can't be poked |
-| A single formula, definition, small table or comparison | **Text** (markdown + KaTeX + a layout primitive) | Anything heavier is noise | Any of the above |
+| The concept is…                                                                                                                                                                                 | Use                                                                                                                                                             | Why                                                                                                             | Not                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **A large amount of raw information**: many values, categories, time series, comparisons, distributions                                                                                         | **Chart** (declarative spec)                                                                                                                                    | The value is in seeing the shape of the data; charts are cheap, exact and interactive (tooltips, filters, zoom) | Custom canvas code for something a bar/line/scatter covers |
+| **A large amount of raw information with an ordered story**: a process, a derivation, a history, "how X leads to Y"                                                                             | **Video** (Manim, rendered in the sandbox by the video subagent)                                                                                                | Narrated, controlled reveals carry dense sequential information better than a static view                       | A wall of text, or a simulation the learner has to drive   |
+| **Heavily mathematical, with many parts that need brute force**: enumeration, Monte Carlo, parameter sweeps, numerical solutions, statistics over real or generated data                        | Compute with **`run_python`** (a tool, not a modality), then show the result as a **chart**, a figure, or a **simulation** for whatever should stay interactive | Real computation produces trustworthy numbers                                                                   | Hand-waved numbers; re-running the sandbox per slider move |
+| **Many moving parts that together determine the outcome**: linkages, inverse kinematics, mechanical systems, fields, feedback loops, population and market models, algorithms on changing input | **Simulation** (client-side, in a worker, built on `context/math`)                                                                                              | The insight comes from manipulating the inputs and watching the coupled system respond                          | A video, which can't be poked                              |
+| A single formula, definition, small table or comparison                                                                                                                                         | **Text** (markdown + KaTeX + a layout primitive)                                                                                                                | Anything heavier is noise                                                                                       | Any of the above                                           |
 
 **Simulation is not only physics.** An SIR epidemic with a vaccination slider, Bayesian
 updating as evidence arrives, a supply/demand model with a tax, a sorting algorithm on
@@ -49,6 +49,7 @@ adjustable input, a neural network's decision boundary as weights change: all of
 simulations.
 
 Tie-breakers:
+
 - Prefer the **cheapest modality that teaches the point** (text < chart < simulation <
   video in cost).
 - **`run_python` feeds the modalities.** A Python run produces data; data becomes a chart;
@@ -60,15 +61,15 @@ Tie-breakers:
 
 ### Worked examples
 
-| Prompt (grounded in the user's notes) | Modality |
-| --- | --- |
-| "How did CO₂ and temperature move together over the last century?" (data table in a PDF) | Chart: dual-axis line from the extracted table, with hover readouts and a year-range brush |
-| "Explain how backpropagation computes gradients" | Video: layer-by-layer reveal of the chain rule |
-| "What's the probability two people share a birthday in a class of 30?" | `run_python` computes the exact curve for n = 1…100 and a Monte Carlo check; a simulation then lets the learner drag n and re-roll trials client-side |
-| "How does a robot arm reach a point? Why does it get stuck?" | Simulation: FABRIK chain with a draggable target, joint-limit sliders, an "unreachable" state |
-| "How does the logistic map become chaotic?" | `run_python` renders the bifurcation diagram once (millions of iterations); a simulation shows the cobweb plot for the r the learner picks |
-| "Compare sorting algorithms on random vs. sorted input" | `run_python` (timed runs) feeding a chart |
-| "Define entropy" | Text |
+| Prompt (grounded in the user's notes)                                                    | Modality                                                                                                                                              |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "How did CO₂ and temperature move together over the last century?" (data table in a PDF) | Chart: dual-axis line from the extracted table, with hover readouts and a year-range brush                                                            |
+| "Explain how backpropagation computes gradients"                                         | Video: layer-by-layer reveal of the chain rule                                                                                                        |
+| "What's the probability two people share a birthday in a class of 30?"                   | `run_python` computes the exact curve for n = 1…100 and a Monte Carlo check; a simulation then lets the learner drag n and re-roll trials client-side |
+| "How does a robot arm reach a point? Why does it get stuck?"                             | Simulation: FABRIK chain with a draggable target, joint-limit sliders, an "unreachable" state                                                         |
+| "How does the logistic map become chaotic?"                                              | `run_python` renders the bifurcation diagram once (millions of iterations); a simulation shows the cobweb plot for the r the learner picks            |
+| "Compare sorting algorithms on random vs. sorted input"                                  | `run_python` (timed runs) feeding a chart                                                                                                             |
+| "Define entropy"                                                                         | Text                                                                                                                                                  |
 
 ## 3. The artifact and how it reaches the chat
 
@@ -85,14 +86,14 @@ interface Artifact {
   schemaVersion: 2;
   modality: Modality;
   title: string;
-  learningObjective: string;              // "See why the chain stops when the target is out of reach"
+  learningObjective: string; // "See why the chain stops when the target is out of reach"
   caption: string;
-  altText: string;                         // accessible description; also the low-power fallback
-  sourceChunkIds: ChunkId[];               // provenance into the user's material
+  altText: string; // accessible description; also the low-power fallback
+  sourceChunkIds: ChunkId[]; // provenance into the user's material
   status: "planned" | "rendering" | "ready" | "failed";
-  outputs: ArtifactOutput[];               // stored files: html, chart spec, data, svg/png, mp4/vtt, poster
-  diagnostics?: Diagnostic[];              // last failure, structured
-  parentArtifactId?: ArtifactId;           // revisions ("make the arm longer")
+  outputs: ArtifactOutput[]; // stored files: html, chart spec, data, svg/png, mp4/vtt, poster
+  diagnostics?: Diagnostic[]; // last failure, structured
+  parentArtifactId?: ArtifactId; // revisions ("make the arm longer")
 }
 ```
 
@@ -118,15 +119,15 @@ renderer mounts it from there. There's no upload round-trip and no extra fetch.
 wrong width, colours that clash with the theme, a kit that doesn't exist, a 3D scene on a
 phone. So before writing a visual Ruth calls **`get_page_context`**, which returns:
 
-| Field | Example | Source |
-| --- | --- | --- |
-| `surface` | `chat` / `note` / `canvas` | client, sent with the chat request |
-| `platform` | `desktop` / `web` / `mobile` | client |
-| `contentWidthPx`, `colorScheme` | `720`, `dark` | client |
-| `themeTokens`, `fonts` | `--accent`, `--ink`, `--surface-2`, body and mono font | client |
-| `runtime` | viz runtime version, available kits, capabilities | server constant |
-| `budgets` | max source bytes, frame budget | server constant |
-| `existingVisuals` | `{ id, title }` of visuals already in this thread | server, from messages |
+| Field                           | Example                                                | Source                             |
+| ------------------------------- | ------------------------------------------------------ | ---------------------------------- |
+| `surface`                       | `chat` / `note` / `canvas`                             | client, sent with the chat request |
+| `platform`                      | `desktop` / `web` / `mobile`                           | client                             |
+| `contentWidthPx`, `colorScheme` | `720`, `dark`                                          | client                             |
+| `themeTokens`, `fonts`          | `--accent`, `--ink`, `--surface-2`, body and mono font | client                             |
+| `runtime`                       | viz runtime version, available kits, capabilities      | server constant                    |
+| `budgets`                       | max source bytes, frame budget                         | server constant                    |
+| `existingVisuals`               | `{ id, title }` of visuals already in this thread      | server, from messages              |
 
 The client sends its half with every chat request (`body.page`), so the tool needs no
 round-trip to the client. The result is cached for the turn. `existingVisuals` lets Ruth
@@ -163,14 +164,14 @@ spec-authored and look and feel nothing like the rest of the app. Recharts is sh
 but too small: few chart types and weak support for large data. So:
 
 - **Spec:** our own `ChartSpec`, written inline as `<avenire-chart>{…}</avenire-chart>`,
-  deliberately Vega-Lite-*shaped* because models already know that grammar. It has `mark` (bar, line, area, point, rule, arc, boxplot, heatmap,
+  deliberately Vega-Lite-_shaped_ because models already know that grammar. It has `mark` (bar, line, area, point, rule, arc, boxplot, heatmap,
   histogram, candlestick), `encoding` (x/y/color/size/facet with field, type, aggregate),
   `transform` (filter, aggregate, bin, window), and `data` as inline rows or a `dataRef` to
   a `run_python` data output. It's schema-validated and contains no code.
 - **Interactions are the renderer's job, not the spec's.** Every chart gets the same
   shadcn-style behaviour for free: crosshair and rich tooltip, legend toggle and isolate,
   brush to zoom with reset, series and category filter chips, a data-table view, and copy
-  or download of the data. The spec can only *hint* (`interactions: { brush: "x" }`, a
+  or download of the data. The spec can only _hint_ (`interactions: { brush: "x" }`, a
   default filter).
 - **Renderer, off the main thread:** a chart worker runs transforms, scales (d3-scale),
   layout, hit-testing, and drawing into an `OffscreenCanvas` (Canvas2D, LTTB downsampling
@@ -201,7 +202,7 @@ matplotlib, polars).
     to interpolate (see below)
 - **Small matplotlib figures:** rendered as **SVG** (PNG fallback) with an
   `avenire.mplstyle` mapping the host theme (font, ink, accent palette, transparent
-  background). In chat they show as compact *figure cards* (max ~360 px tall) with a
+  background). In chat they show as compact _figure cards_ (max ~360 px tall) with a
   caption and "open full". Matplotlib is for **static** results. Anything the learner
   should explore goes out as `avenire.data` and becomes a chart or simulation.
 - **One run per question, not per parameter.** Each call runs once (seeded, cached by
@@ -214,19 +215,19 @@ matplotlib, polars).
 **Handing parameters to the client.** When a computation has knobs worth exposing, Ruth picks
 the cheapest tier that keeps interaction instant:
 
-| Tier | When | How |
-| --- | --- | --- |
-| **1. JS model in the simulation worker** (default) | The per-parameter computation is cheap enough to run in the browser: Monte Carlo with ≤ ~10⁶ samples, ODE integration, small linear algebra | Python produces the data and validates the model; the simulation re-implements the cheap part on `context/math` kits and runs it in the worker |
-| **2. Precomputed grid** | The computation is expensive but has only 1–3 parameters | Python sweeps the parameter grid once (`avenire.grid`); the simulation interpolates between grid points |
-| **3. Pyodide in the worker** | The model must stay in Python (numpy/scipy) and is light per run | The simulation loads Pyodide in its worker (lazy, cached) and re-runs the Python function on parameter change. Opt-in, and budgeted by load time |
-| **4. Explicit recompute** | Truly heavy work (large datasets, training) | A "Recompute with these settings" button asks Ruth to call `run_python` again, with a visible cost and progress. Never automatic |
+| Tier                                               | When                                                                                                                                        | How                                                                                                                                              |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **1. JS model in the simulation worker** (default) | The per-parameter computation is cheap enough to run in the browser: Monte Carlo with ≤ ~10⁶ samples, ODE integration, small linear algebra | Python produces the data and validates the model; the simulation re-implements the cheap part on `context/math` kits and runs it in the worker   |
+| **2. Precomputed grid**                            | The computation is expensive but has only 1–3 parameters                                                                                    | Python sweeps the parameter grid once (`avenire.grid`); the simulation interpolates between grid points                                          |
+| **3. Pyodide in the worker**                       | The model must stay in Python (numpy/scipy) and is light per run                                                                            | The simulation loads Pyodide in its worker (lazy, cached) and re-runs the Python function on parameter change. Opt-in, and budgeted by load time |
+| **4. Explicit recompute**                          | Truly heavy work (large datasets, training)                                                                                                 | A "Recompute with these settings" button asks Ruth to call `run_python` again, with a visible cost and progress. Never automatic                 |
 
 ### 4.4 Simulation (client-side, in a worker)
 
 **Form.** A simulation is **an HTML widget the agent writes inline in its markdown**
 (§3.2), sized and themed from `get_page_context`. That keeps the agent flexible: it can lay out readouts, labels and
 explanatory text around the canvas however the concept needs. The renderer hosts it in a
-sandboxed iframe and gives it the `@avenire/viz` runtime.
+sandboxed iframe and gives it the `@avenire/ui` runtime.
 
 **Threading.**
 
@@ -257,6 +258,7 @@ sandboxed iframe and gives it the `@avenire/viz` runtime.
   `ctx.pointer` and `ctx.handles` (draggable points with hit-testing, events forwarded
   from the iframe), `ctx.theme` (tokens), `ctx.data(name)` (`run_python` outputs and grids),
   and `ctx.emit(name, value)` (readouts bound to DOM elements by `data-readout`).
+
 - **Controls** declared in `avenire/params` render as host-styled native components
   (sliders, toggles, selects) inside the widget. Values cross a **typed, validated
   `postMessage` channel** (a schema per message, exact `targetOrigin`).
@@ -313,13 +315,13 @@ The subagent's pipeline, following animus with the job model, validation and cac
 lacks:
 
 1. **Plan:** a `VideoPlan` of `{ scenes: [{ id, objective, narration, visualIntent,
-   sourceChunkIds, durationHint }], style, quality }`, optionally confirmed by the user
+sourceChunkIds, durationHint }], style, quality }`, optionally confirmed by the user
    through a question request.
 2. **Code:** Manim CE source, one `Scene` per planned scene, against an `avenire_manim`
    helper library (theme palette, title cards, equation reveals, axis/graph presets,
    citation lower-thirds) baked into the snapshot.
 3. **Job:** a `render_job` row is queued and picked up by a worker (`FOR UPDATE SKIP
-   LOCKED`, like ingestion). It runs in a **prebaked Daytona snapshot**
+LOCKED`, like ingestion). It runs in a **prebaked Daytona snapshot**
    (`avenire-manim:<version>`: Python, Manim CE, LaTeX, ffmpeg, Cairo/Pango, fonts,
    `avenire_manim`, `avenire.mplstyle`), so there's no per-run apt/pip install. One sandbox
    per job, reused across preview, repair and final renders.
@@ -353,7 +355,7 @@ Prompting alone doesn't make modality choice reliable. Five reinforcing mechanis
 
 1. **A planning step the tools enforce.** Before any visual, Ruth must call
    `get_page_context({ plan: { learningObjective, modality, justification, dataSource,
-   parameters? } })`. The tool validates the plan against the policy:
+parameters? } })`. The tool validates the plan against the policy:
    - a chart needs a data source;
    - a simulation needs ≥ 2 coupled parameters or a draggable state, and a client tier
      (§4.3) for any parameter backed by `run_python` output;
@@ -362,11 +364,12 @@ Prompting alone doesn't make modality choice reliable. Five reinforcing mechanis
    It returns either the go-ahead with the matching skill loaded, or a correction ("this
    is a 12-row comparison: use a chart spec"; "this slider would re-run the sandbox: use a
    precomputed grid").
+
 2. **Skills per modality**, generated from Markdown like v1's
    (`packages/ai/skills/sections/*`). A short router skill (the §2 table and tie-breakers)
    is always loaded. On-demand modality skills contain:
    - the spec references;
-   - the `avenire` / `avenire_manim` / `@avenire/viz` APIs;
+   - the `avenire` / `avenire_manim` / `@avenire/ui` APIs;
    - **templates adapted from `context/math/examples`** (FABRIK 2D/3D, springs, flow field,
      XPBD, convex hull);
    - animus's Manim craft rules (layout safety, contrast, low object count, pacing). These
@@ -387,19 +390,19 @@ Prompting alone doesn't make modality choice reliable. Five reinforcing mechanis
 
 ## 6. Security model
 
-| Surface | Boundary |
-| --- | --- |
-| Python / Manim | Ephemeral or job-scoped Daytona sandbox; no secrets; network disabled after the snapshot; CPU, memory and time caps; outputs only via the `avenire` helper |
-| Simulation | Opaque-origin sandboxed iframe (process-isolated on desktop), model code in a worker with no network, CSP without remote origins, host-bundled runtime, typed `postMessage` with schemas and exact origins, capability manifest |
-| Shared artifacts | Opt-in per artifact; signed public URL; served from a separate origin with the same CSP and runtime; no capabilities |
-| Text / chart | No code; schema-validated; sanitized text; node and size limits |
-| Storage | Content-addressed outputs, signed URLs, artifacts scoped to the user |
+| Surface          | Boundary                                                                                                                                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Python / Manim   | Ephemeral or job-scoped Daytona sandbox; no secrets; network disabled after the snapshot; CPU, memory and time caps; outputs only via the `avenire` helper                                                                      |
+| Simulation       | Opaque-origin sandboxed iframe (process-isolated on desktop), model code in a worker with no network, CSP without remote origins, host-bundled runtime, typed `postMessage` with schemas and exact origins, capability manifest |
+| Shared artifacts | Opt-in per artifact; signed public URL; served from a separate origin with the same CSP and runtime; no capabilities                                                                                                            |
+| Text / chart     | No code; schema-validated; sanitized text; node and size limits                                                                                                                                                                 |
+| Storage          | Content-addressed outputs, signed URLs, artifacts scoped to the user                                                                                                                                                            |
 
 ## 7. Packages and contracts
 
 - `@avenire/contracts`: `Artifact`, `ChartSpec`, `VideoPlan`, `Diagnostic`, and render-job
   status (extending today's `Artifact` / `ArtifactKind`).
-- `@avenire/viz` (new):
+- `@avenire/ui` (`widget-frame` and React-free `widget-protocol` today; planned additions):
   - the simulation runtime (iframe host, worker bootstrap, kits wrapping `math`);
   - the chart worker;
   - host React components: `<AvenireVis>`, figure cards, chart overlay, video player.
@@ -423,7 +426,7 @@ Prompting alone doesn't make modality choice reliable. Five reinforcing mechanis
 2. **`run_python`:** the Python snapshot, the `avenire` helper, SVG figure cards, data
    outputs feeding charts.
 3. **Simulation:**
-   - the `@avenire/viz` iframe + worker runtime;
+   - the `@avenire/ui` iframe + worker runtime;
    - the kinematics, mechanics, stochastic and plot kits;
    - grid handoff from `run_python`;
    - IK, spring, SIR and Monte Carlo reference templates.

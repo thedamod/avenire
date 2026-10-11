@@ -9,7 +9,8 @@ Ruth is Avenire's agent. It comes in two forms that share one tool backbone:
   and on-demand hydration, publishes results as new files, and proposes changes to originals
   for a morning review.
 
-Both import their tools from `@avenire/ruth-kit`: one definition per tool (schemas,
+Both import their tools from explicit `@avenire/ai/tools/*` and `@avenire/ai/cloud/*`
+subpaths: one definition per tool (schemas,
 permission policy, execution, logging), adapted to the AI SDK for chat and to an HTTP gateway
 plus a Pi extension for Cloud.
 
@@ -17,13 +18,13 @@ plus a Pi extension for Cloud.
 flowchart LR
   subgraph Client["Web / desktop / mobile"]
     Chat["Chat (useChat)"]
-    Frame["WidgetFrame<br/>(@avenire/viz)"]
+    Frame["WidgetFrame<br/>(@avenire/ui)"]
   end
 
   subgraph Server["Avenire server (apps/web + packages)"]
     ChatRoute["/api/ruth/chat"]
     Ruth["Ruth turn<br/>(@avenire/ai, AI SDK)"]
-    Kit["@avenire/ruth-kit<br/>tool defs · policy · selectors · logging"]
+    Kit["@avenire/ai<br/>tool defs · policy · selectors · logging"]
     Gateway["/api/ruth-cloud/tools/:name<br/>(run-token auth)"]
     Cloud["RuthCloud orchestrator<br/>+ task scheduler"]
     Retrieval["Retrieval<br/>(@avenire/ingestion)"]
@@ -50,7 +51,13 @@ flowchart LR
   Cloud -- "report message + pending_approval" --> DB
 ```
 
-## 1. The shared package: `@avenire/ruth-kit`
+## 1. Shared tools in `@avenire/ai`
+
+Tool core, client-safe specs, selectors and the AI SDK adapter live in `src/tools/`.
+`@avenire/ai/tools` remains the client-safe chat spec entry point; execution modules
+are imported separately. Widget and artifact stores live in `src/outputs/` and are
+exported as `@avenire/ai/outputs/widgets` and `@avenire/ai/outputs/artifacts`.
+Cloud hydration, publishing, review, run tokens and the gateway live in `src/cloud/`.
 
 A tool is defined once:
 
@@ -254,10 +261,13 @@ visible), and the same retrieval engine and benchmark as chat Ruth.
   `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src
 'unsafe-inline' <widget-origin>/kits/; style-src 'unsafe-inline'; img-src data: blob:;
 font-src data:; media-src data: blob:; connect-src 'none'; frame-ancestors <app origins>`.
-- `<WidgetFrame>` (`@avenire/viz`) renders it in an iframe with `sandbox="allow-scripts"`
+- `<WidgetFrame>` (`@avenire/ui/widget-frame`) renders it in an iframe with `sandbox="allow-scripts"`
   (opaque origin), reserves height, accepts messages only from its own `contentWindow` and
   only if they decode against the protocol schema, posts theme updates when the app theme
   changes, and shows an error state (load timeout, runtime error) instead of a blank frame.
+  The React-free `@avenire/ui/widget-protocol` supplies the wire schemas, document
+  builder and response CSP for server code as well as the frame. Mobile opens widget
+  URLs in the system browser until a native WebView renderer is added.
 - **Tokens** are defined once in `packages/ui/src/styles/globals.css` (colours, fonts,
   spacing, type scale, chart palette, radius) and generated into `tokens.ts` for the server
   (tool description, first-paint injection) and the client.

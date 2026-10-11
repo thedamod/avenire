@@ -4,14 +4,14 @@ import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { toAiSdkTools } from "./ai-sdk.ts";
+import { toAiSdkTools } from "../tools/ai-sdk.ts";
 import { cloudCtx } from "./cloud-test-support.ts";
-import { CLOUD_TOOL_SPECS } from "./cloud-specs.ts";
-import { cloudGatewayTools, type CloudToolServices } from "./cloud-tools.ts";
+import { CLOUD_TOOL_SPECS } from "../tools/cloud-specs.ts";
+import { cloudGatewayTools, type CloudToolServices } from "./tools.ts";
 import { makeGateway } from "./gateway.ts";
 import { RunTokens } from "./run-tokens.ts";
-import { recordingAnalytics } from "./test-support.ts";
-import type { RuthKitServices } from "./tools.ts";
+import { recordingAnalytics } from "../tools/test-support.ts";
+import type { RuthKitServices } from "../tools/library.ts";
 
 it.effect("hydrate_files rejects a token lacking hydrate scope before executing", () => {
   const tokens = RunTokens.of({

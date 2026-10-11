@@ -9,7 +9,7 @@ import { newId } from "@avenire/shared/id";
 import { userPrefix } from "@avenire/storage/keys";
 import { ObjectNotFound, Storage, type StorageError } from "@avenire/storage/storage";
 import { THEME_TOKENS } from "@avenire/ui/tokens";
-import { buildWidgetDocument } from "@avenire/viz/protocol";
+import { buildWidgetDocument } from "@avenire/ui/widget-protocol";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -20,7 +20,7 @@ import * as Option from "effect/Option";
 import type * as PlatformError from "effect/PlatformError";
 import * as Redacted from "effect/Redacted";
 
-import { type AgentContext, RuthToolError } from "./core.ts";
+import { type AgentContext, RuthToolError } from "../tools/core.ts";
 
 /** Widgets are permanent objects outside the indexed file namespace. */
 export const widgetKey = (userId: UserId, widgetId: WidgetId): StorageKey =>
@@ -45,7 +45,7 @@ export class WidgetStore extends Context.Service<
     readonly resolve: (token: string) => Effect.Effect<Option.Option<ResolvedWidget>>;
     readonly load: (token: string) => Effect.Effect<Uint8Array, ObjectNotFound | StorageError>;
   }
->()("avenire/ruth-kit/WidgetStore") {}
+>()("avenire/ai/WidgetStore") {}
 
 /** Injectable settings keep signing/theming tests independent of production config. */
 export const makeWidgetStore = Effect.fn("WidgetStore.make")(function* (options: {

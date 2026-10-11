@@ -7,9 +7,9 @@ import * as Schema from "effect/Schema";
 
 import { gatewayTool, makeGateway, toolManifest } from "./gateway.ts";
 import { RunTokens } from "./run-tokens.ts";
-import { standardSchema } from "./schema.ts";
-import { ctx, recordingAnalytics } from "./test-support.ts";
-import type { RuthKitServices } from "./tools.ts";
+import { standardSchema } from "../tools/schema.ts";
+import { ctx, recordingAnalytics } from "../tools/test-support.ts";
+import type { RuthKitServices } from "../tools/library.ts";
 
 const runId = CloudRunId.make("run");
 const tokens = RunTokens.of({

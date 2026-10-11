@@ -1,7 +1,7 @@
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "@effect/vitest";
 import * as Option from "effect/Option";
-import { THEME_TOKENS } from "@avenire/ui/tokens";
+import { THEME_TOKENS } from "../styles/tokens.ts";
 import { buildWidgetDocument, decodeWidgetMessage, WIDGET_RESPONSE_CSP } from "./protocol.ts";
 
 const build = (html: string, title = "Example") =>

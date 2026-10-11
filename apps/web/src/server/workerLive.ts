@@ -14,7 +14,7 @@ import { FileIndexerLive } from "@avenire/ingestion/indexer";
 import { IngestionModelsLive } from "@avenire/ingestion/models";
 import { IngestionPipelineLive } from "@avenire/ingestion/pipeline";
 import { IngestionWorkerLive } from "@avenire/ingestion/worker";
-import { ArtifactSweeperLive } from "@avenire/ruth-kit/artifacts";
+import { ArtifactSweeperLive } from "@avenire/ai/outputs/artifacts";
 import * as Layer from "effect/Layer";
 import { ServicesLive } from "./services.ts";
 

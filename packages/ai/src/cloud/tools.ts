@@ -38,12 +38,12 @@ import type * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { artifactMediaType } from "./artifacts.ts";
-import { CLOUD_TOOL_POLICY, CLOUD_TOOL_SPECS } from "./cloud-specs.ts";
-import { type AgentContext, RuthToolError, type ToolImpl, toToolError } from "./core.ts";
+import { artifactMediaType } from "../outputs/artifacts.ts";
+import { CLOUD_TOOL_POLICY, CLOUD_TOOL_SPECS } from "../tools/cloud-specs.ts";
+import { type AgentContext, RuthToolError, type ToolImpl, toToolError } from "../tools/core.ts";
 import { gatewayTool } from "./gateway.ts";
 import type { VerifiedRunToken } from "./run-tokens.ts";
-import { resolveSelector, type ResolvedFile } from "./selectors.ts";
+import { resolveSelector, type ResolvedFile } from "../tools/selectors.ts";
 
 export type CloudToolServices =
   | CloudBoxes

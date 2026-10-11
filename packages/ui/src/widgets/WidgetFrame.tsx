@@ -2,7 +2,7 @@
 
 import * as Option from "effect/Option";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { cn } from "@avenire/ui/lib/utils";
+import { cn } from "../lib/utils.ts";
 import { decodeWidgetMessage, WIDGET_IFRAME_SANDBOX } from "./protocol.ts";
 
 export interface WidgetFrameProps {

@@ -3,10 +3,10 @@ import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
 import { type AgentContext, runTool } from "./core.ts";
-import type { GatewayTool } from "./gateway.ts";
+import type { GatewayTool } from "../cloud/gateway.ts";
 import { standardSchema } from "./schema.ts";
 import { RUTH_TOOL_POLICY, RUTH_TOOL_SPECS, type RuthToolName } from "./specs.ts";
-import { ruthKitTools, type RuthKitServices, type RuthToolImplementations } from "./tools.ts";
+import { ruthKitTools, type RuthKitServices, type RuthToolImplementations } from "./library.ts";
 
 /** A paired spec/implementation extends the adapter; existing implementations can be overridden for tests. */
 export type AiSdkExtraTools<R = never> = Partial<RuthToolImplementations> &

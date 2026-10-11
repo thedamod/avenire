@@ -1,11 +1,11 @@
 /** Bind the shared tool backbone to one request; local tools supply skills and page context. */
 import type { PageContext, ThreadId, UserId } from "@avenire/contracts";
 import type { ChatSandboxes } from "@avenire/cloud/chat-sandbox";
-import { toAiSdkTools } from "@avenire/ruth-kit/ai-sdk";
-import type { ArtifactStore } from "@avenire/ruth-kit/artifacts";
-import type { AgentContext } from "@avenire/ruth-kit/core";
-import { sandboxToolRegistry } from "@avenire/ruth-kit/sandbox-tools";
-import type { RuthKitServices } from "@avenire/ruth-kit/tools";
+import { toAiSdkTools } from "./ai-sdk.ts";
+import type { ArtifactStore } from "../outputs/artifacts.ts";
+import type { AgentContext } from "./core.ts";
+import { sandboxToolRegistry } from "./sandbox-tools.ts";
+import type { RuthKitServices } from "./library.ts";
 import { tool, type ToolSet } from "ai";
 import type * as Context from "effect/Context";
 import { askUserSpec, getPageContextSpec, type PageContextResult, ruthToolSpecs } from "./index.ts";

@@ -9,8 +9,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 
-import { renderWidgetSpec } from "./specs.ts";
-import { ctx, testCrypto } from "./test-support.ts";
+import { renderWidgetSpec } from "../tools/specs.ts";
+import { ctx, testCrypto } from "../tools/test-support.ts";
 import { makeWidgetStore, widgetKey, WidgetStore, WidgetStoreLive } from "./widgets.ts";
 
 const settings = {

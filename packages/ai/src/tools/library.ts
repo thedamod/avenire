@@ -24,7 +24,7 @@ import {
   toFileEntry,
 } from "./selectors.ts";
 import { RUTH_TOOL_SPECS, type RuthToolName } from "./specs.ts";
-import { WidgetStore } from "./widgets.ts";
+import { WidgetStore } from "../outputs/widgets.ts";
 
 /** enqueueIngestion requires only Database and Crypto, rather than the worker's runtime layer. */
 export type RuthKitServices =

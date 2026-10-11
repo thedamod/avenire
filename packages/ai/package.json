@@ -34,6 +34,70 @@
     "./scheduler": {
       "types": "./src/scheduler/index.ts",
       "import": "./src/scheduler/index.ts"
+    },
+    "./tools/schema": {
+      "types": "./src/tools/schema.ts",
+      "import": "./src/tools/schema.ts"
+    },
+    "./tools/specs": {
+      "types": "./src/tools/specs.ts",
+      "import": "./src/tools/specs.ts"
+    },
+    "./tools/core": {
+      "types": "./src/tools/core.ts",
+      "import": "./src/tools/core.ts"
+    },
+    "./tools/library": {
+      "types": "./src/tools/library.ts",
+      "import": "./src/tools/library.ts"
+    },
+    "./tools/selectors": {
+      "types": "./src/tools/selectors.ts",
+      "import": "./src/tools/selectors.ts"
+    },
+    "./tools/ai-sdk": {
+      "types": "./src/tools/ai-sdk.ts",
+      "import": "./src/tools/ai-sdk.ts"
+    },
+    "./outputs/widgets": {
+      "types": "./src/outputs/widgets.ts",
+      "import": "./src/outputs/widgets.ts"
+    },
+    "./cloud/run-tokens": {
+      "types": "./src/cloud/run-tokens.ts",
+      "import": "./src/cloud/run-tokens.ts"
+    },
+    "./cloud/gateway": {
+      "types": "./src/cloud/gateway.ts",
+      "import": "./src/cloud/gateway.ts"
+    },
+    "./tools/sandbox-meter": {
+      "types": "./src/tools/sandbox-meter.ts",
+      "import": "./src/tools/sandbox-meter.ts"
+    },
+    "./tools/sandbox-tools": {
+      "types": "./src/tools/sandbox-tools.ts",
+      "import": "./src/tools/sandbox-tools.ts"
+    },
+    "./outputs/artifacts": {
+      "types": "./src/outputs/artifacts.ts",
+      "import": "./src/outputs/artifacts.ts"
+    },
+    "./tools/sandbox-specs": {
+      "types": "./src/tools/sandbox-specs.ts",
+      "import": "./src/tools/sandbox-specs.ts"
+    },
+    "./tools/cloud-specs": {
+      "types": "./src/tools/cloud-specs.ts",
+      "import": "./src/tools/cloud-specs.ts"
+    },
+    "./cloud/tools": {
+      "types": "./src/cloud/tools.ts",
+      "import": "./src/cloud/tools.ts"
+    },
+    "./cloud/review": {
+      "types": "./src/cloud/review.ts",
+      "import": "./src/cloud/review.ts"
     }
   },
   "scripts": {
@@ -47,11 +111,9 @@
     "@avenire/contracts": "workspace:*",
     "@avenire/database": "workspace:*",
     "@avenire/ingestion": "workspace:*",
-    "@avenire/ruth-kit": "workspace:*",
     "@avenire/shared": "workspace:*",
     "@avenire/storage": "workspace:*",
     "@avenire/ui": "workspace:*",
-    "@avenire/viz": "workspace:*",
     "ai": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"
