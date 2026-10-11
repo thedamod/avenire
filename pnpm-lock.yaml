@@ -744,6 +744,9 @@ importers:
       '@avenire/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@avenire/database':
+        specifier: workspace:*
+        version: link:../database
       '@aws-sdk/client-s3':
         specifier: ^3.913.0
         version: 3.1146.0
@@ -855,6 +858,15 @@ importers:
       react-dom:
         specifier: 'catalog:'
         version: 19.3.0(react@19.3.0)
+      vite-plus:
+        specifier: 'catalog:'
+        version: 1.0.0(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(@vitest/ui@5.0.1)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1)
+
+  packages/widget-kit:
+    devDependencies:
+      '@types/node':
+        specifier: 24.12.4
+        version: 24.12.4
       vite-plus:
         specifier: 'catalog:'
         version: 1.0.0(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(@vitest/ui@5.0.1)(esbuild@0.28.2)(happy-dom@20.14.5)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1)
