@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./math": "./src/math.ts",
-    "./iso": "./src/iso.ts",
+    "./math": "./src/math/index.ts",
+    "./iso": "./src/iso/index.ts",
+    "./iso-gl": "./src/iso/gl.ts",
     "./kits-dir": "./src/kits-dir.ts"
   },
   "scripts": {

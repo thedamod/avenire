@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const dir = fileURLToPath(new URL("../dist/kits/", import.meta.url));
-for (const [index, name] of ["math", "iso", "iso-gl"].entries()) {
+const entries = { math: "src/math/index.ts", iso: "src/iso/index.ts", "iso-gl": "src/iso/gl.ts" };
+for (const [index, [name, entry]] of Object.entries(entries).entries()) {
   await build({
     configFile: false,
     root,
@@ -13,7 +14,7 @@ for (const [index, name] of ["math", "iso", "iso-gl"].entries()) {
       outDir: "dist/kits",
       emptyOutDir: index === 0,
       minify: "oxc",
-      lib: { entry: `src/${name}.ts`, formats: ["es"], fileName: () => `${name}.js` },
+      lib: { entry, formats: ["es"], fileName: () => `${name}.js` },
       rollupOptions: {
         output: {
           banner:
@@ -23,16 +24,13 @@ for (const [index, name] of ["math", "iso", "iso-gl"].entries()) {
     },
   });
 }
-await copyFile(
-  fileURLToPath(new URL("../src/vendor/anatomy/iso.css", import.meta.url)),
-  `${dir}iso.css`,
-);
+await copyFile(fileURLToPath(new URL("../src/iso/iso.css", import.meta.url)), `${dir}iso.css`);
 const mathLicense = await readFile(
-  fileURLToPath(new URL("../src/vendor/pmndrs-math/LICENSE", import.meta.url)),
+  fileURLToPath(new URL("../src/math/LICENSE", import.meta.url)),
   "utf8",
 );
 const anatomyLicense = await readFile(
-  fileURLToPath(new URL("../src/vendor/anatomy/LICENSE", import.meta.url)),
+  fileURLToPath(new URL("../src/iso/LICENSE", import.meta.url)),
   "utf8",
 );
 await writeFile(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { boxCorners, figureSvg, fitProjection, iso, slabOf, solidSvg } from "./iso.ts";
+import { boxCorners, figureSvg, fitProjection, iso, slabOf, solidSvg } from "./index.ts";
 
 describe("isometric browser runtime", () => {
   it("projects and renders a labeled solid without DOM globals", () => {
