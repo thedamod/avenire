@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { CloudRunId, HydrationId, ItemId, UserId, type HydrationResult } from "@avenire/contracts";
+import { CloudRunId, HydrationId, FileId, UserId, type HydrationResult } from "@avenire/contracts";
 import { CloudBoxes, type CloudBox } from "@avenire/cloud/cloud-box";
 import { CloudError } from "@avenire/cloud/daytona";
 import { Database } from "@avenire/database/client";
@@ -35,7 +35,7 @@ const manifest: HydrationResult = {
   truncated: { byCount: false, byBytes: false },
   files: [
     {
-      fileId: ItemId.make("source"),
+      fileId: FileId.make("source"),
       drivePath: "Physics/Lecture.pdf",
       sandboxPath: "/home/daytona/workspace/inputs/lecture.pdf",
       size: 5,
@@ -65,7 +65,7 @@ const fixture = (
     id: runId,
     userId,
     taskId: "task",
-    clusterId: "outputs",
+    folderId: "outputs",
     attempt: options.attempt ?? 1,
     status: "provisioning",
     scheduledFor: new Date(0),
@@ -88,19 +88,19 @@ const fixture = (
     maxAttempts: 2,
     delivery: { email: true },
   });
-  f.rows("item").push({
+  f.rows("file").push({
     id: "notes",
     userId,
     title: "Study notes",
     source: "ruth-cloud",
     createdAt: new Date(0),
   });
-  f.rows("item_cluster").push({ itemId: "notes", userId, clusterId: "outputs" });
+  f.rows("file_folder").push({ fileId: "notes", userId, folderId: "outputs" });
   f.rows("pending_approval").push({
     id: "approval",
     runId,
     userId,
-    itemId: "notes",
+    fileId: "notes",
     summary: "Updated notes",
     conflict: "Original changed",
     status: "conflict",
@@ -265,13 +265,13 @@ describe("RuthCloud Pi orchestrator", () => {
         summary: "Published study notes.",
         finishedAt: new Date(0),
       });
-      expect(f.rows("artifact")[0]).toMatchObject({ kind: "recording", sourceItemIds: ["source"] });
+      expect(f.rows("artifact")[0]).toMatchObject({ kind: "recording", sourceFileIds: ["source"] });
       expect(f.rows("email_outbox")[0]).toMatchObject({
         template: "morning-digest",
         props: {
-          itemsRead: 1,
+          filesRead: 1,
           pendingApprovals: 1,
-          produced: [{ title: "Study notes", url: "https://app.example.test/library?item=notes" }],
+          produced: [{ title: "Study notes", url: "https://app.example.test/library?file=notes" }],
         },
       });
       expect((yield* validate(f.rows("ruth_message")[0])).success).toBe(true);

@@ -15,7 +15,7 @@ import { TranscriptCacheLive } from "@avenire/ingestion/extract/transcript-cache
 import { GraphExtractorLive, GraphExtractorTest } from "@avenire/ingestion/graph/extract";
 import { GraphIndexerLive } from "@avenire/ingestion/graph/indexer";
 import { GraphSearchLive } from "@avenire/ingestion/graph/search";
-import { ItemIndexerLive } from "@avenire/ingestion/indexer";
+import { FileIndexerLive } from "@avenire/ingestion/indexer";
 import {
   INGESTION_MODEL_DEFAULTS,
   INGESTION_MODEL_NAMES,
@@ -85,7 +85,7 @@ const Providers = Layer.mergeAll(
     Layer.mergeAll(IngestionModelsLive, DatabaseLive, FetchHttpClient.layer, NodeServices.layer),
   ),
 );
-const AppLive = Layer.mergeAll(ItemIndexerLive, RetrievalLive).pipe(
+const AppLive = Layer.mergeAll(FileIndexerLive, RetrievalLive).pipe(
   Layer.provideMerge(Layer.mergeAll(GraphIndexerLive, GraphSearchLive, SemanticCacheLive)),
   Layer.provideMerge(Providers),
 );

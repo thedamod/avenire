@@ -2,12 +2,12 @@
 import {
   ChunkId,
   ChunkLocation,
-  ClusterId,
+  FolderId,
   FileSelector,
   GraphFact,
-  ItemId,
-  ItemKind,
-  ItemSource,
+  FileId,
+  FileKind,
+  FileSource,
   SearchAspect,
   SearchDepth,
   SearchHit,
@@ -20,12 +20,12 @@ import * as Schema from "effect/Schema";
 import { standardSchema } from "./schema.ts";
 
 export const FileEntry = Schema.Struct({
-  fileId: ItemId,
+  fileId: FileId,
   title: Schema.String,
-  kind: ItemKind,
+  kind: FileKind,
   drivePath: Schema.String,
   size: Schema.NullOr(Schema.Number),
-  source: ItemSource,
+  source: FileSource,
   tags: Schema.Array(Schema.String),
   createdAt: Schema.String,
   contentModifiedAt: Schema.NullOr(Schema.String),
@@ -34,12 +34,12 @@ export type FileEntry = typeof FileEntry.Type;
 
 const ChunkResult = Schema.Struct({
   chunkId: ChunkId,
-  itemId: ItemId,
+  fileId: FileId,
   title: Schema.String,
   location: ChunkLocation,
   content: Schema.String,
 });
-const FileMutationResult = Schema.Struct({ fileId: ItemId, summary: Schema.String });
+const FileMutationResult = Schema.Struct({ fileId: FileId, summary: Schema.String });
 const boundedInt = (max: number) =>
   Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: max }));
 
@@ -72,11 +72,11 @@ export const searchMaterialsSpec = {
 export const listFilesSpec = {
   name: "list_files",
   description:
-    "List library files and, when no folder is specified, folders. Clusters are folders; inbox contains files with no folder membership. Archived files are excluded.",
+    "List library files and, when no folder is specified, folders. The inbox contains files with no folder membership. Archived files are excluded.",
   inputSchema: standardSchema(
     Schema.Struct({
-      folder: Schema.optionalKey(Schema.Union([ClusterId, Schema.Literal("inbox")])),
-      kinds: Schema.optionalKey(Schema.Array(ItemKind)),
+      folderId: Schema.optionalKey(Schema.Union([FolderId, Schema.Literal("inbox")])),
+      kinds: Schema.optionalKey(Schema.Array(FileKind)),
       cursor: Schema.optionalKey(Schema.String),
       limit: Schema.optionalKey(boundedInt(100)),
     }),
@@ -84,7 +84,7 @@ export const listFilesSpec = {
   outputSchema: standardSchema(
     Schema.Struct({
       folders: Schema.Array(
-        Schema.Struct({ clusterId: ClusterId, name: Schema.String, itemCount: Schema.Int }),
+        Schema.Struct({ folderId: FolderId, name: Schema.String, fileCount: Schema.Int }),
       ),
       files: Schema.Array(FileEntry),
       nextCursor: Schema.NullOr(Schema.String),
@@ -110,7 +110,7 @@ export const readFileSpec = {
   description: "Read consecutive chunks of one file, e.g. to see the context around a search hit.",
   inputSchema: standardSchema(
     Schema.Struct({
-      fileId: ItemId,
+      fileId: FileId,
       fromOrdinal: Schema.optionalKey(Schema.Int),
       count: Schema.optionalKey(Schema.Int),
     }),
@@ -125,7 +125,7 @@ export const writeFileSpec = {
     Schema.Struct({
       title: Schema.NonEmptyString,
       content: Schema.String,
-      folder: Schema.optionalKey(ClusterId),
+      folderId: Schema.optionalKey(FolderId),
     }),
   ),
   outputSchema: standardSchema(FileMutationResult),
@@ -133,21 +133,21 @@ export const writeFileSpec = {
 export const moveFileSpec = {
   name: "move_file",
   description: "Move a file into a folder. Requires approval unless Full access is enabled.",
-  inputSchema: standardSchema(Schema.Struct({ fileId: ItemId, folder: ClusterId })),
+  inputSchema: standardSchema(Schema.Struct({ fileId: FileId, folderId: FolderId })),
   outputSchema: standardSchema(FileMutationResult),
 };
 export const renameFileSpec = {
   name: "rename_file",
   description:
     "Rename a file and update its search index. Requires approval unless Full access is enabled.",
-  inputSchema: standardSchema(Schema.Struct({ fileId: ItemId, title: Schema.NonEmptyString })),
+  inputSchema: standardSchema(Schema.Struct({ fileId: FileId, title: Schema.NonEmptyString })),
   outputSchema: standardSchema(FileMutationResult),
 };
 export const archiveFileSpec = {
   name: "archive_file",
   description:
     "Archive a file. Archive is the only delete operation; it is undoable for 30 days. Nothing is permanently deleted by this tool. Requires approval unless Full access is enabled.",
-  inputSchema: standardSchema(Schema.Struct({ fileId: ItemId })),
+  inputSchema: standardSchema(Schema.Struct({ fileId: FileId })),
   outputSchema: standardSchema(FileMutationResult),
 };
 export const renderWidgetSpec = {

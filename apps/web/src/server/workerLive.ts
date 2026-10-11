@@ -10,7 +10,7 @@ import { TranscriberLive } from "@avenire/ingestion/extract/transcribe";
 import { TranscriptCacheLive } from "@avenire/ingestion/extract/transcript-cache";
 import { GraphExtractorLive } from "@avenire/ingestion/graph/extract";
 import { GraphIndexerLive } from "@avenire/ingestion/graph/indexer";
-import { ItemIndexerLive } from "@avenire/ingestion/indexer";
+import { FileIndexerLive } from "@avenire/ingestion/indexer";
 import { IngestionModelsLive } from "@avenire/ingestion/models";
 import { IngestionPipelineLive } from "@avenire/ingestion/pipeline";
 import { IngestionWorkerLive } from "@avenire/ingestion/worker";
@@ -26,7 +26,7 @@ const ExtractionLive = Layer.mergeAll(
   MediaProcessorLive,
   RemoteMediaLive,
 ).pipe(Layer.provideMerge(IngestionModelsLive));
-const IndexingLive = ItemIndexerLive.pipe(
+const IndexingLive = FileIndexerLive.pipe(
   Layer.provideMerge(GraphIndexerLive.pipe(Layer.provideMerge(GraphExtractorLive))),
   Layer.provideMerge(IngestionModelsLive),
 );

@@ -1,14 +1,14 @@
-import { ChunkId, ClusterId, ItemId, NotFound } from "@avenire/contracts";
+import { ChunkId, FolderId, FileId, NotFound } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import { chunk, cluster, item, itemCluster } from "@avenire/database/schema";
-import { archiveItem } from "@avenire/ingestion/archive";
-import { recordItemEvent } from "@avenire/ingestion/events";
+import { chunk, folder, file, fileFolder } from "@avenire/database/schema";
+import { archiveFile } from "@avenire/ingestion/archive";
+import { recordFileEvent } from "@avenire/ingestion/events";
 import { Retrieval } from "@avenire/ingestion/retrieval";
 import { SemanticCache } from "@avenire/ingestion/retrieval/cache";
 import { enqueueIngestion } from "@avenire/ingestion/worker";
 import { newId } from "@avenire/shared/id";
 import { Analytics } from "@avenire/shared/observability";
-import { itemSourceKey } from "@avenire/storage/keys";
+import { fileSourceKey } from "@avenire/storage/keys";
 import { Storage } from "@avenire/storage/storage";
 import { and, asc, eq, gte, isNull, ne, sql } from "drizzle-orm";
 import type * as Crypto from "effect/Crypto";
@@ -42,16 +42,16 @@ export type RuthToolImplementations = {
     RuthKitServices
   >;
 };
-const ownedItem = Effect.fn("RuthKit.ownedItem")(function* (ctx: AgentContext, fileId: ItemId) {
+const ownedFile = Effect.fn("RuthKit.ownedFile")(function* (ctx: AgentContext, fileId: FileId) {
   const database = yield* Database;
   const row = yield* database.use((db) =>
-    db.query.item.findFirst({
+    db.query.file.findFirst({
       columns: { id: true },
       where: and(
-        eq(item.id, fileId),
-        eq(item.userId, ctx.userId),
-        ne(item.placement, "archived"),
-        isNull(item.archivedAt),
+        eq(file.id, fileId),
+        eq(file.userId, ctx.userId),
+        ne(file.placement, "archived"),
+        isNull(file.archivedAt),
       ),
     }),
   );
@@ -59,21 +59,21 @@ const ownedItem = Effect.fn("RuthKit.ownedItem")(function* (ctx: AgentContext, f
 });
 const ownedFolder = Effect.fn("RuthKit.ownedFolder")(function* (
   ctx: AgentContext,
-  folder: ClusterId,
+  folderId: FolderId,
 ) {
   const database = yield* Database;
   const row = yield* database.use((db) =>
-    db.query.cluster.findFirst({
+    db.query.folder.findFirst({
       columns: { id: true },
-      where: and(eq(cluster.id, folder), eq(cluster.userId, ctx.userId)),
+      where: and(eq(folder.id, folderId), eq(folder.userId, ctx.userId)),
     }),
   );
-  if (!row) return yield* new NotFound({ entity: "Folder", id: folder });
+  if (!row) return yield* new NotFound({ entity: "Folder", id: folderId });
 });
 const FolderEntry = Schema.Struct({
-  clusterId: ClusterId,
+  folderId: FolderId,
   name: Schema.String,
-  itemCount: Schema.Int,
+  fileCount: Schema.Int,
 });
 
 export const ruthKitTools: RuthToolImplementations = {
@@ -87,8 +87,8 @@ export const ruthKitTools: RuthToolImplementations = {
     return {
       hits: result.hits.map((hit) => ({
         chunkId: hit.chunkId,
-        itemId: hit.itemId,
-        title: hit.itemTitle,
+        fileId: hit.fileId,
+        title: hit.fileTitle,
         location: hit.location,
         content: hit.content,
         relevance: hit.relevance,
@@ -101,8 +101,8 @@ export const ruthKitTools: RuthToolImplementations = {
   }),
   list_files: Effect.fn("RuthKit.listFiles")(function* (input, ctx) {
     const database = yield* Database;
-    if (input.folder !== undefined && input.folder !== "inbox")
-      yield* ownedFolder(ctx, input.folder);
+    if (input.folderId !== undefined && input.folderId !== "inbox")
+      yield* ownedFolder(ctx, input.folderId);
     let cursor: string | undefined;
     if (input.cursor !== undefined) {
       cursor = Buffer.from(input.cursor, "base64url").toString("utf8");
@@ -125,7 +125,7 @@ export const ruthKitTools: RuthToolImplementations = {
             limit: limit + 1,
             order: "id",
             ...(cursor === undefined ? {} : { cursor }),
-            ...(input.folder === undefined ? {} : { folder: input.folder }),
+            ...(input.folderId === undefined ? {} : { folderId: input.folderId }),
           },
         ),
       ),
@@ -133,13 +133,13 @@ export const ruthKitTools: RuthToolImplementations = {
     const candidates = yield* Schema.decodeUnknownEffect(Schema.Array(MetadataCandidate))(rows);
     const selected = candidates.slice(0, limit);
     const folders =
-      input.folder !== undefined
+      input.folderId !== undefined
         ? []
         : yield* database.use((db) =>
             db.execute(sql`
-      SELECT c.id AS "clusterId", c.name, count(i.id)::int AS "itemCount"
-      FROM cluster c LEFT JOIN item_cluster ic ON ic.cluster_id = c.id AND ic.user_id = c.user_id
-      LEFT JOIN item i ON i.id = ic.item_id AND i.user_id = c.user_id AND i.placement <> 'archived' AND i.archived_at IS NULL
+      SELECT c.id AS "folderId", c.name, count(i.id)::int AS "fileCount"
+      FROM folder c LEFT JOIN file_folder ic ON ic.folder_id = c.id AND ic.user_id = c.user_id
+      LEFT JOIN file i ON i.id = ic.file_id AND i.user_id = c.user_id AND i.placement <> 'archived' AND i.archived_at IS NULL
       WHERE c.user_id = ${ctx.userId} GROUP BY c.id, c.name ORDER BY c.name, c.id`),
           );
     return {
@@ -160,24 +160,24 @@ export const ruthKitTools: RuthToolImplementations = {
     };
   }),
   read_file: Effect.fn("RuthKit.readFile")(function* (input, ctx) {
-    yield* ownedItem(ctx, input.fileId);
+    yield* ownedFile(ctx, input.fileId);
     const database = yield* Database;
     const rows = yield* database.use((db) =>
       db
         .select({
           chunkId: chunk.id,
-          title: item.title,
+          title: file.title,
           location: chunk.location,
           content: chunk.content,
         })
         .from(chunk)
-        .innerJoin(item, eq(chunk.itemId, item.id))
+        .innerJoin(file, eq(chunk.fileId, file.id))
         .where(
           and(
-            eq(item.id, input.fileId),
-            eq(item.userId, ctx.userId),
-            ne(item.placement, "archived"),
-            isNull(item.archivedAt),
+            eq(file.id, input.fileId),
+            eq(file.userId, ctx.userId),
+            ne(file.placement, "archived"),
+            isNull(file.archivedAt),
             ...(input.fromOrdinal === undefined
               ? []
               : [gte(chunk.ordinal, Math.max(0, input.fromOrdinal))]),
@@ -189,36 +189,36 @@ export const ruthKitTools: RuthToolImplementations = {
     return rows.map((row) => ({
       ...row,
       chunkId: ChunkId.make(row.chunkId),
-      itemId: input.fileId,
+      fileId: input.fileId,
     }));
   }),
   write_file: Effect.fn("RuthKit.writeFile")(function* (input, ctx) {
-    if (input.folder !== undefined) yield* ownedFolder(ctx, input.folder);
+    if (input.folderId !== undefined) yield* ownedFolder(ctx, input.folderId);
     const storage = yield* Storage;
     const database = yield* Database;
-    const fileId = yield* newId(ItemId);
-    const storageKey = itemSourceKey(ctx.userId, fileId, "note.md");
+    const fileId = yield* newId(FileId);
+    const storageKey = fileSourceKey(ctx.userId, fileId, "note.md");
     const bytes = new TextEncoder().encode(input.content);
     yield* storage.put(storageKey, bytes, { contentType: "text/markdown" });
     yield* database.useTransaction(async (tx) => {
-      await tx.insert(item).values({
+      await tx.insert(file).values({
         id: fileId,
         userId: ctx.userId,
         kind: "note",
         title: input.title,
         source: "ruth",
-        placement: input.folder === undefined ? "inbox" : "filed",
+        placement: input.folderId === undefined ? "inbox" : "filed",
         storageKey,
         mimeType: "text/markdown",
         sizeBytes: bytes.byteLength,
         dedupeKey: `ruth-note:${fileId}`,
       });
-      if (input.folder !== undefined)
+      if (input.folderId !== undefined)
         await tx
-          .insert(itemCluster)
-          .values({ userId: ctx.userId, itemId: fileId, clusterId: input.folder });
+          .insert(fileFolder)
+          .values({ userId: ctx.userId, fileId: fileId, folderId: input.folderId });
     });
-    yield* recordItemEvent(ctx.userId, fileId, "uploaded");
+    yield* recordFileEvent(ctx.userId, fileId, "uploaded");
     yield* enqueueIngestion(ctx.userId, fileId);
     const cache = yield* SemanticCache;
     yield* cache.invalidate(ctx.userId);
@@ -227,30 +227,30 @@ export const ruthKitTools: RuthToolImplementations = {
   move_file: Effect.fn("RuthKit.moveFile")(function* (input, ctx) {
     const database = yield* Database;
     const moved = yield* database.useTransaction(async (tx) => {
-      const target = await tx.query.cluster.findFirst({
+      const target = await tx.query.folder.findFirst({
         columns: { id: true },
-        where: and(eq(cluster.id, input.folder), eq(cluster.userId, ctx.userId)),
+        where: and(eq(folder.id, input.folderId), eq(folder.userId, ctx.userId)),
       });
-      const owned = await tx.query.item.findFirst({
+      const owned = await tx.query.file.findFirst({
         columns: { id: true },
         where: and(
-          eq(item.id, input.fileId),
-          eq(item.userId, ctx.userId),
-          ne(item.placement, "archived"),
-          isNull(item.archivedAt),
+          eq(file.id, input.fileId),
+          eq(file.userId, ctx.userId),
+          ne(file.placement, "archived"),
+          isNull(file.archivedAt),
         ),
       });
       if (!target || !owned) return false;
       await tx
-        .delete(itemCluster)
-        .where(and(eq(itemCluster.itemId, input.fileId), eq(itemCluster.userId, ctx.userId)));
+        .delete(fileFolder)
+        .where(and(eq(fileFolder.fileId, input.fileId), eq(fileFolder.userId, ctx.userId)));
       await tx
-        .insert(itemCluster)
-        .values({ itemId: input.fileId, clusterId: input.folder, userId: ctx.userId });
+        .insert(fileFolder)
+        .values({ fileId: input.fileId, folderId: input.folderId, userId: ctx.userId });
       await tx
-        .update(item)
+        .update(file)
         .set({ placement: "filed", updatedAt: sql`now()` })
-        .where(and(eq(item.id, input.fileId), eq(item.userId, ctx.userId)));
+        .where(and(eq(file.id, input.fileId), eq(file.userId, ctx.userId)));
       return true;
     });
     if (!moved) return yield* new NotFound({ entity: "File or folder", id: input.fileId });
@@ -262,17 +262,17 @@ export const ruthKitTools: RuthToolImplementations = {
     const database = yield* Database;
     const rows = yield* database.use((db) =>
       db
-        .update(item)
+        .update(file)
         .set({ title: input.title, updatedAt: sql`now()` })
         .where(
           and(
-            eq(item.id, input.fileId),
-            eq(item.userId, ctx.userId),
-            ne(item.placement, "archived"),
-            isNull(item.archivedAt),
+            eq(file.id, input.fileId),
+            eq(file.userId, ctx.userId),
+            ne(file.placement, "archived"),
+            isNull(file.archivedAt),
           ),
         )
-        .returning({ id: item.id }),
+        .returning({ id: file.id }),
     );
     if (rows.length === 0) return yield* new NotFound({ entity: "File", id: input.fileId });
     // A title is indexed, so re-ingest; it isn't a content change, so no `edited` event.
@@ -282,7 +282,7 @@ export const ruthKitTools: RuthToolImplementations = {
     return { fileId: input.fileId, summary: `Renamed the file to "${input.title}".` };
   }),
   archive_file: Effect.fn("RuthKit.archiveFile")(function* (input, ctx) {
-    yield* archiveItem(ctx.userId, input.fileId);
+    yield* archiveFile(ctx.userId, input.fileId);
     return { fileId: input.fileId, summary: "Archived the file. You can undo this for 30 days." };
   }),
   render_widget: Effect.fn("RuthKit.renderWidget")(function* (input, ctx) {

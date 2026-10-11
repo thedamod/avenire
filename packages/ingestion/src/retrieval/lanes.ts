@@ -6,8 +6,8 @@ import {
   ChunkId,
   ChunkKind,
   ChunkLocation,
-  ItemId,
-  ItemKind,
+  FileId,
+  FileKind,
   type SearchQuery,
   type UserId,
 } from "@avenire/contracts";
@@ -25,9 +25,9 @@ const TIME_TOLERANCE_SEC = 20;
 
 const CandidateRow = Schema.Struct({
   chunkId: ChunkId,
-  itemId: ItemId,
-  itemTitle: Schema.String,
-  itemKind: ItemKind,
+  fileId: FileId,
+  fileTitle: Schema.String,
+  fileKind: FileKind,
   chunkKind: ChunkKind,
   ordinal: Schema.Number,
   content: Schema.String,
@@ -36,9 +36,9 @@ const CandidateRow = Schema.Struct({
 export type CandidateRow = typeof CandidateRow.Type;
 const decodeCandidates = Schema.decodeUnknownEffect(Schema.Array(CandidateRow));
 
-const COLUMNS = sql`c.id AS "chunkId", i.id AS "itemId", i.title AS "itemTitle",
-  i.kind AS "itemKind", c.kind AS "chunkKind", c.ordinal, c.content, c.location`;
-const SOURCE = sql`FROM chunk c JOIN item i ON i.id = c.item_id AND i.user_id = c.user_id`;
+const COLUMNS = sql`c.id AS "chunkId", i.id AS "fileId", i.title AS "fileTitle",
+  i.kind AS "fileKind", c.kind AS "chunkKind", c.ordinal, c.content, c.location`;
+const SOURCE = sql`FROM chunk c JOIN file i ON i.id = c.file_id AND i.user_id = c.user_id`;
 
 const list = (values: ReadonlyArray<string | number>) =>
   sql.join(
@@ -46,20 +46,20 @@ const list = (values: ReadonlyArray<string | number>) =>
     sql`, `,
   );
 
-/** The user's searchable chunks, restricted by every item and content-time filter. */
+/** The user's searchable chunks, restricted by every file and content-time filter. */
 export const candidateFilter = (userId: UserId, query: SearchQuery): SQL => {
   const kinds = query.kinds?.length ? sql` AND i.kind IN (${list(query.kinds)})` : sql``;
-  const clusters = query.clusterIds?.length
-    ? sql` AND EXISTS (SELECT 1 FROM item_cluster ic
-        WHERE ic.item_id = i.id AND ic.user_id = ${userId}
-          AND ic.cluster_id IN (${list(query.clusterIds)}))`
+  const folders = query.folderIds?.length
+    ? sql` AND EXISTS (SELECT 1 FROM file_folder ic
+        WHERE ic.file_id = i.id AND ic.user_id = ${userId}
+          AND ic.folder_id IN (${list(query.folderIds)}))`
     : sql``;
-  const items =
-    query.itemIds === undefined
+  const files =
+    query.fileIds === undefined
       ? sql``
-      : query.itemIds.length === 0
+      : query.fileIds.length === 0
         ? sql` AND false`
-        : sql` AND i.id IN (${list(query.itemIds)})`;
+        : sql` AND i.id IN (${list(query.fileIds)})`;
   const since =
     query.since === undefined
       ? sql``
@@ -68,7 +68,7 @@ export const candidateFilter = (userId: UserId, query: SearchQuery): SQL => {
     query.until === undefined
       ? sql``
       : sql` AND coalesce(i.content_modified_at, i.created_at) < ${query.until}::timestamptz`;
-  return sql`c.user_id = ${userId} AND i.user_id = ${userId} AND i.placement <> 'archived'${kinds}${clusters}${items}${since}${until}`;
+  return sql`c.user_id = ${userId} AND i.user_id = ${userId} AND i.placement <> 'archived'${kinds}${folders}${files}${since}${until}`;
 };
 
 const candidates = (statement: SQL) =>
@@ -176,25 +176,25 @@ export const hydrate = (where: SQL, ids: ReadonlyArray<ChunkId>) =>
       );
 
 const NeighbourRow = Schema.Struct({
-  itemId: Schema.String,
+  fileId: Schema.String,
   ordinal: Schema.Number,
   content: Schema.String,
 });
 const decodeNeighbours = Schema.decodeUnknownEffect(Schema.Array(NeighbourRow));
 
-/** The content of the given (item, ordinal) chunks, in one query. */
+/** The content of the given (file, ordinal) chunks, in one query. */
 export const neighbours = (
   where: SQL,
-  wanted: ReadonlyArray<{ readonly itemId: string; readonly ordinal: number }>,
+  wanted: ReadonlyArray<{ readonly fileId: string; readonly ordinal: number }>,
 ) =>
   wanted.length === 0
     ? Effect.succeed<ReadonlyArray<typeof NeighbourRow.Type>>([])
     : Effect.flatMap(Effect.service(Database), (database) =>
         database.use((db) =>
-          db.execute(sql`SELECT c.item_id AS "itemId", c.ordinal, c.content FROM chunk c
-            JOIN item i ON i.id = c.item_id AND i.user_id = c.user_id
-            WHERE ${where} AND (c.item_id, c.ordinal) IN (${sql.join(
-              wanted.map(({ itemId, ordinal }) => sql`(${itemId}, ${ordinal})`),
+          db.execute(sql`SELECT c.file_id AS "fileId", c.ordinal, c.content FROM chunk c
+            JOIN file i ON i.id = c.file_id AND i.user_id = c.user_id
+            WHERE ${where} AND (c.file_id, c.ordinal) IN (${sql.join(
+              wanted.map(({ fileId, ordinal }) => sql`(${fileId}, ${ordinal})`),
               sql`, `,
             )})`),
         ),

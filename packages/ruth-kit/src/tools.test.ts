@@ -1,8 +1,8 @@
-import { ClusterId, ItemId } from "@avenire/contracts";
+import { FolderId, FileId } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { SemanticCache } from "@avenire/ingestion/retrieval/cache";
 import { Storage, StorageMemory } from "@avenire/storage/storage";
-import { itemSourceKey } from "@avenire/storage/keys";
+import { fileSourceKey } from "@avenire/storage/keys";
 import { expect, it } from "@effect/vitest";
 import { type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -22,12 +22,12 @@ const cache = SemanticCache.of({
   store: () => Effect.void,
   invalidate: () => Effect.void,
 });
-const fileId = ItemId.make("file");
-const folder = ClusterId.make("folder");
+const fileId = FileId.make("file");
+const folder = FolderId.make("folder");
 const inaccessible = fakeDatabase({
   query: {
-    item: { findFirst: async () => undefined },
-    cluster: { findFirst: async () => undefined },
+    file: { findFirst: async () => undefined },
+    folder: { findFirst: async () => undefined },
   },
   update: () => ({ set: () => ({ where: () => ({ returning: async () => [] }) }) }),
 });
@@ -44,9 +44,9 @@ for (const name of ["read_file", "write_file", "move_file", "rename_file", "arch
       name === "read_file"
         ? ruthKitTools.read_file({ fileId }, ctx)
         : name === "write_file"
-          ? ruthKitTools.write_file({ title: "Note", content: "private", folder }, ctx)
+          ? ruthKitTools.write_file({ title: "Note", content: "private", folderId: folder }, ctx)
           : name === "move_file"
-            ? ruthKitTools.move_file({ fileId, folder }, ctx)
+            ? ruthKitTools.move_file({ fileId, folderId: folder }, ctx)
             : name === "rename_file"
               ? ruthKitTools.rename_file({ fileId, title: "New" }, ctx)
               : ruthKitTools.archive_file({ fileId }, ctx);
@@ -60,8 +60,8 @@ it.effect("writes a Ruth note, folder membership, uploaded event and ingestion j
   let invalidated = 0;
   const database = fakeDatabase({
     query: {
-      cluster: { findFirst: async () => ({ id: folder }) },
-      item: { findFirst: async () => ({ id: fileId }) },
+      folder: { findFirst: async () => ({ id: folder }) },
+      file: { findFirst: async () => ({ id: fileId }) },
     },
     insert: (table: { [key: symbol]: unknown }) => ({
       values: (values: Record<string, unknown>) => {
@@ -90,9 +90,9 @@ it.effect("writes a Ruth note, folder membership, uploaded event and ingestion j
       }),
     ) as Context.Context<RuthKitServices>;
     const result = yield* ruthKitTools
-      .write_file({ title: "Note", content: "# Hello", folder }, ctx)
+      .write_file({ title: "Note", content: "# Hello", folderId: folder }, ctx)
       .pipe(Effect.provide(services));
-    const note = writes.find((write) => write.table === "item");
+    const note = writes.find((write) => write.table === "file");
     expect(note?.values).toMatchObject({
       id: result.fileId,
       userId: ctx.userId,
@@ -102,21 +102,21 @@ it.effect("writes a Ruth note, folder membership, uploaded event and ingestion j
       mimeType: "text/markdown",
       sizeBytes: 7,
     });
-    expect(writes.find((write) => write.table === "item_cluster")?.values).toEqual({
+    expect(writes.find((write) => write.table === "file_folder")?.values).toEqual({
       userId: ctx.userId,
-      itemId: result.fileId,
-      clusterId: folder,
+      fileId: result.fileId,
+      folderId: folder,
     });
-    expect(statements[0]?.sql).toContain("INSERT INTO item_event");
+    expect(statements[0]?.sql).toContain("INSERT INTO file_event");
     expect(statements[0]?.params).toContain("uploaded");
     expect(writes.find((write) => write.table === "ingestion_job")?.values).toMatchObject({
-      itemId: result.fileId,
+      fileId: result.fileId,
       userId: ctx.userId,
       status: "queued",
     });
     expect(
       new TextDecoder().decode(
-        yield* storage.get(itemSourceKey(ctx.userId, result.fileId, "note.md")),
+        yield* storage.get(fileSourceKey(ctx.userId, result.fileId, "note.md")),
       ),
     ).toBe("# Hello");
     expect(invalidated).toBe(1);
@@ -127,7 +127,7 @@ it.effect(
   () => {
     const statements: Array<{ sql: string; params: unknown[] }> = [];
     const row = (id: string): MetadataCandidate => ({
-      fileId: ItemId.make(id),
+      fileId: FileId.make(id),
       title: "Note",
       kind: "note",
       mimeType: "text/markdown",
@@ -147,22 +147,22 @@ it.effect(
           const rendered = new PgDialect().sqlToQuery(statement);
           statements.push(rendered);
           if (rendered.sql.includes("count(i.id)::int"))
-            return [{ clusterId: folder, name: "Folder", itemCount: 2 }];
+            return [{ folderId: folder, name: "Folder", fileCount: 2 }];
           return [row("b"), row("a")];
         },
       }),
     ) as Context.Context<RuthKitServices>;
     return Effect.gen(function* () {
       const root = yield* ruthKitTools.list_files({ limit: 1 }, ctx);
-      expect(root.folders).toEqual([{ clusterId: folder, name: "Folder", itemCount: 2 }]);
+      expect(root.folders).toEqual([{ folderId: folder, name: "Folder", fileCount: 2 }]);
       expect(root.nextCursor).toBe(Buffer.from("b").toString("base64url"));
       const inbox = yield* ruthKitTools.list_files(
-        { folder: "inbox", limit: 1, cursor: root.nextCursor! },
+        { folderId: "inbox", limit: 1, cursor: root.nextCursor! },
         ctx,
       );
       expect(inbox.folders).toEqual([]);
       expect(statements).toHaveLength(3);
-      expect(statements[2]?.sql).toContain("NOT EXISTS (SELECT 1 FROM item_cluster");
+      expect(statements[2]?.sql).toContain("NOT EXISTS (SELECT 1 FROM file_folder");
       expect(statements[2]?.params).toContain("b");
       expect(
         statements.every(

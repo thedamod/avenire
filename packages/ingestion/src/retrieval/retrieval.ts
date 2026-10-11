@@ -27,7 +27,7 @@ import { Embedder } from "../embed.ts";
 import { GraphSearch } from "../graph/search.ts";
 import { SemanticCache, type SearchCacheError } from "./cache.ts";
 import { afterSnippet, beforeSnippet, endsMidSentence, startsMidSentence } from "./context.ts";
-import { capPerItem, LANE_WEIGHTS, type Ranked, weightedRrf } from "./fusion.ts";
+import { capPerFile, LANE_WEIGHTS, type Ranked, weightedRrf } from "./fusion.ts";
 import {
   type CandidateRow,
   candidateFilter,
@@ -61,11 +61,11 @@ export class Retrieval extends Context.Service<
   }
 >()("avenire/ingestion/Retrieval") {}
 
-/** Fused candidates sent to the reranker, and how many of them one item may fill. */
+/** Fused candidates sent to the reranker, and how many of them one file may fill. */
 const POOL_SIZE = 40;
-const POOL_PER_ITEM = 4;
-/** Chunks per item in the final hits. */
-const HITS_PER_ITEM = 2;
+const POOL_PER_FILE = 4;
+/** Chunks per file in the final hits. */
+const HITS_PER_FILE = 2;
 const MAX_FACTS = 12;
 
 interface LaneList {
@@ -93,7 +93,7 @@ const fuse = (lists: ReadonlyArray<LaneList>) => {
   const fused = weightedRrf(
     lists.map(({ lane, weight, rows }) => ({ lane, weight, ids: rows.map((row) => row.chunkId) })),
   );
-  return { rows, pool: capPerItem(fused, (id) => rows.get(id)?.itemId, POOL_SIZE, POOL_PER_ITEM) };
+  return { rows, pool: capPerFile(fused, (id) => rows.get(id)?.fileId, POOL_SIZE, POOL_PER_FILE) };
 };
 
 const toRelevance = (
@@ -141,7 +141,7 @@ const sameMoment =
 /**
  * Abstains when the best relevance is below `threshold`. Otherwise reserves each
  * aspect's best chunk (when it clears the threshold), fills by relevance (or fused
- * order when not reranked), and caps chunks per item.
+ * order when not reranked), and caps chunks per file.
  */
 const shapeResult = (input: {
   readonly candidates: Candidates;
@@ -178,11 +178,11 @@ const shapeResult = (input: {
   const byId = new Map(candidates.pool.map((entry) => [entry.id, entry]));
   const first = reserved.flatMap((id) => (id === undefined ? [] : (byId.get(id) ?? [])));
   const unique = [...new Map([...first, ...ordered].map((entry) => [entry.id, entry])).values()];
-  const kept = capPerItem(
+  const kept = capPerFile(
     unique,
-    (id) => candidates.rows.get(id)?.itemId,
+    (id) => candidates.rows.get(id)?.fileId,
     input.limit,
-    HITS_PER_ITEM,
+    HITS_PER_FILE,
     sameMoment(candidates.rows),
   );
 
@@ -295,23 +295,23 @@ export const RetrievalLive = Layer.effect(
       hits: SearchResult["hits"],
       rows: Candidates["rows"],
     ) => {
-      const wanted = hits.flatMap(({ chunkId, itemId, content }) => {
+      const wanted = hits.flatMap(({ chunkId, fileId, content }) => {
         const ordinal = rows.get(chunkId)?.ordinal;
         if (ordinal === undefined) return [];
         return [
-          ...(startsMidSentence(content) && ordinal > 0 ? [{ itemId, ordinal: ordinal - 1 }] : []),
-          ...(endsMidSentence(content) ? [{ itemId, ordinal: ordinal + 1 }] : []),
+          ...(startsMidSentence(content) && ordinal > 0 ? [{ fileId, ordinal: ordinal - 1 }] : []),
+          ...(endsMidSentence(content) ? [{ fileId, ordinal: ordinal + 1 }] : []),
         ];
       });
       return neighbours(where, wanted).pipe(
         Effect.map((found) => {
           const byPosition = new Map(
-            found.map((row) => [`${row.itemId}:${row.ordinal}`, row.content]),
+            found.map((row) => [`${row.fileId}:${row.ordinal}`, row.content]),
           );
           return hits.map((hit) => {
             const ordinal = rows.get(hit.chunkId)?.ordinal ?? -1;
-            const previous = byPosition.get(`${hit.itemId}:${ordinal - 1}`);
-            const next = byPosition.get(`${hit.itemId}:${ordinal + 1}`);
+            const previous = byPosition.get(`${hit.fileId}:${ordinal - 1}`);
+            const next = byPosition.get(`${hit.fileId}:${ordinal + 1}`);
             const before = previous === undefined ? "" : beforeSnippet(previous, hit.content);
             const after = next === undefined ? "" : afterSnippet(hit.content, next);
             return before || after ? { ...hit, context: { before, after } } : hit;
@@ -327,7 +327,7 @@ export const RetrievalLive = Layer.effect(
     const rerank = (text: string, aspects: ReadonlyArray<string>, candidates: Candidates) => {
       const documents = candidates.pool.map(({ id }) => {
         const row = candidates.rows.get(id);
-        return row === undefined ? "" : embeddingText(row.itemTitle, row);
+        return row === undefined ? "" : embeddingText(row.fileTitle, row);
       });
       return Effect.forEach(
         [text, ...aspects],

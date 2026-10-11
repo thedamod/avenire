@@ -1,4 +1,4 @@
-import { ItemId, UserId } from "@avenire/contracts";
+import { FileId, UserId } from "@avenire/contracts";
 import { StorageMemory } from "@avenire/storage/storage";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -8,7 +8,7 @@ import { loadDocument, saveDocument } from "./document.ts";
 import type { ExtractedDocument } from "./extract/types.ts";
 
 const userId = UserId.make("user");
-const itemId = ItemId.make("item");
+const fileId = FileId.make("file");
 
 const document: ExtractedDocument = {
   title: "Lecture 6",
@@ -21,13 +21,13 @@ const document: ExtractedDocument = {
 
 it.effect("round-trips a document through storage", () =>
   Effect.gen(function* () {
-    yield* saveDocument(userId, itemId, document);
-    expect(yield* loadDocument(userId, itemId)).toEqual(Option.some(document));
+    yield* saveDocument(userId, fileId, document);
+    expect(yield* loadDocument(userId, fileId)).toEqual(Option.some(document));
   }).pipe(Effect.provide(StorageMemory)),
 );
 
 it.effect("treats a missing document as none", () =>
   Effect.gen(function* () {
-    expect(Option.isNone(yield* loadDocument(userId, ItemId.make("missing")))).toBe(true);
+    expect(Option.isNone(yield* loadDocument(userId, FileId.make("missing")))).toBe(true);
   }).pipe(Effect.provide(StorageMemory)),
 );

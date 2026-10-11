@@ -8,7 +8,7 @@ export const MorningDigest = ({
   date,
   taskTitle,
   summary,
-  itemsRead,
+  filesRead,
   produced,
   pendingApprovals,
   reportUrl,
@@ -17,7 +17,7 @@ export const MorningDigest = ({
     <Text style={titleStyle}>Good morning, {name}.</Text>
     <Text style={copyStyle}>{taskTitle}</Text>
     <Text style={{ ...copyStyle, color: "#55527f" }}>
-      {date} · {itemsRead} {itemsRead === 1 ? "item" : "items"} read
+      {date} · {filesRead} {filesRead === 1 ? "file" : "files"} read
     </Text>
     <Text style={copyStyle}>{summary}</Text>
     {produced.map((artifact) => (
@@ -49,8 +49,8 @@ MorningDigest.PreviewProps = {
   date: "Tuesday, October 6",
   taskTitle: "Nightly study digest",
   summary: "Your notes, quiz and flashcards are ready.",
-  itemsRead: 3,
-  produced: [{ title: "A concise review", url: "https://avenire.space/library?item=review" }],
+  filesRead: 3,
+  produced: [{ title: "A concise review", url: "https://avenire.space/library?file=review" }],
   pendingApprovals: 1,
   reportUrl: "https://avenire.space/ruth/cloud",
 } satisfies Props;

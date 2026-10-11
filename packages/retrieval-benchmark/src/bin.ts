@@ -5,7 +5,7 @@ import { EmbedderLive, EmbedderTest } from "@avenire/ingestion/embed";
 import { GraphExtractorLive, GraphExtractorTest } from "@avenire/ingestion/graph/extract";
 import { GraphIndexerLive } from "@avenire/ingestion/graph/indexer";
 import { GraphSearchLive } from "@avenire/ingestion/graph/search";
-import { ItemIndexerLive } from "@avenire/ingestion/indexer";
+import { FileIndexerLive } from "@avenire/ingestion/indexer";
 import { IngestionModelsLive } from "@avenire/ingestion/models";
 import { SemanticCacheLive } from "@avenire/ingestion/retrieval/cache";
 import { QueryPlannerLive, QueryPlannerTest } from "@avenire/ingestion/retrieval/planner";
@@ -47,9 +47,9 @@ const Providers = Layer.mergeAll(
     : QueryPlannerLive.pipe(Layer.provide(IngestionModelsLive)),
 );
 const Infrastructure = Layer.mergeAll(DatabaseLive, NodeServices.layer, Providers);
-// The benchmark seeds through Database, Embedder and ItemIndexer as well as searching
+// The benchmark seeds through Database, Embedder and FileIndexer as well as searching
 // through Retrieval, so every layer stays visible to the program (provideMerge).
-const AppLive = Layer.mergeAll(ItemIndexerLive, RetrievalLive).pipe(
+const AppLive = Layer.mergeAll(FileIndexerLive, RetrievalLive).pipe(
   Layer.provideMerge(Layer.mergeAll(GraphIndexerLive, GraphSearchLive, SemanticCacheLive)),
   Layer.provideMerge(Infrastructure),
 );

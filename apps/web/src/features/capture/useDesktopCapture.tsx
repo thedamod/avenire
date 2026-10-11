@@ -18,7 +18,7 @@ export function useDesktopCapture() {
         .then((result) => {
           const receipt = {
             capturedAt: payload.snapshot.capturedAt,
-            items: result.items,
+            files: result.files,
             skipped: result.skipped,
             blocked: payload.blocked,
           };
@@ -28,21 +28,21 @@ export function useDesktopCapture() {
               <div className="w-[min(24rem,calc(100vw-2rem))] border border-border bg-popover p-4 text-popover-foreground shadow-md">
                 <p className="font-medium">Capture received</p>
                 <ul className="mt-2 grid gap-1 text-sm text-muted-foreground">
-                  {result.items.map((item) => (
-                    <li key={item.id}>Saved: {item.title}</li>
+                  {result.files.map((file) => (
+                    <li key={file.id}>Saved: {file.title}</li>
                   ))}
-                  {result.skipped.map((item, index) => (
-                    <li key={`${item.title}-${index}`}>
-                      Skipped {item.title}: {item.reason}
+                  {result.skipped.map((file, index) => (
+                    <li key={`${file.title}-${index}`}>
+                      Skipped {file.title}: {file.reason}
                     </li>
                   ))}
-                  {payload.blocked.map((item, index) => (
-                    <li key={`${item.title}-${index}`}>
-                      Blocked {item.title}: {item.category}
+                  {payload.blocked.map((file, index) => (
+                    <li key={`${file.title}-${index}`}>
+                      Blocked {file.title}: {file.category}
                     </li>
                   ))}
-                  {result.items.length + result.skipped.length + payload.blocked.length === 0 ? (
-                    <li>No items to add.</li>
+                  {result.files.length + result.skipped.length + payload.blocked.length === 0 ? (
+                    <li>No files to add.</li>
                   ) : null}
                 </ul>
               </div>

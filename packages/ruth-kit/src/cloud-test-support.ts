@@ -1,7 +1,7 @@
 /** Recording database and sandbox doubles; real StorageMemory exercises object semantics. */
-import { CloudRunId, ItemId, WORKSPACE_CAP_BYTES } from "@avenire/contracts";
+import { CloudRunId, FileId, WORKSPACE_CAP_BYTES } from "@avenire/contracts";
 import { CLOUD_WORKSPACE, CloudBoxes, type CloudBox } from "@avenire/cloud/cloud-box";
-import { SandboxInputRejected } from "@avenire/cloud/sandbox";
+import { SandboxInputRejected } from "@avenire/cloud/daytona";
 import { Database } from "@avenire/database/client";
 import { Retrieval } from "@avenire/ingestion/retrieval";
 import { SemanticCache } from "@avenire/ingestion/retrieval/cache";
@@ -23,7 +23,7 @@ export const cloudCtx: AgentContext = {
   runId: CloudRunId.make("run"),
   timeZone: "America/Los_Angeles",
 };
-export const fileId = ItemId.make("12345678-file");
+export const fileId = FileId.make("12345678-file");
 export const candidate = (
   id = fileId,
   overrides: Partial<MetadataCandidate> = {},
@@ -53,7 +53,7 @@ export const cloudFixture = () => {
     return result;
   };
   const metadata: MetadataCandidate[] = [candidate()];
-  rows("item").push({
+  rows("file").push({
     id: fileId,
     userId: ctx.userId,
     title: "Lecture",
@@ -64,7 +64,7 @@ export const cloudFixture = () => {
     contentModifiedAt: new Date("2026-10-02"),
     sizeBytes: 5,
   });
-  rows("cloud_run").push({ id: "run", userId: ctx.userId, taskId: "task", clusterId: null });
+  rows("cloud_run").push({ id: "run", userId: ctx.userId, taskId: "task", folderId: null });
   rows("cloud_task").push({
     id: "task",
     userId: ctx.userId,
@@ -91,7 +91,7 @@ export const cloudFixture = () => {
     return true;
   };
   const query = Object.fromEntries(
-    ["item", "cloudRun", "cloudTask", "cloudWorkspaceFile", "pendingApproval"].map((name) => {
+    ["file", "cloudRun", "cloudTask", "cloudWorkspaceFile", "pendingApproval"].map((name) => {
       const table = name.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`);
       return [
         name,
@@ -132,8 +132,8 @@ export const cloudFixture = () => {
                   .filter((row) => matches(row, where))
                   .map((row) => ({
                     approval: { ...row },
-                    itemTitle:
-                      rows("item").find((item) => item.id === row.itemId)?.title ?? "Missing",
+                    fileTitle:
+                      rows("file").find((file) => file.id === row.fileId)?.title ?? "Missing",
                   }))
                   .sort((a, b) => Number(b.approval.createdAt) - Number(a.approval.createdAt)),
             }),
@@ -159,7 +159,7 @@ export const cloudFixture = () => {
           const target = rows(name);
           const existing =
             name === "cloud_workspace_file"
-              ? target.find((row) => row.itemId === values.itemId && row.userId === values.userId)
+              ? target.find((row) => row.fileId === values.fileId && row.userId === values.userId)
               : undefined;
           if (existing) Object.assign(existing, values);
           else target.push(saved);
@@ -194,7 +194,7 @@ export const cloudFixture = () => {
       const rendered = dialect.sqlToQuery(statement);
       statements.push(rendered);
       if (rendered.sql.includes("string_agg")) return [{ text: "# extracted text" }];
-      if (rendered.sql.includes("INSERT INTO item_event")) return [{ id: fileId }];
+      if (rendered.sql.includes("INSERT INTO file_event")) return [{ id: fileId }];
       return metadata;
     },
   });
@@ -277,7 +277,7 @@ export const cloudFixture = () => {
     );
   const workspaceRow = (overrides: Row = {}): Row => ({
     userId: ctx.userId,
-    itemId: fileId,
+    fileId: fileId,
     sandboxPath: `${CLOUD_WORKSPACE}/inputs/Physics/Lecture-12345678.pdf`,
     contentHash: "base",
     sizeBytes: 5,
@@ -289,7 +289,7 @@ export const cloudFixture = () => {
   const addOld = () =>
     rows("cloud_workspace_file").push(
       workspaceRow({
-        itemId: "old-item",
+        fileId: "old-file",
         sandboxPath: `${CLOUD_WORKSPACE}/inputs/old`,
         sizeBytes: WORKSPACE_CAP_BYTES,
         lastRunId: "old-run",

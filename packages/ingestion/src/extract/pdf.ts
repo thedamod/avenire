@@ -111,8 +111,8 @@ const readNativePages = Effect.fn("Pdf.readNativePages")(function* (bytes: Uint8
             page.getOperatorList(),
           ]);
           const text = content.items
-            .filter((item): item is typeof item & { str: string } => "str" in item)
-            .map((item) => item.str)
+            .filter((file): file is typeof file & { str: string } => "str" in file)
+            .map((file) => file.str)
             .join(" ")
             .trim();
           return {

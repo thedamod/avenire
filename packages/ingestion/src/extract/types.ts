@@ -1,4 +1,4 @@
-import { ChunkKind, ChunkLocation, ExtractionCoverage, type ItemKind } from "@avenire/contracts";
+import { ChunkKind, ChunkLocation, ExtractionCoverage, type FileKind } from "@avenire/contracts";
 import * as Schema from "effect/Schema";
 
 /**
@@ -9,7 +9,7 @@ export const EXTRACTOR_VERSION = 1;
 
 /** What an extractor needs to know about a source, independent of how it's stored. */
 export interface SourceInput {
-  readonly kind: ItemKind;
+  readonly kind: FileKind;
   readonly title: string;
   readonly mimeType: string | null;
   readonly sourceUrl: string | null;

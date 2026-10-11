@@ -1,14 +1,14 @@
-import { ItemId, UserId } from "@avenire/contracts";
-import { itemDocumentKey, itemPrefix, itemSourceKey } from "@avenire/storage/keys";
+import { FileId, UserId } from "@avenire/contracts";
+import { fileDocumentKey, filePrefix, fileSourceKey } from "@avenire/storage/keys";
 import { Storage, StorageError, StorageMemory } from "@avenire/storage/storage";
 import { describe, expect, it } from "@effect/vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import * as Effect from "effect/Effect";
 
-import { ARCHIVE_RETENTION_DAYS, archiveCutoff, purgeItem, restoreStatement } from "./archive.ts";
+import { ARCHIVE_RETENTION_DAYS, archiveCutoff, purgeFile, restoreStatement } from "./archive.ts";
 
 const userId = UserId.make("user");
-const itemId = ItemId.make("item");
+const fileId = FileId.make("file");
 
 describe("archive", () => {
   it("computes thirty elapsed days across a calendar boundary", () => {
@@ -18,42 +18,42 @@ describe("archive", () => {
     );
   });
 
-  it("restores using owned cluster membership and clears the archive timestamp", () => {
-    const rendered = new PgDialect().sqlToQuery(restoreStatement(userId, itemId));
-    expect(rendered.sql).toContain("ic.item_id = i.id AND ic.user_id = i.user_id");
+  it("restores using owned folder membership and clears the archive timestamp", () => {
+    const rendered = new PgDialect().sqlToQuery(restoreStatement(userId, fileId));
+    expect(rendered.sql).toContain("ic.file_id = i.id AND ic.user_id = i.user_id");
     expect(rendered.sql).toContain("THEN 'filed' ELSE 'inbox' END");
     expect(rendered.sql).toContain("archived_at = NULL");
-    expect(rendered.params).toEqual([itemId, userId]);
+    expect(rendered.params).toEqual([fileId, userId]);
   });
 
-  it.effect("removes all item objects before its row and leaves other items alone", () =>
+  it.effect("removes all file objects before its row and leaves other files alone", () =>
     Effect.gen(function* () {
       const storage = yield* Storage;
-      const source = itemSourceKey(userId, itemId, "source.pdf");
-      const document = itemDocumentKey(userId, itemId, 1);
-      const other = itemSourceKey(userId, ItemId.make("other"), "source.pdf");
+      const source = fileSourceKey(userId, fileId, "source.pdf");
+      const document = fileDocumentKey(userId, fileId, 1);
+      const other = fileSourceKey(userId, FileId.make("other"), "source.pdf");
       yield* storage.put(source, "source");
       yield* storage.put(document, "document");
       yield* storage.put(other, "other");
       let deleted = false;
-      const removed = yield* purgeItem(
+      const removed = yield* purgeFile(
         userId,
-        itemId,
+        fileId,
         Effect.gen(function* () {
-          expect(yield* storage.list(itemPrefix(userId, itemId))).toEqual([]);
+          expect(yield* storage.list(filePrefix(userId, fileId))).toEqual([]);
           deleted = true;
         }),
       );
       expect(removed).toBe(true);
       expect(deleted).toBe(true);
-      expect(yield* storage.list(itemPrefix(userId, ItemId.make("other")))).toHaveLength(1);
+      expect(yield* storage.list(filePrefix(userId, FileId.make("other")))).toHaveLength(1);
     }).pipe(Effect.provide(StorageMemory)),
   );
 
   it.effect("retains the row when storage removal fails and supports a subsequent retry", () =>
     Effect.gen(function* () {
       const storage = yield* Storage;
-      const key = itemSourceKey(userId, itemId, "source.pdf");
+      const key = fileSourceKey(userId, fileId, "source.pdf");
       yield* storage.put(key, "source");
       let deleted = false;
       const deleteRow = Effect.sync(() => {
@@ -67,11 +67,11 @@ describe("archive", () => {
           ),
       });
       expect(
-        yield* purgeItem(userId, itemId, deleteRow).pipe(Effect.provideService(Storage, failing)),
+        yield* purgeFile(userId, fileId, deleteRow).pipe(Effect.provideService(Storage, failing)),
       ).toBe(false);
       expect(deleted).toBe(false);
-      expect(yield* storage.list(itemPrefix(userId, itemId))).toHaveLength(1);
-      expect(yield* purgeItem(userId, itemId, deleteRow)).toBe(true);
+      expect(yield* storage.list(filePrefix(userId, fileId))).toHaveLength(1);
+      expect(yield* purgeFile(userId, fileId, deleteRow)).toBe(true);
       expect(deleted).toBe(true);
     }).pipe(Effect.provide(StorageMemory)),
   );
@@ -85,9 +85,9 @@ describe("archive", () => {
         list: () => Effect.fail(new StorageError({ operation: "list", cause: "test failure" })),
       });
       expect(
-        yield* purgeItem(
+        yield* purgeFile(
           userId,
-          itemId,
+          fileId,
           Effect.sync(() => {
             deleted = true;
           }),

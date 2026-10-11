@@ -23,7 +23,7 @@ const K = 10;
 
 /** Documents in the order their first chunk was retrieved. */
 const rankedDocuments = (hits: ReadonlyArray<SearchHit>): ReadonlyArray<string> => [
-  ...new Set(hits.map((hit) => hit.itemId)),
+  ...new Set(hits.map((hit) => hit.fileId)),
 ];
 
 const scoreResult = (

@@ -4,7 +4,7 @@ import { StorageKey } from "@avenire/contracts";
 
 import { ObjectNotFound, Storage, StorageMemory } from "./storage.ts";
 
-const key = StorageKey.make("users/test/items/item/source.txt");
+const key = StorageKey.make("users/test/files/file/source.txt");
 const prefix = StorageKey.make("users/test/");
 
 describe("StorageMemory", () => {

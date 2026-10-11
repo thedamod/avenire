@@ -95,7 +95,7 @@ export interface AggregatedGraph {
   readonly relations: ReadonlyArray<AggregatedRelation>;
 }
 
-/** Merge extraction batches into the rows written for one item. */
+/** Merge extraction batches into the rows written for one file. */
 export const aggregateGraph = (
   graph: ExtractedGraph,
   chunkIds: ReadonlyArray<string>,
@@ -188,7 +188,7 @@ export const GraphExtractorLive = Layer.effect(
             generateText({
               model: models.languageModel("ingest-graph"),
               system: SYSTEM,
-              prompt: `Item title: ${input.title}\n\n${input.chunks.map((chunk, index) => `[${index}] ${chunk}`).join("\n\n")}`,
+              prompt: `File title: ${input.title}\n\n${input.chunks.map((chunk, index) => `[${index}] ${chunk}`).join("\n\n")}`,
               output: graphOutput,
               abortSignal,
             }),

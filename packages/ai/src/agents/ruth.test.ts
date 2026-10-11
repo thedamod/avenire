@@ -92,7 +92,7 @@ for (const fullAccess of [false, true]) {
       expect(agent.tools[name]?.needsApproval).toBe(false);
       expect(agent.toolApproval[name]).toBeUndefined();
     }
-    for (const name of ["run_python", "read_item", "propose_file_action"])
+    for (const name of ["run_python", "propose_file_action"])
       expect(agent.tools).not.toHaveProperty(name);
     expect(Object.keys(agent.tools).sort()).toEqual(Object.keys(ruthToolSpecs).sort());
   });

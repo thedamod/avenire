@@ -1,4 +1,4 @@
-import { CaptureId, ChunkId, ClusterId, ItemId, type SearchHit } from "@avenire/contracts";
+import { CaptureId, ChunkId, FolderId, FileId, type SearchHit } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { Retrieval } from "@avenire/ingestion/retrieval";
 import { describe, expect, it } from "@effect/vitest";
@@ -20,7 +20,7 @@ import { ctx, fakeDatabase } from "./test-support.ts";
 
 const now = DateTime.makeUnsafe("2026-10-09T06:30:00Z");
 const candidate = (id: string): MetadataCandidate => ({
-  fileId: ItemId.make(id),
+  fileId: FileId.make(id),
   title: "Heat",
   kind: "pdf",
   mimeType: "application/pdf",
@@ -38,9 +38,9 @@ const candidate = (id: string): MetadataCandidate => ({
 });
 const hit = (id: string, relevance: number | null): SearchHit => ({
   chunkId: ChunkId.make(`chunk-${id}`),
-  itemId: ItemId.make(id),
-  itemTitle: "Heat",
-  itemKind: "pdf",
+  fileId: FileId.make(id),
+  fileTitle: "Heat",
+  fileKind: "pdf",
   chunkKind: "concept",
   content: "Heat transfer",
   location: { page: 1 },
@@ -84,11 +84,11 @@ it("renders owned metadata, overlap, activity and explicit filters with paramete
         kinds: ["pdf"],
         tags: ["physics"],
         sources: ["upload"],
-        clusterIds: [ClusterId.make("folder")],
+        folderIds: [FolderId.make("folder")],
       },
       explicit: {
-        itemIds: [ItemId.make("item")],
-        clusterIds: [ClusterId.make("folder")],
+        fileIds: [FileId.make("file")],
+        folderIds: [FolderId.make("folder")],
         captureIds: [CaptureId.make("capture")],
       },
       time: { events: ["opened", "edited"] },
@@ -104,15 +104,15 @@ it("renders owned metadata, overlap, activity and explicit filters with paramete
   expect(sql).toContain("e.kind = ANY(ARRAY[");
   expect(sql).toContain("ic.user_id = i.user_id");
   expect(sql).toContain("cap.user_id = i.user_id");
-  expect(sql).toContain("EXISTS (SELECT 1 FROM item_event e");
-  expect(sql).not.toContain("OR EXISTS (SELECT 1 FROM item_event");
+  expect(sql).toContain("EXISTS (SELECT 1 FROM file_event e");
+  expect(sql).not.toContain("OR EXISTS (SELECT 1 FROM file_event");
   for (const value of [
     "user",
     "pdf",
     "physics",
     "upload",
     "folder",
-    "item",
+    "file",
     "capture",
     "opened",
     "edited",
@@ -127,11 +127,11 @@ it("time without explicit event kinds includes content OR activity", () => {
     metadataCandidatesStatement(ctx.userId, {}, { since: "2026-10-08T00:00:00Z" }),
   );
   expect(sql).toContain("coalesce(i.content_modified_at, i.created_at) >=");
-  expect(sql).toContain("OR EXISTS (SELECT 1 FROM item_event e");
+  expect(sql).toContain("OR EXISTS (SELECT 1 FROM file_event e");
 });
 it("empty explicit ids select no candidates", () => {
   const { sql } = new PgDialect().sqlToQuery(
-    metadataCandidatesStatement(ctx.userId, { explicit: { itemIds: [] } }, {}),
+    metadataCandidatesStatement(ctx.userId, { explicit: { fileIds: [] } }, {}),
   );
   expect(sql).toContain("i.id = ANY(ARRAY[]::text[])");
 });
@@ -149,11 +149,11 @@ it("reasons include activity, local today, topic relevance and folder", () => {
     selectorReason(candidate("a"), { topic: { query: "thermodynamics" } }, "UTC", now, 0.82),
   ).toBe('edited 2026-10-08 · opened today · matches "thermodynamics" (0.82) · in Thermodynamics');
 });
-it("scores each item by its best relevance with fused rank fallback", () => {
+it("scores each file by its best relevance with fused rank fallback", () => {
   const scores = scoreTopicHits([hit("a", 0.4), hit("b", null), hit("a", 0.82)]);
   expect([...scores]).toEqual([
-    [ItemId.make("a"), 0.82],
-    [ItemId.make("b"), 0.5],
+    [FileId.make("a"), 0.82],
+    [FileId.make("b"), 0.5],
   ]);
 });
 for (const abstained of [false, true])
@@ -161,7 +161,7 @@ for (const abstained of [false, true])
     `topic ${abstained ? "abstention returns no files" : "sorts scores and filters minRelevance"}`,
     () => {
       const statements: SQL[] = [];
-      const searches: Array<{ itemIds?: ReadonlyArray<ItemId> | undefined; text: string }> = [];
+      const searches: Array<{ fileIds?: ReadonlyArray<FileId> | undefined; text: string }> = [];
       const database = fakeDatabase({
         execute: async (statement: SQL) => {
           statements.push(statement);
@@ -189,7 +189,7 @@ for (const abstained of [false, true])
           { now, limit: 1 },
         );
         expect(searches[0]).toMatchObject({
-          itemIds: ["a", "b", "c"],
+          fileIds: ["a", "b", "c"],
           limit: 50,
           depth: "standard",
         });
@@ -240,7 +240,7 @@ it.effect("caps candidates and batches restricted retrieval ids", () => {
       Retrieval,
       Retrieval.of({
         search: (_userId, query) => {
-          batches.push(query.itemIds?.length ?? 0);
+          batches.push(query.fileIds?.length ?? 0);
           return Effect.succeed({
             hits: [hit("0", 0.9)],
             facts: [],

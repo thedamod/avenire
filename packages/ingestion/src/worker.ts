@@ -3,9 +3,9 @@
  * `FOR UPDATE SKIP LOCKED` and hold a lease (`locked_until`), so several worker
  * processes can run side by side and a crashed worker's jobs are picked up again.
  */
-import { IngestionJobId, type IngestionStatus, ItemId, NotFound, UserId } from "@avenire/contracts";
+import { IngestionJobId, type IngestionStatus, FileId, NotFound, UserId } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import { ingestionJob, item } from "@avenire/database/schema";
+import { ingestionJob, file } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
 import { and, eq, ne, sql } from "drizzle-orm";
 import * as Cause from "effect/Cause";
@@ -26,7 +26,7 @@ const IN_PROGRESS: ReadonlyArray<IngestionStatus> = [
   "chunking",
   "embedding",
   "graphing",
-  "clustering",
+  "foldering",
 ];
 const IN_PROGRESS_SQL = sql.join(
   IN_PROGRESS.map((status) => sql`${status}`),
@@ -36,27 +36,27 @@ const IN_PROGRESS_SQL = sql.join(
 /** Minutes to wait before retrying a job that failed on its `attempts`-th try. */
 export const retryDelayMinutes = (attempts: number): number => 2 ** attempts;
 
-/** Queue (or re-queue) an item for ingestion. Fails with NotFound if the user doesn't own it. */
+/** Queue (or re-queue) an file for ingestion. Fails with NotFound if the user doesn't own it. */
 export const enqueueIngestion = Effect.fn("Ingestion.enqueue")(function* (
   userId: UserId,
-  itemId: ItemId,
+  fileId: FileId,
 ) {
   const database = yield* Database;
   const owned = yield* database.use((db) =>
-    db.query.item.findFirst({
+    db.query.file.findFirst({
       columns: { id: true },
-      where: and(eq(item.id, itemId), eq(item.userId, userId)),
+      where: and(eq(file.id, fileId), eq(file.userId, userId)),
     }),
   );
-  if (owned === undefined) return yield* new NotFound({ entity: "Item", id: itemId });
+  if (owned === undefined) return yield* new NotFound({ entity: "File", id: fileId });
   const id = yield* newId(IngestionJobId);
   const reset = { status: "queued" as const, attempts: 0, error: null };
   yield* database.use((db) =>
     db
       .insert(ingestionJob)
-      .values({ id, userId, itemId, ...reset })
+      .values({ id, userId, fileId, ...reset })
       .onConflictDoUpdate({
-        target: ingestionJob.itemId,
+        target: ingestionJob.fileId,
         set: {
           ...reset,
           generation: sql`${ingestionJob.generation} + 1`,
@@ -73,7 +73,7 @@ export const enqueueIngestion = Effect.fn("Ingestion.enqueue")(function* (
 const ClaimedJob = Schema.Struct({
   id: IngestionJobId,
   userId: UserId,
-  itemId: ItemId,
+  fileId: FileId,
   generation: Schema.Number,
   attempts: Schema.Number,
 });
@@ -97,7 +97,7 @@ const claimJobs = (limit: number) => sql`
   SET status = 'extracting', locked_until = now() + interval '10 minutes',
       attempts = job.attempts + 1, updated_at = now()
   FROM candidates WHERE job.id = candidates.id
-  RETURNING job.id, job.user_id AS "userId", job.item_id AS "itemId", job.generation,
+  RETURNING job.id, job.user_id AS "userId", job.file_id AS "fileId", job.generation,
     job.attempts
 `;
 
@@ -137,7 +137,7 @@ export const IngestionWorkerLive = Layer.effectDiscard(
       );
     };
 
-    /** If the item was re-enqueued while this run held the lease, hand the lease back. */
+    /** If the file was re-enqueued while this run held the lease, hand the lease back. */
     const releaseIfSuperseded = (job: ClaimedJob) =>
       database
         .use((db) =>

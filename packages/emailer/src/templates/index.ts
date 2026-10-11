@@ -14,7 +14,7 @@ export const TemplatePropsSchema = {
     date: Schema.String,
     taskTitle: Schema.String,
     summary: Schema.String.check(Schema.isMaxLength(600)),
-    itemsRead: Schema.Int,
+    filesRead: Schema.Int,
     produced: Schema.Array(Schema.Struct({ title: Schema.String, url: Schema.String })),
     pendingApprovals: Schema.Int,
     reportUrl: Schema.String,

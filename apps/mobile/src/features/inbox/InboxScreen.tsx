@@ -9,11 +9,11 @@ import { useQuery, useStream } from "../../lib/useRpc";
 
 export function InboxScreen() {
   const {
-    data: items,
+    data: files,
     error,
     loading,
     refetch,
-  } = useQuery((client) => client["library.listItems"]({ placement: "inbox" }), "inbox-items");
+  } = useQuery((client) => client["library.listFiles"]({ placement: "inbox" }), "inbox-files");
   const [jobsById, setJobsById] = useState<ReadonlyMap<IngestionJob["id"], IngestionJob>>(
     () => new Map(),
   );
@@ -29,8 +29,8 @@ export function InboxScreen() {
     (cause) => setStreamError(errorMessage(cause)),
   );
 
-  const statusByItem = new Map(
-    [...jobsById.values()].map((job) => [job.itemId, job.status] as const),
+  const statusByFile = new Map(
+    [...jobsById.values()].map((job) => [job.fileId, job.status] as const),
   );
 
   return (
@@ -38,14 +38,14 @@ export function InboxScreen() {
       {loading ? <ActivityIndicator /> : null}
       {error ? <ErrorState message={errorMessage(error)} onRetry={() => void refetch()} /> : null}
       {streamError ? <ErrorState message={`Live updates stopped: ${streamError}`} /> : null}
-      {!loading && !error && items?.length === 0 ? (
+      {!loading && !error && files?.length === 0 ? (
         <EmptyState title="Your inbox is clear" description="New captures will show up here." />
       ) : null}
-      {items?.map((item) => (
+      {files?.map((file) => (
         <ListRow
-          key={item.id}
-          title={item.title}
-          detail={statusByItem.get(item.id) ?? "Waiting for ingestion"}
+          key={file.id}
+          title={file.title}
+          detail={statusByFile.get(file.id) ?? "Waiting for ingestion"}
         />
       ))}
     </Screen>

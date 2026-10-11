@@ -86,7 +86,7 @@ export const recordingDatabase = (events: string[] = []) => {
       : {}),
     ...(name === "cloud_run"
       ? {
-          clusterId: null,
+          folderId: null,
           summary: null,
           reportMessageId: null,
           logTail: null,
@@ -151,11 +151,11 @@ export const recordingDatabase = (events: string[] = []) => {
                 };
               if (joined && name === "pending_approval")
                 return {
-                  itemTitle: rows("item").find((item) => item.id === row.itemId)?.title,
+                  fileTitle: rows("file").find((file) => file.id === row.fileId)?.title,
                   summary: row.summary,
                   conflict: row.conflict,
                 };
-              if (!selection || (joined && name === "item")) return { ...row };
+              if (!selection || (joined && name === "file")) return { ...row };
               return Object.fromEntries(
                 Object.entries(selection).map(([key, column]) => [
                   key,

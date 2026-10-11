@@ -1,4 +1,4 @@
-import { ItemId, UserId } from "@avenire/contracts";
+import { FileId, UserId } from "@avenire/contracts";
 import {
   Database,
   DatabaseError,
@@ -39,7 +39,7 @@ it.effect("filters graph seeds, edges and mentions before their limits", () => {
     const graph = yield* GraphSearch;
     const query = {
       text: "entity",
-      itemIds: [ItemId.make("selected")],
+      fileIds: [FileId.make("selected")],
       since: "2026-10-01T00:00:00Z",
       until: "2026-10-09T00:00:00Z",
     };
@@ -71,7 +71,7 @@ it.effect("filters graph seeds, edges and mentions before their limits", () => {
   }).pipe(Effect.provide(GraphSearchLive), Effect.provideService(Database, database));
 });
 
-it.effect("leaves unscoped graph searches free of item joins", () => {
+it.effect("leaves unscoped graph searches free of file joins", () => {
   const statements: Array<{ sql: string; params: unknown[] }> = [];
   const database = recordingDatabase(statements);
   return Effect.gen(function* () {
@@ -86,6 +86,6 @@ it.effect("leaves unscoped graph searches free of item joins", () => {
     });
     const candidates = statements.filter(({ sql }) => !sql.includes("set_config"));
     expect(candidates).toHaveLength(3);
-    for (const rendered of candidates) expect(rendered.sql).not.toContain("JOIN item");
+    for (const rendered of candidates) expect(rendered.sql).not.toContain("JOIN file");
   }).pipe(Effect.provide(GraphSearchLive), Effect.provideService(Database, database));
 });

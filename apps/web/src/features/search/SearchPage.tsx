@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { ItemKind, SearchHit } from "@avenire/contracts";
+import type { FileKind, SearchHit } from "@avenire/contracts";
 import { call } from "@avenire/client-runtime/rpc";
 import { Input } from "@avenire/ui/components/input";
 import { useApi, errorMessage } from "~/lib/rpc";
 
-const kinds: ReadonlyArray<ItemKind> = [
+const kinds: ReadonlyArray<FileKind> = [
   "pdf",
   "document",
   "web-page",
@@ -29,7 +29,7 @@ function location(hit: SearchHit): string {
 export function SearchPage() {
   const api = useApi();
   const [query, setQuery] = useState("");
-  const [kind, setKind] = useState<ItemKind | "all">("all");
+  const [kind, setKind] = useState<FileKind | "all">("all");
   const [hits, setHits] = useState<ReadonlyArray<SearchHit>>([]);
   const [abstained, setAbstained] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -74,9 +74,9 @@ export function SearchPage() {
   const grouped = useMemo(() => {
     const groups = new Map<string, SearchHit[]>();
     for (const hit of hits) {
-      const group = groups.get(hit.itemId) ?? [];
+      const group = groups.get(hit.fileId) ?? [];
       group.push(hit);
-      groups.set(hit.itemId, group);
+      groups.set(hit.fileId, group);
     }
     return [...groups.entries()];
   }, [hits]);
@@ -103,9 +103,9 @@ export function SearchPage() {
           }
         >
           <option value="all">All kinds</option>
-          {kinds.map((itemKind) => (
-            <option key={itemKind} value={itemKind}>
-              {itemKind}
+          {kinds.map((fileKind) => (
+            <option key={fileKind} value={fileKind}>
+              {fileKind}
             </option>
           ))}
         </select>
@@ -122,17 +122,17 @@ export function SearchPage() {
         </p>
       ) : null}
       <div className="divide-y divide-border">
-        {grouped.map(([itemId, itemHits]) => (
-          <article key={itemId} className="py-4">
-            <h2 className="font-medium">{itemHits[0]?.itemTitle}</h2>
+        {grouped.map(([fileId, fileHits]) => (
+          <article key={fileId} className="py-4">
+            <h2 className="font-medium">{fileHits[0]?.fileTitle}</h2>
             <div className="mt-2 grid gap-3">
-              {itemHits.map((hit) => (
+              {fileHits.map((hit) => (
                 <div key={hit.chunkId} className="border-l-2 border-border pl-3">
                   <p className="text-sm leading-6">
                     {hit.content.trim().replace(/\s+/g, " ").slice(0, 300)}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {location(hit)} · {hit.itemKind}
+                    {location(hit)} · {hit.fileKind}
                   </p>
                 </div>
               ))}

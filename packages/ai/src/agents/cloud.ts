@@ -16,8 +16,8 @@ import {
   cloudRun,
   cloudTask,
   emailOutbox,
-  item,
-  itemCluster,
+  file,
+  fileFolder,
   pendingApproval,
   ruthMessage,
   ruthThread,
@@ -203,7 +203,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
             title: "Ruth Cloud session recording",
             storageKey: key,
             mimeType: "video/mp4",
-            sourceItemIds: readFiles(manifests).map((file) => file.fileId),
+            sourceFileIds: readFiles(manifests).map((file) => file.fileId),
           }),
         );
         recording = { id: artifactId };
@@ -232,34 +232,34 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
           }),
         );
         const produced =
-          current.clusterId === null
+          current.folderId === null
             ? []
             : yield* database.use((db) =>
                 db
-                  .select({ id: item.id, title: item.title })
-                  .from(item)
+                  .select({ id: file.id, title: file.title })
+                  .from(file)
                   .innerJoin(
-                    itemCluster,
-                    and(eq(itemCluster.itemId, item.id), eq(itemCluster.userId, userId)),
+                    fileFolder,
+                    and(eq(fileFolder.fileId, file.id), eq(fileFolder.userId, userId)),
                   )
                   .where(
                     and(
-                      eq(item.userId, userId),
-                      eq(itemCluster.clusterId, current.clusterId!),
-                      eq(item.source, "ruth-cloud"),
+                      eq(file.userId, userId),
+                      eq(fileFolder.folderId, current.folderId!),
+                      eq(file.source, "ruth-cloud"),
                     ),
                   )
-                  .orderBy(asc(item.createdAt)),
+                  .orderBy(asc(file.createdAt)),
               );
         const approvals = yield* database.use((db) =>
           db
             .select({
-              itemTitle: item.title,
+              fileTitle: file.title,
               summary: pendingApproval.summary,
               conflict: pendingApproval.conflict,
             })
             .from(pendingApproval)
-            .innerJoin(item, and(eq(pendingApproval.itemId, item.id), eq(item.userId, userId)))
+            .innerJoin(file, and(eq(pendingApproval.fileId, file.id), eq(file.userId, userId)))
             .where(
               and(
                 eq(pendingApproval.userId, userId),
@@ -356,10 +356,10 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
                       ),
                       taskTitle: taskForReport.title,
                       summary: scrub(summary).slice(0, 600),
-                      itemsRead: readFiles(manifests).length,
+                      filesRead: readFiles(manifests).length,
                       produced: produced.map((file) => ({
                         title: file.title,
-                        url: `${appUrl}/library?item=${encodeURIComponent(file.id)}`,
+                        url: `${appUrl}/library?file=${encodeURIComponent(file.id)}`,
                       })),
                       pendingApprovals: approvals.length,
                       reportUrl,

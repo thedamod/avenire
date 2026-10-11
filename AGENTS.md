@@ -22,7 +22,7 @@ packages/
   auth/              better-auth server + clients
   storage/           files-sdk wrapped as the `Storage` service
   cloud/             Daytona sandboxes (ephemeral compute + persistent Ruth Cloud boxes)
-  ingestion/         Extract -> chunk -> embed -> graph -> cluster, the job queue worker, and retrieval
+  ingestion/         Extract -> chunk -> embed -> graph -> folder, the job queue worker, and retrieval
                      (multi-lane RRF, rerank, graph RAG, semantic cache)
   ai/                Ruth (AI SDK chat) and Ruth Cloud (Pi orchestrator + task scheduler)
   ruth-kit/          Shared tools, hydration, publishing, run tokens and approval review
@@ -62,7 +62,7 @@ widgets and visual rendering come from `@avenire/viz`.
   `effect/ai`. Effect stays for services, errors, config and jobs; tool `execute` functions
   run Effect programs against the request's services.
 - Ruth Cloud never writes to originals without a user-approved sync: it works on copies,
-  publishes new items, and proposes changes as pending approvals the user accepts or skips.
+  publishes new files, and proposes changes as pending approvals the user accepts or skips.
 - `context/` holds reference repos (t3code, legacy v1, research). Read-only, never imported,
   never committed.
 

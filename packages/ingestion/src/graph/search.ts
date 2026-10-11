@@ -1,5 +1,5 @@
 /** The graph retrieval lane: link the query to entities, then walk relations. */
-import { ChunkId, ItemId, type GraphFact, type SearchQuery, type UserId } from "@avenire/contracts";
+import { ChunkId, FileId, type GraphFact, type SearchQuery, type UserId } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { type SQL, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
@@ -13,20 +13,20 @@ import { entityKey, GraphError } from "./extract.ts";
 import { advanceFrontier, type GraphEdge, mergeSeeds, rankGraph } from "./rank.ts";
 
 /**
- * A search narrowed to items, times, kinds or clusters keeps the walk inside them, so
+ * A search narrowed to files, times, kinds or folders keeps the walk inside them, so
  * out-of-scope entities don't use up its budget. Unscoped searches skip these joins:
  * hits are filtered when their chunks are hydrated either way.
  */
 const isScoped = (query: SearchQuery): boolean =>
-  query.itemIds !== undefined ||
+  query.fileIds !== undefined ||
   query.since !== undefined ||
   query.until !== undefined ||
   (query.kinds?.length ?? 0) > 0 ||
-  (query.clusterIds?.length ?? 0) > 0;
+  (query.folderIds?.length ?? 0) > 0;
 
 const chunkInScope = (userId: UserId, query: SearchQuery, chunkId: SQL): SQL =>
   isScoped(query)
-    ? sql` AND EXISTS (SELECT 1 FROM chunk c JOIN item i ON i.id = c.item_id AND i.user_id = c.user_id
+    ? sql` AND EXISTS (SELECT 1 FROM chunk c JOIN file i ON i.id = c.file_id AND i.user_id = c.user_id
         WHERE c.id = ${chunkId} AND ${candidateFilter(userId, query)})`
     : sql``;
 
@@ -68,7 +68,7 @@ const EdgeRow = Schema.Struct({
   predicate: Schema.String,
   weight: Schema.Number,
   chunkId: Schema.String,
-  itemId: Schema.String,
+  fileId: Schema.String,
 });
 const MentionRow = Schema.Struct({ entityId: Schema.String, chunkId: Schema.String });
 const decodeSeeds = Schema.decodeUnknownEffect(Schema.Array(SeedRow));
@@ -133,7 +133,7 @@ export const GraphSearchLive = Layer.effect(
             SELECT r.id, r.source_id AS "sourceId", r.target_id AS "targetId",
               source.name AS "sourceName", target.name AS "targetName",
               r.predicate, r.weight::float8 AS weight,
-              r.chunk_id AS "chunkId", r.item_id AS "itemId"
+              r.chunk_id AS "chunkId", r.file_id AS "fileId"
             FROM entity_relation AS r
             JOIN entity AS source ON source.id = r.source_id
             JOIN entity AS target ON target.id = r.target_id
@@ -181,7 +181,7 @@ export const GraphSearchLive = Layer.effect(
             relation: edge.predicate,
             target: edge.targetName,
             chunkId: ChunkId.make(edge.chunkId),
-            itemId: ItemId.make(edge.itemId),
+            fileId: FileId.make(edge.fileId),
           })),
         };
       },

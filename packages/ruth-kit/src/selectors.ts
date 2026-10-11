@@ -1,10 +1,10 @@
 import {
-  ClusterId,
+  FolderId,
   FileSelector,
-  ItemEventKind,
-  ItemId,
-  ItemKind,
-  ItemSource,
+  FileEventKind,
+  FileId,
+  FileKind,
+  FileSource,
   type SearchHit,
   type UserId,
 } from "@avenire/contracts";
@@ -73,8 +73,8 @@ const bounds = (column: SQL, window: TimeWindow) => [
 const conjunction = (clauses: ReadonlyArray<SQL>) =>
   clauses.length === 0 ? sql`TRUE` : sql.join([...clauses], sql` AND `);
 const membership = (ids: ReadonlyArray<string>) => sql`EXISTS (
-  SELECT 1 FROM item_cluster ic JOIN cluster c ON c.id = ic.cluster_id AND c.user_id = i.user_id
-  WHERE ic.item_id = i.id AND ic.user_id = i.user_id AND ic.cluster_id = ANY(${array(ids)})
+  SELECT 1 FROM file_folder ic JOIN folder c ON c.id = ic.folder_id AND c.user_id = i.user_id
+  WHERE ic.file_id = i.id AND ic.user_id = i.user_id AND ic.folder_id = ANY(${array(ids)})
 )`;
 
 /** All identifiers remain parameters, and related rows are scoped before they can match. */
@@ -88,22 +88,22 @@ export const metadataFilter = (userId: UserId, selector: FileSelector, window: T
   if (filters?.kinds !== undefined) clauses.push(sql`i.kind = ANY(${array(filters.kinds)})`);
   if (filters?.tags !== undefined) clauses.push(sql`i.tags && ${array(filters.tags)}`);
   if (filters?.sources !== undefined) clauses.push(sql`i.source = ANY(${array(filters.sources)})`);
-  if (filters?.clusterIds !== undefined) clauses.push(membership(filters.clusterIds));
+  if (filters?.folderIds !== undefined) clauses.push(membership(filters.folderIds));
   const explicit = selector.explicit;
-  if (explicit?.itemIds !== undefined) clauses.push(sql`i.id = ANY(${array(explicit.itemIds)})`);
-  if (explicit?.clusterIds !== undefined) clauses.push(membership(explicit.clusterIds));
+  if (explicit?.fileIds !== undefined) clauses.push(sql`i.id = ANY(${array(explicit.fileIds)})`);
+  if (explicit?.folderIds !== undefined) clauses.push(membership(explicit.folderIds));
   if (explicit?.captureIds !== undefined)
     clauses.push(
       sql`EXISTS (SELECT 1 FROM capture cap WHERE cap.id = i.capture_id AND cap.user_id = i.user_id AND cap.id = ANY(${array(explicit.captureIds)}))`,
     );
   const eventClauses = [
-    sql`e.item_id = i.id`,
+    sql`e.file_id = i.id`,
     sql`e.user_id = i.user_id`,
     ...bounds(sql`e.at`, window),
   ];
   if (selector.time?.events !== undefined)
     eventClauses.push(sql`e.kind = ANY(${array(selector.time.events)})`);
-  const eventMatch = sql`EXISTS (SELECT 1 FROM item_event e WHERE ${conjunction(eventClauses)})`;
+  const eventMatch = sql`EXISTS (SELECT 1 FROM file_event e WHERE ${conjunction(eventClauses)})`;
   if (selector.time?.events !== undefined) clauses.push(eventMatch);
   else if (window.since !== undefined || window.until !== undefined)
     clauses.push(
@@ -115,7 +115,7 @@ export const metadataFilter = (userId: UserId, selector: FileSelector, window: T
 export interface CandidateOptions {
   readonly limit?: number;
   readonly cursor?: string;
-  readonly folder?: ClusterId | "inbox";
+  readonly folderId?: FolderId | "inbox";
   readonly order?: "activity" | "id";
 }
 /** One extra row detects truncation; only the first 2,000 become retrieval candidates. */
@@ -127,21 +127,21 @@ export const metadataCandidatesStatement = (
 ): SQL => {
   const extra: SQL[] = [metadataFilter(userId, selector, window)];
   if (options.cursor !== undefined) extra.push(sql`i.id < ${options.cursor}`);
-  if (options.folder === "inbox")
+  if (options.folderId === "inbox")
     extra.push(
-      sql`NOT EXISTS (SELECT 1 FROM item_cluster ic WHERE ic.item_id = i.id AND ic.user_id = i.user_id)`,
+      sql`NOT EXISTS (SELECT 1 FROM file_folder ic WHERE ic.file_id = i.id AND ic.user_id = i.user_id)`,
     );
-  else if (options.folder !== undefined) extra.push(membership([options.folder]));
+  else if (options.folderId !== undefined) extra.push(membership([options.folderId]));
   const eventClauses = [
     sql`e.user_id = i.user_id`,
-    sql`e.item_id = i.id`,
+    sql`e.file_id = i.id`,
     ...bounds(sql`e.at`, window),
   ];
   if (selector.time?.events !== undefined)
     eventClauses.push(sql`e.kind = ANY(${array(selector.time.events)})`);
   const preferred =
-    options.folder !== undefined && options.folder !== "inbox"
-      ? sql`(c.id = ${options.folder}) DESC, `
+    options.folderId !== undefined && options.folderId !== "inbox"
+      ? sql`(c.id = ${options.folderId}) DESC, `
       : sql``;
   const order =
     options.order === "id" ? sql`i.id DESC` : sql`activity."activityAt" DESC, i.id DESC`;
@@ -149,35 +149,35 @@ export const metadataCandidatesStatement = (
     SELECT i.id AS "fileId", i.title, i.kind, i.mime_type AS "mimeType", i.size_bytes::double precision AS size,
       i.source, i.tags, i.created_at::text AS "createdAt", i.content_modified_at::text AS "contentModifiedAt",
       folder.name AS "folderName", activity."activityAt"::text AS "activityAt", events.entries AS events
-    FROM item i
+    FROM file i
     LEFT JOIN LATERAL (
-      SELECT c.name FROM item_cluster ic JOIN cluster c ON c.id = ic.cluster_id AND c.user_id = i.user_id
-      WHERE ic.item_id = i.id AND ic.user_id = i.user_id ORDER BY ${preferred}c.name, c.id LIMIT 1
+      SELECT c.name FROM file_folder ic JOIN folder c ON c.id = ic.folder_id AND c.user_id = i.user_id
+      WHERE ic.file_id = i.id AND ic.user_id = i.user_id ORDER BY ${preferred}c.name, c.id LIMIT 1
     ) folder ON TRUE
     LEFT JOIN LATERAL (
       SELECT greatest(coalesce(i.content_modified_at, i.created_at), coalesce(max(e.at), i.created_at)) AS "activityAt"
-      FROM item_event e WHERE e.item_id = i.id AND e.user_id = i.user_id
+      FROM file_event e WHERE e.file_id = i.id AND e.user_id = i.user_id
     ) activity ON TRUE
     LEFT JOIN LATERAL (
       SELECT coalesce(jsonb_agg(jsonb_build_object('kind', latest.kind, 'at', latest.at::text) ORDER BY latest.at DESC), '[]'::jsonb) AS entries
-      FROM (SELECT e.kind, max(e.at) AS at FROM item_event e WHERE ${conjunction(eventClauses)} GROUP BY e.kind) latest
+      FROM (SELECT e.kind, max(e.at) AS at FROM file_event e WHERE ${conjunction(eventClauses)} GROUP BY e.kind) latest
     ) events ON TRUE
     WHERE ${conjunction(extra)} ORDER BY ${order} LIMIT ${options.limit ?? SELECTOR_CANDIDATE_CAP + 1}`;
 };
 
 export const MetadataCandidate = Schema.Struct({
-  fileId: ItemId,
+  fileId: FileId,
   title: Schema.String,
-  kind: ItemKind,
+  kind: FileKind,
   mimeType: Schema.NullOr(Schema.String),
   size: Schema.NullOr(Schema.Number),
-  source: ItemSource,
+  source: FileSource,
   tags: Schema.Array(Schema.String),
   createdAt: Schema.String,
   contentModifiedAt: Schema.NullOr(Schema.String),
   folderName: Schema.NullOr(Schema.String),
   activityAt: Schema.String,
-  events: Schema.Array(Schema.Struct({ kind: ItemEventKind, at: Schema.String })),
+  events: Schema.Array(Schema.Struct({ kind: FileEventKind, at: Schema.String })),
 });
 export type MetadataCandidate = typeof MetadataCandidate.Type;
 const mimeExtensions: Readonly<Record<string, string>> = {
@@ -232,11 +232,11 @@ export const toFileEntry = (candidate: MetadataCandidate): FileEntry => {
 };
 
 /** Null relevance falls back to fused order, never the uncalibrated fused score. */
-export const scoreTopicHits = (hits: ReadonlyArray<SearchHit>): ReadonlyMap<ItemId, number> => {
-  const scores = new Map<ItemId, number>();
+export const scoreTopicHits = (hits: ReadonlyArray<SearchHit>): ReadonlyMap<FileId, number> => {
+  const scores = new Map<FileId, number>();
   hits.forEach((hit, index) => {
     const score = hit.relevance ?? 1 / (index + 1);
-    scores.set(hit.itemId, Math.max(scores.get(hit.itemId) ?? 0, score));
+    scores.set(hit.fileId, Math.max(scores.get(hit.fileId) ?? 0, score));
   });
   return scores;
 };
@@ -298,14 +298,14 @@ export const resolveSelector = Effect.fn("Selectors.resolveSelector")(function* 
   );
   const candidates = yield* Schema.decodeUnknownEffect(Schema.Array(MetadataCandidate))(rows);
   const capped = candidates.slice(0, SELECTOR_CANDIDATE_CAP);
-  let scores: ReadonlyMap<ItemId, number> | undefined;
+  let scores: ReadonlyMap<FileId, number> | undefined;
   if (selector.topic && capped.length > 0) {
     const retrieval = yield* Retrieval;
-    const topicScores = new Map<ItemId, number>();
+    const topicScores = new Map<FileId, number>();
     for (let offset = 0; offset < capped.length; offset += RETRIEVAL_ID_BATCH) {
       const result = yield* retrieval.search(ctx.userId, {
         text: selector.topic.query,
-        itemIds: capped.slice(offset, offset + RETRIEVAL_ID_BATCH).map((c) => c.fileId),
+        fileIds: capped.slice(offset, offset + RETRIEVAL_ID_BATCH).map((c) => c.fileId),
         limit: 50,
         depth: "standard",
       });

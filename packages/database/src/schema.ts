@@ -6,9 +6,9 @@ import type {
   CanvasNodeRef,
   ChunkLocation,
   ExtractionCoverage,
-  ItemKind,
-  ItemSource,
-  ItemEventKind,
+  FileKind,
+  FileSource,
+  FileEventKind,
   RuthThreadKind,
   CloudTaskSchedule,
   CloudTaskDelivery,
@@ -17,7 +17,7 @@ import type {
   HydratedFile,
   PendingApprovalStatus,
   IngestionStatus,
-  ItemPlacement,
+  FilePlacement,
   SearchResult,
 } from "@avenire/contracts";
 import {
@@ -103,17 +103,17 @@ export const capture = pgTable("capture", {
   createdAt: timestamptz("created_at").notNull().defaultNow(),
 });
 
-export const item = pgTable(
-  "item",
+export const file = pgTable(
+  "file",
   {
     id: text("id").primaryKey(),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    kind: text("kind").$type<ItemKind>().notNull(),
+    kind: text("kind").$type<FileKind>().notNull(),
     title: text("title").notNull(),
-    placement: text("placement").$type<ItemPlacement>().notNull().default("inbox"),
-    source: text("source").$type<ItemSource>().notNull().default("upload"),
+    placement: text("placement").$type<FilePlacement>().notNull().default("inbox"),
+    source: text("source").$type<FileSource>().notNull().default("upload"),
     contentModifiedAt: timestamptz("content_modified_at"),
     tags: text("tags")
       .array()
@@ -136,34 +136,34 @@ export const item = pgTable(
     updatedAt: timestamptz("updated_at").notNull().defaultNow(),
   },
   (t) => [
-    unique("item_user_dedupe_key_unique").on(t.userId, t.dedupeKey),
-    index("item_user_placement_idx").on(t.userId, t.placement),
-    index("item_user_content_modified_idx").on(t.userId, t.contentModifiedAt),
+    unique("file_user_dedupe_key_unique").on(t.userId, t.dedupeKey),
+    index("file_user_placement_idx").on(t.userId, t.placement),
+    index("file_user_content_modified_idx").on(t.userId, t.contentModifiedAt),
   ],
 );
 
 /** Library activity used by time-based selectors. */
-export const itemEvent = pgTable(
-  "item_event",
+export const fileEvent = pgTable(
+  "file_event",
   {
     id: text("id").primaryKey(),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    itemId: text("item_id")
+    fileId: text("file_id")
       .notNull()
-      .references(() => item.id, { onDelete: "cascade" }),
-    kind: text("kind").$type<ItemEventKind>().notNull(),
+      .references(() => file.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<FileEventKind>().notNull(),
     at: timestamptz("at").notNull().defaultNow(),
     metadata: jsonb("metadata"),
   },
   (t) => [
-    index("item_event_user_at_idx").on(t.userId, t.at),
-    index("item_event_user_item_at_idx").on(t.userId, t.itemId, t.at),
+    index("file_event_user_at_idx").on(t.userId, t.at),
+    index("file_event_user_file_at_idx").on(t.userId, t.fileId, t.at),
   ],
 );
 
-export const cluster = pgTable("cluster", {
+export const folder = pgTable("folder", {
   id: text("id").primaryKey(),
   userId: text("user_id")
     .notNull()
@@ -175,21 +175,21 @@ export const cluster = pgTable("cluster", {
   updatedAt: timestamptz("updated_at").notNull().defaultNow(),
 });
 
-export const itemCluster = pgTable(
-  "item_cluster",
+export const fileFolder = pgTable(
+  "file_folder",
   {
-    itemId: text("item_id")
+    fileId: text("file_id")
       .notNull()
-      .references(() => item.id, { onDelete: "cascade" }),
-    clusterId: text("cluster_id")
+      .references(() => file.id, { onDelete: "cascade" }),
+    folderId: text("folder_id")
       .notNull()
-      .references(() => cluster.id, { onDelete: "cascade" }),
+      .references(() => folder.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.itemId, t.clusterId] })],
+  (t) => [primaryKey({ columns: [t.fileId, t.folderId] })],
 );
 
 export const canvasNode = pgTable("canvas_node", {
@@ -212,10 +212,10 @@ export const ingestionJob = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    itemId: text("item_id")
+    fileId: text("file_id")
       .notNull()
       .unique()
-      .references(() => item.id, { onDelete: "cascade" }),
+      .references(() => file.id, { onDelete: "cascade" }),
     status: text("status").$type<IngestionStatus>().notNull().default("queued"),
     /** Bumped on every enqueue; a run only writes while its generation is current. */
     generation: integer("generation").notNull().default(0),
@@ -236,9 +236,9 @@ export const chunk = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    itemId: text("item_id")
+    fileId: text("file_id")
       .notNull()
-      .references(() => item.id, { onDelete: "cascade" }),
+      .references(() => file.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
     kind: text("kind").$type<ChunkKind>().notNull(),
     content: text("content").notNull(),
@@ -249,7 +249,7 @@ export const chunk = pgTable(
     /** NFKC-folded, lowercased content for the exact-match lane's trigram index. */
     contentNorm: text("content_norm").notNull(),
     embedding: vector("embedding", { dimensions: 1536 }),
-    /** Weighted at write time: item title A, heading B, content D. */
+    /** Weighted at write time: file title A, heading B, content D. */
     search: tsvector("search").notNull(),
     embeddingModel: text("embedding_model"),
     /** Set once the chunk's entities and relations are stored; false chunks are retried. */
@@ -260,7 +260,7 @@ export const chunk = pgTable(
     index("chunk_embedding_hnsw_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
     index("chunk_search_gin_idx").using("gin", t.search),
     index("chunk_content_norm_trgm_idx").using("gin", t.contentNorm.op("gin_trgm_ops")),
-    index("chunk_item_id_idx").on(t.itemId, t.ordinal),
+    index("chunk_file_id_idx").on(t.fileId, t.ordinal),
     index("chunk_user_id_idx").on(t.userId),
   ],
 );
@@ -327,9 +327,9 @@ export const entityMention = pgTable(
     chunkId: text("chunk_id")
       .notNull()
       .references(() => chunk.id, { onDelete: "cascade" }),
-    itemId: text("item_id")
+    fileId: text("file_id")
       .notNull()
-      .references(() => item.id, { onDelete: "cascade" }),
+      .references(() => file.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -361,9 +361,9 @@ export const entityRelation = pgTable(
     chunkId: text("chunk_id")
       .notNull()
       .references(() => chunk.id, { onDelete: "cascade" }),
-    itemId: text("item_id")
+    fileId: text("file_id")
       .notNull()
-      .references(() => item.id, { onDelete: "cascade" }),
+      .references(() => file.id, { onDelete: "cascade" }),
   },
   (t) => [
     index("entity_relation_source_idx").on(t.userId, t.sourceId),
@@ -483,7 +483,7 @@ export const cloudRun = pgTable(
     taskId: text("task_id")
       .notNull()
       .references(() => cloudTask.id, { onDelete: "cascade" }),
-    clusterId: text("cluster_id").references(() => cluster.id, { onDelete: "set null" }),
+    folderId: text("folder_id").references(() => folder.id, { onDelete: "set null" }),
     scheduledFor: timestamptz("scheduled_for").notNull(),
     /** When a worker claimed the run; a run active long past this belongs to a dead worker. */
     claimedAt: timestamptz("claimed_at"),
@@ -554,9 +554,9 @@ export const cloudWorkspaceFile = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    itemId: text("item_id")
+    fileId: text("file_id")
       .notNull()
-      .references(() => item.id, { onDelete: "cascade" }),
+      .references(() => file.id, { onDelete: "cascade" }),
     sandboxPath: text("sandbox_path").notNull(),
     contentHash: text("content_hash").notNull(),
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
@@ -565,7 +565,7 @@ export const cloudWorkspaceFile = pgTable(
     lastRunId: text("last_run_id"),
   },
   (t) => [
-    primaryKey({ columns: [t.userId, t.itemId] }),
+    primaryKey({ columns: [t.userId, t.fileId] }),
     index("cloud_workspace_file_user_last_used_idx").on(t.userId, t.lastUsedAt),
   ],
 );
@@ -581,9 +581,9 @@ export const pendingApproval = pgTable(
     runId: text("run_id")
       .notNull()
       .references(() => cloudRun.id, { onDelete: "cascade" }),
-    itemId: text("item_id")
+    fileId: text("file_id")
       .notNull()
-      .references(() => item.id, { onDelete: "cascade" }),
+      .references(() => file.id, { onDelete: "cascade" }),
     kind: text("kind").$type<"sync">().notNull().default("sync"),
     status: text("status").$type<PendingApprovalStatus>().notNull().default("pending"),
     baseHash: text("base_hash").notNull(),
@@ -627,7 +627,7 @@ export const artifact = pgTable(
     title: text("title").notNull(),
     storageKey: text("storage_key").notNull(),
     mimeType: text("mime_type").notNull(),
-    sourceItemIds: jsonb("source_item_ids").$type<ReadonlyArray<string>>().notNull(),
+    sourceFileIds: jsonb("source_file_ids").$type<ReadonlyArray<string>>().notNull(),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [index("artifact_user_created_idx").on(t.userId, t.createdAt)],
@@ -651,12 +651,12 @@ export const emailOutbox = pgTable(
   (t) => [index("email_outbox_status_send_after_idx").on(t.status, t.sendAfter)],
 );
 
-export const itemRelations = relations(item, ({ many }) => ({
+export const fileRelations = relations(file, ({ many }) => ({
   chunks: many(chunk),
-  clusters: many(itemCluster),
+  folders: many(fileFolder),
 }));
 export const chunkRelations = relations(chunk, ({ one }) => ({
-  item: one(item, { fields: [chunk.itemId], references: [item.id] }),
+  file: one(file, { fields: [chunk.fileId], references: [file.id] }),
 }));
 export const entityRelations = relations(entity, ({ many }) => ({
   mentions: many(entityMention),
@@ -665,10 +665,10 @@ export const entityMentionRelations = relations(entityMention, ({ one }) => ({
   entity: one(entity, { fields: [entityMention.entityId], references: [entity.id] }),
   chunk: one(chunk, { fields: [entityMention.chunkId], references: [chunk.id] }),
 }));
-export const clusterRelations = relations(cluster, ({ many }) => ({ items: many(itemCluster) }));
-export const itemClusterRelations = relations(itemCluster, ({ one }) => ({
-  item: one(item, { fields: [itemCluster.itemId], references: [item.id] }),
-  cluster: one(cluster, { fields: [itemCluster.clusterId], references: [cluster.id] }),
+export const folderRelations = relations(folder, ({ many }) => ({ files: many(fileFolder) }));
+export const fileFolderRelations = relations(fileFolder, ({ one }) => ({
+  file: one(file, { fields: [fileFolder.fileId], references: [file.id] }),
+  folder: one(folder, { fields: [fileFolder.folderId], references: [folder.id] }),
 }));
 export const ruthThreadRelations = relations(ruthThread, ({ many }) => ({
   messages: many(ruthMessage),
@@ -683,10 +683,10 @@ export const schema = {
   account,
   verification,
   capture,
-  item,
-  itemEvent,
-  cluster,
-  itemCluster,
+  file,
+  fileEvent,
+  folder,
+  fileFolder,
   canvasNode,
   ingestionJob,
   chunk,
@@ -707,12 +707,12 @@ export const schema = {
   sandboxUsage,
   artifact,
   emailOutbox,
-  itemRelations,
+  fileRelations,
   chunkRelations,
   entityRelations,
   entityMentionRelations,
-  clusterRelations,
-  itemClusterRelations,
+  folderRelations,
+  fileFolderRelations,
   ruthThreadRelations,
   ruthMessageRelations,
 };
@@ -722,9 +722,9 @@ export type SessionRow = typeof session.$inferSelect;
 export type AccountRow = typeof account.$inferSelect;
 export type VerificationRow = typeof verification.$inferSelect;
 export type CaptureRow = typeof capture.$inferSelect;
-export type ItemRow = typeof item.$inferSelect;
-export type ClusterRow = typeof cluster.$inferSelect;
-export type ItemClusterRow = typeof itemCluster.$inferSelect;
+export type FileRow = typeof file.$inferSelect;
+export type FolderRow = typeof folder.$inferSelect;
+export type FileFolderRow = typeof fileFolder.$inferSelect;
 export type CanvasNodeRow = typeof canvasNode.$inferSelect;
 export type IngestionJobRow = typeof ingestionJob.$inferSelect;
 export type ChunkRow = typeof chunk.$inferSelect;
@@ -736,7 +736,7 @@ export type CloudRunRow = typeof cloudRun.$inferSelect;
 export type ArtifactRow = typeof artifact.$inferSelect;
 export type EmailOutboxRow = typeof emailOutbox.$inferSelect;
 
-export type ItemEventRow = typeof itemEvent.$inferSelect;
+export type FileEventRow = typeof fileEvent.$inferSelect;
 export type CloudTaskRow = typeof cloudTask.$inferSelect;
 export type CloudRunTokenRow = typeof cloudRunToken.$inferSelect;
 export type CloudHydrationRow = typeof cloudHydration.$inferSelect;

@@ -1,9 +1,9 @@
 import type { NavigationProp } from "@react-navigation/native";
-import type { ClusterId } from "@avenire/contracts";
+import type { FolderId } from "@avenire/contracts";
 
 export type RootStackParamList = {
   Home: undefined;
-  Cluster: { clusterId: ClusterId; name: string };
+  Folder: { folderId: FolderId; name: string };
 };
 
 export type RootNavigation = NavigationProp<RootStackParamList>;

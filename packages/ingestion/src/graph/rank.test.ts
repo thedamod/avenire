@@ -7,7 +7,7 @@ const edge = (id: string, sourceId: string, targetId: string, chunkId: string): 
   sourceId,
   targetId,
   chunkId,
-  itemId: "item",
+  fileId: "file",
   sourceName: sourceId,
   targetName: targetId,
   predicate: "leads to",

@@ -9,7 +9,7 @@ import {
   ArtifactId,
   CloudRunId,
   CloudTaskId,
-  ItemId,
+  FileId,
   PendingApprovalId,
   StorageKey,
 } from "./ids.ts";
@@ -44,7 +44,7 @@ export const Artifact = Schema.Struct({
   title: Schema.String,
   storageKey: StorageKey,
   mimeType: Schema.String,
-  sourceItemIds: Schema.Array(ItemId),
+  sourceFileIds: Schema.Array(FileId),
   createdAt: Schema.String,
 });
 export type Artifact = typeof Artifact.Type;
@@ -108,8 +108,8 @@ export type PendingApprovalStatus = typeof PendingApprovalStatus.Type;
 export const PendingApproval = Schema.Struct({
   id: PendingApprovalId,
   runId: CloudRunId,
-  itemId: ItemId,
-  itemTitle: Schema.String,
+  fileId: FileId,
+  fileTitle: Schema.String,
   kind: Schema.Literal("sync"),
   status: PendingApprovalStatus,
   conflict: Schema.NullOr(Schema.String),

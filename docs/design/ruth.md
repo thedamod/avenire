@@ -6,7 +6,7 @@ Ruth is Avenire's agent. It comes in two forms that share one tool backbone:
   an ephemeral Daytona sandbox; file actions gated by approvals; widgets rendered inline.
 - **Ruth Cloud**: the Pi agent harness running in a **persistent, per-user Daytona sandbox**
   for scheduled and long-running work. It reaches the user's library only through retrieval
-  and on-demand hydration, publishes results as new items, and proposes changes to originals
+  and on-demand hydration, publishes results as new files, and proposes changes to originals
   for a morning review.
 
 Both import their tools from `@avenire/ruth-kit`: one definition per tool (schemas,
@@ -94,21 +94,21 @@ inputJsonSchema }[]` for the Pi extension.
 | Tool                                                                                          | Ruth | Cloud         | Approval                                                                 | Notes                                                                |
 | --------------------------------------------------------------------------------------------- | ---- | ------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------- |
 | `search_materials`                                                                            | ✓    | ✓ (retrieval) | never                                                                    | multi-lane retrieval, unchanged ranking                              |
-| `list_files`                                                                                  | ✓    | ✓ (retrieval) | never                                                                    | clusters act as folders; `inbox` pseudo-folder                       |
+| `list_files`                                                                                  | ✓    | ✓ (retrieval) | never                                                                    | folders act as folders; `inbox` pseudo-folder                        |
 | `find_files`                                                                                  | ✓    | ✓ (retrieval) | never                                                                    | metadata + time + topic via the shared `FileSelector` resolver       |
-| `read_file`                                                                                   | ✓    | ✓ (download)  | never                                                                    | extracted text by chunk range (replaces `read_item`)                 |
-| `write_file`                                                                                  | ✓    | —             | unless-full-access                                                       | new note item in a cluster                                           |
+| `read_file`                                                                                   | ✓    | ✓ (download)  | never                                                                    | extracted text by chunk range (replaces `read_file`)                 |
+| `write_file`                                                                                  | ✓    | —             | unless-full-access                                                       | new note file in a folder                                            |
 | `move_file`, `rename_file`                                                                    | ✓    | —             | unless-full-access                                                       |                                                                      |
 | `archive_file`                                                                                | ✓    | —             | unless-full-access                                                       | "delete" = archive; purged after 30 days. No permanent delete exists |
 | `sandbox_exec`, `sandbox_write`, `sandbox_read`, `sandbox_download_artifact`, `sandbox_close` | ✓    | —             | never                                                                    | ephemeral chat sandbox                                               |
 | `render_widget`                                                                               | ✓    | —             | never                                                                    | → `{ widgetId, url }`                                                |
 | `get_page_context`, `load_skill`, `ask_user`                                                  | ✓    | —             | never                                                                    | unchanged                                                            |
 | `hydrate_files`                                                                               | —    | ✓ (hydrate)   | never                                                                    | selector → files pushed into `/workspace/inputs`                     |
-| `publish_output`                                                                              | —    | ✓ (publish)   | never (outputs are new items; changes to originals become pending syncs) |
+| `publish_output`                                                                              | —    | ✓ (publish)   | never (outputs are new files; changes to originals become pending syncs) |
 | `publish_report`                                                                              | —    | ✓ (publish)   | never                                                                    | the run's report markdown + artifact paths                           |
 
 Ruth Cloud has no write/move/rename/archive tool: it **never writes to originals**. A changed
-copy of an original is published with `publish_output({ sandboxPath, replaces: itemId })` and
+copy of an original is published with `publish_output({ sandboxPath, replaces: fileId })` and
 becomes a `pending_approval` sync that the user accepts or skips in the morning.
 
 `run_python` and `propose_file_action` are removed. A single script is `sandbox_write` then
@@ -130,8 +130,8 @@ becomes a `pending_approval` sync that the user accepts or skips in the morning.
 - **Downloads.** `sandbox_download_artifact({ path })` copies the file to
   `users/<id>/.avenire/tmp/artifacts/<expiresOn>/<artifactId>/<name>` (7-day TTL, swept
   nightly) and returns a signed URL plus a `file` part for the message.
-- **Files.** The library is items in clusters; clusters act as folders. Tools work on items,
-  not raw bucket keys (the Files SDK's own AI tools address raw keys, which would bypass items
+- **Files.** The library is files in folders; folders act as folders. Tools work on files,
+  not raw bucket keys (the Files SDK's own AI tools address raw keys, which would bypass files
   and indexing and expose the storage layout); the Files SDK remains the storage layer, and
   the approval mechanism is the same AI SDK flow the Files SDK tools use.
 - **Widgets** (§4).
@@ -188,18 +188,18 @@ Infrastructure failures (box start, Pi crash, timeout) retry with backoff up to
 FileSelector = {
   time?: { since?, until?, lastDays?, today?, events?: ("opened"|"edited"|"captured"|"uploaded")[] },
   topic?: { query, minRelevance? },
-  filters?: { kinds?, clusterIds?, tags?, sources? },
-  explicit?: { itemIds?, clusterIds?, captureIds? },
+  filters?: { kinds?, folderIds?, tags?, sources? },
+  explicit?: { fileIds?, folderIds?, captureIds? },
 }
 ```
 
 Parts combine with AND ("PDFs on thermodynamics touched this week" =
 `topic` ∧ `filters.kinds` ∧ `time.lastDays: 7`). Resolution: metadata candidates from SQL
-(`item`, `item_event`, `capture`, `item_cluster`), then, if `topic` is set, retrieval restricted
-to those item ids, scored per item by its best chunk relevance. Each returned file carries a
+(`file`, `file_event`, `capture`, `file_folder`), then, if `topic` is set, retrieval restricted
+to those file ids, scored per file by its best chunk relevance. Each returned file carries a
 `reason` ("edited 2026-10-08 · matches 'thermodynamics' 0.82").
 
-Files are pushed by the server into `/workspace/inputs/<cluster>/<title>.<ext>` through the
+Files are pushed by the server into `/workspace/inputs/<folder>/<title>.<ext>` through the
 Daytona API (the sandbox never holds storage credentials). Hydration is idempotent: a file
 whose `contentHash` matches `cloud_workspace_file` is skipped. Count and byte caps apply
 (defaults 200 files, 1 GB per call), the workspace is an LRU/age cache capped at 10 GB (files
@@ -212,14 +212,14 @@ keeps the workspace small, makes every run's inputs auditable, and lets Ruth Clo
 inputs when it discovers it needs more. **The trade-off:** Ruth Cloud can only reach what
 retrieval and metadata can find. A file with poor extraction, no events, or a misleading
 title may never be hydrated, so retrieval quality bounds Ruth Cloud's reach. Mitigations:
-explicit selectors (item, cluster, capture), the hydration log in every report (so a miss is
+explicit selectors (file, folder, capture), the hydration log in every report (so a miss is
 visible), and the same retrieval engine and benchmark as chat Ruth.
 
 ### Publishing and the morning review
 
-- `publish_output({ sandboxPath, title? })` uploads the file as a **new item** in the run's
-  cluster ("Ruth Cloud · <date> · <task>"), `source = "ruth-cloud"`, queued for indexing.
-- `publish_output({ sandboxPath, replaces: itemId })` stores the bytes under
+- `publish_output({ sandboxPath, title? })` uploads the file as a **new file** in the run's
+  folder ("Ruth Cloud · <date> · <task>"), `source = "ruth-cloud"`, queued for indexing.
+- `publish_output({ sandboxPath, replaces: fileId })` stores the bytes under
   `users/<id>/.avenire/cloud/<runId>/sync/` and creates a `pending_approval` (`kind = "sync"`)
   with the hydrated `baseHash`. If the original changed since hydration it is flagged
   `conflict` at publish time and re-checked at accept time.
@@ -248,7 +248,7 @@ visible), and the same retrieval engine and benchmark as chat Ruth.
 - `render_widget({ title, html })` validates size (≤ 512 KB), wraps the document with the
   **widget bootstrap** (theme variables for first paint, the theme-update listener, the height
   reporter, a CSP `<meta>`), stores it at `users/<id>/.avenire/widgets/<widgetId>.html`
-  (never expires; not an item) and returns `{ widgetId, url }` where `url` is
+  (never expires; not an file) and returns `{ widgetId, url }` where `url` is
   `https://widgets.<domain>/w/<token>` and `token` is an HMAC-signed `(userId, widgetId)`.
 - The widget origin serves only `/w/:token` (and later `/kits/*`), with
   `Content-Security-Policy: sandbox allow-scripts; default-src 'none'; script-src
@@ -267,10 +267,10 @@ font-src data:; media-src data: blob:; connect-src 'none'; frame-ancestors <app 
 
 ## 5. Library metadata
 
-`item` gains `source` (`upload` | `capture` | `ruth` | `ruth-cloud`), `contentModifiedAt`,
-`tags text[]` and `archivedAt`. `item_event` records `opened` (from `ItemDetail` via
-`library.recordItemEvent`), `edited`, `captured` and `uploaded`. `Retrieval.search` gains
-`itemIds` and a time filter. These power "what did I study today" and time-based selectors.
+`file` gains `source` (`upload` | `capture` | `ruth` | `ruth-cloud`), `contentModifiedAt`,
+`tags text[]` and `archivedAt`. `file_event` records `opened` (from `FileDetail` via
+`library.recordFileEvent`), `edited`, `captured` and `uploaded`. `Retrieval.search` gains
+`fileIds` and a time filter. These power "what did I study today" and time-based selectors.
 
 ## 6. Limits (defaults; plan tiers later)
 
@@ -283,23 +283,23 @@ font-src data:; media-src data: blob:; connect-src 'none'; frame-ancestors <app 
 
 ## 7. Decisions where the spec, the vision doc or t3code disagreed
 
-| Where                                                                                                 | Decision                                                                                                                                                                                                                                           |
-| ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Vision doc: visuals are inline `<avenire-*>` tags with no upload. Spec: `render_widget` stores a file | Stored file on a separate widget origin (owner's call). Inline tags and the chart/simulation kits will compile to the same stored-widget path: one frame, one security model                                                                       |
-| t3code serves rendered HTML from the app origin and allows remote resources                           | Separate origin, `sandbox allow-scripts` CSP header plus an opaque-origin iframe, `connect-src 'none'`, no remote scripts; messages checked for source window and schema (t3code checks only the source)                                           |
-| Spec: hidden widget path with TTL cleanup                                                             | Widgets never expire (owner's call); only sandbox downloads have a 7-day TTL                                                                                                                                                                       |
-| Spec: file control through the Files SDK AI tools                                                     | The Files SDK stays the storage layer, but tools work on items and clusters (clusters act as folders) using the same AI SDK `needsApproval` flow. The SDK's tools address raw bucket keys, which would skip indexing and expose the storage layout |
-| Spec: deletes go through approval                                                                     | Delete is archive with a 30-day purge; the permanent `deleteFile` is never exposed (owner's call, matching AGENTS.md's "undoable")                                                                                                                 |
-| AGENTS.md: Ruth Cloud never edits existing material. Spec: changes to originals as queued approvals   | Ruth Cloud writes copies; changes become `pending_approval` syncs, applied only on accept; AGENTS.md rule updated                                                                                                                                  |
-| Spec: approval UI out of scope. Owner: "one review screen"                                            | Backend only (review service and RPC contracts); the screen comes later                                                                                                                                                                            |
-| Spec: model key, token and API base URL as Daytona secrets                                            | Model key and run token are Daytona secrets (placeholders in the box). The API base URL is plain config in `run.json`: Daytona substitutes a secret only inside requests to its allowed hosts, so it can't stand in for the hostname               |
-| Daytona mounts secrets at creation, but the Cloud box is reused                                       | One secret per user whose value is rotated to the run's token and cleared afterwards. Assumes Daytona resolves the value at request time (to verify live)                                                                                          |
-| Spec: 2 concurrent Cloud runs per user                                                                | 1 active run per user: one box, one token secret, one `run.json`. Runs queue                                                                                                                                                                       |
-| Spec: a tool to post the report vs. the token reaching only retrieval, download, hydrate and publish  | `publish_report` is a publish tool; the server posts the report to the thread after the run                                                                                                                                                        |
-| Spec: the four `sandbox_*` tools                                                                      | Added `sandbox_close` so the agent can close the sandbox when done; a hard 60-minute cap deletes it regardless                                                                                                                                     |
-| Spec: `publish_output({ sandboxPath, drivePath })`                                                    | `publish_output({ sandboxPath, title?, replaces? })`: no paths exist, so outputs go to the run's cluster and `replaces` proposes a sync                                                                                                            |
-| No Pi setup existed in the repo                                                                       | Built fresh (owner's call), pinned at 0.83.0, extension modelled on t3code's Pi provider (file extension + HTTP tool calls)                                                                                                                        |
-| Repo has no server layer                                                                              | Added only the routes this feature needs (chat, artifacts, widget origin, gateway) and the worker entry; the RPC server for the whole app is out of scope                                                                                          |
+| Where                                                                                                 | Decision                                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Vision doc: visuals are inline `<avenire-*>` tags with no upload. Spec: `render_widget` stores a file | Stored file on a separate widget origin (owner's call). Inline tags and the chart/simulation kits will compile to the same stored-widget path: one frame, one security model                                                                     |
+| t3code serves rendered HTML from the app origin and allows remote resources                           | Separate origin, `sandbox allow-scripts` CSP header plus an opaque-origin iframe, `connect-src 'none'`, no remote scripts; messages checked for source window and schema (t3code checks only the source)                                         |
+| Spec: hidden widget path with TTL cleanup                                                             | Widgets never expire (owner's call); only sandbox downloads have a 7-day TTL                                                                                                                                                                     |
+| Spec: file control through the Files SDK AI tools                                                     | The Files SDK stays the storage layer, but tools work on files and folders (folders act as folders) using the same AI SDK `needsApproval` flow. The SDK's tools address raw bucket keys, which would skip indexing and expose the storage layout |
+| Spec: deletes go through approval                                                                     | Delete is archive with a 30-day purge; the permanent `deleteFile` is never exposed (owner's call, matching AGENTS.md's "undoable")                                                                                                               |
+| AGENTS.md: Ruth Cloud never edits existing material. Spec: changes to originals as queued approvals   | Ruth Cloud writes copies; changes become `pending_approval` syncs, applied only on accept; AGENTS.md rule updated                                                                                                                                |
+| Spec: approval UI out of scope. Owner: "one review screen"                                            | Backend only (review service and RPC contracts); the screen comes later                                                                                                                                                                          |
+| Spec: model key, token and API base URL as Daytona secrets                                            | Model key and run token are Daytona secrets (placeholders in the box). The API base URL is plain config in `run.json`: Daytona substitutes a secret only inside requests to its allowed hosts, so it can't stand in for the hostname             |
+| Daytona mounts secrets at creation, but the Cloud box is reused                                       | One secret per user whose value is rotated to the run's token and cleared afterwards. Assumes Daytona resolves the value at request time (to verify live)                                                                                        |
+| Spec: 2 concurrent Cloud runs per user                                                                | 1 active run per user: one box, one token secret, one `run.json`. Runs queue                                                                                                                                                                     |
+| Spec: a tool to post the report vs. the token reaching only retrieval, download, hydrate and publish  | `publish_report` is a publish tool; the server posts the report to the thread after the run                                                                                                                                                      |
+| Spec: the four `sandbox_*` tools                                                                      | Added `sandbox_close` so the agent can close the sandbox when done; a hard 60-minute cap deletes it regardless                                                                                                                                   |
+| Spec: `publish_output({ sandboxPath, drivePath })`                                                    | `publish_output({ sandboxPath, title?, replaces? })`: no paths exist, so outputs go to the run's folder and `replaces` proposes a sync                                                                                                           |
+| No Pi setup existed in the repo                                                                       | Built fresh (owner's call), pinned at 0.83.0, extension modelled on t3code's Pi provider (file extension + HTTP tool calls)                                                                                                                      |
+| Repo has no server layer                                                                              | Added only the routes this feature needs (chat, artifacts, widget origin, gateway) and the worker entry; the RPC server for the whole app is out of scope                                                                                        |
 
 ## 8. Not yet verified live
 

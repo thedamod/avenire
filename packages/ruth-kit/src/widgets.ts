@@ -22,7 +22,7 @@ import * as Redacted from "effect/Redacted";
 
 import { type AgentContext, RuthToolError } from "./core.ts";
 
-/** Widgets are permanent objects outside the indexed item namespace. */
+/** Widgets are permanent objects outside the indexed file namespace. */
 export const widgetKey = (userId: UserId, widgetId: WidgetId): StorageKey =>
   StorageKey.make(`${userPrefix(userId)}.avenire/widgets/${encodeURIComponent(widgetId)}.html`);
 export interface ResolvedWidget {

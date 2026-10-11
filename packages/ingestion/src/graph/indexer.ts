@@ -1,5 +1,5 @@
-/** Writes an item's entities, mentions and relations. */
-import type { ChunkId, ItemId, UserId } from "@avenire/contracts";
+/** Writes an file's entities, mentions and relations. */
+import type { ChunkId, FileId, UserId } from "@avenire/contracts";
 import { Database, type DatabaseTransaction } from "@avenire/database/client";
 import { entity, entityMention, entityRelation } from "@avenire/database/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
@@ -28,7 +28,7 @@ export class GraphIndexer extends Context.Service<
      */
     readonly indexChunks: (input: {
       readonly userId: UserId;
-      readonly itemId: ItemId;
+      readonly fileId: FileId;
       readonly title: string;
       readonly chunks: ReadonlyArray<{ readonly id: ChunkId; readonly content: string }>;
     }) => Effect.Effect<{ readonly entities: number; readonly relations: number }, GraphError>;
@@ -42,7 +42,7 @@ const entityText = (row: AggregatedEntity) => `${row.name} (${row.type}): ${row.
 
 interface GraphWrite {
   readonly userId: UserId;
-  readonly itemId: ItemId;
+  readonly fileId: FileId;
   readonly chunkIds: ReadonlyArray<string>;
   /** Entities with the id to use if they turn out to be new. */
   readonly entities: ReadonlyArray<readonly [AggregatedEntity, string]>;
@@ -58,7 +58,7 @@ interface GraphWrite {
  * then prunes the user's entities that no chunk mentions any more.
  */
 const writeGraph = async (tx: DatabaseTransaction, input: GraphWrite) => {
-  const { userId, itemId } = input;
+  const { userId, fileId } = input;
   if (input.chunkIds.length > 0) {
     const ofChunks = [...input.chunkIds];
     await tx
@@ -104,7 +104,7 @@ const writeGraph = async (tx: DatabaseTransaction, input: GraphWrite) => {
 
   const mentions = input.mentions.flatMap(({ key, chunkId }) => {
     const entityId = idOf.get(key);
-    return entityId === undefined ? [] : [{ entityId, chunkId, itemId, userId }];
+    return entityId === undefined ? [] : [{ entityId, chunkId, fileId, userId }];
   });
   if (mentions.length > 0) await tx.insert(entityMention).values(mentions).onConflictDoNothing();
 
@@ -113,7 +113,7 @@ const writeGraph = async (tx: DatabaseTransaction, input: GraphWrite) => {
     const targetId = idOf.get(row.targetKey);
     if (sourceId === undefined || targetId === undefined) return [];
     const { predicate, description, weight, chunkId } = row;
-    return [{ id, userId, sourceId, targetId, predicate, description, weight, chunkId, itemId }];
+    return [{ id, userId, sourceId, targetId, predicate, description, weight, chunkId, fileId }];
   });
   if (relations.length > 0) await tx.insert(entityRelation).values(relations);
 
@@ -189,7 +189,7 @@ export const GraphIndexerLive = Layer.effect(
         yield* database.useTransaction((tx) =>
           writeGraph(tx, {
             userId: input.userId,
-            itemId: input.itemId,
+            fileId: input.fileId,
             chunkIds: input.chunks.map((row) => row.id),
             entities: Arr.zip(graph.entities, entityIds),
             mentions: graph.mentions,

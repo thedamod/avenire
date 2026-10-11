@@ -3,7 +3,7 @@ import {
   CloudRunId,
   CloudTaskId,
   Conflict,
-  ItemId,
+  FileId,
   NotFound,
   StorageKey,
   type CloudRun as ContractRun,
@@ -105,7 +105,7 @@ export const runToContract = (
     title: entry.title,
     storageKey: StorageKey.make(entry.storageKey),
     mimeType: entry.mimeType,
-    sourceItemIds: entry.sourceItemIds.map((id) => ItemId.make(id)),
+    sourceFileIds: entry.sourceFileIds.map((id) => FileId.make(id)),
     createdAt: entry.createdAt.toISOString(),
   })),
 });

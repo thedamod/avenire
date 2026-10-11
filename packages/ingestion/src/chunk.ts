@@ -33,7 +33,7 @@ const locationMarker = ({ startSec, page, slide, sheet }: ChunkLocation): string
   return "";
 };
 
-/** The text embedded and reranked for a chunk: its item title, heading and location first. */
+/** The text embedded and reranked for a chunk: its file title, heading and location first. */
 export const embeddingText = (
   title: string,
   chunk: { readonly content: string; readonly location: ChunkLocation },

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ItemId } from "@avenire/contracts";
+import { FileId } from "@avenire/contracts";
 import { buildReport, type ReportInput } from "./cloud-report.ts";
 import { parsePiLogs, piCommand } from "./cloud-pi.ts";
 
 const file = {
-  fileId: ItemId.make("source-id"),
+  fileId: FileId.make("source-id"),
   drivePath: "Physics/Lecture.pdf",
   sandboxPath: "/inputs/lecture.pdf",
   reason: "edited today",
@@ -26,7 +26,7 @@ const input: ReportInput = {
   produced: [{ id: "output", title: "Study notes" }],
   approvals: [
     {
-      itemTitle: "Lecture",
+      fileTitle: "Lecture",
       summary: "Copy corrected",
       conflict: "Original changed since hydration",
     },
@@ -43,8 +43,8 @@ describe("buildReport", () => {
     expect(report).toContain("Status: failed · attempt 2");
     expect(report).toContain("2026-10-09T03:10:00.000Z");
     expect(report).toContain("I created study notes.");
-    expect(report.match(/library\?item=source-id/g)).toHaveLength(1);
-    expect(report).toContain("https://app.example.test/library?item=output");
+    expect(report.match(/library\?file=source-id/g)).toHaveLength(1);
+    expect(report).toContain("https://app.example.test/library?file=output");
     expect(report).toContain("1 changes wait for your review");
     expect(report).toContain("https://app.example.test/cloud/review?run=run");
     expect(report).toContain("Lecture: Copy corrected");

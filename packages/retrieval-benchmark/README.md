@@ -1,6 +1,6 @@
 # Retrieval benchmark
 
-Measures document-level recall@10, precision@10, MRR, nDCG@10, and abstentions on a seeded study corpus. Each document is indexed through `ItemIndexer.index`, so contextual embeddings, weighted lexical search, and the graph are exercised.
+Measures document-level recall@10, precision@10, MRR, nDCG@10, and abstentions on a seeded study corpus. Each document is indexed through `FileIndexer.index`, so contextual embeddings, weighted lexical search, and the graph are exercised.
 
 Run against a migrated development Postgres database with pgvector:
 

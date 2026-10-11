@@ -1,4 +1,4 @@
-import { CloudRunId, ItemId, StorageKey } from "@avenire/contracts";
+import { CloudRunId, FileId, StorageKey } from "@avenire/contracts";
 import { CLOUD_WORKSPACE } from "@avenire/cloud/cloud-box";
 import { Database } from "@avenire/database/client";
 import { Storage, StorageMemory } from "@avenire/storage/storage";
@@ -37,7 +37,7 @@ it.effect("hydrates originals, touches skips, records the manifest and evicts ol
 });
 it.effect("text-only/media files hydrate extracted markdown with its own hash", () => {
   const f = cloudFixture();
-  Object.assign(f.rows("item")[0]!, { kind: "video", title: "Lecture.mp4" });
+  Object.assign(f.rows("file")[0]!, { kind: "video", title: "Lecture.mp4" });
   f.metadata.splice(0, 1, candidate(fileId, { kind: "video", title: "Lecture.mp4" }));
   return Effect.gen(function* () {
     const storage = yield* Storage;
@@ -75,7 +75,7 @@ it.effect("requires runId and a running box before hydration work", () => {
     expect(f.written).toHaveLength(0);
   }).pipe(Effect.provide(StorageMemory));
 });
-it.effect("publishes two new items into one run cluster with events and ingestion", () => {
+it.effect("publishes two new files into one run folder with events and ingestion", () => {
   const f = cloudFixture();
   return Effect.gen(function* () {
     const storage = yield* Storage;
@@ -85,13 +85,13 @@ it.effect("publishes two new items into one run cluster with events and ingestio
         cloudCtx,
       );
       const second = yield* cloudTools.publish_output({ sandboxPath: "report.md" }, cloudCtx);
-      expect(first.kind).toBe("item");
-      expect(second.kind).toBe("item");
-      expect(f.rows("cluster")).toHaveLength(1);
-      expect(f.rows("cluster")[0]?.name).toMatch(/^Ruth Cloud · \d{4}-\d{2}-\d{2} · Morning$/);
-      expect(f.rows("item_cluster")).toHaveLength(2);
-      expect(f.rows("cloud_run")[0]?.clusterId).toBe(f.rows("cluster")[0]?.id);
-      expect(f.rows("item").slice(1)).toEqual(
+      expect(first.kind).toBe("file");
+      expect(second.kind).toBe("file");
+      expect(f.rows("folder")).toHaveLength(1);
+      expect(f.rows("folder")[0]?.name).toMatch(/^Ruth Cloud · \d{4}-\d{2}-\d{2} · Morning$/);
+      expect(f.rows("file_folder")).toHaveLength(2);
+      expect(f.rows("cloud_run")[0]?.folderId).toBe(f.rows("folder")[0]?.id);
+      expect(f.rows("file").slice(1)).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             kind: "note",
@@ -108,7 +108,7 @@ it.effect("publishes two new items into one run cluster with events and ingestio
       expect(f.invalidated()).toBe(2);
       expect(
         new TextDecoder().decode(
-          yield* storage.get(StorageKey.make(f.rows("item")[1]!.storageKey as string)),
+          yield* storage.get(StorageKey.make(f.rows("file")[1]!.storageKey as string)),
         ),
       ).toBe("# report");
     }).pipe(Effect.provide(f.services(storage)));
@@ -135,11 +135,11 @@ it.effect("rejects paths outside workspace/internal directory before download", 
     expect(f.storageWrites).toHaveLength(0);
   }).pipe(Effect.provide(StorageMemory));
 });
-it.effect("rejects replaces without hydration and unowned replacement items", () => {
+it.effect("rejects replaces without hydration and unowned replacement files", () => {
   const f = cloudFixture();
   return Effect.gen(function* () {
     const storage = yield* Storage;
-    for (const replaces of [fileId, ItemId.make("unowned")]) {
+    for (const replaces of [fileId, FileId.make("unowned")]) {
       expect(
         yield* Effect.flip(
           cloudTools
@@ -159,7 +159,7 @@ it.effect(
   () => {
     const f = cloudFixture();
     f.rows("cloud_workspace_file").push(f.workspaceRow());
-    Object.assign(f.rows("item")[0]!, { contentHash: "changed" });
+    Object.assign(f.rows("file")[0]!, { contentHash: "changed" });
     return Effect.gen(function* () {
       const storage = yield* Storage;
       yield* storage.put(StorageKey.make("original"), "input");
@@ -193,7 +193,7 @@ it.effect(
           "input",
         );
         expect(f.invalidated()).toBe(0);
-        expect(f.rows("item")).toHaveLength(1);
+        expect(f.rows("file")).toHaveLength(1);
       }).pipe(Effect.provide(f.services(storage)));
     }).pipe(Effect.provide(StorageMemory));
   },
@@ -236,10 +236,10 @@ it.effect("publish_report exposes an agent failure without setting a terminal ru
 });
 it.effect("identical titles and shared id prefixes cannot overwrite another hydrated input", () => {
   const f = cloudFixture();
-  const secondId = ItemId.make("12345678-other");
+  const secondId = FileId.make("12345678-other");
   f.metadata.push(candidate(secondId));
-  f.rows("item").push({
-    ...f.rows("item")[0],
+  f.rows("file").push({
+    ...f.rows("file")[0],
     id: secondId,
     storageKey: "other",
     contentHash: "other-hash",

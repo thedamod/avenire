@@ -7,7 +7,7 @@ import {
   CloudRunId,
   type PendingApproval,
   PendingApprovalId,
-  ItemId,
+  FileId,
   type UserId,
 } from "@avenire/contracts";
 import {
@@ -16,7 +16,7 @@ import {
   type DatabaseClient,
   type DatabaseTransaction,
 } from "@avenire/database/client";
-import { item, pendingApproval, type PendingApprovalRow } from "@avenire/database/schema";
+import { file, pendingApproval, type PendingApprovalRow } from "@avenire/database/schema";
 import { markContentChanged } from "@avenire/ingestion/events";
 import { SemanticCache, type SearchCacheError } from "@avenire/ingestion/retrieval/cache";
 import { enqueueIngestion } from "@avenire/ingestion/worker";
@@ -57,11 +57,11 @@ export class CloudReview extends Context.Service<
     ) => Effect.Effect<void, CloudReviewError>;
   }
 >()("avenire/ruth-kit/CloudReview") {}
-const wireApproval = (row: PendingApprovalRow & { itemTitle: string }): PendingApproval => ({
+const wireApproval = (row: PendingApprovalRow & { fileTitle: string }): PendingApproval => ({
   id: PendingApprovalId.make(row.id),
   runId: CloudRunId.make(row.runId),
-  itemId: ItemId.make(row.itemId),
-  itemTitle: row.itemTitle,
+  fileId: FileId.make(row.fileId),
+  fileTitle: row.fileTitle,
   kind: row.kind,
   status: row.status,
   conflict: row.conflict,
@@ -94,9 +94,9 @@ export const CloudReviewLive = Layer.effect(
     const list = Effect.fn("CloudReview.list")(function* (userId: UserId, runId?: CloudRunId) {
       const rows = yield* database.use((db) =>
         db
-          .select({ approval: pendingApproval, itemTitle: item.title })
+          .select({ approval: pendingApproval, fileTitle: file.title })
           .from(pendingApproval)
-          .innerJoin(item, and(eq(pendingApproval.itemId, item.id), eq(item.userId, userId)))
+          .innerJoin(file, and(eq(pendingApproval.fileId, file.id), eq(file.userId, userId)))
           .where(
             and(
               eq(pendingApproval.userId, userId),
@@ -106,7 +106,7 @@ export const CloudReviewLive = Layer.effect(
           )
           .orderBy(desc(pendingApproval.createdAt), desc(pendingApproval.id)),
       );
-      return rows.map(({ approval, itemTitle }) => wireApproval({ ...approval, itemTitle }));
+      return rows.map(({ approval, fileTitle }) => wireApproval({ ...approval, fileTitle }));
     });
     const cleanup = (key: string) =>
       storage
@@ -142,10 +142,10 @@ export const CloudReviewLive = Layer.effect(
         }
         const [original] = await tx
           .select()
-          .from(item)
-          .where(and(eq(item.id, current.itemId), eq(item.userId, userId)))
+          .from(file)
+          .where(and(eq(file.id, current.fileId), eq(file.userId, userId)))
           .for("update");
-        if (!original) return { kind: "missingItem" as const };
+        if (!original) return { kind: "missingFile" as const };
         const conflict = !original.storageKey
           ? "This file can't be updated in place"
           : detectConflict(current.baseHash, original.contentHash, original.contentModifiedAt);
@@ -155,7 +155,7 @@ export const CloudReviewLive = Layer.effect(
           return { kind: "conflict" as const };
         }
         // The SDK promise transaction owns both row locks during the external object write.
-        // This bridge prevents another review/server from accepting against a stale item hash.
+        // This bridge prevents another review/server from accepting against a stale file hash.
         const bytes = await Effect.runPromise(storage.get(StorageKey.make(current.proposedKey)));
         await Effect.runPromise(
           storage.put(
@@ -165,17 +165,17 @@ export const CloudReviewLive = Layer.effect(
           ),
         );
         await tx
-          .update(item)
+          .update(file)
           .set({ contentHash: current.proposedHash, sizeBytes: bytes.byteLength })
-          .where(and(eq(item.id, original.id), eq(item.userId, userId)));
-        const itemId = ItemId.make(original.id);
+          .where(and(eq(file.id, original.id), eq(file.userId, userId)));
+        const fileId = FileId.make(original.id);
         const services = Context.make(Database, transactionDatabase(tx)).pipe(
           Context.add(Crypto.Crypto, crypto),
         );
         await Effect.runPromiseWith(services)(
-          markContentChanged(userId, itemId, current.proposedHash),
+          markContentChanged(userId, fileId, current.proposedHash),
         );
-        await Effect.runPromiseWith(services)(enqueueIngestion(userId, itemId));
+        await Effect.runPromiseWith(services)(enqueueIngestion(userId, fileId));
         await tx
           .update(pendingApproval)
           .set({ status: "accepted", conflict: null, resolvedAt: now })
@@ -184,8 +184,8 @@ export const CloudReviewLive = Layer.effect(
       });
       if (outcome.kind === "missing")
         return yield* new NotFound({ entity: "PendingApproval", id: approvalId });
-      if (outcome.kind === "missingItem")
-        return yield* new NotFound({ entity: "Item", id: approval.itemId });
+      if (outcome.kind === "missingFile")
+        return yield* new NotFound({ entity: "File", id: approval.fileId });
       if (outcome.kind === "resolved") return yield* new Conflict({ reason: "Already resolved" });
       if (outcome.kind === "conflict") return;
       if (outcome.kind === "accepted") {

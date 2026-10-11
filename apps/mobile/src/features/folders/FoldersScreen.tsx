@@ -7,30 +7,28 @@ import { Screen } from "../../components/Screen";
 import type { RootNavigation } from "../../navigation";
 import { useQuery } from "../../lib/useRpc";
 
-export function ClustersScreen() {
+export function FoldersScreen() {
   const navigation = useNavigation<RootNavigation>();
   const {
-    data: clusters,
+    data: folders,
     error,
     loading,
     refetch,
-  } = useQuery((client) => client["library.listClusters"](), "clusters-list");
+  } = useQuery((client) => client["library.listFolders"](), "folders-list");
 
   return (
     <Screen title="Clusters" subtitle="Related material, grouped by topic.">
       {loading ? <ActivityIndicator /> : null}
       {error ? <ErrorState message={errorMessage(error)} onRetry={() => void refetch()} /> : null}
-      {!loading && !error && clusters?.length === 0 ? (
+      {!loading && !error && folders?.length === 0 ? (
         <EmptyState title="No clusters yet" description="Topics appear as your library grows." />
       ) : null}
-      {clusters?.map((cluster) => (
+      {folders?.map((folder) => (
         <ListRow
-          key={cluster.id}
-          title={cluster.name}
-          detail={`${cluster.itemCount} ${cluster.itemCount === 1 ? "item" : "items"}${cluster.suggested ? " · Suggested" : ""}`}
-          onPress={() =>
-            navigation.navigate("Cluster", { clusterId: cluster.id, name: cluster.name })
-          }
+          key={folder.id}
+          title={folder.name}
+          detail={`${folder.fileCount} ${folder.fileCount === 1 ? "file" : "files"}${folder.suggested ? " · Suggested" : ""}`}
+          onPress={() => navigation.navigate("Folder", { folderId: folder.id, name: folder.name })}
         />
       ))}
     </Screen>

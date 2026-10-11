@@ -16,7 +16,7 @@ export const RuthMessageMetadata = Schema.Struct({
   references: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
-        kind: Schema.Literals(["item", "cluster", "canvasNode"]),
+        kind: Schema.Literals(["file", "folder", "canvasNode"]),
         id: Schema.String,
       }),
     ),

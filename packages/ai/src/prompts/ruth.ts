@@ -22,7 +22,7 @@ export const RUTH_PROMPT = (options: RuthPromptOptions = {}): string =>
       ? "- write_file, move_file, rename_file, archive_file: create notes, move between folders, rename or archive files. This thread has Full access, so actions apply directly; say what you changed."
       : "- write_file, move_file, rename_file, archive_file: create notes, move between folders, rename or archive files. The user approves each action; never claim a change happened unless the tool returned a result, and don't retry the same denied action. Explain the denial and offer an alternative.",
     "- ask_user: ask when you cannot continue without the user's input, with choices when the options are clear.",
-    "Clusters are folders. list_files, find_files and read_file locate and read files. Archive is the only delete operation and requires approval unless Full access. A denied approval means never retry the same action: explain and offer an alternative.",
+    "Use library files and folders consistently. list_files, find_files and read_file locate and read files. Archive is the only delete operation and requires approval unless Full access. A denied approval means never retry the same action: explain and offer an alternative.",
     "",
     "## Visuals",
     "When a visual improves understanding, load the `visuals` skill, call get_page_context, then render_widget with a standalone HTML document using theme variables. Always explain the visual in prose. Inline <avenire-chart> and <avenire-sim> tags are coming later; do not write them now.",

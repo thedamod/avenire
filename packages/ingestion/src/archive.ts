@@ -1,8 +1,8 @@
 /** Reversible library archival and storage-first retention cleanup. */
-import { ItemId, NotFound, type UserId, UserId as UserIdSchema } from "@avenire/contracts";
+import { FileId, NotFound, type UserId, UserId as UserIdSchema } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import { item } from "@avenire/database/schema";
-import { itemPrefix } from "@avenire/storage/keys";
+import { file } from "@avenire/database/schema";
+import { filePrefix } from "@avenire/storage/keys";
 import { Storage, type StorageError } from "@avenire/storage/storage";
 import { and, eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
@@ -14,61 +14,61 @@ import { SemanticCache } from "./retrieval/cache.ts";
 export const ARCHIVE_RETENTION_DAYS = 30;
 const PURGE_BATCH_SIZE = 100;
 
-/** Retention is thirty elapsed days; items exactly at the cutoff are retained. */
+/** Retention is thirty elapsed days; files exactly at the cutoff are retained. */
 export const archiveCutoff = (nowMillis: number): number =>
   nowMillis - ARCHIVE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
-/** Archives the user's item and discards its cached retrieval results. */
-export const archiveItem = Effect.fn("Archive.archiveItem")(function* (
+/** Archives the user's file and discards its cached retrieval results. */
+export const archiveFile = Effect.fn("Archive.archiveFile")(function* (
   userId: UserId,
-  itemId: ItemId,
+  fileId: FileId,
 ) {
   const database = yield* Database;
   const cache = yield* SemanticCache;
   const rows = yield* database.use((db) =>
     db
-      .update(item)
+      .update(file)
       .set({ placement: "archived", archivedAt: sql`now()`, updatedAt: sql`now()` })
-      .where(and(eq(item.id, itemId), eq(item.userId, userId)))
-      .returning({ id: item.id }),
+      .where(and(eq(file.id, fileId), eq(file.userId, userId)))
+      .returning({ id: file.id }),
   );
-  if (rows.length === 0) return yield* new NotFound({ entity: "Item", id: itemId });
+  if (rows.length === 0) return yield* new NotFound({ entity: "File", id: fileId });
   yield* cache.invalidate(userId);
 });
 
-/** Restores membership-bearing items to filed and other items to inbox. */
-export const restoreStatement = (userId: UserId, itemId: ItemId) => sql`
-  UPDATE item i SET placement = CASE WHEN EXISTS (
-    SELECT 1 FROM item_cluster ic WHERE ic.item_id = i.id AND ic.user_id = i.user_id
+/** Restores membership-bearing files to filed and other files to inbox. */
+export const restoreStatement = (userId: UserId, fileId: FileId) => sql`
+  UPDATE file i SET placement = CASE WHEN EXISTS (
+    SELECT 1 FROM file_folder ic WHERE ic.file_id = i.id AND ic.user_id = i.user_id
   ) THEN 'filed' ELSE 'inbox' END, archived_at = NULL, updated_at = now()
-  WHERE i.id = ${itemId} AND i.user_id = ${userId} RETURNING i.id`;
+  WHERE i.id = ${fileId} AND i.user_id = ${userId} RETURNING i.id`;
 
-export const restoreItem = Effect.fn("Archive.restoreItem")(function* (
+export const restoreFile = Effect.fn("Archive.restoreFile")(function* (
   userId: UserId,
-  itemId: ItemId,
+  fileId: FileId,
 ) {
   const database = yield* Database;
   const cache = yield* SemanticCache;
-  const rows = yield* database.use((db) => db.execute(restoreStatement(userId, itemId)));
-  if (rows.length === 0) return yield* new NotFound({ entity: "Item", id: itemId });
+  const rows = yield* database.use((db) => db.execute(restoreStatement(userId, fileId)));
+  if (rows.length === 0) return yield* new NotFound({ entity: "File", id: fileId });
   yield* cache.invalidate(userId);
 });
 
 /** Deletes a row only after all of its objects have been removed. Storage failures retain it. */
-export const purgeItem = Effect.fn("Archive.purgeItem")(function* <E, R>(
+export const purgeFile = Effect.fn("Archive.purgeFile")(function* <E, R>(
   userId: UserId,
-  itemId: ItemId,
+  fileId: FileId,
   deleteRow: Effect.Effect<void, E, R>,
 ) {
   const storage = yield* Storage;
   const removed = yield* Effect.gen(function* () {
-    const objects = yield* storage.list(itemPrefix(userId, itemId));
+    const objects = yield* storage.list(filePrefix(userId, fileId));
     yield* Effect.forEach(objects, ({ key }) => storage.remove(key), { discard: true });
     return true;
   }).pipe(
     Effect.catchTag("StorageError", (error: StorageError) =>
       Effect.as(
-        Effect.logWarning("Archive purge storage failed; retaining item", { itemId, error }),
+        Effect.logWarning("Archive purge storage failed; retaining file", { fileId, error }),
         false,
       ),
     ),
@@ -78,29 +78,29 @@ export const purgeItem = Effect.fn("Archive.purgeItem")(function* <E, R>(
   return true;
 });
 
-/** At most one hundred expired items per tick; cascading deletes clean up their metadata. */
+/** At most one hundred expired files per tick; cascading deletes clean up their metadata. */
 export const purgeArchived = Effect.fn("Archive.purgeArchived")(function* () {
   const database = yield* Database;
   const expired = yield* database.use((db) =>
     db
-      .select({ id: item.id, userId: item.userId })
-      .from(item)
+      .select({ id: file.id, userId: file.userId })
+      .from(file)
       .where(
-        sql`${item.placement} = 'archived' AND ${item.archivedAt} < now() - ${ARCHIVE_RETENTION_DAYS} * interval '24 hours'`,
+        sql`${file.placement} = 'archived' AND ${file.archivedAt} < now() - ${ARCHIVE_RETENTION_DAYS} * interval '24 hours'`,
       )
-      .orderBy(item.archivedAt, item.id)
+      .orderBy(file.archivedAt, file.id)
       .limit(PURGE_BATCH_SIZE),
   );
   const purged = yield* Effect.forEach(expired, (row) =>
-    purgeItem(
+    purgeFile(
       UserIdSchema.make(row.userId),
-      ItemId.make(row.id),
+      FileId.make(row.id),
       database
-        .use((db) => db.delete(item).where(and(eq(item.id, row.id), eq(item.userId, row.userId))))
+        .use((db) => db.delete(file).where(and(eq(file.id, row.id), eq(file.userId, row.userId))))
         .pipe(Effect.asVoid),
     ),
   );
-  yield* Effect.logInfo("Purged archived items", {
+  yield* Effect.logInfo("Purged archived files", {
     found: expired.length,
     purged: purged.filter(Boolean).length,
     skipped: purged.filter((value) => !value).length,

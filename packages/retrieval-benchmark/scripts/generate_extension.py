@@ -61,8 +61,8 @@ def llm(system, user):
 def chunks():
     sql = """
       SELECT json_agg(row_to_json(t)) FROM (
-        SELECT substr(c.item_id, length('bench-v1:') + 1) AS artifact, i.title, c.kind, c.content
-        FROM chunk c JOIN item i ON i.id = c.item_id
+        SELECT substr(c.file_id, length('bench-v1:') + 1) AS artifact, i.title, c.kind, c.content
+        FROM chunk c JOIN file i ON i.id = c.file_id
         WHERE c.user_id = 'bench-v1' AND c.kind NOT IN ('outline')
       ) t"""
     out = subprocess.run(["psql", os.environ["DATABASE_URL"], "-Atc", sql], capture_output=True, text=True, check=True)
@@ -98,7 +98,7 @@ def exact_values(rows, want=44):
         if not draft or not all(isinstance(draft.get(k), str) and draft[k].strip() for k in ("question", "answer", "needle")):
             continue
         needle, answer, question = norm(draft["needle"]), norm(draft["answer"]), draft["question"].strip()
-        holders = [a for a, texts in corpus.items() if any(needle in t for t in texts)]
+        holders = [a for a, texts in corpus.files() if any(needle in t for t in texts)]
         copied = any(" ".join(w) in norm(question) for w in zip(*(needle.split()[i:] for i in range(5))))
         if not (10 <= len(needle) <= 80 and answer in needle and holders == [row["artifact"]] and not copied):
             continue
@@ -114,17 +114,17 @@ def unanswerable(rows, titles, want=30):
         "answer: same subjects (statistics, biology, climate, graph algorithms, history, thermodynamics, "
         "information retrieval, linear algebra, machine learning, differential equations), but specific facts, "
         "values or events that a library of these titles would not contain. Return JSON "
-        '{"questions": [{"question": str, "terms": [str, str]}]} with 40 items; "terms" are the 1-2 distinctive '
+        '{"questions": [{"question": str, "terms": [str, str]}]} with 40 files; "terms" are the 1-2 distinctive '
         "words or names a passage answering it would have to contain."
     )
     draft = llm(system, "Library titles:\n" + "\n".join(sorted(set(titles))))
     texts = [norm(r["content"]) for r in rows]
     out = []
-    for item in (draft or {}).get("questions", []):
-        terms = [norm(t) for t in item.get("terms", []) if isinstance(t, str) and len(t) >= 4]
+    for file in (draft or {}).get("questions", []):
+        terms = [norm(t) for t in file.get("terms", []) if isinstance(t, str) and len(t) >= 4]
         if not terms or any(all(t in text for t in terms) for text in texts):
             continue
-        out.append(item["question"].strip())
+        out.append(file["question"].strip())
         if len(out) >= want:
             break
     return out
@@ -214,7 +214,7 @@ def main():
     for q in queries:
         key = (q["family"], q["split"])
         families[key] = families.get(key, 0) + 1
-    print(json.dumps({f"{f}/{s}": n for (f, s), n in sorted(families.items())}, indent=1))
+    print(json.dumps({f"{f}/{s}": n for (f, s), n in sorted(families.files())}, indent=1))
 
 
 main()

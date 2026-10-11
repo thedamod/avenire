@@ -7,29 +7,26 @@ import { Screen } from "../../components/Screen";
 import type { RootStackParamList } from "../../navigation";
 import { useQuery } from "../../lib/useRpc";
 
-type Props = NativeStackScreenProps<RootStackParamList, "Cluster">;
+type Props = NativeStackScreenProps<RootStackParamList, "Folder">;
 
-export function ClusterScreen({ route }: Props) {
-  const { clusterId, name } = route.params;
+export function FolderScreen({ route }: Props) {
+  const { folderId, name } = route.params;
   const {
-    data: items,
+    data: files,
     error,
     loading,
     refetch,
-  } = useQuery(
-    (client) => client["library.listItems"]({ clusterId }),
-    `cluster-items:${clusterId}`,
-  );
+  } = useQuery((client) => client["library.listFiles"]({ folderId }), `folder-files:${folderId}`);
 
   return (
     <Screen title={name} subtitle="Material filed in this cluster.">
       {loading ? <ActivityIndicator /> : null}
       {error ? <ErrorState message={errorMessage(error)} onRetry={() => void refetch()} /> : null}
-      {!loading && !error && items?.length === 0 ? (
+      {!loading && !error && files?.length === 0 ? (
         <EmptyState title="No material in this cluster" />
       ) : null}
-      {items?.map((item) => (
-        <ListRow key={item.id} title={item.title} detail={item.kind} />
+      {files?.map((file) => (
+        <ListRow key={file.id} title={file.title} detail={file.kind} />
       ))}
     </Screen>
   );

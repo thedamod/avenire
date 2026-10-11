@@ -32,6 +32,11 @@ export class SandboxTimeout extends Schema.TaggedError<SandboxTimeout>()("Sandbo
   }
 }
 
+export class SandboxInputRejected extends Schema.TaggedError<SandboxInputRejected>()(
+  "SandboxInputRejected",
+  { reason: Schema.String },
+) {}
+
 export class DaytonaClient extends Context.Service<DaytonaClient, Daytona>()(
   "avenire/cloud/DaytonaClient",
 ) {}

@@ -7,10 +7,6 @@
       "types": "./src/daytona.ts",
       "import": "./src/daytona.ts"
     },
-    "./sandbox": {
-      "types": "./src/sandbox.ts",
-      "import": "./src/sandbox.ts"
-    },
     "./chat-sandbox": {
       "types": "./src/chatSandbox.ts",
       "import": "./src/chatSandbox.ts"

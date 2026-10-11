@@ -206,8 +206,8 @@ Generate effective flashcards optimized for spaced repetition learning.
 
 Avenire is not a flashcard app: cards are a by-product of studying, written by Ruth Cloud
 as an artifact file. Write them as a JSON array of
-\`{ "front": string, "back": string, "notes"?: string, "sourceItemIds": string[] }\`, with
-markdown allowed in \`front\`, \`back\` and \`notes\`. Every card cites the items it came from.
+\`{ "front": string, "back": string, "notes"?: string, "sourceFileIds": string[] }\`, with
+markdown allowed in \`front\`, \`back\` and \`notes\`. Every card cites the files it came from.
 
 ## Workflow
 
@@ -345,7 +345,7 @@ Each card is one object in the artifact's JSON array:
   "front": "What is DNA?",
   "back": "Deoxyribonucleic acid - carries genetic information.",
   "notes": "Think \\"de-oxy-ribo\\" for the sugar backbone.",
-  "sourceItemIds": ["itm_..."]
+  "sourceFileIds": ["file_..."]
 }
 \`\`\`
 
@@ -392,10 +392,10 @@ When creating multiple cards from a topic:
 - [ ] Each card tests ONE piece of information
 - [ ] Cards can be answered in <10 seconds
 - [ ] No ambiguous questions with multiple valid answers
-- [ ] Mnemonics added for difficult items
+- [ ] Mnemonics added for difficult files
 - [ ] Cards are context-independent (understandable alone)
 - [ ] Cloze deletions used where appropriate
-- [ ] Every card cites at least one source item
+- [ ] Every card cites at least one source file
 - [ ] Any equations use \`$...$\` or \`$$...$$\` formatting, never \`\`\`latex fences
 \`\`\`\`
 `,

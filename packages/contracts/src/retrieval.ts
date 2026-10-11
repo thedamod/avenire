@@ -1,8 +1,8 @@
 import * as Schema from "effect/Schema";
 
-import { ChunkId, ClusterId, ItemId } from "./ids.ts";
+import { ChunkId, FolderId, FileId } from "./ids.ts";
 import { ChunkKind, ChunkLocation } from "./ingestion.ts";
-import { ItemKind } from "./library.ts";
+import { FileKind } from "./library.ts";
 
 /**
  * `standard` runs every lane on the question as written. `deep` also splits a
@@ -19,11 +19,11 @@ export type SearchLane = typeof SearchLane.Type;
 export const SearchQuery = Schema.Struct({
   text: Schema.NonEmptyString,
   limit: Schema.optional(Schema.Int),
-  clusterIds: Schema.optional(Schema.Array(ClusterId)),
-  kinds: Schema.optional(Schema.Array(ItemKind)),
+  folderIds: Schema.optional(Schema.Array(FolderId)),
+  kinds: Schema.optional(Schema.Array(FileKind)),
   depth: Schema.optional(SearchDepth),
-  /** Restrict retrieval to these items; an empty list selects no items. */
-  itemIds: Schema.optional(Schema.Array(ItemId)),
+  /** Restrict retrieval to these files; an empty list selects no files. */
+  fileIds: Schema.optional(Schema.Array(FileId)),
   /** ISO lower bound on the last content change: coalesce(contentModifiedAt, createdAt). */
   since: Schema.optional(Schema.String),
   /** ISO upper bound on the last content change: coalesce(contentModifiedAt, createdAt). */
@@ -33,9 +33,9 @@ export type SearchQuery = typeof SearchQuery.Type;
 
 export const SearchHit = Schema.Struct({
   chunkId: ChunkId,
-  itemId: ItemId,
-  itemTitle: Schema.String,
-  itemKind: ItemKind,
+  fileId: FileId,
+  fileTitle: Schema.String,
+  fileKind: FileKind,
   chunkKind: ChunkKind,
   content: Schema.String,
   location: ChunkLocation,
@@ -59,7 +59,7 @@ export const GraphFact = Schema.Struct({
   relation: Schema.String,
   target: Schema.String,
   chunkId: ChunkId,
-  itemId: ItemId,
+  fileId: FileId,
 });
 export type GraphFact = typeof GraphFact.Type;
 

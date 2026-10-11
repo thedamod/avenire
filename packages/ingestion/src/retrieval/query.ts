@@ -93,8 +93,8 @@ export const optionsKey = (query: SearchQuery, analysis: QueryAnalysis): string 
   sha256Hex(
     JSON.stringify({
       kinds: [...(query.kinds ?? [])].sort(),
-      clusterIds: [...(query.clusterIds ?? [])].sort(),
-      itemIds: query.itemIds === undefined ? null : [...query.itemIds].sort(),
+      folderIds: [...(query.folderIds ?? [])].sort(),
+      fileIds: query.fileIds === undefined ? null : [...query.fileIds].sort(),
       since: query.since ?? null,
       until: query.until ?? null,
       limit: resultLimit(query),

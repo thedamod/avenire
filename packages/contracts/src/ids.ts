@@ -6,11 +6,11 @@ export type UserId = typeof UserId.Type;
 export const CaptureId = Schema.NonEmptyString.pipe(Schema.brand("CaptureId"));
 export type CaptureId = typeof CaptureId.Type;
 
-export const ItemId = Schema.NonEmptyString.pipe(Schema.brand("ItemId"));
-export type ItemId = typeof ItemId.Type;
+export const FileId = Schema.NonEmptyString.pipe(Schema.brand("FileId"));
+export type FileId = typeof FileId.Type;
 
-export const ClusterId = Schema.NonEmptyString.pipe(Schema.brand("ClusterId"));
-export type ClusterId = typeof ClusterId.Type;
+export const FolderId = Schema.NonEmptyString.pipe(Schema.brand("FolderId"));
+export type FolderId = typeof FolderId.Type;
 
 export const CanvasNodeId = Schema.NonEmptyString.pipe(Schema.brand("CanvasNodeId"));
 export type CanvasNodeId = typeof CanvasNodeId.Type;
@@ -33,7 +33,7 @@ export type CloudRunId = typeof CloudRunId.Type;
 export const ArtifactId = Schema.NonEmptyString.pipe(Schema.brand("ArtifactId"));
 export type ArtifactId = typeof ArtifactId.Type;
 
-/** Object key inside the user's storage bucket, e.g. `users/<id>/items/<id>/source.pdf`. */
+/** Object key inside the user's storage bucket, e.g. `users/<id>/files/<id>/source.pdf`. */
 export const StorageKey = Schema.NonEmptyString.pipe(Schema.brand("StorageKey"));
 export type StorageKey = typeof StorageKey.Type;
 
@@ -49,5 +49,5 @@ export type WidgetId = typeof WidgetId.Type;
 export const HydrationId = Schema.NonEmptyString.pipe(Schema.brand("HydrationId"));
 export type HydrationId = typeof HydrationId.Type;
 
-export const ItemEventId = Schema.NonEmptyString.pipe(Schema.brand("ItemEventId"));
-export type ItemEventId = typeof ItemEventId.Type;
+export const FileEventId = Schema.NonEmptyString.pipe(Schema.brand("FileEventId"));
+export type FileEventId = typeof FileEventId.Type;

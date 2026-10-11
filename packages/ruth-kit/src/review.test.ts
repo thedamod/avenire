@@ -38,15 +38,15 @@ it.effect(
           status: "accepted",
           resolvedAt: expect.any(Date),
         });
-        expect(f.rows("item")[0]?.contentHash).toBe(f.rows("pending_approval")[0]?.proposedHash);
-        expect(f.rows("item")[0]?.sizeBytes).toBe(8);
-        expect(f.rows("item_event")[0]).toMatchObject({ itemId: fileId, kind: "edited" });
+        expect(f.rows("file")[0]?.contentHash).toBe(f.rows("pending_approval")[0]?.proposedHash);
+        expect(f.rows("file")[0]?.sizeBytes).toBe(8);
+        expect(f.rows("file_event")[0]).toMatchObject({ fileId: fileId, kind: "edited" });
         expect(
           f.writes.some(
-            (write) => write.table === "item" && write.values.contentModifiedAt !== undefined,
+            (write) => write.table === "file" && write.values.contentModifiedAt !== undefined,
           ),
         ).toBe(true);
-        expect(f.rows("ingestion_job")[0]).toMatchObject({ itemId: fileId, status: "queued" });
+        expect(f.rows("ingestion_job")[0]).toMatchObject({ fileId: fileId, status: "queued" });
         expect(f.invalidated()).toBe(1);
         expect((yield* Effect.flip(storage.get(key)))._tag).toBe("ObjectNotFound");
         expect((yield* Effect.flip(review.resolve(cloudCtx.userId, id, "accept"))).message).toBe(
@@ -63,7 +63,7 @@ it.effect("accept rechecks the CURRENT hash; conflicts leave the original untouc
     yield* storage.put(StorageKey.make("original"), "library changed");
     yield* Effect.gen(function* () {
       const id = yield* f.proposal();
-      Object.assign(f.rows("item")[0]!, {
+      Object.assign(f.rows("file")[0]!, {
         contentHash: "changed-again",
         contentModifiedAt: new Date("2026-10-09"),
       });
@@ -77,19 +77,19 @@ it.effect("accept rechecks the CURRENT hash; conflicts leave the original untouc
         "library changed",
       );
       expect(f.storageWrites).not.toContain("original");
-      expect(f.rows("item_event")).toHaveLength(0);
+      expect(f.rows("file_event")).toHaveLength(0);
       expect(f.rows("ingestion_job")).toHaveLength(0);
       expect(f.invalidated()).toBe(0);
     }).pipe(Effect.provide(CloudReviewLive), Effect.provide(f.services(storage)));
   }).pipe(Effect.provide(StorageMemory));
 });
-it.effect("items without original storage become a conflict without trying to write", () => {
+it.effect("files without original storage become a conflict without trying to write", () => {
   const f = setup();
   return Effect.gen(function* () {
     const storage = yield* Storage;
     yield* Effect.gen(function* () {
       const id = yield* f.proposal();
-      Object.assign(f.rows("item")[0]!, { storageKey: null });
+      Object.assign(f.rows("file")[0]!, { storageKey: null });
       yield* (yield* CloudReview).resolve(cloudCtx.userId, id, "accept");
       expect(f.rows("pending_approval")[0]).toMatchObject({
         status: "conflict",
@@ -154,7 +154,7 @@ it.effect(
         const review = yield* CloudReview;
         const list = yield* review.list(cloudCtx.userId, cloudCtx.runId!);
         expect(list.map((approval) => approval.id)).toEqual([second, first]);
-        expect(list[0]?.itemTitle).toBe("Lecture");
+        expect(list[0]?.fileTitle).toBe("Lecture");
         yield* review.resolveRun(cloudCtx.userId, cloudCtx.runId!, "skip");
         expect(
           f
