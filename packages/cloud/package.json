@@ -18,6 +18,10 @@
     "./cloud-box": {
       "types": "./src/cloudBox.ts",
       "import": "./src/cloudBox.ts"
+    },
+    "./screen": {
+      "types": "./src/screen.ts",
+      "import": "./src/screen.ts"
     }
   },
   "scripts": {

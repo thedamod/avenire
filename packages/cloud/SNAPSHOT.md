@@ -1,47 +1,125 @@
 # Avenire sandbox snapshot
 
-`avenire-sandbox-v3` is the sole snapshot for ephemeral Ruth chat sandboxes and persistent Ruth Cloud boxes. It derives from Daytona's slim base `daytonaio/sandbox:0.9.0-slim` (the full base is 7.4 GB compressed) and installs the desktop packages computer use needs. The image does not count against the sandbox disk: a fresh sandbox has its full 10 GB free. `ensureSnapshot` is declarative until the build script is run; it reads an existing snapshot by name or creates it if absent. Change the snapshot name when changing its contents: an existing name is never rebuilt in place.
+`avenire-sandbox-v4` is the shared image for ephemeral Ruth chat sandboxes and persistent Cloud boxes. Base: `daytonaio/sandbox:0.9.0-slim`, **Debian trixie**, not Ubuntu. Retaining Debian preserves the verified KiCad/X11/Daytona runtime. Snapshot resources are fixed by SDK 0.220.0: **4 vCPU / 8 GB RAM / 10 GB disk**. The image itself does not consume the sandbox's 10 GB allocation. Existing sandboxes must be recreated to receive v4.
 
-## Contents
+## Desktop
 
-| Component      | Selection                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Python science | Python 3.13 installed by uv (prebuilt, no compile) as the venv `/opt/avenire/python`, first on PATH as `python`: numpy, scipy, pandas, openpyxl, sympy, matplotlib, networkx, scikit-learn, polars, Pillow, imageio, Playwright and **manimgx** (Manim CE's API on a Rust/wgpu engine; on a GPU-less box it renders on the CPU through the lavapipe driver bundled in its Linux wheels, and it ships its own LaTeX/Typst typesetting and video encoder). Package versions resolve at build time. |
-| KiCad          | KiCad 9 or newer via Debian package: Bookworm backports or Trixie main. `--no-install-recommends` omits demo, symbol/footprint libraries, documentation, and 3D models. `kicad-cli` and `pcbnew` come from the same package.                                                                                                                                                                                                                                                                     |
-| KiCad Python   | The `pcbnew` binding is built for the distro interpreter: run KiCad scripts with `/usr/bin/python3`. `kicad-cli` works from any shell.                                                                                                                                                                                                                                                                                                                                                           |
-| Browser        | Python Playwright with its downloaded Chromium and browser dependencies; shared browser path `/opt/avenire/browsers`.                                                                                                                                                                                                                                                                                                                                                                            |
-| Node           | Node.js 24 from NodeSource and pnpm 11.17.0 installed globally with npm (Corepack pinned it only for root and fetched the latest pnpm at runtime for the `daytona` user). Bun and Pi are absent.                                                                                                                                                                                                                                                                                                 |
-| Rendering      | FFmpeg (Daytona screen recording, matplotlib GIF/MP4 writers) and TeX Live base/extra/recommended fonts for report generation. Manim CE and its Cairo/Pango build dependencies are not installed.                                                                                                                                                                                                                                                                                                |
-| Desktop        | Daytona base plus any missing Xvfb, Xfce, Xfce terminal, x11vnc, noVNC, D-Bus/X11 and specified X11 libraries. `VNC_RESOLUTION=1024x768`. No custom wallpaper: the Xfce desktop keeps Daytona's default black background.                                                                                                                                                                                                                                                                        |
+One **44 px bottom, full-width Xfce panel**, always visible, opaque navy. Left to right: Whisker launcher, Browser (`avenire-browser` → Debian Chromium), Files (`thunar`), Terminal (`xfce4-terminal`), Editor (`mousepad`), icon-only grouped window tasklist, expanding separator, status tray, 24-hour clock. Active tasks have a lavender bottom indicator. Whisker favorites are the same four applications; Xfce preferred-app helpers resolve to the browser wrapper, thunar and xfce4-terminal. No workspace switcher, second panel or Plank. Desktop icons are disabled.
 
-The distro check accepts Debian Bookworm and Trixie and fails explicitly on another base. The current base image's exact Python and package inventory has **not** been measured in a live image; the Dockerfile checks the distribution and imports every Python package at build time. The KiCad package from Bookworm backports was listed as 9.0.8 when this spec was written; the selected patch version can change. The Debian package itself is about 162 MB installed on amd64; its runtime dependencies add more. Omitting libraries and 3D models avoids their separate large packages. Docker Hub reports roughly **7.4 GB** for the `daytonaio/sandbox:latest` amd64 image before these additions. Budget roughly **10–15 GB compressed** and **20–30 GB unpacked** for the combined image, then measure the actual snapshot; these totals are estimates, not a live build result.
+Arc-Dark GTK/XFWM, Papirus-Dark, Bibata-Modern-Ice at 24 px, Inter 10, grayscale antialiasing and slight hinting. The terminal uses DejaVu Sans Mono 10 and a solid dark palette; this is a deliberate typography deviation to preserve a readable installed mono face. Adwaita-dark and Graphite-Dark remain available for comparison. Graphite's release **2026-08-23**, commit `2a8dd5aa1346d77539bf8196061260f353ee8d75`, has archive SHA-256 `a46a5c4bd9562332221c504a58da0d6f4d729c8a74ab26e002b41516df52acb9`; the build checks it before running the installer. Graphite includes a matching XFWM theme; Adwaita uses the stock Default XFWM theme. Graphite's build-only sassc and unrelated shell/HiDPI themes are removed after installation.
 
-## Resources and build
+The navy/indigo wallpaper is a real 1600×900 PNG, generated deterministically with Python stdlib by `assets/desktop/generate-wallpaper.py`. It has no text/logo. Both `monitorscreen` (Xvfb's actual output) and `monitor0` are configured. PNG avoids the missing SVG pixbuf loader observed in v3.
 
-The installed Daytona SDK 0.220.0 has `resources` in `CreateSnapshotParams` and in image-based sandbox creation, but not in `CreateSandboxFromSnapshotParams`. Both sandbox types therefore use **4 vCPU, 8 GB RAM, 30 GB disk** fixed on the snapshot. This raises chat compute cost compared with its old 2/4/5 allocation and gives Cloud less RAM/disk than the 4/16/40 target. Measure live manimgx, browser, KiCad, hydration, and recording workloads before changing the shared allocation.
+Display: **1600×900, 100%, 96 DPI**. Xfce's `/Xft/DPI` XML value is **96**; xfsettingsd multiplies it by 1024 when publishing **98304** over XSETTINGS. Storing 98304 directly in xfconf would be clamped to 500 DPI. `/Gdk/WindowScalingFactor=1`, Xresources `Xft.dpi: 96`, GTK/Xresources/environment cursor size 24. The verifier decodes the actual XSETTINGS property and reads XFixes cursor metadata.
 
-Set `DAYTONA_API_KEY` and optionally `DAYTONA_API_URL` and `DAYTONA_TARGET`, then run from the repo root:
+XFWM: single workspace, click-to-focus, centered placement, minimize/maximize/close on the right, titleless/borderless maximized windows, no shadows, compositing off. Edge tiling, snapping and workspace/window wrapping are disabled. Off/on comparison screenshots and recording tests determine whether the no-compositor default has artifacts.
+
+Chromium: actual desktop `/usr/bin/chromium`, separate from Playwright's renderer. The wrapper opens maximized, uses `--force-device-scale-factor=1`, no first-run/default-browser/restore bubble, basic password store, and loopback-only CDP port 9222 for testing and local automation. Managed policies disable sign-in, sync, saved passwords, translation, notifications, autofill, promotional tabs and background mode; zoom defaults to 100%. The verifier presses Ctrl+0 and checks devicePixelRatio, browser geometry and screen metrics through CDP.
+
+`desktop-session` runs as an ordinary Xfce autostart entry to merge Xresources, set the root cursor, and disable screensaver/blanking. Xvfb has no DPMS extension; its unsupported `xset -dpms` response is expected. Screensaver/locker/power-manager/Plank packages are purged if installed; notifications use do-not-disturb. No Daytona service or process-launch command is replaced. User configs are copied via `Image.addLocalFile` and chowned to daytona; root policies/theme/cursor assets stay root-owned.
+
+## Daytona desktop internals
+
+Read-only inspection from a disposable live **v3** sandbox on 2026-10-11:
+
+- OS: Debian GNU/Linux 13 (trixie), 13.5. Exec and desktop uid/gid 1000 (`daytona`). Image entrypoint `/usr/local/bin/daytona sleep infinity`; computer-use server `/usr/local/lib/daytona-computer-use`.
+- `computerUse.start()` starts Xvfb, Xfce and remote desktop. Observed Xvfb command: `/usr/bin/Xvfb :0 -screen 0 1024x768x24`. Display `:0`, 24-bit depth. v4 changes the image's `VNC_RESOLUTION` to 1600x900; the verifier checks the actual resulting command and display dimensions.
+- Xfce session: `xfce4-session`, children `xfwm4`, `xfsettingsd`, `xfce4-panel`, `Thunar --daemon`, `xfdesktop`; `xfconfd` is separate. A session `dbus-daemon`, ssh-agent and gpg-agent run as daytona. Versions: XFWM 4.20.0-1; panel 4.20.4-1; session 4.20.2-2; xfdesktop 4.20.1-1.
+- VNC: `/usr/bin/x11vnc -display :0 -forever -shared -rfbport 5901`; noVNC proxy `/usr/share/novnc/utils/novnc_proxy --vnc localhost:5901 --listen 6080`; Python websockify serves `/usr/share/novnc`.
+- Defaults live under `/etc/xdg/xfce4/`, including `panel/default.xml`, `Xft.xrdb`, `xinitrc`, keyboard shortcuts, xsettings and session XML. Runtime user channels live in `~/.config/xfce4/xfconf/xfce-perchannel-xml/`; baked user XML is read at session startup. The stock desktop had a top panel, bottom launcher panel and Home/File System desktop icons. No Plank, screensaver or notification daemon appeared in the baseline process list.
+- `/etc/xdg/autostart/xfsettingsd.desktop` is present. v4 adds only the settings autostart. Daytona toolbox process/file/recording APIs remain in use.
+- `process.executeCommand` does not inherit the desktop's DISPLAY/session D-Bus. Desktop commands borrow `DBUS_SESSION_BUS_ADDRESS`, `DISPLAY` and `XDG_*` from `/proc/$(pgrep -n xfdesktop)/environ`; no new session bus is started.
+- The first exec after create can reset its connection; scripts retry before setup. Baseline `ss` and `xdpyinfo` were absent; ports are established from live command lines. v4 adds x11-utils and checks xdpyinfo/xrandr. An initial inspection query used :1; it was corrected to :0 in the reproducible inspection script.
+
+Baseline evidence: `/tmp/avenire-snapshot/inspection-v3/{before.png,internals.txt,display.json,sandbox.json,snapshots.json}`. The inspection sandbox is deleted in `finally`. Its startup measurement included an 8-second settling delay; the full verification reports the direct API call separately.
+
+## Runtime stacks
+
+| Component         | Selection                                                                                                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Python            | Python 3.13 venv `/opt/avenire/python` first on PATH; numpy, scipy, pandas, openpyxl, sympy, matplotlib, networkx, scikit-learn, polars, Pillow, imageio, Playwright, manimgx.        |
+| manimgx           | Manim CE-style API on Rust/wgpu, CPU renderer without a GPU; its own typesetter/encoder. No Manim CE/Cairo/Pango toolchain added.                                                     |
+| KiCad             | Debian KiCad 9 without recommended libraries/docs/models. `pcbnew` belongs to `/usr/bin/python3`; `kicad-cli` works from the regular shell. Bookworm base guard uses KiCad backports. |
+| Browser rendering | Python Playwright headless shell/full browser under `/opt/avenire/browsers`; Debian Chromium is the visible taskbar browser.                                                          |
+| JavaScript        | Node 24 from NodeSource; pnpm **11.17.0** globally via npm, usable offline by daytona. Bun and Pi absent.                                                                             |
+| Reports/media     | TeX Live base/extra/recommended fonts, FFmpeg, poppler-utils.                                                                                                                         |
+
+uv's 0.13.0 installer is pinned/checksummed (SHA-256 `283cbef4bdaca819bd896b0dacb8a085c4c05dbc880642aa5001d97bc4db74ba`). NodeSource's setup_24.x is pinned to commit `c6e581b0d24e5d043476ddb947d70e6fe10e83c9`, checksum `6e3d580f5bd7ccf2aa1e8df8d35c60d78e873c3ff8beb282c9bebd914904ad72`. Graphite's archive is pinned/checksummed; cursor/icons/themes come from signed Debian apt repositories. Scientific package versions, the Python 3.13 patch and signed apt packages still resolve at build time; this is not a fully locked binary environment. Actual Debian/Python versions are retained by each live verification inventory.
+
+## Screen profiles
+
+Import `@avenire/cloud/screen`. `SCREEN={width:1600,height:900}`. `SCREEN_PROFILES` is provisional and contains no per-model/provider routing; a later research task owns that choice.
+
+| ID              | Screenshot | Coordinates               | Scale |
+| --------------- | ---------- | ------------------------- | ----- |
+| pixels-1280x720 | 1280×720   | image pixels              | 0.8   |
+| pixels-1024x576 | 1024×576   | image pixels              | 0.64  |
+| pixels-native   | 1600×900   | display/image pixels      | 1     |
+| normalized-1000 | 1280×720   | inclusive 0–1000 per axis | 0.8   |
+| normalized-999  | 1280×720   | inclusive 0–999 per axis  | 0.8   |
+
+`toScreen`/`toModel` round and clamp; valid display coordinates are 0..1599 and 0..899. Image-pixel profiles use exact dimension ratios. Normalized endpoints map to the first and last valid display pixels. Profile dimensions must be positive integers with a 16:9 aspect ratio; normalized max must be a positive integer; nonfinite points fail. `screenshotScale` validates the profile and returns its width ratio. A crop has its own origin/dimensions and must not be sent through a full-screen profile without translating its origin first.
+
+## Build and verification
+
+From the repository root:
 
 ```sh
 pnpm --filter @avenire/cloud snapshot:build
+pnpm --filter @avenire/cloud snapshot:verify
+pnpm --filter @avenire/cloud typecheck
+pnpm --filter @avenire/cloud test
+pnpm exec vp fmt packages/cloud
 ```
 
-This publishes a Daytona snapshot and can incur charges. `pnpm --filter @avenire/cloud snapshot:verify` then runs the live checklist below on a throwaway sandbox and saves screenshots and a recording to `/tmp/avenire-snapshot`. After publishing, deploy code that uses `avenire-sandbox-v3`; any existing chat/Cloud sandboxes continue with their original images until recreated.
+Package scripts load `.env.local` with `tsx --env-file-if-exists=../../.env.local`. Do not log API keys. Creating resources bills the owner. `ensureSnapshot` never rebuilds an existing name; the build script waits for an in-progress build and requires active state. SDK 0.220.0's optional remote log stream can fail independently with an unhandled fetch timeout; the build uses API polling without that optional stream. Replacing a named existing snapshot requires explicit authorization; **never delete v3**.
 
-The older `DAYTONA_CHAT_SNAPSHOT` and `DAYTONA_RUTH_CLOUD_SNAPSHOT` entries in the root `.env.example` are outside this package's edit scope and are ignored by the new creation paths.
+`verify-snapshot.ts` builds widget-kit locally (only the requested generated dist), creates one outbound-blocked sandbox, runs the independent checks, downloads outputs, and deletes the sandbox in `finally` with bounded retries. A deletion failure is a failed check that names the resource. The fixtures avoid `matplotlib.py`, which would shadow matplotlib.
 
-## Live verification after the build
+| Checks           | Outputs                                                                                                                                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime          | Disk/RAM, science imports, Node24/offline pnpm11.17.0 as daytona, KiCad/pcbnew, TeX/FFmpeg/Poppler, package inventory.                                                                                            |
+| matplotlib       | Thin lines on dark background: 200 DPI PNG, SVG, animated Pillow GIF and FFmpeg MP4.                                                                                                                              |
+| manimgx          | MathTex + axes/sine plot inspect storyboard; 1280×720@30 CPU 2D and ThreeDScene videos/storyboards, wall time and renderer CPU time.                                                                              |
+| KiCad            | Generated native board, schematic, PCB SVG/PDF, CRC-checked Gerber ZIP, schematic SVG. Minimal fixtures test file export, not electrical design correctness.                                                      |
+| LaTeX            | One-page headings/equation/table/embedded matplotlib report PDF and page-one PNG.                                                                                                                                 |
+| Widgets          | Three exact API.md examples plus iso.js; local kits; CSP-constrained loopback server; Playwright captures after 1.5s; any console/page error fails.                                                               |
+| Node             | SVG written by Node.                                                                                                                                                                                              |
+| Desktop          | Direct startup time, display/xrandr/xdpyinfo, XSETTINGS/cursor metadata, one panel/no dock/theme/scaling/hygiene, clean desktop/menu/Thunar/terminal/browser, actual pinned launcher clicks and window existence. |
+| Theme/compositor | Identical three-theme window arrangements plus maximized browser; compositor off/on screenshots.                                                                                                                  |
+| Screenshots      | PNG and JPEG at qualities 60/80/95, scales 0.8/0.64, exact decoded sizes/bytes; region and half-scale compressed region.                                                                                          |
+| Interaction      | Every profile: full-screen mouse location and browser event coordinates, ±1 pixel/model unit; click/double-click counts, drag endpoint, up/down wheel, exact text with newline, Ctrl+A and Enter.                 |
+| Recording        | ~30s menu/browser/typing/scrolling/Thunar/terminal session; MP4, ffprobe, blackdetect/freezedetect, MB/min and 4h size projection.                                                                                |
+| Integrity        | All PNGs decode, GIF animated, SVG XML, Gerber ZIP CRC, one-page PDF, manimgx dimensions/fps/duration.                                                                                                            |
 
-Create a chat sandbox and a Cloud box from `avenire-sandbox-v3`, then check both:
+Widget CSP: `default-src 'none'; script-src 'unsafe-inline' http://127.0.0.1:8765/kits/; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'`.
 
-1. `python --version` (3.13) and `python -c 'import numpy, scipy, pandas, openpyxl, sympy, matplotlib, networkx, sklearn, polars, PIL, imageio, manimgx; from playwright.sync_api import sync_playwright'`.
-2. `python -c 'import pcbnew; print(pcbnew.GetBuildVersion())'` and `kicad-cli version`; create a simple board with `pcbnew`, then export it with `kicad-cli pcb export`.
-3. `manimgx inspect scene.py` and `manimgx render scene.py -r 1280x720 --fps 30` on a minimal scene with a `MathTex`; confirm it renders on the CPU (no `no GPU adapter` error) and time it. Check `ffmpeg -version` and `pdflatex --version`.
-4. `node --version` and `pnpm --version` (expect Node 24 and pnpm 11.17.0).
-5. Render a local HTML widget page with Playwright's Chromium in headless mode, capture a screenshot, and collect console messages.
-6. Call `sandbox.computerUse.start()`, then `display.getInfo()` and `screenshot.takeFullScreen()`; check 1024×768 and the black default desktop. Test mouse and keyboard input.
-7. Start a recording, perform a few desktop actions, stop it, download the returned file, and play the MP4. Test longer runs separately because recorder duration/size limits are not documented.
-8. Open the sandbox's **VNC** action in the Daytona Dashboard and confirm the same desktop is visible.
-9. Check actual image size, build time, and free disk/RAM on each workload. Confirm package versions and that no unexpected recommended KiCad libraries or 3D models were installed.
+Outputs: `/tmp/avenire-snapshot/avenire-sandbox-v4/verify.json`, `sandbox.json`, and **`renders/index.html`** plus every downloaded artifact. `SNAPSHOT` and `OUT_DIR` can override the target/root; use a different output root to retain failed/earlier evidence. Each JSON row records PASS/FAIL (`ok`), wall seconds, command, diagnostic output and absolute artifact paths/bytes. The gallery embeds every image/video/PDF as a data URL so it is self-contained, while retaining links to raw downloaded files.
 
-Daytona's [VNC package list](https://www.daytona.io/docs/en/vnc-access/) and [Computer Use guide](https://www.daytona.io/docs/en/computer-use/) define the desktop/recording checks. Debian lists the [Bookworm backports KiCad package](https://packages.debian.org/bookworm-backports/kicad) and its [installed files](https://packages.debian.org/bookworm-backports/amd64/kicad/filelist), including `kicad-cli`, `pcbnew.py`, and `_pcbnew.so`.
+### API limitations to verify explicitly
+
+SDK 0.220.0's `takeRegion` reverses positional arguments. A requested region `{x:300,y:150,width:640,height:360}` returns **150×300**, with the wrong origin. Use **`takeCompressedRegion(region, {format: "png", scale: 1})`** for a correct 640×360 crop, or scale 0.5 for 320×180. The verifier explicitly preserves the raw bad crop and asserts the working fallback. No SDK dependency or package outside cloud is patched.
+
+`takeFullScreen(true)` paints a diagnostic crosshair rather than the actual theme cursor. `*-x11.png` companion captures use FFmpeg X11 input with `-draw_mouse 1` to show Bibata. `display.getWindows()` may return zero geometry even for visible windows; preserve its actual response and use CDP plus wmctrl/X11 to establish dimensions rather than inventing geometry. Four-hour storage is an extrapolation, not a four-hour test. A passing suite does not validate an interactive Dashboard VNC connection, production deployment or long recorder duration limits.
+
+## Live v4 results
+
+Final snapshot **`avenire-sandbox-v4`**, ID `0d1210b4-488b-499c-8696-ebc0c1a365f8`, is active (2026-10-11). Image size: 6.275 GiB. **59/59 real checks passed** in the final `snapshot:verify` run; summed check wall times were 219.236 s. Local typecheck, 42 tests and package formatting passed. The final verification sandbox `0235449f-f407-455e-92de-9aa9167fd3a0` was deleted at 20:38:01 UTC; its deletion is the last passing check.
+
+| Measurement           | Final result                                                                                                                                               | Evidence under `renders/`                                                                               |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Desktop startup       | 8.213 s direct API call                                                                                                                                    | `display.json`, `desktop-x11.png`                                                                       |
+| Display/browser       | 1600×900; maximized browser 1600×856; DPR 1 / 100% zoom                                                                                                    | `browser-metrics.json`, `browser-x11.png`                                                               |
+| Theme/compositor      | Arc-Dark selected; compositor off, no visible artifacts                                                                                                    | `theme-comparison.png`, individual candidate/window captures, `compositor-off.png`, `compositor-on.png` |
+| Screenshot scale 0.8  | Exactly 1280×720; PNG 38,033 bytes; JPEG q60/q80/q95 35,059 / 43,931 / 66,949 bytes                                                                        | `scale-0.8-*`                                                                                           |
+| Screenshot scale 0.64 | Exactly 1024×576; PNG 27,437 bytes; JPEG q60/q80/q95 23,004 / 28,784 / 44,530 bytes                                                                        | `scale-0.64-*`                                                                                          |
+| Crops                 | Raw SDK defect retained; working 640×360 PNG origin/content matches full screenshot; compressed half crop 320×180                                          | `crop-*`                                                                                                |
+| Five profiles         | All PASS; actual mouse/event coordinates within ±1 px; 7 clicks, 1 double-click each, drag endpoint, both wheel directions, exact text and keyboard events | `interaction-*.json`                                                                                    |
+| Recording             | 1600×900, 30 fps, 30.033 s, 1,562,621 bytes; 3.122 MB/min; 0.749 GB/4h extrapolation; no detected black/frozen intervals at documented thresholds          | `desktop-recording.mp4`, `recording-stats.json`, `recording-probe.json`, `recording-contact.png`        |
+| Science/media         | All matplotlib/manimgx/KiCad/LaTeX/widget/Node outputs passed; manimgx 2D/3D wall 3.179/5.153 s                                                            | Full self-contained `index.html`                                                                        |
+
+Actual packages: Arc 20221218-1, Bibata 2.0.6-1, Papirus 20250501-1, Chromium 154.0.8037.92-1~deb13u1, Inter 4.1+ds-1, Mousepad 0.6.3-1, Whisker 2.9.2-1, XFWM 4.20.0-1, panel 4.20.4-1, KiCad 9.0.2+dfsg-1, Poppler 25.03.0-5+deb13u4; Python 3.13.16, Node 24.21.0, pnpm 11.17.0. The full inventory includes all Python package versions in `verify.json`/the gallery.
+
+Final evidence root: **`/tmp/avenire-snapshot/avenire-sandbox-v4/`**. Report generator `scripts/verify/report.ts` writes **`/tmp/plans/avenire-sandbox-v4/plan.html`** with before/after and theme comparisons, all check times/commands/sizes, profile results, package versions, resource lifecycle and every absolute artifact path.
+
+The owner-authorized cancelled-attempt scratch v4 snapshot and scratch sandbox were deleted. One newly built intermediate v4 snapshot was deleted before the final build. Every created inspection/verification sandbox was deleted; v3 remains active. Resource IDs are recorded in `/tmp/avenire-snapshot/resource-lifecycle.json` and final live state in `final-resource-state.json`. Earlier runs remain under `avenire-sandbox-v4-run1` through `-run4`; none replace the final 59/59 evidence. The last fixture correction selects a visible CDP tab after preferred-app testing opens extra tabs, preventing hidden-page geometry/event measurements.

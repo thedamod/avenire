@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Avenire desktop settings
+Exec=/usr/local/bin/avenire-desktop-session
+OnlyShowIn=XFCE;
+Terminal=false
+StartupNotify=false

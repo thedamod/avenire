@@ -1,163 +1,275 @@
-/**
- * Live check of the built snapshot (SNAPSHOT.md checklist). Creates one sandbox, runs every
- * check, saves screenshots/recording to OUT_DIR, and always deletes the sandbox.
- *
- * Run: pnpm --filter @avenire/cloud snapshot:verify   (bills a few sandbox-minutes)
- */
-import { Daytona } from "@daytonaio/sdk";
-import { mkdir, writeFile } from "node:fs/promises";
-
+/** Real render/desktop verification. One disposable sandbox, downloaded artifacts, no secrets. */
+import { Daytona, type Sandbox } from "@daytonaio/sdk";
+import { execFileSync } from "node:child_process";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { AVENIRE_SNAPSHOT } from "../src/snapshots.ts";
+import { gallery, type Check, type Output } from "./verify/gallery.ts";
+import { desktop, sessionEnv } from "./verify/desktop.ts";
+import { widgetPages } from "./verify/widgets.ts";
 
-const OUT_DIR = process.env.OUT_DIR ?? `/tmp/avenire-snapshot/${AVENIRE_SNAPSHOT}`;
-const results: { check: string; ok: boolean; detail: string }[] = [];
-const log = (line: string) => process.stdout.write(`${line}\n`);
-
-const SCENE = `import manimgx as m
-
-class Check(m.Scene):
-    def construct(self) -> None:
-        formula = m.MathTex(r"\\int_0^1 x^2\\,dx = \\tfrac{1}{3}")
-        self.play(m.Write(formula), run_time=1)
-        self.wait(0.5)
-`;
-const PAGE = `<!doctype html><html><body style="margin:0;background:#1b1c28;color:#ebe9e1;font:16px sans-serif">
-<svg width="320" height="120"><path d="M10 100 L110 20 L210 80 L310 10" fill="none" stroke="#a5a2e9" stroke-width="1"/></svg>
-<script>console.log("widget ok")</script></body></html>`;
-const SHOT = `from playwright.sync_api import sync_playwright
-with sync_playwright() as p:
-    b = p.chromium.launch()
-    page = b.new_page(viewport={"width": 360, "height": 160})
-    logs = []
-    page.on("console", lambda m: logs.append(m.text))
-    page.goto("file:///home/daytona/work/page.html")
-    page.screenshot(path="/home/daytona/work/page.png")
-    print("console:", logs)
-    b.close()
-`;
-
-const daytona = new Daytona();
-log(`Creating a sandbox from ${AVENIRE_SNAPSHOT}…`);
-const sandbox = await daytona.create(
-  {
-    snapshot: AVENIRE_SNAPSHOT,
-    autoStopInterval: 15,
-    autoDeleteInterval: 0,
-    labels: { app: "snapshot-verify" },
-  },
-  { timeout: 300 },
-);
-const run = async (check: string, command: string, timeout = 300) => {
+const snapshot = process.env.SNAPSHOT ?? AVENIRE_SNAPSHOT;
+const out = process.env.OUT_DIR ?? `/tmp/avenire-snapshot/${snapshot}`;
+const renders = `${out}/renders`;
+const work = "/home/daytona/work";
+const results: Check[] = [];
+const log = (line: string) => process.stdout.write(line + "\n");
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+let sandbox: Sandbox | undefined;
+await mkdir(renders, { recursive: true });
+// The explicitly requested build touches only ignored widget-kit dist artifacts.
+execFileSync("pnpm", ["--filter", "@avenire/widget-kit", "build"], {
+  cwd: fileURLToPath(new URL("../../../", import.meta.url)),
+  stdio: "inherit",
+});
+async function download(remote: string, local: string): Promise<Output> {
+  const bytes = await sandbox!.fs.downloadFile(remote);
+  if (!bytes.length) throw new Error(`Empty output: ${remote}`);
+  const path = `${renders}/${local}`;
+  await writeFile(path, bytes);
+  return { path, bytes: bytes.length };
+}
+async function check(
+  name: string,
+  command: string,
+  action: () => Promise<{ detail: string; outputs?: Output[] }>,
+) {
   const started = Date.now();
-  const response = await sandbox.process.executeCommand(
-    command,
-    "/home/daytona/work",
-    undefined,
-    timeout,
-  );
-  const seconds = ((Date.now() - started) / 1000).toFixed(1);
-  const detail = `${response.result.trim().split("\n").slice(-6).join(" | ")} (${seconds}s)`;
-  results.push({ check, ok: response.exitCode === 0, detail });
-  log(`${response.exitCode === 0 ? "PASS" : "FAIL"} ${check}: ${detail}`);
-  return response;
-};
-const save = async (name: string, base64: string) => {
-  await writeFile(`${OUT_DIR}/${name}`, Buffer.from(base64, "base64"));
-  log(`saved ${OUT_DIR}/${name}`);
-};
-const imageOf = (value: object) =>
-  Object.values(value).find(
-    (field): field is string => typeof field === "string" && field.length > 1000,
-  ) ?? "";
+  const r: Check = { check: name, ok: false, seconds: 0, command, detail: "", outputs: [] };
+  try {
+    const value = await action();
+    r.detail = value.detail;
+    r.outputs = value.outputs ?? [];
+    r.ok = true;
+  } catch (e) {
+    r.detail = e instanceof Error ? e.message : String(e);
+  }
+  r.seconds = (Date.now() - started) / 1000;
+  results.push(r);
+  log(`${r.ok ? "PASS" : "FAIL"} ${name} ${r.seconds.toFixed(2)}s: ${r.detail.slice(-700)}`);
+  await writeFile(`${out}/verify.json`, JSON.stringify(results, null, 2) + "\n");
+}
+async function execute(command: string, timeout = 300) {
+  const response = await sandbox!.process.executeCommand(command, work, undefined, timeout);
+  if (response.exitCode !== 0) throw new Error(`exit ${response.exitCode}: ${response.result}`);
+  return response.result.trim();
+}
+async function run(name: string, command: string, files: string[] = [], timeout = 300) {
+  await check(name, command, async () => {
+    const detail = await execute(command, timeout);
+    const outputs: Output[] = [];
+    for (const file of files)
+      outputs.push(await download(`${work}/${file}`, file.split("/").pop()!));
+    return { detail, outputs };
+  });
+}
+async function launch(name: string, command: string) {
+  await check(name, command, async () => {
+    const id = name.replaceAll(" ", "-");
+    await sandbox!.process.createSession(id);
+    const r = await sandbox!.process.executeSessionCommand(id, {
+      command: `cd ${work}; ${command}`,
+      runAsync: true,
+    });
+    if (!r.cmdId) throw new Error("Missing async command id");
+    return { detail: `Started session ${id}: ${r.cmdId}` };
+  });
+}
 
+async function shot(name: string, x: number, y: number) {
+  await sandbox!.computerUse.mouse.move(x, y);
+  await sleep(1000);
+  const value = await sandbox!.computerUse.screenshot.takeFullScreen(true);
+  const b64 = Object.values(value).find(
+    (v): v is string => typeof v === "string" && v.length > 1000,
+  );
+  if (!b64) throw new Error("Screenshot has no image data");
+  const bytes = Buffer.from(b64, "base64");
+  if (!bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])))
+    throw new Error("Screenshot is not a PNG");
+  if (bytes.readUInt32BE(16) !== 1600 || bytes.readUInt32BE(20) !== 900)
+    throw new Error(
+      `Unexpected native screenshot dimensions: ${bytes.readUInt32BE(16)}x${bytes.readUInt32BE(20)}`,
+    );
+  const path = `${renders}/${name}.png`;
+  await writeFile(path, bytes);
+  const native = `renders/${name}-x11.png`;
+  await execute(
+    sessionEnv +
+      `ffmpeg -v error -y -f x11grab -draw_mouse 1 -video_size 1600x900 -i "$DISPLAY" -frames:v 1 -update 1 ${native}`,
+  );
+  return [{ path, bytes: bytes.length }, await download(`${work}/${native}`, `${name}-x11.png`)];
+}
 try {
-  await mkdir(OUT_DIR, { recursive: true });
-  // The toolbox can reset the first connection while a new sandbox finishes starting.
+  log(`Creating ${snapshot} verification sandbox`);
+  sandbox = await new Daytona().create(
+    {
+      snapshot,
+      autoStopInterval: 15,
+      autoDeleteInterval: 0,
+      labels: { app: "avenire-v4-verify" },
+      networkBlockAll: true,
+    },
+    { timeout: 300 },
+  );
+  await writeFile(
+    `${out}/sandbox.json`,
+    JSON.stringify(
+      { id: sandbox.id, snapshot, createdAt: new Date().toISOString(), networkBlockAll: true },
+      null,
+      2,
+    ),
+  );
   for (let attempt = 1; ; attempt++) {
     try {
-      await sandbox.process.executeCommand("mkdir -p /home/daytona/work");
+      await sandbox.process.executeCommand(
+        `mkdir -p ${work}/renders ${work}/kits ${work}/mixed/Projects`,
+      );
       break;
-    } catch (error) {
-      if (attempt === 6) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
+    } catch (e) {
+      if (attempt === 6) throw e;
+      await sleep(2000 * attempt);
     }
   }
-  await run("disk", "df -h / | tail -1; du -sh /opt/avenire 2>/dev/null | tail -1");
+  for (const file of [
+    "plot-render.py",
+    "scenes.py",
+    "kicad.py",
+    "report.tex",
+    "node.mjs",
+    "widgets.py",
+    "integrity.py",
+    "interaction.html",
+    "desktop-cdp.py",
+    "x11-state.py",
+    "theme-comparison.py",
+  ])
+    await sandbox.fs.uploadFile(
+      await readFile(new URL("./verify/" + file, import.meta.url)),
+      `${work}/${file}`,
+    );
+  const kitDir = new URL("../../widget-kit/dist/kits/", import.meta.url);
+  for (const file of await readdir(kitDir))
+    await sandbox.fs.uploadFile(await readFile(new URL(file, kitDir)), `${work}/kits/${file}`);
+  for (const page of await widgetPages())
+    await sandbox.fs.uploadFile(Buffer.from(page.html), `${work}/${page.name}.html`);
+  await run(
+    "disk",
+    'df -h /; du -sh /opt/avenire; free -m; cat /sys/fs/cgroup/memory.max; python -c \'import shutil; free=shutil.disk_usage("/home/daytona").free; print(free,"free bytes"); assert free > 1024**3\'',
+  );
   await run(
     "python",
-    "python --version && python -c 'import numpy, scipy, pandas, openpyxl, sympy, matplotlib, networkx, sklearn, polars, PIL, imageio, manimgx; print(\"imports ok\")'",
+    `python --version && python -c 'import numpy, scipy, pandas, openpyxl, sympy, matplotlib, networkx, sklearn, polars, PIL, imageio, manimgx; from playwright.sync_api import sync_playwright; import sys; assert sys.version_info >= (3,13); print("imports ok")'`,
   );
-  await run("node + pnpm", "node --version && pnpm --version");
+  await run(
+    "node + pnpm (network blocked)",
+    `test "$(id -un)" = daytona && node --version && output=$(pnpm --version 2>&1) && printf '%s\n' "$output" && test "$output" = 11.17.0`,
+  );
   await run(
     "kicad",
-    "kicad-cli version && /usr/bin/python3 -c 'import pcbnew; print(pcbnew.Version())'",
+    `kicad-cli version && /usr/bin/python3 -c 'import pcbnew; print(pcbnew.Version())'`,
   );
-  await run("tex + ffmpeg", "pdflatex --version | head -1 && ffmpeg -version | head -1");
-  await sandbox.fs.uploadFile(Buffer.from(SCENE), "/home/daytona/work/scene.py");
+  await run("tex + ffmpeg", "pdflatex --version | head -1; ffmpeg -version | head -1; pdftoppm -v");
+  await run(
+    "package inventory",
+    `dpkg-query -W bibata-cursor-theme papirus-icon-theme librsvg2-common arc-theme gnome-themes-extra xfce4-whiskermenu-plugin chromium fonts-inter fonts-dejavu-core mousepad poppler-utils kicad xfwm4 xfce4-panel; python -m pip list 2>/dev/null || /usr/local/bin/uv pip list --python /opt/avenire/python/bin/python`,
+  );
+  for (const kind of ["png", "svg", "gif", "mp4"])
+    await run("matplotlib " + kind, `python plot-render.py ${kind}`, [
+      `renders/matplotlib.${kind}`,
+    ]);
   await run(
     "manimgx inspect",
-    "manimgx inspect scene.py -o check.storyboard.png; ls -la *.png",
+    "manimgx inspect scenes.py Plot -o renders/manimgx-inspect.png",
+    ["renders/manimgx-inspect.png"],
     600,
   );
   await run(
-    "manimgx render (cpu)",
-    "manimgx render scene.py -r 640x360 --fps 15; ls -la *.mp4 || find . -name '*.mp4' -ls",
+    "manimgx render 2D (cpu)",
+    "manimgx render scenes.py Plot -r 1280x720 --fps 30 -o renders/manimgx-plot.mp4",
+    ["renders/manimgx-plot.mp4", "renders/manimgx-plot.storyboard.png"],
     900,
   );
-  for (const name of ["Check.mp4", "Check.storyboard.png", "check.storyboard.png"]) {
-    const found = await sandbox.process.executeCommand(
-      `find /home/daytona/work -name '${name}' | head -1`,
-    );
-    const path = found.result.trim();
-    if (path) await writeFile(`${OUT_DIR}/manimgx-${name}`, await sandbox.fs.downloadFile(path));
-  }
-  await sandbox.fs.uploadFile(Buffer.from(PAGE), "/home/daytona/work/page.html");
-  await sandbox.fs.uploadFile(Buffer.from(SHOT), "/home/daytona/work/shot.py");
-  const shot = await run("playwright screenshot", "python shot.py && ls -la page.png");
-  if (shot.exitCode === 0)
-    await writeFile(
-      `${OUT_DIR}/widget.png`,
-      await sandbox.fs.downloadFile("/home/daytona/work/page.png"),
-    );
-
-  const start = Date.now();
-  await sandbox.computerUse.start();
-  results.push({
-    check: "computer use start",
-    ok: true,
-    detail: `${((Date.now() - start) / 1000).toFixed(1)}s`,
-  });
-  await new Promise((resolve) => setTimeout(resolve, 12_000));
-  const display = await sandbox.computerUse.display.getInfo();
-  log(`display: ${JSON.stringify(display)}`);
-  const recording = await sandbox.computerUse.recording.start("verify");
-  await sandbox.computerUse.mouse.move(512, 384);
-  await sandbox.computerUse.mouse.click(200, 200);
-  const screenshot = await sandbox.computerUse.screenshot.takeFullScreen(true);
-  await save("desktop.png", imageOf(screenshot));
-  await new Promise((resolve) => setTimeout(resolve, 5_000));
-  const stopped = await sandbox.computerUse.recording.stop(recording.id);
-  results.push({
-    check: "recording",
-    ok: stopped.status !== "failed",
-    detail: `${stopped.status} ${stopped.durationSeconds ?? "?"}s ${stopped.sizeBytes ?? "?"} bytes at ${stopped.filePath}`,
-  });
-  await writeFile(`${OUT_DIR}/recording.mp4`, await sandbox.fs.downloadFile(stopped.filePath));
-  const tree = await sandbox.computerUse.display.getWindows();
-  log(`windows: ${JSON.stringify(tree).slice(0, 400)}`);
-} catch (error) {
+  await run(
+    "manimgx render 3D (cpu)",
+    "manimgx render scenes.py Spatial -r 1280x720 --fps 30 -o renders/manimgx-spatial.mp4",
+    ["renders/manimgx-spatial.mp4", "renders/manimgx-spatial.storyboard.png"],
+    900,
+  );
+  await run("kicad board generation", "/usr/bin/python3 kicad.py", [
+    "renders/check.kicad_pcb",
+    "renders/check.kicad_sch",
+  ]);
+  await run(
+    "kicad PCB SVG",
+    "kicad-cli pcb export svg --mode-single --layers F.Cu,F.Silkscreen,Edge.Cuts --page-size-mode 2 --output renders/kicad-board.svg renders/check.kicad_pcb",
+    ["renders/kicad-board.svg"],
+  );
+  await run(
+    "kicad PCB PDF",
+    "kicad-cli pcb export pdf --mode-single --layers F.Cu,F.Silkscreen,Edge.Cuts --output renders/kicad-board.pdf renders/check.kicad_pcb",
+    ["renders/kicad-board.pdf"],
+  );
+  await run(
+    "kicad gerbers",
+    `kicad-cli pcb export gerbers --output renders/gerbers/ renders/check.kicad_pcb && python -c 'import shutil;shutil.make_archive("renders/kicad-gerbers","zip","renders/gerbers")'`,
+    ["renders/kicad-gerbers.zip"],
+  );
+  await run(
+    "kicad schematic SVG",
+    "kicad-cli sch export svg --output renders/sch-svg/ renders/check.kicad_sch && cp renders/sch-svg/*.svg renders/kicad-schematic.svg",
+    ["renders/kicad-schematic.svg"],
+  );
+  await run(
+    "latex report",
+    "cp report.tex renders/report.tex && cd renders && pdflatex -interaction=nonstopmode -halt-on-error report.tex && pdftoppm -png -singlefile -r 140 report.pdf latex-report",
+    ["renders/report.pdf", "renders/latex-report.png"],
+  );
+  await launch(
+    "widget server",
+    "nohup python -m http.server 8765 --bind 127.0.0.1 >/tmp/widget-server.log 2>&1 </dev/null",
+  );
+  await sleep(1000);
+  for (const name of ["pendulum", "three-body", "curve-fit", "iso"])
+    await run("playwright widget " + name, `python widgets.py ${name}`, [
+      `renders/widget-${name}.png`,
+    ]);
+  await run("node SVG", "node node.mjs", ["renders/node.svg"]);
+  await desktop({ box: sandbox, work, renders, check, execute, run, launch, download, shot });
+  await run("media integrity", "python integrity.py");
+} catch (e) {
   results.push({
     check: "script",
     ok: false,
-    detail: error instanceof Error ? error.message : String(error),
+    seconds: 0,
+    command: "verification setup/orchestration",
+    detail: e instanceof Error ? e.message : String(e),
+    outputs: [],
   });
+  log(String(e));
 } finally {
-  await sandbox
-    .delete()
-    .catch((error: unknown) => log(`DELETE FAILED for ${sandbox.id}: ${String(error)}`));
-  log("\nSummary");
-  for (const result of results)
-    log(`${result.ok ? "PASS" : "FAIL"}  ${result.check}  ${result.detail}`);
-  await writeFile(`${OUT_DIR}/verify.json`, JSON.stringify(results, null, 2));
-  if (results.some((result) => !result.ok)) process.exitCode = 1;
+  if (sandbox) {
+    await check("sandbox deletion", "sandbox.delete()", async () => {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await sandbox!.delete(60, true);
+          break;
+        } catch (e) {
+          if (attempt === 4) throw e;
+          await sleep(attempt * 2000);
+        }
+      }
+      await writeFile(
+        `${out}/sandbox.json`,
+        JSON.stringify({ id: sandbox!.id, snapshot, deletedAt: new Date().toISOString() }, null, 2),
+      );
+      return { detail: `Deleted ${sandbox!.id}` };
+    });
+  }
+  await writeFile(`${out}/verify.json`, JSON.stringify(results, null, 2) + "\n");
+  await writeFile(`${renders}/index.html`, await gallery(snapshot, results));
+  log(
+    `Verification: ${results.filter((r) => r.ok).length}/${results.length} PASS. Gallery: ${renders}/index.html`,
+  );
+  if (results.some((r) => !r.ok)) process.exitCode = 1;
 }

@@ -1,0 +1,17 @@
+@define-color theme_selected_bg_color #a5a2e9;
+@define-color theme_selected_fg_color #181818;
+.xfce4-panel {
+  background-color: #1b2030;
+}
+.xfce4-panel button {
+  border-radius: 3px;
+  margin: 2px;
+  padding: 4px;
+}
+.xfce4-panel .tasklist button:checked {
+  background-color: #353a4b;
+  border-bottom: 2px solid #a5a2e9;
+}
+.xfce4-panel .tasklist button:hover {
+  background-color: #2b3040;
+}
