@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/bin.ts",
-    "start": "tsx src/bin.ts",
+    "dev": "tsx watch --env-file-if-exists=../../.env.local src/bin.ts",
+    "start": "tsx --env-file-if-exists=../../.env.local src/bin.ts",
     "preview": "vp run --filter @avenire/emailer preview",
     "typecheck": "tsc --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"

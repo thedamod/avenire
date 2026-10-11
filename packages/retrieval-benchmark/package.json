@@ -11,14 +11,14 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests",
-    "bench": "tsx src/bin.ts",
-    "bench:v1": "tsx src/v1/bin.ts",
-    "bench:calibrate": "tsx src/v1/calibrate-bin.ts",
-    "bench:summary": "tsx src/v1/summary-final-bin.ts",
-    "corpus:fetch": "tsx src/v1/corpus-bin.ts fetch",
-    "corpus:import-local": "tsx src/v1/corpus-bin.ts import-local",
-    "corpus:import-mit": "tsx src/v1/corpus-bin.ts import-mit",
-    "corpus:status": "tsx src/v1/corpus-bin.ts status"
+    "bench": "tsx --env-file-if-exists=../../.env.local src/bin.ts",
+    "bench:v1": "tsx --env-file-if-exists=../../.env.local src/v1/bin.ts",
+    "bench:calibrate": "tsx --env-file-if-exists=../../.env.local src/v1/calibrate-bin.ts",
+    "bench:summary": "tsx --env-file-if-exists=../../.env.local src/v1/summary-final-bin.ts",
+    "corpus:fetch": "tsx --env-file-if-exists=../../.env.local src/v1/corpus-bin.ts fetch",
+    "corpus:import-local": "tsx --env-file-if-exists=../../.env.local src/v1/corpus-bin.ts import-local",
+    "corpus:import-mit": "tsx --env-file-if-exists=../../.env.local src/v1/corpus-bin.ts import-mit",
+    "corpus:status": "tsx --env-file-if-exists=../../.env.local src/v1/corpus-bin.ts status"
   },
   "dependencies": {
     "@avenire/contracts": "workspace:*",

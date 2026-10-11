@@ -1,4 +1,9 @@
+import { existsSync } from "node:fs";
 import type { NextConfig } from "next";
+
+// One env file for the monorepo: the repo-root .env.local (Next only reads apps/web/.env*).
+const rootEnv = new URL("../../.env.local", import.meta.url);
+if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 
 const nextConfig: NextConfig = {
   transpilePackages: [

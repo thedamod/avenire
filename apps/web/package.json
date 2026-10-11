@@ -6,7 +6,7 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "worker": "tsx src/server/worker.ts",
+    "worker": "tsx --env-file-if-exists=../../.env.local src/server/worker.ts",
     "typecheck": "tsc --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },
