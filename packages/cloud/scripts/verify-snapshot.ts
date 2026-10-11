@@ -72,7 +72,16 @@ const imageOf = (value: object) =>
 
 try {
   await mkdir(OUT_DIR, { recursive: true });
-  await sandbox.process.executeCommand("mkdir -p /home/daytona/work");
+  // The toolbox can reset the first connection while a new sandbox finishes starting.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await sandbox.process.executeCommand("mkdir -p /home/daytona/work");
+      break;
+    } catch (error) {
+      if (attempt === 6) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 2_000 * attempt));
+    }
+  }
   await run("disk", "df -h / | tail -1; du -sh /opt/avenire 2>/dev/null | tail -1");
   await run(
     "python",
