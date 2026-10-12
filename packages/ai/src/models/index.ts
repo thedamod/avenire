@@ -1,6 +1,7 @@
 import { SCREEN_PROFILES } from "@avenire/cloud/screen";
 
-/** Call sites resolve Ruth registry names; only this module knows OpenRouter ids. */
+/** Call sites resolve Ruth registry names; only this module knows provider model ids. */
+import { createFireworks } from "@ai-sdk/fireworks";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { customProvider, type LanguageModel } from "ai";
 import * as Config from "effect/Config";
@@ -13,19 +14,26 @@ import * as Schema from "effect/Schema";
 
 export const RUTH_MODEL_NAMES = ["ruth-sprint", "ruth-core", "ruth-apex"] as const;
 export type RuthModelName = (typeof RUTH_MODEL_NAMES)[number];
+/** A `fireworks:` prefix routes to Fireworks; any other id is an OpenRouter model id. */
 export const RUTH_MODEL_DEFAULTS: Record<RuthModelName, string> = {
-  "ruth-sprint": "anthropic/claude-haiku-4.5",
+  "ruth-sprint": "fireworks:accounts/fireworks/models/glm-5p3-flash",
   "ruth-core": "anthropic/claude-sonnet-5.5",
   "ruth-apex": "anthropic/claude-opus-5.5",
 };
 export const RUTH_DEFAULT_MODEL: RuthModelName = "ruth-core";
 export const RUTH_FAST_MODEL: RuthModelName = "ruth-sprint";
+const FIREWORKS_PREFIX = "fireworks:";
+export const parseModelId = (spec: string) =>
+  spec.startsWith(FIREWORKS_PREFIX)
+    ? { provider: "fireworks" as const, id: spec.slice(FIREWORKS_PREFIX.length) }
+    : { provider: "openrouter" as const, id: spec };
 export const screenProfileForModel = (
   id: string,
 ): import("@avenire/cloud/screen").ScreenProfile => {
+  // GLM-V grounding is documented on a 0-1000 grid; unverified until the conformance run.
   const profile = /(?:gemini)/i.test(id)
     ? "normalized-999"
-    : /qwen3.*vl/i.test(id)
+    : /qwen3.*vl|glm/i.test(id)
       ? "normalized-1000"
       : /^openai\/.*(?:computer-use|cua)/i.test(id)
         ? "pixels-native"
@@ -44,6 +52,7 @@ export const modelCapabilities = (
 ): ModelCapabilities => ({
   screenProfile: screenProfileForModel(id),
   vision: inputModalities.includes("image"),
+  // Fireworks' OpenAI-compatible tool messages carry text only; images follow as user messages.
   toolResultImages: /^(anthropic|openai|google)\//.test(id),
   ...override,
 });
@@ -64,6 +73,19 @@ const Catalog = Schema.Struct({
     }),
   ),
 });
+const FireworksCatalog = Schema.Struct({
+  data: Schema.Array(
+    Schema.Struct({ id: Schema.String, supports_image_input: Schema.optionalKey(Schema.Boolean) }),
+  ),
+});
+class MissingProviderKey extends Schema.TaggedError<MissingProviderKey>()("MissingProviderKey", {
+  model: Schema.String,
+  key: Schema.String,
+}) {
+  override get message(): string {
+    return `${this.model} needs ${this.key}`;
+  }
+}
 class ModelCatalogError extends Schema.TaggedError<ModelCatalogError>()("ModelCatalogError", {
   cause: Schema.Defect(),
 }) {}
@@ -94,6 +116,32 @@ export const RuthModelsLive = Layer.effect(
       ),
     );
     const metadata = new Map(catalog.data.map((m) => [m.id, m.architecture.input_modalities]));
+    const fireworksKey = yield* Config.option(Config.Redacted("FIREWORKS_API_KEY"));
+    const fireworks = Option.map(fireworksKey, (key) =>
+      createFireworks({ apiKey: Redacted.value(key) }),
+    );
+    if (Option.isSome(fireworksKey)) {
+      const fireworksCatalog = yield* Effect.tryPromise({
+        try: () =>
+          fetch("https://api.fireworks.ai/inference/v1/models", {
+            headers: { Authorization: `Bearer ${Redacted.value(fireworksKey.value)}` },
+            signal: AbortSignal.timeout(10_000),
+          }).then((r) => r.json()),
+        catch: (cause) => new ModelCatalogError({ cause }),
+      }).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(FireworksCatalog)),
+        Effect.catchCause(() =>
+          Effect.logWarning("Fireworks catalog unavailable; its models default to text only").pipe(
+            Effect.as({ data: [] }),
+          ),
+        ),
+      );
+      for (const m of fireworksCatalog.data)
+        metadata.set(
+          `${FIREWORKS_PREFIX}${m.id}`,
+          m.supports_image_input ? ["text", "image"] : ["text"],
+        );
+    }
     const configured = yield* Effect.forEach(
       RUTH_MODEL_NAMES,
       Effect.fn("RuthModels.configure")(function* (name) {
@@ -114,14 +162,20 @@ export const RuthModelsLive = Layer.effect(
         };
       }),
     );
-    const ruth = customProvider({
-      languageModels: Object.fromEntries(
-        configured.map((m) => [
+    const languageModels = yield* Effect.forEach(configured, (m) => {
+      const target = parseModelId(m.id);
+      if (target.provider === "openrouter")
+        return Effect.succeed([
           m.name,
-          provider.chat(m.id, { parallelToolCalls: false, usage: { include: true } }),
-        ]),
-      ),
+          provider.chat(target.id, { parallelToolCalls: false, usage: { include: true } }),
+        ] as const);
+      return Option.match(fireworks, {
+        onNone: () =>
+          Effect.fail(new MissingProviderKey({ model: m.id, key: "FIREWORKS_API_KEY" })),
+        onSome: (client) => Effect.succeed([m.name, client.chatModel(target.id)] as const),
+      });
     });
+    const ruth = customProvider({ languageModels: Object.fromEntries(languageModels) });
     const registry = new Map(configured.map((m) => [m.name, m.capabilities]));
     const maxImages = Math.max(
       0,

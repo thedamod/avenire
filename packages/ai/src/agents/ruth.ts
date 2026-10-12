@@ -294,15 +294,21 @@ const makeRuth = Effect.gen(function* () {
   const chat = Effect.fn("Ruth.chat")(function* (input: ChatInput) {
     const thread = yield* findThread(input.userId, input.threadId);
     const rows = yield* loadRows(input.userId, input.threadId);
-    const history = yield* validate(
-      "read the thread history",
-      rows.map((row) => ({
-        id: row.id,
-        role: row.role,
-        parts: row.parts,
-        ...(row.metadata === null || row.metadata === undefined ? {} : { metadata: row.metadata }),
-      })),
-    );
+    // safeValidateUIMessages rejects an empty array, and a new thread has no history yet.
+    const history: Array<RuthUIMessage> =
+      rows.length === 0
+        ? []
+        : yield* validate(
+            "read the thread history",
+            rows.map((row) => ({
+              id: row.id,
+              role: row.role,
+              parts: row.parts,
+              ...(row.metadata === null || row.metadata === undefined
+                ? {}
+                : { metadata: row.metadata }),
+            })),
+          );
     const [incoming] = yield* validate("read the message", [input.message], incomingMessageSchemas);
     if (incoming === undefined) {
       return yield* new RuthError({ operation: "read the message", cause: "it is missing" });

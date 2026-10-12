@@ -116,7 +116,8 @@
     "skills:generate": "node src/skills/scripts/generator.ts",
     "typecheck": "tsc --noEmit",
     "test": "pnpm --filter @avenire/widget-kit build && vp test run --config ../../vite.config.ts --dir . --passWithNoTests",
-    "conformance": "node --env-file-if-exists=../../.env.local --experimental-strip-types scripts/computer-use-conformance.ts"
+    "conformance": "node --env-file-if-exists=../../.env.local --experimental-strip-types scripts/computer-use-conformance.ts",
+    "model:smoke": "tsx --env-file-if-exists=../../.env.local scripts/model-smoke.ts"
   },
   "dependencies": {
     "@avenire/cloud": "workspace:*",
@@ -127,6 +128,7 @@
     "@avenire/storage": "workspace:*",
     "@avenire/ui": "workspace:*",
     "@avenire/widget-kit": "workspace:*",
+    "@ai-sdk/fireworks": "catalog:",
     "@openrouter/ai-sdk-provider": "3.1.0",
     "ai": "catalog:",
     "drizzle-orm": "catalog:",

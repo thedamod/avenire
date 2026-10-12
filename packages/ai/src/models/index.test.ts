@@ -1,8 +1,13 @@
 import { expect, it } from "@effect/vitest";
-import { modelCapabilities, RUTH_MODEL_DEFAULTS, screenProfileForModel } from "./index.ts";
-it("keeps the current Claude models using exact OpenRouter ids", () => {
+import {
+  modelCapabilities,
+  RUTH_MODEL_DEFAULTS,
+  screenProfileForModel,
+  parseModelId,
+} from "./index.ts";
+it("defaults sprint to GLM 5.3 Flash on Fireworks and core/apex to Claude on OpenRouter", () => {
   expect(RUTH_MODEL_DEFAULTS).toEqual({
-    "ruth-sprint": "anthropic/claude-haiku-4.5",
+    "ruth-sprint": "fireworks:accounts/fireworks/models/glm-5p3-flash",
     "ruth-core": "anthropic/claude-sonnet-5.5",
     "ruth-apex": "anthropic/claude-opus-5.5",
   });
@@ -40,4 +45,23 @@ it("assigns portable profile conventions by model capability family", () => {
     ["unknown/model", "pixels-1280x720"],
   ])
     expect(screenProfileForModel(id!).id).toBe(profile);
+});
+
+it("routes fireworks: ids to Fireworks and everything else to OpenRouter", () => {
+  expect(parseModelId("fireworks:accounts/fireworks/models/glm-5p3-flash")).toEqual({
+    provider: "fireworks",
+    id: "accounts/fireworks/models/glm-5p3-flash",
+  });
+  expect(parseModelId("anthropic/claude-sonnet-5.5")).toEqual({
+    provider: "openrouter",
+    id: "anthropic/claude-sonnet-5.5",
+  });
+});
+it("gives GLM vision from its catalog, follow-up-message images and the 0-1000 grid", () => {
+  const glm = modelCapabilities("fireworks:accounts/fireworks/models/glm-5p3-flash", [
+    "text",
+    "image",
+  ]);
+  expect(glm).toMatchObject({ vision: true, toolResultImages: false });
+  expect(glm.screenProfile?.id).toBe("normalized-1000");
 });
