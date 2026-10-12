@@ -13,6 +13,7 @@ const fixture = () => {
   const decoder = new TextDecoder();
   const base = `${CHAT_WORKDIR}/.avenire-preview`;
   const service = ChatSandboxes.of({
+    target: () => Effect.die("Unexpected computer target in this test"),
     exec: (owner, input) =>
       Effect.sync(() => {
         owners.push(owner);

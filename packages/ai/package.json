@@ -63,14 +63,6 @@
       "types": "./src/outputs/widgets.ts",
       "import": "./src/outputs/widgets.ts"
     },
-    "./cloud/run-tokens": {
-      "types": "./src/cloud/run-tokens.ts",
-      "import": "./src/cloud/run-tokens.ts"
-    },
-    "./cloud/gateway": {
-      "types": "./src/cloud/gateway.ts",
-      "import": "./src/cloud/gateway.ts"
-    },
     "./tools/sandbox-meter": {
       "types": "./src/tools/sandbox-meter.ts",
       "import": "./src/tools/sandbox-meter.ts"
@@ -106,12 +98,25 @@
     "./tools/preview": {
       "types": "./src/tools/preview.ts",
       "import": "./src/tools/preview.ts"
+    },
+    "./tools/computer-specs": {
+      "types": "./src/tools/computer-specs.ts",
+      "import": "./src/tools/computer-specs.ts"
+    },
+    "./tools/computer": {
+      "types": "./src/tools/computer.ts",
+      "import": "./src/tools/computer.ts"
+    },
+    "./tools/registration": {
+      "types": "./src/tools/registration.ts",
+      "import": "./src/tools/registration.ts"
     }
   },
   "scripts": {
     "skills:generate": "node src/skills/scripts/generator.ts",
     "typecheck": "tsc --noEmit",
-    "test": "pnpm --filter @avenire/widget-kit build && vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
+    "test": "pnpm --filter @avenire/widget-kit build && vp test run --config ../../vite.config.ts --dir . --passWithNoTests",
+    "conformance": "node --env-file-if-exists=../../.env.local --experimental-strip-types scripts/computer-use-conformance.ts"
   },
   "dependencies": {
     "@avenire/cloud": "workspace:*",

@@ -1,3 +1,5 @@
+import { SCREEN_PROFILES } from "@avenire/cloud/screen";
+
 /** Call sites resolve Ruth registry names; only this module knows OpenRouter ids. */
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { customProvider, type LanguageModel } from "ai";
@@ -18,7 +20,20 @@ export const RUTH_MODEL_DEFAULTS: Record<RuthModelName, string> = {
 };
 export const RUTH_DEFAULT_MODEL: RuthModelName = "ruth-core";
 export const RUTH_FAST_MODEL: RuthModelName = "ruth-sprint";
+export const screenProfileForModel = (
+  id: string,
+): import("@avenire/cloud/screen").ScreenProfile => {
+  const profile = /(?:gemini)/i.test(id)
+    ? "normalized-999"
+    : /qwen3.*vl/i.test(id)
+      ? "normalized-1000"
+      : /^openai\/.*(?:computer-use|cua)/i.test(id)
+        ? "pixels-native"
+        : "pixels-1280x720";
+  return SCREEN_PROFILES.find((p) => p.id === profile)!;
+};
 export interface ModelCapabilities {
+  readonly screenProfile?: import("@avenire/cloud/screen").ScreenProfile;
   readonly vision: boolean;
   readonly toolResultImages: boolean;
 }
@@ -27,6 +42,7 @@ export const modelCapabilities = (
   inputModalities: ReadonlyArray<string>,
   override: Partial<ModelCapabilities> = {},
 ): ModelCapabilities => ({
+  screenProfile: screenProfileForModel(id),
   vision: inputModalities.includes("image"),
   toolResultImages: /^(anthropic|openai|google)\//.test(id),
   ...override,
@@ -99,7 +115,12 @@ export const RuthModelsLive = Layer.effect(
       }),
     );
     const ruth = customProvider({
-      languageModels: Object.fromEntries(configured.map((m) => [m.name, provider.chat(m.id)])),
+      languageModels: Object.fromEntries(
+        configured.map((m) => [
+          m.name,
+          provider.chat(m.id, { parallelToolCalls: false, usage: { include: true } }),
+        ]),
+      ),
     });
     const registry = new Map(configured.map((m) => [m.name, m.capabilities]));
     const maxImages = Math.max(

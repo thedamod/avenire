@@ -111,6 +111,8 @@ export class CloudRpcs extends RpcGroup.make(
       patch: Schema.Struct({
         title: Schema.optionalKey(CloudTaskInput.fields.title),
         prompt: Schema.optionalKey(CloudTaskInput.fields.prompt),
+        model: CloudTaskInput.fields.model,
+        network: CloudTaskInput.fields.network,
         schedule: Schema.optionalKey(CloudTaskInput.fields.schedule),
         timeZone: Schema.optionalKey(CloudTaskInput.fields.timeZone),
         preHydration: Schema.optionalKey(CloudTaskInput.fields.preHydration),

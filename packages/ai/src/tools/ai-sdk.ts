@@ -2,16 +2,17 @@ import type { ImageTransport } from "./images.ts";
 import { tool, type ToolSet } from "ai";
 import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
-import { type AgentContext, runTool } from "./core.ts";
-import type { GatewayTool } from "../cloud/gateway.ts";
+import { type AgentContext, RuthToolError, runTool } from "./core.ts";
+import type { ToolRegistration } from "./registration.ts";
 import { standardSchema } from "./schema.ts";
 import { RUTH_TOOL_POLICY, RUTH_TOOL_SPECS, type RuthToolName } from "./specs.ts";
 import { ruthKitTools, type RuthKitServices, type RuthToolImplementations } from "./library.ts";
 
 /** A paired spec/implementation extends the adapter; existing implementations can be overridden for tests. */
 export type AiSdkExtraTools<R = never> = Partial<RuthToolImplementations> &
-  Readonly<Record<string, GatewayTool<R> | RuthToolImplementations[RuthToolName] | undefined>>;
+  Readonly<Record<string, ToolRegistration<R> | RuthToolImplementations[RuthToolName] | undefined>>;
 
 /** Existing policies remain authoritative; new registrations carry their own agent/approval policy. */
 export const toAiSdkTools = <R = never>(
@@ -25,7 +26,7 @@ export const toAiSdkTools = <R = never>(
   const toolApproval: Record<string, "approved"> = Object.create(null);
   for (const name of names) {
     const override = Object.hasOwn(extra, name) ? extra[name] : undefined;
-    let registration: GatewayTool<RuthKitServices | R>;
+    let registration: ToolRegistration<RuthKitServices | R>;
     if (Object.hasOwn(RUTH_TOOL_SPECS, name)) {
       const builtIn = name as RuthToolName;
       // Runtime registry iteration erases the correlation; specs and implementations share a typed key map.
@@ -34,7 +35,8 @@ export const toAiSdkTools = <R = never>(
         policy: RUTH_TOOL_POLICY[builtIn],
         execute: (typeof override === "function"
           ? override
-          : ruthKitTools[builtIn]) as GatewayTool<RuthKitServices>["execute"],
+          : (override?.execute ??
+            ruthKitTools[builtIn])) as ToolRegistration<RuthKitServices>["execute"],
       };
     } else if (override !== undefined && typeof override !== "function") registration = override;
     else continue;
@@ -46,9 +48,25 @@ export const toAiSdkTools = <R = never>(
       outputSchema: standardSchema(spec.outputSchema),
       needsApproval: policy.approval === "unless-full-access" && !ctx.fullAccess,
       ...(images ? { toModelOutput: images.toModelOutput } : {}),
-      execute: async (input, { abortSignal }) => {
+      execute: async (input, { abortSignal, toolCallId }) => {
+        const callContext = { ...ctx, toolCallId };
         const result = await Effect.runPromiseWith(services)(
-          runTool(name, ctx, execute(input, ctx)),
+          runTool(
+            name,
+            callContext,
+            Schema.decodeUnknownEffect(spec.inputSchema)(input).pipe(
+              Effect.mapError(
+                () =>
+                  new RuthToolError({
+                    tool: name,
+                    code: "invalid_input",
+                    message: "Arguments do not match this tool schema.",
+                    recoverable: true,
+                  }),
+              ),
+              Effect.flatMap((decoded) => execute(decoded, callContext)),
+            ),
+          ),
           {
             signal: abortSignal,
           },

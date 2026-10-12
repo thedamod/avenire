@@ -1,7 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { FileId } from "@avenire/contracts";
 import { buildReport, type ReportInput } from "./cloud-report.ts";
-import { parsePiLogs, piCommand } from "./cloud-pi.ts";
 
 const file = {
   fileId: FileId.make("source-id"),
@@ -57,71 +56,5 @@ describe("buildReport", () => {
     expect(
       buildReport({ ...input, produced: [{ id: "safe", title: "[title](other)" }] }),
     ).toContain("\\[title\\](other)");
-  });
-});
-describe("Pi protocol", () => {
-  it("reads final assistant text, including the agent_end fallback", () => {
-    const logs = [
-      "incomplete tail {",
-      '{"type":"agent_start"}',
-      JSON.stringify({
-        type: "message_end",
-        message: {
-          role: "assistant",
-          content: [
-            { type: "thinking", thinking: "private" },
-            { type: "text", text: "Earlier" },
-          ],
-        },
-      }),
-      JSON.stringify({
-        type: "agent_end",
-        messages: [{ role: "assistant", content: [{ type: "text", text: "Final" }] }],
-      }),
-    ].join("\n");
-    expect(parsePiLogs(logs)).toEqual({ assistantText: "Final", started: true, error: null });
-  });
-  it("detects provider failure events without mistaking a tool error for an agent failure", () => {
-    expect(
-      parsePiLogs(
-        JSON.stringify({
-          type: "message_end",
-          message: {
-            role: "assistant",
-            content: [],
-            stopReason: "error",
-            errorMessage: "provider failed",
-          },
-        }),
-      ).error,
-    ).toBe("provider failed");
-    expect(parsePiLogs('{"type":"tool_execution_end","isError":true}').error).toBeNull();
-  });
-  it("a successful retry clears an earlier provider error", () => {
-    const logs = [
-      JSON.stringify({
-        type: "message_end",
-        message: { role: "assistant", content: [], stopReason: "error", errorMessage: "transient" },
-      }),
-      JSON.stringify({ type: "auto_retry_end", success: true }),
-      JSON.stringify({
-        type: "message_end",
-        message: {
-          role: "assistant",
-          stopReason: "stop",
-          content: [{ type: "text", text: "Recovered" }],
-        },
-      }),
-    ].join("\n");
-    expect(parsePiLogs(logs)).toEqual({ assistantText: "Recovered", started: true, error: null });
-  });
-  it("quotes model arguments and uses only documented unattended options", () => {
-    const command = piCommand("run", "model' $(touch /tmp/injection)");
-    expect(command).toContain(
-      "PI_TELEMETRY=0 pi -p --mode json --no-session --offline --no-approve",
-    );
-    expect(command).toContain("--extension /home/daytona/.avenire/pi/avenire.ts");
-    expect(command).toContain("'@/home/daytona/workspace/runs/run/prompt.md'");
-    expect(command).toContain("'model'\\'' $(touch /tmp/injection)'");
   });
 });

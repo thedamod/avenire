@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@avenire/contracts": "workspace:*",
+    "ai": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "postgres": "3.4.9"

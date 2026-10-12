@@ -109,7 +109,14 @@ export interface AssetFilters {
 export interface PutAsset extends AssetFilters {
   readonly name: string;
   readonly title?: string;
-  readonly bytes: Uint8Array;
+  readonly bytes:
+    | Uint8Array
+    | {
+        readonly stream: ReadableStream<Uint8Array>;
+        readonly sizeBytes: number;
+        readonly contentHash: string;
+      };
+  readonly idempotencyId?: AssetId;
   readonly mediaType: string;
   readonly kind?: AssetKind;
   readonly messageId?: MessageId;
@@ -189,7 +196,9 @@ export const makeAssetStore = Effect.fn("AssetStore.make")(function* (options: {
     ),
     load: Effect.fn("AssetStore.load")((entry) => storage.get(entry.storageKey)),
     put: Effect.fn("AssetStore.put")(function* (userId, input) {
-      const id = yield* newId(AssetId);
+      const id = input.idempotencyId ?? (yield* newId(AssetId));
+      const existing = yield* options.repository.get(id);
+      if (existing && existing.userId === userId) return wire(existing);
       const now = yield* DateTime.now;
       const key = assetKey(userId, id, safeAssetName(input.name));
       const row: AssetRow = {
@@ -199,15 +208,23 @@ export const makeAssetStore = Effect.fn("AssetStore.make")(function* (options: {
         title: input.title?.trim() || safeAssetName(input.name),
         mediaType: input.mediaType,
         storageKey: key,
-        sizeBytes: input.bytes.byteLength,
-        contentHash: createHash("sha256").update(input.bytes).digest("hex"),
+        sizeBytes:
+          input.bytes instanceof Uint8Array ? input.bytes.byteLength : input.bytes.sizeBytes,
+        contentHash:
+          input.bytes instanceof Uint8Array
+            ? createHash("sha256").update(input.bytes).digest("hex")
+            : input.bytes.contentHash,
         threadId: input.threadId ?? null,
         messageId: input.messageId ?? null,
         runId: input.runId ?? null,
         visibility: "private",
         createdAt: DateTime.toDateUtc(now),
       };
-      yield* storage.put(key, input.bytes, { contentType: input.mediaType });
+      yield* storage.put(
+        key,
+        input.bytes instanceof Uint8Array ? input.bytes : input.bytes.stream,
+        { contentType: input.mediaType },
+      );
       yield* options.repository
         .insert(row)
         .pipe(

@@ -1,4 +1,4 @@
-import { Daytona } from "@daytonaio/sdk";
+import { Daytona, DaytonaNotFoundError } from "@daytonaio/sdk";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -78,3 +78,5 @@ export const requireSuccess =
 
 export const decodeBase64 = (encoded: string): Uint8Array =>
   Uint8Array.from(atob(encoded.replace(/^data:[^;]+;base64,/, "")), (char) => char.charCodeAt(0));
+
+export const isDaytonaNotFound = (cause: unknown): boolean => cause instanceof DaytonaNotFoundError;

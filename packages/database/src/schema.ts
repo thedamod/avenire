@@ -45,6 +45,7 @@ const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
+  cloudInputsSlug: text("cloud_inputs_slug"),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").notNull().default(false),
@@ -498,6 +499,11 @@ export const cloudTask = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     prompt: text("prompt").notNull(),
+    model: text("model")
+      .$type<"ruth-sprint" | "ruth-core" | "ruth-apex">()
+      .notNull()
+      .default("ruth-core"),
+    network: text("network").$type<"packages" | "open">().notNull().default("packages"),
     schedule: jsonb("schedule").$type<CloudTaskSchedule>().notNull(),
     timeZone: text("time_zone").notNull().default("UTC"),
     preHydration: jsonb("pre_hydration")
@@ -536,6 +542,27 @@ export const cloudRun = pgTable(
     scheduledFor: timestamptz("scheduled_for").notNull(),
     /** When a worker claimed the run; a run active long past this belongs to a dead worker. */
     claimedAt: timestamptz("claimed_at"),
+    leasedBy: text("leased_by"),
+    leaseExpiresAt: timestamptz("lease_expires_at"),
+    heartbeatAt: timestamptz("heartbeat_at"),
+    messages: jsonb("messages").$type<import("ai").ModelMessage[]>().notNull().default([]),
+    stepIndex: integer("step_index").notNull().default(0),
+    usage: jsonb("usage")
+      .$type<{
+        inputTokens: number;
+        outputTokens: number;
+        cost: number;
+        actions: number;
+        boxMetered?: boolean;
+        cleanupComplete?: boolean;
+        resumeFailures?: number;
+      }>()
+      .notNull()
+      .default({ inputTokens: 0, outputTokens: 0, cost: 0, actions: 0 }),
+    recordingId: text("recording_id"),
+    modelName: text("model_name"),
+    promptVersion: text("prompt_version"),
+    inputsSlug: text("inputs_slug"),
     notBefore: timestamptz("not_before").notNull().defaultNow(),
     attempt: integer("attempt").notNull().default(1),
     summary: text("summary"),
@@ -557,29 +584,24 @@ export const cloudRun = pgTable(
   ],
 );
 
-/** Hashed bearer credentials for one Cloud run. */
-export const cloudRunToken = pgTable(
-  "cloud_run_token",
+/** Tool intents survive an interrupted model step; results are replayed by call id. */
+export const cloudToolCall = pgTable(
+  "cloud_tool_call",
   {
-    id: text("id").primaryKey(),
     runId: text("run_id")
       .notNull()
       .references(() => cloudRun.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    tokenHash: text("token_hash").notNull().unique(),
-    scopes: jsonb("scopes")
-      .$type<ReadonlyArray<"retrieval" | "download" | "hydrate" | "publish">>()
-      .notNull(),
-    expiresAt: timestamptz("expires_at").notNull(),
-    revokedAt: timestamptz("revoked_at"),
+    toolCallId: text("tool_call_id").notNull(),
+    name: text("name").notNull(),
+    status: text("status").$type<"pending" | "started" | "completed">().notNull(),
+    input: jsonb("input").notNull(),
+    result: jsonb("result"),
+    sessionId: text("session_id"),
+    commandId: text("command_id"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
+    completedAt: timestamptz("completed_at"),
   },
-  (t) => [
-    index("cloud_run_token_run_id_idx").on(t.runId),
-    index("cloud_run_token_user_id_idx").on(t.userId),
-  ],
+  (t) => [primaryKey({ columns: [t.runId, t.toolCallId] })],
 );
 
 /** Audit manifest for one workspace hydration call. */
@@ -773,7 +795,7 @@ export const schema = {
   ruthMessage,
   cloudRun,
   cloudTask,
-  cloudRunToken,
+  cloudToolCall,
   cloudHydration,
   cloudWorkspaceFile,
   pendingApproval,
@@ -811,7 +833,7 @@ export type EmailOutboxRow = typeof emailOutbox.$inferSelect;
 
 export type FileEventRow = typeof fileEvent.$inferSelect;
 export type CloudTaskRow = typeof cloudTask.$inferSelect;
-export type CloudRunTokenRow = typeof cloudRunToken.$inferSelect;
+export type CloudToolCallRow = typeof cloudToolCall.$inferSelect;
 export type CloudHydrationRow = typeof cloudHydration.$inferSelect;
 export type CloudWorkspaceFileRow = typeof cloudWorkspaceFile.$inferSelect;
 export type PendingApprovalRow = typeof pendingApproval.$inferSelect;

@@ -26,7 +26,6 @@ import { newId } from "@avenire/shared/id";
 import {
   convertToModelMessages,
   safeValidateUIMessages,
-  stepCountIs,
   streamText,
   toUIMessageStream,
   type FlexibleSchema,
@@ -52,8 +51,7 @@ import {
   RuthModels,
   RuthModelsLive,
 } from "../models/index.ts";
-import { createImageTransport } from "../tools/images.ts";
-import { RUTH_PROMPT } from "../prompts/ruth.ts";
+import { createAgent } from "./factory.ts";
 import { ruthToolSpecs } from "../tools/index.ts";
 import { findVisuals } from "../tools/page.ts";
 import { createRuthTools, type RuthToolServices, type RuthTurn } from "../tools/ruth.ts";
@@ -174,28 +172,20 @@ export const createRuthAgent = (options: {
   readonly fullAccess: boolean;
   readonly fast?: boolean | undefined;
 }) => {
-  const name = options.fast === true ? RUTH_FAST_MODEL : RUTH_DEFAULT_MODEL;
-  const images = createImageTransport(options.models.capabilities(name), options.models.maxImages);
-  const { tools, toolApproval } = createRuthTools(
-    options.services,
-    {
-      ...options.turn,
-      fullAccess: options.fullAccess,
-    },
-    images,
-  );
-  return {
-    model: options.models.languageModel(
-      options.fast === true ? RUTH_FAST_MODEL : RUTH_DEFAULT_MODEL,
-    ),
-    system: RUTH_PROMPT({ fullAccess: options.fullAccess }),
-    tools,
-    toolApproval,
-    stopWhen: stepCountIs(MAX_STEPS),
-    prepareStep: ({ messages }: { messages: import("ai").ModelMessage[] }) => ({
-      messages: images.prepareMessages(messages),
-    }),
-  };
+  return createAgent({
+    kind: "ruth",
+    models: options.models,
+    name: options.fast === true ? RUTH_FAST_MODEL : RUTH_DEFAULT_MODEL,
+    fullAccess: options.fullAccess,
+    maxSteps: MAX_STEPS,
+    bindTools: (images, profile) =>
+      createRuthTools(
+        options.services,
+        { ...options.turn, fullAccess: options.fullAccess },
+        images,
+        profile,
+      ),
+  });
 };
 
 const textOf = (messages: ReadonlyArray<RuthUIMessage>): Array<string> =>

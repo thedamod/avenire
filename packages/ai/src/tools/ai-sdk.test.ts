@@ -150,12 +150,12 @@ it("Cloud can never receive Ruth-only tools, including with Full access", () => 
 
 it.effect("additional paired specs inherit agent filtering and execution telemetry", () =>
   Effect.promise(async () => {
-    const { gatewayTool } = await import("../cloud/gateway.ts");
+    const { registerTool } = await import("./registration.ts");
     const { standardSchema } = await import("./schema.ts");
     const Schema = await import("effect/Schema");
     let calls = 0;
     const extra = {
-      sandbox_echo: gatewayTool({
+      sandbox_echo: registerTool({
         spec: {
           name: "sandbox_echo",
           description: "Test sandbox extension",

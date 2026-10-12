@@ -1,3 +1,4 @@
+import { CloudBoxes } from "@avenire/cloud/cloud-box";
 import { WidgetPreview } from "./preview.ts";
 import { AssetId, StorageKey, ThreadId } from "@avenire/contracts";
 import {
@@ -23,6 +24,7 @@ const fake = () => {
   const files = new Map<string, Uint8Array>();
   const commands: unknown[] = [];
   const sandboxes = ChatSandboxes.of({
+    target: () => Effect.die("Unexpected computer target in this test"),
     exec: (owner, input) =>
       Effect.sync(() => {
         owners.push(owner);
@@ -64,7 +66,7 @@ const stored: Array<{ userId: string; name: string; bytes: Uint8Array; mediaType
 const artifacts = AssetStore.of({
   put: (userId, input) =>
     Effect.sync(() => {
-      stored.push({ userId, ...input });
+      stored.push({ userId, ...input, bytes: input.bytes as Uint8Array });
       return {
         id: AssetId.make("asset"),
         storageKey: StorageKey.make("key"),
@@ -72,7 +74,8 @@ const artifacts = AssetStore.of({
         kind: "image" as const,
         title: input.title ?? input.name,
         mediaType: input.mediaType,
-        sizeBytes: input.bytes.byteLength,
+        sizeBytes:
+          input.bytes instanceof Uint8Array ? input.bytes.byteLength : input.bytes.sizeBytes,
         createdAt: "1970-01-01T00:00:00Z",
         contentHash: "hash",
         visibility: "private" as const,
@@ -86,11 +89,23 @@ const artifacts = AssetStore.of({
   load: () => Effect.succeed(new Uint8Array()),
 });
 const provide = <A, E>(
-  effect: Effect.Effect<A, E, ChatSandboxes | AssetStore | Crypto.Crypto | WidgetPreview>,
+  effect: Effect.Effect<
+    A,
+    E,
+    CloudBoxes | ChatSandboxes | AssetStore | Crypto.Crypto | WidgetPreview
+  >,
   sandboxes: ChatSandboxes["Service"],
 ) =>
   effect.pipe(
     Effect.provideService(ChatSandboxes, sandboxes),
+    Effect.provideService(
+      CloudBoxes,
+      CloudBoxes.of({
+        ensure: () => Effect.die("unused"),
+        running: () => Effect.die("unused"),
+        stop: () => Effect.void,
+      }),
+    ),
     Effect.provideService(AssetStore, artifacts),
     Effect.provideService(Crypto.Crypto, testCrypto),
     Effect.provideService(WidgetPreview, WidgetPreview.of({ preview: () => Effect.die("unused") })),
@@ -168,7 +183,7 @@ for (const [name, input] of [
     const program: Effect.Effect<
       unknown,
       TaggedToolError,
-      ChatSandboxes | AssetStore | Crypto.Crypto | WidgetPreview
+      CloudBoxes | ChatSandboxes | AssetStore | Crypto.Crypto | WidgetPreview
     > =
       name === "sandbox_exec"
         ? sandboxTools.sandbox_exec(input, ctx)

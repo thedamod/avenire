@@ -22,6 +22,10 @@
     "./screen": {
       "types": "./src/screen.ts",
       "import": "./src/screen.ts"
+    },
+    "./network": {
+      "types": "./src/network.ts",
+      "import": "./src/network.ts"
     }
   },
   "scripts": {

@@ -49,6 +49,8 @@ export type CloudTaskDelivery = typeof CloudTaskDelivery.Type;
 export const CloudTaskInput = Schema.Struct({
   title: Schema.NonEmptyString,
   prompt: Schema.NonEmptyString,
+  model: Schema.optionalKey(Schema.Literals(["ruth-sprint", "ruth-core", "ruth-apex"])),
+  network: Schema.optionalKey(Schema.Literals(["packages", "open"])),
   schedule: CloudTaskSchedule,
   timeZone: Schema.String,
   preHydration: Schema.Array(HydrationRule),

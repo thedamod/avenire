@@ -1,15 +1,19 @@
+import { CloudBoxes } from "@avenire/cloud/cloud-box";
+import * as Option from "effect/Option";
+import { stableToolId } from "../cloud/journal.ts";
+import { AssetId } from "@avenire/contracts";
 import { ChatSandboxes, type SandboxOwner } from "@avenire/cloud/chat-sandbox";
 import { posix } from "node:path";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import { AssetStore, assetMediaType, safeAssetName } from "../outputs/assets.ts";
 import { type AgentContext, RuthToolError, type ToolImpl } from "./core.ts";
-import { gatewayTool } from "../cloud/gateway.ts";
+import { registerTool } from "./registration.ts";
 import { SANDBOX_TOOL_SPECS } from "./sandbox-specs.ts";
 
 import { WidgetPreview } from "./preview.ts";
 
-type SandboxServices = WidgetPreview | ChatSandboxes | AssetStore | Crypto.Crypto;
+type SandboxServices = CloudBoxes | WidgetPreview | ChatSandboxes | AssetStore | Crypto.Crypto;
 type SandboxImpls = {
   [K in keyof typeof SANDBOX_TOOL_SPECS]: ToolImpl<
     (typeof SANDBOX_TOOL_SPECS)[K]["inputSchema"]["Type"],
@@ -78,10 +82,30 @@ export const sandboxTools: SandboxImpls = {
     };
   }),
   publish_asset: Effect.fn("RuthKit.publishAsset")(function* (input, ctx) {
-    const owner = yield* ownerFor("publish_asset", ctx);
-    const sandboxes = yield* ChatSandboxes;
     const store = yield* AssetStore;
-    const file = yield* sandboxes.readArtifact(owner, { path: input.path });
+    let file: { name: string; bytes: Uint8Array };
+    if (ctx.agent === "ruth-cloud") {
+      const box = yield* (yield* CloudBoxes).running(ctx.userId);
+      const path = posix.resolve("/home/daytona/workspace", input.path);
+      if (!path.startsWith("/home/daytona/workspace/") || path.includes("\0") || Option.isNone(box))
+        return yield* new RuthToolError({
+          tool: "publish_asset",
+          code: "invalid_input",
+          message: "Publish a file in the running Cloud workspace.",
+          recoverable: true,
+        });
+      file = { name: posix.basename(path), bytes: yield* box.value.readFile(path) };
+    } else {
+      const owner = yield* ownerFor("publish_asset", ctx);
+      file = yield* (yield* ChatSandboxes).readArtifact(owner, { path: input.path });
+    }
+    if (file.bytes.byteLength > 50 * 1024 * 1024)
+      return yield* new RuthToolError({
+        tool: "publish_asset",
+        code: "quota_exceeded",
+        message: "Publish an asset no larger than 50 MiB.",
+        recoverable: true,
+      });
     const mediaType = assetMediaType(file.name);
     // Preserve the extension when a title supplies a friendlier download filename.
     const extension = posix.extname(file.name);
@@ -95,6 +119,10 @@ export const sandboxTools: SandboxImpls = {
       bytes: file.bytes,
       mediaType,
       ...(ctx.threadId ? { threadId: ctx.threadId } : {}),
+      ...(ctx.runId ? { runId: ctx.runId } : {}),
+      ...(ctx.toolCallId && ctx.runId
+        ? { idempotencyId: AssetId.make(stableToolId(ctx, "asset")) }
+        : {}),
     });
     return {
       assetId: stored.id,
@@ -113,32 +141,32 @@ export const sandboxTools: SandboxImpls = {
 };
 const policy = { agents: ["ruth"], approval: "never" } as const;
 export const sandboxToolRegistry = {
-  preview_widget: gatewayTool({
+  preview_widget: registerTool({
     spec: SANDBOX_TOOL_SPECS.preview_widget,
     policy,
     execute: sandboxTools.preview_widget,
   }),
-  sandbox_exec: gatewayTool({
+  sandbox_exec: registerTool({
     spec: SANDBOX_TOOL_SPECS.sandbox_exec,
     policy,
     execute: sandboxTools.sandbox_exec,
   }),
-  sandbox_write: gatewayTool({
+  sandbox_write: registerTool({
     spec: SANDBOX_TOOL_SPECS.sandbox_write,
     policy,
     execute: sandboxTools.sandbox_write,
   }),
-  sandbox_read: gatewayTool({
+  sandbox_read: registerTool({
     spec: SANDBOX_TOOL_SPECS.sandbox_read,
     policy,
     execute: sandboxTools.sandbox_read,
   }),
-  publish_asset: gatewayTool({
+  publish_asset: registerTool({
     spec: SANDBOX_TOOL_SPECS.publish_asset,
-    policy,
+    policy: { ...policy, agents: ["ruth", "ruth-cloud"] },
     execute: sandboxTools.publish_asset,
   }),
-  sandbox_close: gatewayTool({
+  sandbox_close: registerTool({
     spec: SANDBOX_TOOL_SPECS.sandbox_close,
     policy,
     execute: sandboxTools.sandbox_close,

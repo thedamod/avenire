@@ -13,7 +13,7 @@ import { standardSchema } from "./schema.ts";
 export const hydrateFilesSpec = {
   name: "hydrate_files",
   description:
-    "Copy library files into /home/daytona/workspace/inputs/<folder>/<title>. Selector parts combine with AND: time selects activity, topic selects relevance, filters select metadata, and explicit selects ids. Today means today in the run's time zone. Unchanged files are skipped; count and byte caps apply. Call again whenever more material is needed.",
+    "Copy library files into /home/daytona/.avenire/<stable-user-slug>/<folder>/<file>. Inputs are read-only; work on workspace copies. Selector parts combine with AND: time selects activity, topic selects relevance, filters select metadata, and explicit selects ids. Today means today in the run's time zone. Unchanged files are skipped; count and byte caps apply. Call again whenever more material is needed.",
   inputSchema: standardSchema(
     Schema.Struct({
       selector: FileSelector,
@@ -74,9 +74,9 @@ export const CLOUD_TOOL_SPECS = {
   publish_report: publishReportSpec,
 };
 export const CLOUD_TOOL_POLICY = {
-  hydrate_files: { agents: ["ruth-cloud"], approval: "never", scope: "hydrate" },
-  publish_output: { agents: ["ruth-cloud"], approval: "never", scope: "publish" },
-  publish_report: { agents: ["ruth-cloud"], approval: "never", scope: "publish" },
+  hydrate_files: { agents: ["ruth-cloud"], approval: "never" },
+  publish_output: { agents: ["ruth-cloud"], approval: "never" },
+  publish_report: { agents: ["ruth-cloud"], approval: "never" },
 } as const;
 export const ruthCloudSpecs = {
   hydrate_files: tool(hydrateFilesSpec),

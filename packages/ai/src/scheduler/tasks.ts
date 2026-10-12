@@ -69,6 +69,8 @@ export const taskToContract = (row: CloudTaskRow): ContractTask => ({
   id: CloudTaskId.make(row.id),
   title: row.title,
   prompt: row.prompt,
+  model: row.model,
+  network: row.network,
   schedule: row.schedule,
   timeZone: row.timeZone,
   preHydration: row.preHydration,

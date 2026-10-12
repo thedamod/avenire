@@ -66,6 +66,7 @@ const queue = (
     userId: owner,
     taskId,
     status,
+    leaseExpiresAt: status === "scheduled" ? null : new Date(5 * 60 * 60 * 1000),
     notBefore: new Date(notBefore),
     attempt: 1,
     scheduledFor: new Date(0),
@@ -124,23 +125,23 @@ describe("scheduler tick", () => {
       expect(f.rows("cloud_run").find((row) => row.id === "future")?.status).toBe("scheduled");
     }).pipe(Effect.provide(f.services));
   });
-  it.effect("fails runs whose worker died, freeing the user's slot", () => {
+  it.effect("reclaims expired leases and resumes checkpointed runs before queued work", () => {
     const f = fixture();
     f.rows("cloud_task")[0]!.enabled = false;
     queue(f, "dead", "running");
     queue(f, "fresh", "running", UserId.make("other"));
     queue(f, "next");
-    f.rows("cloud_run").find((row) => row.id === "dead")!.claimedAt = new Date(0);
-    f.rows("cloud_run").find((row) => row.id === "fresh")!.claimedAt = new Date(
-      5 * 60 * 60 * 1000 - 60_000,
+    f.rows("cloud_run").find((row) => row.id === "dead")!.leaseExpiresAt = new Date(0);
+    f.rows("cloud_run").find((row) => row.id === "fresh")!.leaseExpiresAt = new Date(
+      5 * 60 * 60 * 1000 + 60_000,
     );
     return Effect.gen(function* () {
       yield* TestClock.setTime(5 * 60 * 60 * 1000);
       yield* schedulerTick();
       const status = (id: string) => f.rows("cloud_run").find((row) => row.id === id)?.status;
-      expect(status("dead")).toBe("failed");
+      expect(status("dead")).toBe("provisioning");
       expect(status("fresh")).toBe("running");
-      expect(f.started).toEqual(["next"]);
+      expect(f.started).toEqual(["dead"]);
     }).pipe(Effect.provide(f.services));
   });
   it.effect("second atomic claim returns nothing, including concurrent attempts", () => {
@@ -236,3 +237,29 @@ describe("CloudTasks", () => {
     }).pipe(Effect.provide(CloudTasksLive.pipe(Layer.provide(f.services))));
   });
 });
+
+it.effect(
+  "reclaims terminal cleanup leases without reopening the run or losing its checkpoint",
+  () => {
+    const f = fixture();
+    f.rows("cloud_task")[0]!.enabled = false;
+    queue(f, "terminal", "succeeded");
+    Object.assign(f.rows("cloud_run")[0]!, {
+      leasedBy: "dead-worker",
+      leaseExpiresAt: new Date(0),
+      usage: { cleanupComplete: false },
+      messages: [{ role: "user", content: "checkpoint" }],
+      recordingId: "recording",
+    });
+    return Effect.gen(function* () {
+      yield* schedulerTick();
+      expect(f.started).toEqual(["terminal"]);
+      expect(f.rows("cloud_run")[0]).toMatchObject({
+        status: "succeeded",
+        recordingId: "recording",
+        messages: [{ role: "user", content: "checkpoint" }],
+      });
+      expect(f.rows("cloud_run")[0]!.leasedBy).not.toBe("dead-worker");
+    }).pipe(Effect.provide(f.services));
+  },
+);

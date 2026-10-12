@@ -60,7 +60,10 @@ export const loadSkillSpec = {
 };
 
 /** Ruth's toolset as the model and the UI see it; `ask_user` is answered by the client. */
+export { computerToolSpecs } from "./computer-specs.ts";
+import { computerToolSpecs } from "./computer-specs.ts";
 export const ruthToolSpecs = {
+  ...computerToolSpecs,
   ...ruthKitSpecs,
   ...ruthSandboxSpecs,
   load_skill: tool(loadSkillSpec),

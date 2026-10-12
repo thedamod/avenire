@@ -123,3 +123,19 @@ Actual packages: Arc 20221218-1, Bibata 2.0.6-1, Papirus 20250501-1, Chromium 15
 Final evidence root: **`/tmp/avenire-snapshot/avenire-sandbox-v4/`**. Report generator `scripts/verify/report.ts` writes **`/tmp/plans/avenire-sandbox-v4/plan.html`** with before/after and theme comparisons, all check times/commands/sizes, profile results, package versions, resource lifecycle and every absolute artifact path.
 
 The owner-authorized cancelled-attempt scratch v4 snapshot and scratch sandbox were deleted. One newly built intermediate v4 snapshot was deleted before the final build. Every created inspection/verification sandbox was deleted; v3 remains active. Resource IDs are recorded in `/tmp/avenire-snapshot/resource-lifecycle.json` and final live state in `final-resource-state.json`. Earlier runs remain under `avenire-sandbox-v4-run1` through `-run4`; none replace the final 59/59 evidence. The last fixture correction selects a visible CDP tab after preferred-app testing opens extra tabs, preventing hidden-page geometry/event measurements.
+
+## Server-owned agent box policy
+
+Cloud boxes use the same v4 image; no image rebuild was required for the server-agent
+migration. Pi and model/API credentials are not installed or mounted. Reused boxes detach
+legacy vault mounts. Task egress defaults to the domain firewall for `registry.npmjs.org`,
+`pypi.org` and `files.pythonhosted.org`; explicit `network: open` clears both allow lists.
+The task policy is reapplied before hydration. Chat sandboxes retain their existing blocked
+network default and optional configured allow list.
+
+Hydrated inputs now live under `/home/daytona/.avenire/<stable-user-slug>/`; their tracked
+cache cap is 4 GiB of the 10 GB writable allocation. Run work/outputs remain under
+`/home/daytona/workspace/runs/<runId>/out`. The server chooses a screen profile and uses
+`takeCompressed` or `takeCompressedRegion(scale:1)`; credentials and model calls remain
+outside the box. Conformance uses a temporary v4 box, the same tool executors, and a local
+fixture. Its `--mock` option spends no model credit and the box is deleted in cleanup.

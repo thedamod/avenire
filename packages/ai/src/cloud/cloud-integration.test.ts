@@ -1,11 +1,10 @@
-import { CloudRunId, FileId, StorageKey } from "@avenire/contracts";
+import { FileId, StorageKey } from "@avenire/contracts";
 import { CLOUD_WORKSPACE } from "@avenire/cloud/cloud-box";
-import { Database } from "@avenire/database/client";
 import { Storage, StorageMemory } from "@avenire/storage/storage";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { cloudFixture, cloudCtx, fileId, candidate } from "./cloud-test-support.ts";
-import { cloudTools, hydrate, resolveRunTimeZone } from "./tools.ts";
+import { cloudTools, hydrate } from "./tools.ts";
 
 it.effect("hydrates originals, touches skips, records the manifest and evicts old files", () => {
   const f = cloudFixture();
@@ -215,13 +214,6 @@ it.effect("publish_report publishes private assets and persists the markdown sum
     expect(key).toContain("/.avenire/assets/");
     expect((yield* storage.head(StorageKey.make(key))).contentType).toBe("text/markdown");
     expect(f.rows("cloud_run")[0]?.summary).toBe("Finished");
-    expect(
-      yield* resolveRunTimeZone({
-        userId: cloudCtx.userId,
-        runId: CloudRunId.make("run"),
-        scopes: [],
-      }).pipe(Effect.provideService(Database, f.database)),
-    ).toBe("America/Los_Angeles");
   }).pipe(Effect.provide(StorageMemory));
 });
 it.effect("publish_report exposes an agent failure without setting a terminal run status", () => {
@@ -266,3 +258,50 @@ it.effect("identical titles and shared id prefixes cannot overwrite another hydr
     }).pipe(Effect.provide(f.services(storage)));
   }).pipe(Effect.provide(StorageMemory));
 });
+
+it.effect(
+  "reconciles hydrated and published records when a completed side-effect result was lost",
+  () => {
+    const f = cloudFixture();
+    const call = { ...cloudCtx, toolCallId: "lost-result" };
+    return Effect.gen(function* () {
+      const storage = yield* Storage;
+      yield* storage.put(StorageKey.make("original"), new TextEncoder().encode("input"));
+      yield* Effect.gen(function* () {
+        const firstHydration = yield* hydrate(call, { selector: {} }, "agent");
+        expect(yield* hydrate(call, { selector: {} }, "agent")).toEqual(firstHydration);
+        expect(f.written).toHaveLength(1);
+        expect(f.rows("cloud_hydration")).toHaveLength(1);
+        const firstPublish = yield* cloudTools.publish_output({ sandboxPath: "report.md" }, call);
+        expect(yield* cloudTools.publish_output({ sandboxPath: "report.md" }, call)).toEqual(
+          firstPublish,
+        );
+        expect(f.rows("file").filter((row) => row.source === "ruth-cloud")).toHaveLength(1);
+        expect(f.rows("folder")).toHaveLength(1);
+        expect(f.rows("ingestion_job")).toHaveLength(1);
+        expect(f.rows("file_event").filter((row) => row.kind === "uploaded")).toHaveLength(1);
+      }).pipe(Effect.provide(f.services(storage)));
+    }).pipe(Effect.provide(StorageMemory));
+  },
+);
+
+it.effect(
+  "leaves disk room by refusing new inputs after current-run protection reaches the cache cap",
+  () => {
+    const f = cloudFixture();
+    f.addOld();
+    const cached = f.rows("cloud_workspace_file")[0]!;
+    cached.lastRunId = "run";
+    return Effect.gen(function* () {
+      const storage = yield* Storage;
+      yield* storage.put(StorageKey.make("original"), new TextEncoder().encode("input"));
+      const result = yield* hydrate(cloudCtx, { selector: {} }, "agent").pipe(
+        Effect.provide(f.services(storage)),
+      );
+      expect(result.files).toHaveLength(0);
+      expect(result.truncated.byBytes).toBe(true);
+      expect(f.written).toHaveLength(0);
+      expect(f.removed).toHaveLength(0);
+    }).pipe(Effect.provide(StorageMemory));
+  },
+);

@@ -182,13 +182,12 @@ export type RuthToolName = keyof typeof RUTH_TOOL_SPECS;
 export interface ToolPolicy {
   readonly agents: ReadonlyArray<"ruth" | "ruth-cloud">;
   readonly approval: "never" | "unless-full-access";
-  readonly scope?: "retrieval" | "download" | "hydrate" | "publish";
 }
 export const RUTH_TOOL_POLICY: Record<RuthToolName, ToolPolicy> = {
-  search_materials: { agents: ["ruth", "ruth-cloud"], approval: "never", scope: "retrieval" },
-  list_files: { agents: ["ruth", "ruth-cloud"], approval: "never", scope: "retrieval" },
-  find_files: { agents: ["ruth", "ruth-cloud"], approval: "never", scope: "retrieval" },
-  read_file: { agents: ["ruth", "ruth-cloud"], approval: "never", scope: "download" },
+  search_materials: { agents: ["ruth", "ruth-cloud"], approval: "never" },
+  list_files: { agents: ["ruth", "ruth-cloud"], approval: "never" },
+  find_files: { agents: ["ruth", "ruth-cloud"], approval: "never" },
+  read_file: { agents: ["ruth", "ruth-cloud"], approval: "never" },
   write_file: { agents: ["ruth"], approval: "unless-full-access" },
   move_file: { agents: ["ruth"], approval: "unless-full-access" },
   rename_file: { agents: ["ruth"], approval: "unless-full-access" },

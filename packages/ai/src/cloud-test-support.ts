@@ -82,7 +82,17 @@ export const recordingDatabase = (events: string[] = []) => {
     createdAt: new Date(clock),
     updatedAt: new Date(clock),
     ...(name === "cloud_task"
-      ? { builtin: null, maxAttempts: 2, lastRunAt: null, nextRunAt: null }
+      ? {
+          timeZone: "UTC",
+          preHydration: [],
+          enabled: true,
+          model: "ruth-core",
+          network: "packages",
+          builtin: null,
+          maxAttempts: 2,
+          lastRunAt: null,
+          nextRunAt: null,
+        }
       : {}),
     ...(name === "cloud_run"
       ? {
@@ -95,6 +105,16 @@ export const recordingDatabase = (events: string[] = []) => {
           error: null,
           sandboxId: null,
           claimedAt: null,
+          leasedBy: null,
+          leaseExpiresAt: null,
+          heartbeatAt: null,
+          recordingId: null,
+          modelName: null,
+          promptVersion: null,
+          inputsSlug: null,
+          messages: [],
+          stepIndex: 0,
+          usage: { inputTokens: 0, outputTokens: 0, cost: 0, actions: 0 },
           attempt: 1,
           notBefore: new Date(clock),
         }
@@ -118,7 +138,15 @@ export const recordingDatabase = (events: string[] = []) => {
     );
   const mock = {
     query: Object.fromEntries(
-      ["cloudTask", "cloudRun", "asset", "cloudHydration", "ruthThread", "user"].map((key) => {
+      [
+        "cloudTask",
+        "cloudRun",
+        "cloudToolCall",
+        "asset",
+        "cloudHydration",
+        "ruthThread",
+        "user",
+      ].map((key) => {
         const name = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
         const find = (where?: SQL) =>
           rows(name)
@@ -193,6 +221,10 @@ export const recordingDatabase = (events: string[] = []) => {
         return chain(() => {
           const values = evaluate(input);
           let existing: Row | undefined;
+          if (name === "cloud_tool_call")
+            existing = rows(name).find(
+              (row) => row.runId === values.runId && row.toolCallId === values.toolCallId,
+            );
           if (name === "cloud_run")
             existing = rows(name).find(
               (row) =>

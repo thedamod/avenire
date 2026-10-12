@@ -507,6 +507,9 @@ importers:
       '@avenire/contracts':
         specifier: workspace:*
         version: link:../contracts
+      ai:
+        specifier: 'catalog:'
+        version: 7.0.127(zod@4.6.5)
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.3(@opentelemetry/api@1.9.1)(kysely@0.29.6)(postgres@3.4.9)

@@ -102,22 +102,29 @@ export const cloudFixture = () => {
     return true;
   };
   const query = Object.fromEntries(
-    ["file", "cloudRun", "asset", "cloudTask", "cloudWorkspaceFile", "pendingApproval"].map(
-      (name) => {
-        const table = name.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`);
-        return [
-          name,
-          {
-            findFirst: async ({ where }: { where?: SQL } = {}) =>
-              rows(table).find((row) => matches(row, where)),
-            findMany: async ({ where }: { where?: SQL } = {}) =>
-              rows(table)
-                .filter((row) => matches(row, where))
-                .map((row) => ({ ...row })),
-          },
-        ];
-      },
-    ),
+    [
+      "file",
+      "cloudRun",
+      "cloudHydration",
+      "user",
+      "asset",
+      "cloudTask",
+      "cloudWorkspaceFile",
+      "pendingApproval",
+    ].map((name) => {
+      const table = name.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`);
+      return [
+        name,
+        {
+          findFirst: async ({ where }: { where?: SQL } = {}) =>
+            rows(table).find((row) => matches(row, where)),
+          findMany: async ({ where }: { where?: SQL } = {}) =>
+            rows(table)
+              .filter((row) => matches(row, where))
+              .map((row) => ({ ...row })),
+        },
+      ];
+    }),
   );
   const chain = (run: () => Row[]) => {
     const promise = Promise.resolve().then(run);
@@ -184,7 +191,10 @@ export const cloudFixture = () => {
           return [];
         };
         const promise = Promise.resolve().then(insert);
-        return Object.assign(promise, { onConflictDoUpdate: async () => await promise });
+        return Object.assign(promise, {
+          onConflictDoUpdate: async () => await promise,
+          onConflictDoNothing: async () => await promise,
+        });
       },
     }),
     update: (table: Parameters<typeof getTableName>[0]) => ({
@@ -225,9 +235,11 @@ export const cloudFixture = () => {
   let running = true;
   let invalidated = 0;
   const box: CloudBox = {
+    sandbox: {} as CloudBox["sandbox"],
+    recordings: Effect.succeed([]),
     id: "sandbox",
     userId: ctx.userId,
-    exec: () => Effect.die("unused"),
+    exec: () => Effect.succeed({ exitCode: 0, output: "" }),
     writeFile: (path, bytes) =>
       Effect.sync(() => {
         written.push(path);
@@ -258,14 +270,12 @@ export const cloudFixture = () => {
     endSession: () => Effect.void,
     startDesktop: Effect.void,
     startRecording: () => Effect.succeed(Option.none()),
-    stopRecording: () => Effect.succeed(Option.none()),
+    stopRecording: () => Effect.void,
   };
   const boxes = CloudBoxes.of({
     ensure: () => Effect.succeed(box),
     running: () => Effect.succeed(running ? Option.some(box) : Option.none()),
     stop: () => Effect.void,
-    setRunToken: () => Effect.void,
-    clearRunToken: () => Effect.void,
   });
   const cache = SemanticCache.of({
     lookupExact: () => Effect.succeed(Option.none()),

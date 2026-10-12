@@ -81,6 +81,7 @@ export type ChatSandboxError =
 export class ChatSandboxes extends Context.Service<
   ChatSandboxes,
   {
+    readonly target: (owner: SandboxOwner) => Effect.Effect<Sandbox, ChatSandboxError>;
     readonly exec: (
       owner: SandboxOwner,
       input: { command: string; cwd?: string; timeoutSeconds?: number },
@@ -289,6 +290,13 @@ export const ChatSandboxesLive: Layer.Layer<ChatSandboxes, never, DaytonaClient 
         ),
       );
       return ChatSandboxes.of({
+        target: Effect.fn("ChatSandboxes.target")(function* (owner) {
+          const sandbox = yield* acquire(owner);
+          yield* attempt("chatComputerWorkspace", () =>
+            sandbox.fs.createFolder("/home/daytona/workspace", "755"),
+          );
+          return sandbox;
+        }),
         exec: Effect.fn("ChatSandboxes.exec")((owner, input) =>
           Effect.gen(function* () {
             const timeout = input.timeoutSeconds ?? CHAT_SANDBOX_LIMITS.commandTimeoutSeconds;

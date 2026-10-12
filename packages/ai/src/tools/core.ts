@@ -13,6 +13,9 @@ export interface AgentContext {
   readonly threadId?: ThreadId;
   readonly runId?: CloudRunId;
   readonly fullAccess: boolean;
+  readonly toolCallId?: string;
+  readonly leaseOwner?: string;
+  readonly screenProfile?: import("@avenire/cloud/screen").ScreenProfile;
   /** The user's IANA zone determines local-day selectors. */
   readonly timeZone: string;
   readonly page?: PageContext;
@@ -32,6 +35,7 @@ export class RuthToolError extends Schema.TaggedError<RuthToolError>()("RuthTool
   ]),
   message: Schema.String,
   recoverable: Schema.Boolean,
+  checkpointFatal: Schema.optionalKey(Schema.Boolean),
 }) {}
 export interface TaggedToolError {
   readonly _tag: string;
@@ -95,6 +99,7 @@ export const toToolError = (
       code,
       message,
       recoverable: code !== "forbidden" && code !== "denied",
+      ...(tagged._tag === "DatabaseError" ? { checkpointFatal: true } : {}),
     }),
   );
 };

@@ -38,10 +38,10 @@ folder entry points of `@avenire/ai`).
 at a call site), `prompts/`, `tools/` (`index.ts` holds client-safe specs, the other files
 add `execute`), `skills/` (markdown in `sections/`, compiled into `skills.ts` by
 `pnpm --filter @avenire/ai skills:generate`; never edit `skills.ts` by hand), `agents/`
-(`createRuthAgent` and the Ruth Cloud Pi orchestrator), `scheduler/`, and `message-types.ts`.
+(`createRuthAgent` and the durable server-owned Ruth Cloud AI SDK executor), `scheduler/`, and `message-types.ts`.
 Shared tool core, specs, implementations, adapters and selectors live in `tools/`;
 widget wrapping and the shared asset store live in `outputs/`; hydration, publishing, approval review,
-run tokens and the gateway live in `cloud/`. These modules have explicit subpath exports;
+checkpoint journals and workspace paths live in `cloud/`. These modules have explicit subpath exports;
 keep specs client-safe and import server execution separately. The widget frame and
 React-free protocol live in `@avenire/ui/widget-frame` and `@avenire/ui/widget-protocol`
 (`src/widgets/`), respectively.
@@ -79,3 +79,26 @@ pnpm test
 pnpm lint && pnpm fmt
 pnpm db:generate          # drizzle-kit generate after schema changes
 ```
+
+## Ruth computer use and durable Cloud runs
+
+- Chat and Cloud use `agents/factory.ts`, the same AI SDK adapter and tool policy. Models
+  resolve registry names through OpenRouter; task `model` defaults to `ruth-core`.
+- `computer`, `screen_read` and `box_*` target the isolated v4 Daytona desktop/workspace.
+  Computer tools never require approval; library-changing chat tools retain approval.
+  Use the registry's screen profile and inject its exact image/coordinate contract.
+- Cloud credentials stay on the server. Never mount model keys, Avenire credentials or
+  run tokens in boxes. Default task egress permits npm/PyPI indexes only; `network: open`
+  is an explicit task setting. Reapply policy before hydration, including on reused boxes.
+- Inputs are copies under `/home/daytona/.avenire/<stable-user-slug>/<folder>/<file>`;
+  the input cache cap is 4 GiB. Work/output stays in `workspace/runs/<runId>/out`.
+- Claim Cloud runs with fenced leases. Commit canonical assistant/tool-call messages
+  before executing tools; journal each result by `(runId, toolCallId)`. Reclaim expired
+  leases and resume checkpoints. Preserve commands and recordings on worker shutdown.
+- `box_command_start` uses deterministic Daytona session ids; reconnect on resume.
+  Publish/hydrate/asset ids are deterministic by tool call. Reconcile uncertain computer
+  actions with a fresh screenshot; do not silently rerun an uncertain `box_exec`.
+- Recording download streams to a temporary file, then streams into AssetStore; never
+  buffer an entire recording. Clean temporary files and stop the box after final delivery.
+- The conformance harness's `--mock` mode makes zero real-model calls. Real OpenRouter
+  conformance runs require owner authorization; always delete its temporary sandbox.

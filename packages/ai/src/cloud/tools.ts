@@ -1,6 +1,6 @@
 import {
   CloudRunId,
-  type AssetId,
+  AssetId,
   FolderId,
   HydrationId,
   HYDRATION_DEFAULTS,
@@ -23,6 +23,8 @@ import {
   folder,
   file,
   fileFolder,
+  fileEvent,
+  ingestionJob,
   pendingApproval,
   type CloudWorkspaceFileRow,
 } from "@avenire/database/schema";
@@ -43,8 +45,9 @@ import * as Option from "effect/Option";
 import { AssetStore, assetMediaType } from "../outputs/assets.ts";
 import { CLOUD_TOOL_POLICY, CLOUD_TOOL_SPECS } from "../tools/cloud-specs.ts";
 import { type AgentContext, RuthToolError, type ToolImpl, toToolError } from "../tools/core.ts";
-import { gatewayTool } from "./gateway.ts";
-import type { VerifiedRunToken } from "./run-tokens.ts";
+import { inputsRootFor } from "./paths.ts";
+import { stableToolId } from "./journal.ts";
+import { registerTool } from "../tools/registration.ts";
 import { resolveSelector, type ResolvedFile } from "../tools/selectors.ts";
 
 export type CloudToolServices =
@@ -119,6 +122,7 @@ export const sandboxPathFor = (
     mimeType?: string | null;
     kind: FileKind;
     extracted?: boolean;
+    inputsRoot?: string;
   },
   occupiedPaths: ReadonlyMap<string, string> = new Map(),
 ) => {
@@ -128,7 +132,7 @@ export const sandboxPathFor = (
     : (extensions[input.mimeType?.split(";")[0]?.trim() ?? ""] ??
       (/^[a-z0-9]{1,10}$/.test(titleExt) ? titleExt : kindExtensions[input.kind]));
   const stem = titleExt ? input.title.slice(0, -(titleExt.length + 1)) : input.title;
-  const prefix = `${CLOUD_INPUTS}/${safe(input.folderName ?? "Inbox", "Inbox")}/${safe(stem, "Untitled")}-${safe(input.fileId.slice(0, 8), "file")}`;
+  const prefix = `${input.inputsRoot ?? CLOUD_INPUTS}/${safe(input.folderName ?? "Inbox", "Inbox")}/${safe(stem, "Untitled")}-${safe(input.fileId.slice(0, 8), "file")}`;
   const short = `${prefix}.${ext}`;
   const long = `${prefix}-${hashBytes(new TextEncoder().encode(input.fileId)).slice(0, 16)}.${ext}`;
   const owner = occupiedPaths.get(short);
@@ -235,13 +239,30 @@ const ownedRun = Effect.fn("RuthCloud.ownedRun")(function* (ctx: AgentContext, t
   return run;
 });
 
-/** Shared by the gateway and the orchestrator's pre-hydration step. */
+/** Shared by the agent and the orchestrator's pre-hydration step. */
 const hydrateProgram = Effect.fn("RuthCloud.hydrateInputs")(function* (
   ctx: AgentContext,
   rule: HydrationRule,
   trigger: "pre-hydration" | "agent",
 ) {
   const runId = yield* requireRun(ctx, "hydrate_files");
+  if (ctx.toolCallId) {
+    const prior = yield* (yield* Database).use((db) =>
+      db.query.cloudHydration.findFirst({
+        where: and(
+          eq(cloudHydration.id, stableToolId(ctx, "hydration")),
+          eq(cloudHydration.userId, ctx.userId),
+        ),
+      }),
+    );
+    if (prior)
+      return {
+        hydrationId: HydrationId.make(prior.id),
+        files: prior.files,
+        totalBytes: prior.totalBytes,
+        truncated: prior.truncated,
+      };
+  }
   const limits = {
     maxFiles: rule.maxFiles ?? HYDRATION_DEFAULTS.maxFiles,
     maxBytes: rule.maxBytes ?? HYDRATION_DEFAULTS.maxBytes,
@@ -265,6 +286,7 @@ const hydrateProgram = Effect.fn("RuthCloud.hydrateInputs")(function* (
   const existing = yield* database.use((db) =>
     db.query.cloudWorkspaceFile.findMany({ where: eq(cloudWorkspaceFile.userId, ctx.userId) }),
   );
+  const inputsRoot = yield* inputsRootFor(ctx);
   const occupiedPaths = new Map(existing.map((row) => [row.sandboxPath, row.fileId]));
   const candidates: (HydrationCandidate & {
     file: ResolvedFile;
@@ -288,6 +310,7 @@ const hydrateProgram = Effect.fn("RuthCloud.hydrateInputs")(function* (
         kind: source.kind,
         mimeType: source.mimeType,
         extracted,
+        inputsRoot,
       },
       occupiedPaths,
     );
@@ -313,10 +336,25 @@ const hydrateProgram = Effect.fn("RuthCloud.hydrateInputs")(function* (
   const fetchIds = new Set(plan.fetch.map((candidate) => candidate.fileId));
   const files: HydratedFile[] = [];
   let fetchedBytes = 0;
+  let protectedBytes = existing
+    .filter((row) => row.lastRunId === runId)
+    .reduce((sum, row) => sum + row.sizeBytes, 0);
   for (const candidate of candidates) {
-    const skipped = skippedIds.has(candidate.fileId);
-    if (!skipped && !fetchIds.has(candidate.fileId)) continue;
+    const selectedSkip = skippedIds.has(candidate.fileId);
+    if (!selectedSkip && !fetchIds.has(candidate.fileId)) continue;
     const old = existing.find((row) => row.fileId === candidate.fileId);
+    const cachedInfo = selectedSkip ? yield* box.fileInfo(candidate.sandboxPath) : Option.none();
+    const skipped =
+      selectedSkip && Option.isSome(cachedInfo) && cachedInfo.value.size === old?.sizeBytes;
+    const previouslyProtected = old?.lastRunId === runId ? old.sizeBytes : 0;
+    const projectedSize = skipped ? old!.sizeBytes : candidate.sizeBytes;
+    if (
+      projectedSize > previouslyProtected &&
+      protectedBytes + projectedSize - previouslyProtected > WORKSPACE_CAP_BYTES
+    ) {
+      plan.truncated.byBytes = true;
+      continue;
+    }
     let size = old?.sizeBytes ?? candidate.sizeBytes;
     let hash = candidate.contentHash ?? "";
     if (!skipped) {
@@ -326,9 +364,21 @@ const hydrateProgram = Effect.fn("RuthCloud.hydrateInputs")(function* (
         plan.truncated.byBytes = true;
         continue;
       }
+      if (
+        protectedBytes + bytes.byteLength - previouslyProtected > WORKSPACE_CAP_BYTES &&
+        bytes.byteLength > previouslyProtected
+      ) {
+        plan.truncated.byBytes = true;
+        continue;
+      }
       size = bytes.byteLength;
       hash = candidate.contentHash ?? hashBytes(bytes);
+      if (old)
+        yield* box.exec(
+          `chmod u+w -- ${"'" + candidate.sandboxPath.replaceAll("'", "'\\''") + "'"}`,
+        );
       yield* box.writeFile(candidate.sandboxPath, bytes);
+      yield* box.exec(`chmod 444 -- ${"'" + candidate.sandboxPath.replaceAll("'", "'\\''") + "'"}`);
       if (old && old.sandboxPath !== candidate.sandboxPath) yield* box.removeFile(old.sandboxPath);
       yield* database.use((db) =>
         db
@@ -369,6 +419,7 @@ const hydrateProgram = Effect.fn("RuthCloud.hydrateInputs")(function* (
           ),
       );
     }
+    protectedBytes += size - previouslyProtected;
     files.push({
       fileId: candidate.file.fileId,
       drivePath: candidate.file.drivePath,
@@ -395,24 +446,29 @@ const hydrateProgram = Effect.fn("RuthCloud.hydrateInputs")(function* (
         ),
     );
   }
-  const hydrationId = yield* newId(HydrationId);
+  const hydrationId = ctx.toolCallId
+    ? HydrationId.make(stableToolId(ctx, "hydration"))
+    : yield* newId(HydrationId);
   const truncated = {
     byCount: resolved.truncated || plan.truncated.byCount,
     byBytes: plan.truncated.byBytes,
   };
   yield* database.use((db) =>
-    db.insert(cloudHydration).values({
-      id: hydrationId,
-      userId: ctx.userId,
-      runId,
-      selector: rule.selector,
-      trigger,
-      ...limits,
-      files,
-      totalBytes: fetchedBytes,
-      truncated,
-      createdAt: date,
-    }),
+    db
+      .insert(cloudHydration)
+      .values({
+        id: hydrationId,
+        userId: ctx.userId,
+        runId,
+        selector: rule.selector,
+        trigger,
+        ...limits,
+        files,
+        totalBytes: fetchedBytes,
+        truncated,
+        createdAt: date,
+      })
+      .onConflictDoNothing(),
   );
   return { hydrationId, files, totalBytes: fetchedBytes, truncated };
 });
@@ -449,6 +505,34 @@ const outputMime = (name: string) =>
   ({ mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4" })[
     posix.extname(name).slice(1).toLowerCase()
   ] ?? assetMediaType(name);
+/** Complete downstream publication work even when a crash followed the file commit. */
+const finishPublication = Effect.fn("RuthCloud.finishPublication")(function* (
+  ctx: AgentContext,
+  id: FileId,
+) {
+  const database = yield* Database;
+  const events = yield* database.use((db) =>
+    db
+      .select({ id: fileEvent.id })
+      .from(fileEvent)
+      .where(
+        and(
+          eq(fileEvent.userId, ctx.userId),
+          eq(fileEvent.fileId, id),
+          eq(fileEvent.kind, "uploaded"),
+        ),
+      ),
+  );
+  if (!events.length) yield* recordFileEvent(ctx.userId, id, "uploaded");
+  const jobs = yield* database.use((db) =>
+    db
+      .select({ id: ingestionJob.id })
+      .from(ingestionJob)
+      .where(and(eq(ingestionJob.userId, ctx.userId), eq(ingestionJob.fileId, id))),
+  );
+  if (!jobs.length) yield* enqueueIngestion(ctx.userId, id);
+  yield* (yield* SemanticCache).invalidate(ctx.userId);
+});
 const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
   input: typeof CLOUD_TOOL_SPECS.publish_output.inputSchema.Type,
   ctx: AgentContext,
@@ -487,13 +571,53 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
         );
   if (input.replaces !== undefined && (!original || !workspace))
     return yield* fail("publish_output", "Hydrate the file before proposing changes to it");
+  if (ctx.toolCallId) {
+    const proposedId = stableToolId(ctx, input.replaces ? "approval" : "file");
+    if (input.replaces) {
+      const prior = yield* database.use((db) =>
+        db.query.pendingApproval.findFirst({
+          where: and(eq(pendingApproval.id, proposedId), eq(pendingApproval.userId, ctx.userId)),
+        }),
+      );
+      if (prior)
+        return {
+          kind: "sync" as const,
+          approvalId: PendingApprovalId.make(prior.id),
+          conflict: prior.conflict,
+        };
+    } else {
+      const prior = yield* database.use((db) =>
+        db.query.file.findFirst({
+          where: and(eq(file.id, proposedId), eq(file.userId, ctx.userId)),
+        }),
+      );
+      if (prior) {
+        yield* finishPublication(ctx, FileId.make(prior.id));
+        const folders = run.folderId
+          ? yield* database.use((db) =>
+              db
+                .select({ name: folder.name })
+                .from(folder)
+                .where(and(eq(folder.id, run.folderId!), eq(folder.userId, ctx.userId))),
+            )
+          : [];
+        return {
+          kind: "file" as const,
+          fileId: FileId.make(prior.id),
+          drivePath: `${folders[0]?.name ? `${folders[0].name}/` : ""}${prior.title}`,
+        };
+      }
+    }
+  }
   const bytes = yield* box.readFile(path);
   if (bytes.byteLength > 100 * 1024 * 1024)
     return yield* fail("publish_output", "Publish a file no larger than 100 MB.");
   const hash = hashBytes(bytes);
   const now = DateTime.toDateUtc(yield* DateTime.now);
   if (original && workspace) {
-    const approvalId = yield* newId(PendingApprovalId);
+    const approvalId = ctx.toolCallId
+      ? PendingApprovalId.make(stableToolId(ctx, "approval"))
+      : yield* newId(PendingApprovalId);
     // Each proposal owns its object; resolving one cannot delete another proposal's bytes.
     const key = StorageKey.make(
       `${userPrefix(ctx.userId)}.avenire/cloud/${runId}/sync/${original.id}/${approvalId}/${name}`,
@@ -523,7 +647,7 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
     );
     return { kind: "sync" as const, approvalId, conflict };
   }
-  const fileId = yield* newId(FileId);
+  const fileId = ctx.toolCallId ? FileId.make(stableToolId(ctx, "file")) : yield* newId(FileId);
   const proposedFolderId = yield* newId(FolderId);
   const task = yield* database.use((db) =>
     db.query.cloudTask.findFirst({
@@ -540,7 +664,7 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
   yield* storage.put(key, bytes, { contentType: mimeType });
   const title = input.title?.trim() || name;
   const publishedFolderName = yield* database.useTransaction(async (tx) => {
-    // A row lock makes first-publish folder creation atomic across gateway requests/servers.
+    // A row lock makes first-publish folder creation atomic across worker processes.
     const [current] = await tx
       .select()
       .from(cloudRun)
@@ -578,10 +702,7 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
   });
   if (publishedFolderName === undefined)
     return yield* fail("publish_output", "This run was not found.", "not_found");
-  yield* recordFileEvent(ctx.userId, fileId, "uploaded");
-  yield* enqueueIngestion(ctx.userId, fileId);
-  const cache = yield* SemanticCache;
-  yield* cache.invalidate(ctx.userId);
+  yield* finishPublication(ctx, fileId);
   return { kind: "file" as const, fileId, drivePath: `${publishedFolderName}/${title}` };
 });
 type CloudImpls = {
@@ -615,6 +736,9 @@ export const cloudTools: CloudImpls = {
         bytes,
         mediaType: outputMime(name),
         runId: CloudRunId.make(run.id),
+        ...(ctx.toolCallId
+          ? { idempotencyId: AssetId.make(stableToolId(ctx, `report-asset:${path}`)) }
+          : {}),
         ...(ctx.threadId ? { threadId: ctx.threadId } : {}),
       });
       published.push({ sandboxPath, assetId: stored.id, url: stored.url });
@@ -632,43 +756,20 @@ export const cloudTools: CloudImpls = {
     return { published };
   }),
 };
-export const cloudGatewayTools = {
-  hydrate_files: gatewayTool({
+export const cloudToolRegistrations = {
+  hydrate_files: registerTool({
     spec: CLOUD_TOOL_SPECS.hydrate_files,
     policy: CLOUD_TOOL_POLICY.hydrate_files,
     execute: cloudTools.hydrate_files,
   }),
-  publish_output: gatewayTool({
+  publish_output: registerTool({
     spec: CLOUD_TOOL_SPECS.publish_output,
     policy: CLOUD_TOOL_POLICY.publish_output,
     execute: cloudTools.publish_output,
   }),
-  publish_report: gatewayTool({
+  publish_report: registerTool({
     spec: CLOUD_TOOL_SPECS.publish_report,
     policy: CLOUD_TOOL_POLICY.publish_report,
     execute: cloudTools.publish_report,
   }),
 };
-/** Ownership remains scoped to the verified token; UTC is the safe fallback for a missing task. */
-export const resolveRunTimeZone = Effect.fn("RuthCloud.resolveRunTimeZone")(
-  function* (run: VerifiedRunToken) {
-    const database = yield* Database;
-    const rows = yield* database.use((db) =>
-      db
-        .select({ timeZone: cloudTask.timeZone })
-        .from(cloudRun)
-        .leftJoin(
-          cloudTask,
-          and(eq(cloudRun.taskId, cloudTask.id), eq(cloudTask.userId, run.userId)),
-        )
-        .where(and(eq(cloudRun.id, run.runId), eq(cloudRun.userId, run.userId))),
-    );
-    return rows[0]?.timeZone ?? "UTC";
-  },
-  (effect) =>
-    effect.pipe(
-      Effect.catchTag("DatabaseError", (error) =>
-        Effect.logWarning("Could not resolve Ruth Cloud time zone", error).pipe(Effect.as("UTC")),
-      ),
-    ),
-);

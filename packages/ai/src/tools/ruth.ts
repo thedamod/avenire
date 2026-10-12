@@ -13,8 +13,15 @@ import { askUserSpec, getPageContextSpec, type PageContextResult, ruthToolSpecs 
 import { VISUAL_BUDGETS, VISUAL_RUNTIME } from "./page.ts";
 import { loadSkillTool } from "./skills.ts";
 
+import { makeComputerRegistry, type ComputerServices } from "./computer.ts";
+import type { ScreenProfile } from "@avenire/cloud/screen";
 import type { WidgetPreview } from "./preview.ts";
-export type RuthToolServices = WidgetPreview | RuthKitServices | ChatSandboxes | AssetStore;
+export type RuthToolServices =
+  | ComputerServices
+  | WidgetPreview
+  | RuthKitServices
+  | ChatSandboxes
+  | AssetStore;
 export interface RuthTurn {
   readonly userId: UserId;
   readonly threadId: ThreadId;
@@ -30,6 +37,7 @@ export const createRuthTools = (
   services: Context.Context<RuthToolServices>,
   turn: RuthTurn,
   images?: ImageTransport,
+  profile?: ScreenProfile,
 ) => {
   const ctx: AgentContext = {
     agent: "ruth",
@@ -43,7 +51,7 @@ export const createRuthTools = (
     chatToolNames,
     ctx,
     services,
-    sandboxToolRegistry,
+    { ...sandboxToolRegistry, ...makeComputerRegistry(profile, 100).registry },
     images,
   );
   const boundTools: ToolSet = {

@@ -51,7 +51,7 @@ export const HydrationLimits = Schema.Struct({
 export type HydrationLimits = typeof HydrationLimits.Type;
 
 export const HYDRATION_DEFAULTS = { maxFiles: 200, maxBytes: 1_073_741_824 } as const;
-export const WORKSPACE_CAP_BYTES = 10 * 1024 ** 3;
+export const WORKSPACE_CAP_BYTES = 4 * 1024 ** 3;
 
 export const HydrationRule = Schema.Struct({
   selector: FileSelector,

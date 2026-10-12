@@ -12,8 +12,6 @@ export const AVENIRE_SNAPSHOT = "avenire-sandbox-v4";
 export const SANDBOX_RESOURCES = { cpu: 4, memory: 8, disk: 10 } as const;
 /** manimgx requires Python 3.13 or newer. */
 export const PYTHON_VERSION = "3.13";
-/** Retained until the server-agent migration removes the Pi imports. */
-export const PI_VERSION = "0.83.0";
 
 /** Support the Debian variants used by Daytona's base; fail on unknown distributions. */
 const runtimeImage = Image.base("daytonaio/sandbox:0.9.0-slim")
