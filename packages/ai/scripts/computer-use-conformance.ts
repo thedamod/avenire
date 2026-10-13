@@ -5,13 +5,10 @@ import { SCREEN_PROFILES, toModel } from "@avenire/cloud/screen";
 import { ChatSandboxes } from "@avenire/cloud/chat-sandbox";
 import { Analytics, AnalyticsNoop } from "@avenire/shared/observability";
 import { ThreadId, UserId } from "@avenire/contracts";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import * as Schedule from "effect/Schedule";
-import * as Config from "effect/Config";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Redacted from "effect/Redacted";
 import {
   makeComputerRegistry,
   shellQuote,
@@ -21,7 +18,13 @@ import {
 import { toAiSdkTools } from "../src/tools/ai-sdk.ts";
 import type { RuthKitServices } from "../src/tools/library.ts";
 import { createImageTransport } from "../src/tools/images.ts";
-import { modelCapabilities, screenProfileForModel } from "../src/models/index.ts";
+import {
+  RUTH_MODEL_CAPABILITIES,
+  RUTH_MODEL_NAMES,
+  RuthModels,
+  RuthModelsLive,
+  type RuthModelName,
+} from "../src/models/index.ts";
 import {
   CONFORMANCE_PAGE,
   mockComputerModel,
@@ -34,10 +37,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 const args = process.argv.slice(2).filter((a) => a !== "--");
 const option = (name: string) => args[args.indexOf(name) + 1];
 const mock = args.includes("--mock");
-const modelId = args.includes("--model") ? option("--model") : undefined;
-if (!mock && !modelId) {
+const modelName = (args.includes("--model") ? option("--model") : undefined) as
+  | RuthModelName
+  | undefined;
+if (!mock && !RUTH_MODEL_NAMES.some((n) => n === modelName)) {
   process.stderr.write(
-    "Usage: conformance -- --model <OpenRouter id> | --mock [--profile <profile id>]\n",
+    "Usage: conformance -- --model <ruth-sprint|ruth-core|ruth-apex> | --mock [--profile <profile id>]\n",
   );
   process.exitCode = 1;
 } else {
@@ -92,10 +97,11 @@ if (!mock && !modelId) {
       const profileId = args.includes("--profile") ? option("--profile") : undefined;
       const profile = mock
         ? (SCREEN_PROFILES.find((p) => p.id === profileId) ?? SCREEN_PROFILES[0])
-        : screenProfileForModel(modelId!);
-      const capabilities = modelCapabilities(modelId ?? "anthropic/mock", ["text", "image"], {
+        : RUTH_MODEL_CAPABILITIES[modelName!].screenProfile!;
+      const capabilities = {
+        ...RUTH_MODEL_CAPABILITIES[modelName ?? "ruth-core"],
         screenProfile: profile,
-      });
+      };
       const images = createImageTransport(capabilities, 1);
       const registry = makeComputerRegistry(profile, 50).registry;
       const targetService = ChatSandboxes.of({
@@ -158,9 +164,9 @@ if (!mock && !modelId) {
       ];
       const model = mock
         ? mockComputerModel(actions)
-        : createOpenRouter({
-            apiKey: Redacted.value(yield* Config.Redacted("OPENROUTER_API_KEY")),
-          }).chat(modelId!, { parallelToolCalls: false, usage: { include: true } });
+        : (yield* Effect.service(RuthModels).pipe(Effect.provide(RuthModelsLive))).languageModel(
+            modelName!,
+          );
       let checkpoint: LoopCheckpoint = {
         messages: [
           {
@@ -207,7 +213,7 @@ if (!mock && !modelId) {
       const report = {
         loopSucceeded: loop._tag === "Success",
         ...(loop._tag === "Failure" ? { failureReason: loop.failure.reason } : {}),
-        model: modelId ?? "AI SDK mock",
+        model: modelName ?? "AI SDK mock",
         profile: profile.id,
         sandboxId: sandbox.id,
         screenRead: tree,

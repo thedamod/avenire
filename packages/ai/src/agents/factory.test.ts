@@ -1,7 +1,7 @@
 import { createFireworks } from "@ai-sdk/fireworks";
 import { generateText } from "ai";
 import { describe, expect, it } from "@effect/vitest";
-import { RuthModels } from "../models/index.ts";
+import { RUTH_MODEL_CAPABILITIES, RuthModels } from "../models/index.ts";
 import { createAgent } from "./factory.ts";
 
 describe("sprint latency settings", () => {
@@ -37,7 +37,7 @@ describe("sprint latency settings", () => {
 
         models: RuthModels.of({
           languageModel: () => provider.chatModel("accounts/fireworks/models/glm-5p3-flash"),
-          capabilities: () => ({ vision: false, toolResultImages: false }),
+          capabilities: (n) => RUTH_MODEL_CAPABILITIES[n],
           maxImages: 0,
         }),
         bindTools: () => ({ tools: {}, toolApproval: {} }),

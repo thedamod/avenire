@@ -9,19 +9,21 @@ import {
   RuthModelsLive,
 } from "../src/models/index.ts";
 
-const name = (process.argv[2] ?? "ruth-sprint") as RuthModelName;
+const name = (process.argv.slice(2).find((a) => a !== "--") ?? "ruth-sprint") as RuthModelName;
 if (!RUTH_MODEL_NAMES.includes(name)) throw new Error(`Unknown model ${name}`);
 
 const program = Effect.gen(function* () {
   const models = yield* RuthModels;
+  const capabilities = models.capabilities(name);
   const started = Date.now();
   const result = yield* Effect.promise(() =>
     generateText({
       model: models.languageModel(name),
+      ...(capabilities.reasoning ? { reasoning: capabilities.reasoning } : {}),
       prompt: "With visualizatione explain how gradient descent finds a minimum",
     }),
   );
-  return { result, ms: Date.now() - started, capabilities: models.capabilities(name) };
+  return { result, ms: Date.now() - started, capabilities };
 }).pipe(Effect.provide(RuthModelsLive));
 
 const { result, ms, capabilities } = await Effect.runPromise(program);

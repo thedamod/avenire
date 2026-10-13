@@ -60,7 +60,7 @@ React-free protocol live in `@avenire/ui/widget-frame` and `@avenire/ui/widget-p
 - Anything Ruth does that changes the user's files requires an approval by default. The
   user can turn approvals off per thread ("Full access"); then actions apply directly but
   are still logged and undoable. Sandboxed compute and read-only tools never need approval.
-- Ruth chat models route through OpenRouter via `OPENROUTER_API_KEY`; keep provider ids in `models/`.
+- Ruth models are one table in `packages/ai/src/models` (one line per `ruth-*` name, provider call written out; keys via `OPENROUTER_API_KEY` / `FIREWORKS_API_KEY`). To switch a model, edit that line and its capability entry; never add provider maps, id overrides or env flags elsewhere.
 - Model calls, tools and chat streaming use the AI SDK (`ai`, `@ai-sdk/*`), never
   `effect/ai`. Effect stays for services, errors, config and jobs; tool `execute` functions
   run Effect programs against the request's services.
@@ -83,7 +83,7 @@ pnpm db:generate          # drizzle-kit generate after schema changes
 ## Ruth computer use and durable Cloud runs
 
 - Chat and Cloud use `agents/factory.ts`, the same AI SDK adapter and tool policy. Models
-  resolve registry names through OpenRouter; task `model` defaults to `ruth-core`.
+  resolve registry names from `models/`; task `model` defaults to `ruth-core`.
 - `computer`, `screen_read` and `box_*` target the isolated v4 Daytona desktop/workspace.
   Computer tools never require approval; library-changing chat tools retain approval.
   Use the registry's screen profile and inject its exact image/coordinate contract.
