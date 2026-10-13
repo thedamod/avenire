@@ -4,8 +4,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import { Files } from "files-sdk";
+import { createHash } from "node:crypto";
 
 import { StorageKey } from "@avenire/contracts";
 
@@ -69,13 +71,20 @@ export class Storage extends Context.Service<
 >()("avenire/storage/Storage") {}
 
 export const StorageConfig = Config.all({
-  driver: Config.Literals(["fs", "r2", "s3"], "STORAGE_DRIVER").pipe(Config.withDefault("fs")),
+  driver: Config.Literals(["fs", "r2", "s3", "uploadthing"], "STORAGE_DRIVER").pipe(
+    Config.withDefault("fs"),
+  ),
   bucket: Config.String("STORAGE_BUCKET").pipe(Config.withDefault("avenire")),
   fsRoot: Config.String("STORAGE_FS_ROOT").pipe(Config.withDefault(".data/storage")),
   r2AccountId: Config.option(Config.String("R2_ACCOUNT_ID")),
   r2AccessKeyId: Config.option(Config.Redacted("R2_ACCESS_KEY_ID")),
   r2SecretAccessKey: Config.option(Config.Redacted("R2_SECRET_ACCESS_KEY")),
   awsRegion: Config.String("AWS_REGION").pipe(Config.withDefault("us-east-1")),
+  uploadthingToken: Config.option(Config.Redacted("UPLOADTHING_TOKEN")),
+  // UploadThing's free tier rejects private files; public-read files get a permanent CDN URL.
+  uploadthingAcl: Config.Literals(["private", "public-read"], "UPLOADTHING_ACL").pipe(
+    Config.withDefault("private"),
+  ),
 });
 
 type FilesAdapter = ConstructorParameters<typeof Files>[0]["adapter"];
@@ -86,6 +95,10 @@ const attempt = <A>(operation: string, key: string, run: () => Promise<A>) =>
     try: run,
     catch: (cause) => new StorageError({ operation, key, cause }),
   }).pipe(Effect.withSpan(`Storage.${operation}`, { attributes: { key } }));
+
+/** Reads, lists, signed URLs and deletes are idempotent: retry transient provider failures. */
+const idempotent = <A>(effect: Effect.Effect<A, StorageError>) =>
+  effect.pipe(Effect.retry({ times: 2, schedule: Schedule.exponential("300 millis") }));
 
 const readAll = async (files: Files, prefix: StorageKey) => {
   const objects: Array<{ readonly key: StorageKey; readonly size: number }> = [];
@@ -111,10 +124,12 @@ const makeStorage = (files: Files): Storage["Service"] => {
     get: (key) =>
       ensureExists(key).pipe(
         Effect.andThen(
-          attempt("get", key, async () => {
-            const file = await files.download(key);
-            return new Uint8Array(await file.arrayBuffer());
-          }),
+          idempotent(
+            attempt("get", key, async () => {
+              const file = await files.download(key);
+              return new Uint8Array(await file.arrayBuffer());
+            }),
+          ),
         ),
       ),
     head: (key) =>
@@ -126,10 +141,13 @@ const makeStorage = (files: Files): Storage["Service"] => {
           ...(file.etag === undefined ? {} : { etag: file.etag }),
         })),
       ),
-    remove: (key) => attempt("remove", key, () => files.delete(key)).pipe(Effect.asVoid),
-    list: (prefix) => attempt("list", prefix, () => readAll(files, prefix)),
+    remove: (key) =>
+      idempotent(attempt("remove", key, () => files.delete(key))).pipe(Effect.asVoid),
+    list: (prefix) => idempotent(attempt("list", prefix, () => readAll(files, prefix))),
     signedDownloadUrl: (key, expiresInSeconds) =>
-      attempt("signedDownloadUrl", key, () => files.url(key, { expiresIn: expiresInSeconds })),
+      idempotent(
+        attempt("signedDownloadUrl", key, () => files.url(key, { expiresIn: expiresInSeconds })),
+      ),
     signedUploadUrl: (key, options) =>
       attempt("signedUploadUrl", key, () =>
         files.signedUploadUrl(key, {
@@ -157,6 +175,66 @@ const r2Credentials = (config: StorageConfig) => ({
   }),
 });
 
+/** UploadThing stores our key as the file's customId, which is capped at 128 characters. */
+export const UPLOADTHING_MAX_KEY = 128;
+/** Keep the directory (prefix listings and purges depend on it); hash an over-long file name. */
+export const fitKey = (key: string, max = UPLOADTHING_MAX_KEY): string => {
+  if (key.length <= max) return key;
+  const slash = key.lastIndexOf("/");
+  const dir = key.slice(0, slash + 1);
+  const name = key.slice(slash + 1);
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 && name.length - dot <= 10 ? name.slice(dot) : "";
+  const hash = createHash("sha256").update(name).digest("hex");
+  const room = max - dir.length - ext.length;
+  if (room < 16) throw new RangeError(`Storage key directory is too long for UploadThing: ${dir}`);
+  return `${dir}${hash.slice(0, Math.min(room, 32))}${ext}`;
+};
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** UploadThing behaviour for every caller, including `storage.files`. Keys are write-once:
+ * looking up a customId that doesn't exist yet (API or CDN) makes the next upload to it fail
+ * with 409, and a deleted customId can't be reused, so callers write new keys instead of
+ * overwriting (see the review accept and document cache). Here:
+ * - keys are fitted to the 128-character customId limit;
+ * - `download`/`head` retry a brief NotFound while the CDN catches up after an upload;
+ * - `url` drops the content-disposition override, which UploadThing cannot set. */
+const forUploadThing = (adapter: FilesAdapter): FilesAdapter =>
+  new Proxy(adapter, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== "function" || property === "list" || property === "listAll")
+        return value;
+      const call = (first: unknown, rest: unknown[]) =>
+        value.call(
+          target,
+          typeof first === "string"
+            ? fitKey(first)
+            : Array.isArray(first)
+              ? first.map((key) => (typeof key === "string" ? fitKey(key) : key))
+              : first,
+          ...rest,
+        );
+      if (property === "download" || property === "head")
+        return async (key: string, ...rest: unknown[]) => {
+          for (let attempt = 1; ; attempt++) {
+            try {
+              return await call(key, rest);
+            } catch (error) {
+              if ((error as { code?: unknown }).code !== "NotFound" || attempt === 4) throw error;
+              await pause(500 * attempt);
+            }
+          }
+        };
+      if (property === "url")
+        return (key: string, options?: { responseContentDisposition?: string }) => {
+          const { responseContentDisposition: _ignored, ...rest } = options ?? {};
+          return call(key, [rest]);
+        };
+      return (first: unknown, ...rest: unknown[]) => call(first, rest);
+    },
+  });
+
 // Drivers are imported lazily so a deployment only loads the SDK it actually uses.
 const makeAdapter = (config: StorageConfig): Effect.Effect<FilesAdapter> => {
   switch (config.driver) {
@@ -171,6 +249,21 @@ const makeAdapter = (config: StorageConfig): Effect.Effect<FilesAdapter> => {
     case "s3":
       return Effect.promise(() => import("files-sdk/s3")).pipe(
         Effect.map(({ s3 }) => s3({ bucket: config.bucket, region: config.awsRegion })),
+      );
+    case "uploadthing":
+      // Private (default): every read goes through a short-lived signed URL (our /a/ links mint them).
+      return Effect.promise(() => import("files-sdk/uploadthing")).pipe(
+        Effect.map(({ uploadthing }) =>
+          forUploadThing(
+            uploadthing({
+              acl: config.uploadthingAcl,
+              ...Option.match(config.uploadthingToken, {
+                onNone: () => ({}),
+                onSome: (token) => ({ token: Redacted.value(token) }),
+              }),
+            }),
+          ),
+        ),
       );
   }
 };

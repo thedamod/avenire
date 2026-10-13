@@ -28,7 +28,8 @@
     "@aws-sdk/s3-request-presigner": "^3.913.0",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
-    "files-sdk": "catalog:"
+    "files-sdk": "catalog:",
+    "uploadthing": "7.7.4"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

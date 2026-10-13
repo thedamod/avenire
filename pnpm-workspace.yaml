@@ -12,6 +12,7 @@ allowBuilds:
   electron-winstaller: false
   protobufjs: false
   tesseract.js: false
+  msgpackr-extract: false
 
 catalog:
   "@ai-sdk/anthropic": 4.0.71
@@ -59,6 +60,9 @@ overrides:
   # vite-plus bundles its own Vitest; the patched @effect/vitest imports it instead.
   "@effect/vitest>vitest": "-"
   effect: "catalog:"
+  # UploadThing (files-sdk's uploadthing adapter) is built on Effect 3; keep it off our Effect 4.
+  "uploadthing>effect": 3.17.7
+  "@uploadthing/shared>effect": 3.17.7
   "@types/node": "catalog:"
 
 packageExtensions:
@@ -71,3 +75,4 @@ packageExtensions:
 
 patchedDependencies:
   "@effect/vitest@4.0.0": patches/@effect__vitest@4.0.0.patch
+  files-sdk@2.6.2: patches/files-sdk@2.6.2.patch
