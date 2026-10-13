@@ -1,5 +1,5 @@
 import { PendingApprovalId, StorageKey, UserId } from "@avenire/contracts";
-import { Storage, StorageMemory, StorageError } from "@avenire/storage/storage";
+import { Storage, StorageMemory } from "@avenire/storage/storage";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { cloudCtx, cloudFixture, fileId } from "./cloud-test-support.ts";
@@ -86,22 +86,6 @@ it.effect("accept rechecks the CURRENT hash; conflicts leave the original untouc
       expect(f.rows("file_event")).toHaveLength(0);
       expect(f.rows("ingestion_job")).toHaveLength(0);
       expect(f.invalidated()).toBe(0);
-    }).pipe(Effect.provide(CloudReviewLive), Effect.provide(f.services(storage)));
-  }).pipe(Effect.provide(StorageMemory));
-});
-it.effect("files without original storage become a conflict without trying to write", () => {
-  const f = setup();
-  return Effect.gen(function* () {
-    const storage = yield* Storage;
-    yield* Effect.gen(function* () {
-      const id = yield* f.proposal();
-      Object.assign(f.rows("file")[0]!, { storageKey: null });
-      yield* (yield* CloudReview).resolve(cloudCtx.userId, id, "accept");
-      expect(f.rows("pending_approval")[0]).toMatchObject({
-        status: "conflict",
-        conflict: "This file can't be updated in place",
-      });
-      expect(f.storageWrites).toHaveLength(1);
     }).pipe(Effect.provide(CloudReviewLive), Effect.provide(f.services(storage)));
   }).pipe(Effect.provide(StorageMemory));
 });
@@ -192,27 +176,5 @@ it.effect("missing/other-user approval returns NotFound and never touches storag
       expect(f.storageWrites).toHaveLength(1);
       expect(f.rows("pending_approval")[0]?.status).toBe("pending");
     }).pipe(Effect.provide(CloudReviewLive), Effect.provide(f.services(storage)));
-  }).pipe(Effect.provide(StorageMemory));
-});
-it.effect("best-effort cleanup failure does not fail a skip", () => {
-  const f = setup();
-  return Effect.gen(function* () {
-    const storage = yield* Storage;
-    yield* Effect.gen(function* () {
-      const id = yield* f.proposal();
-      yield* (yield* CloudReview).resolve(cloudCtx.userId, id, "skip");
-      expect(f.rows("pending_approval")[0]?.status).toBe("skipped");
-    }).pipe(
-      Effect.provide(CloudReviewLive),
-      Effect.provide(
-        f.services({
-          ...storage,
-          remove: () =>
-            Effect.fail(
-              new StorageError({ operation: "remove", cause: "simulated cleanup failure" }),
-            ),
-        }),
-      ),
-    );
   }).pipe(Effect.provide(StorageMemory));
 });

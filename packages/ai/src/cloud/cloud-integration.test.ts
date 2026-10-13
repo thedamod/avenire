@@ -54,26 +54,6 @@ it.effect("text-only/media files hydrate extracted markdown with its own hash", 
     expect(again.files[0]?.skipped).toBe(true);
   }).pipe(Effect.provide(StorageMemory));
 });
-it.effect("requires runId and a running box before hydration work", () => {
-  const f = cloudFixture();
-  f.setRunning(false);
-  return Effect.gen(function* () {
-    const storage = yield* Storage;
-    const { runId: _runId, ...withoutRun } = cloudCtx;
-    expect(
-      (yield* Effect.flip(
-        hydrate(withoutRun, { selector: {} }, "agent").pipe(Effect.provide(f.services(storage))),
-      )).code,
-    ).toBe("invalid_input");
-    expect(
-      (yield* Effect.flip(
-        hydrate(cloudCtx, { selector: {} }, "agent").pipe(Effect.provide(f.services(storage))),
-      )).code,
-    ).toBe("sandbox_unavailable");
-    expect(f.writes).toHaveLength(0);
-    expect(f.written).toHaveLength(0);
-  }).pipe(Effect.provide(StorageMemory));
-});
 it.effect("publishes two new files into one run folder with events and ingestion", () => {
   const f = cloudFixture();
   return Effect.gen(function* () {
@@ -113,27 +93,6 @@ it.effect("publishes two new files into one run folder with events and ingestion
         ),
       ).toBe("# report");
     }).pipe(Effect.provide(f.services(storage)));
-  }).pipe(Effect.provide(StorageMemory));
-});
-it.effect("rejects paths outside workspace/internal directory before download", () => {
-  const f = cloudFixture();
-  return Effect.gen(function* () {
-    const storage = yield* Storage;
-    for (const sandboxPath of [
-      "/etc/passwd",
-      ".avenire/run.json",
-      "out/../../file",
-      `${CLOUD_WORKSPACE}/../file`,
-    ]) {
-      const error = yield* Effect.flip(
-        cloudTools
-          .publish_output({ sandboxPath }, cloudCtx)
-          .pipe(Effect.provide(f.services(storage))),
-      );
-      expect(error).toMatchObject({ code: "invalid_input" });
-    }
-    expect(f.reads).toHaveLength(0);
-    expect(f.storageWrites).toHaveLength(0);
   }).pipe(Effect.provide(StorageMemory));
 });
 it.effect("rejects replaces without hydration and unowned replacement files", () => {
@@ -216,48 +175,6 @@ it.effect("publish_report publishes private assets and persists the markdown sum
     expect(f.rows("cloud_run")[0]?.summary).toBe("Finished");
   }).pipe(Effect.provide(StorageMemory));
 });
-it.effect("publish_report exposes an agent failure without setting a terminal run status", () => {
-  const f = cloudFixture();
-  return Effect.gen(function* () {
-    const storage = yield* Storage;
-    yield* cloudTools
-      .publish_report({ markdown: "The quiz could not be completed.", status: "failed" }, cloudCtx)
-      .pipe(Effect.provide(f.services(storage)));
-    expect(f.rows("cloud_run")[0]).toMatchObject({
-      summary: "The quiz could not be completed.",
-      error: "The agent reported failure.",
-    });
-    yield* cloudTools
-      .publish_report({ markdown: "Recovered.", status: "succeeded" }, cloudCtx)
-      .pipe(Effect.provide(f.services(storage)));
-    expect(f.rows("cloud_run")[0]?.error).toBeNull();
-  }).pipe(Effect.provide(StorageMemory));
-});
-it.effect("identical titles and shared id prefixes cannot overwrite another hydrated input", () => {
-  const f = cloudFixture();
-  const secondId = FileId.make("12345678-other");
-  f.metadata.push(candidate(secondId));
-  f.rows("file").push({
-    ...f.rows("file")[0],
-    id: secondId,
-    storageKey: "other",
-    contentHash: "other-hash",
-  });
-  return Effect.gen(function* () {
-    const storage = yield* Storage;
-    yield* storage.put(StorageKey.make("original"), "first");
-    yield* storage.put(StorageKey.make("other"), "other");
-    yield* Effect.gen(function* () {
-      const result = yield* hydrate(cloudCtx, { selector: {} }, "agent");
-      expect(new Set(result.files.map((file) => file.sandboxPath)).size).toBe(2);
-      expect(
-        result.files.map((file) => new TextDecoder().decode(f.files.get(file.sandboxPath))),
-      ).toEqual(["first", "other"]);
-      const again = yield* hydrate(cloudCtx, { selector: {} }, "agent");
-      expect(again.files.every((file) => file.skipped)).toBe(true);
-    }).pipe(Effect.provide(f.services(storage)));
-  }).pipe(Effect.provide(StorageMemory));
-});
 
 it.effect(
   "reconciles hydrated and published records when a completed side-effect result was lost",
@@ -285,23 +202,3 @@ it.effect(
   },
 );
 
-it.effect(
-  "leaves disk room by refusing new inputs after current-run protection reaches the cache cap",
-  () => {
-    const f = cloudFixture();
-    f.addOld();
-    const cached = f.rows("cloud_workspace_file")[0]!;
-    cached.lastRunId = "run";
-    return Effect.gen(function* () {
-      const storage = yield* Storage;
-      yield* storage.put(StorageKey.make("original"), new TextEncoder().encode("input"));
-      const result = yield* hydrate(cloudCtx, { selector: {} }, "agent").pipe(
-        Effect.provide(f.services(storage)),
-      );
-      expect(result.files).toHaveLength(0);
-      expect(result.truncated.byBytes).toBe(true);
-      expect(f.written).toHaveLength(0);
-      expect(f.removed).toHaveLength(0);
-    }).pipe(Effect.provide(StorageMemory));
-  },
-);

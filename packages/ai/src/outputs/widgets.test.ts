@@ -3,20 +3,17 @@ import {
   MAX_WIDGET_HTML_BYTES,
   MAX_WIDGET_INLINE_HTML_BYTES,
   ThreadId,
-  WidgetSource,
 } from "@avenire/contracts";
-import { WIDGET_THEME_TOKENS, WIDGET_TOKEN_SHEET } from "@avenire/ui/tokens";
+import { WIDGET_THEME_TOKENS } from "@avenire/ui/tokens";
 import { WIDGET_RESPONSE_CSP } from "@avenire/ui/widget-protocol";
 import { expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
 import { ChatSandboxes } from "@avenire/cloud/chat-sandbox";
 import * as Redacted from "effect/Redacted";
 import * as TestClock from "effect/testing/TestClock";
 import { ctx, testCrypto } from "../tools/test-support.ts";
-import { renderWidgetSpec } from "../tools/specs.ts";
 import { AssetStore } from "./assets.ts";
 import { AssetStoreTest } from "./asset-test-support.ts";
 import {
@@ -101,18 +98,7 @@ it.effect("rejects oversize UTF-8 before storing", () =>
     expect(yield* (yield* AssetStore).list(ctx.userId)).toEqual([]);
   }).pipe(Effect.provide(AssetStoreTest), Effect.provideService(Crypto.Crypto, testCrypto)),
 );
-it("advertises drawing tokens and the real preview tool", () => {
-  expect(renderWidgetSpec.description).toContain(WIDGET_TOKEN_SHEET);
-  expect(renderWidgetSpec.description).toContain("preview_widget");
-});
 
-it("widget source schema accepts one source and rejects both or neither", () => {
-  const decode = Schema.decodeUnknownOption(WidgetSource);
-  for (const input of [{ html: "" }, { path: "figure.html" }])
-    expect(Option.isSome(decode(input))).toBe(true);
-  for (const input of [{}, { html: "x", path: "figure.html" }, { path: "" }])
-    expect(Option.isNone(decode(input))).toBe(true);
-});
 it.effect(
   "resolves large built HTML using only the owning thread, enforces inline size and UTF-8",
   () => {

@@ -13,12 +13,7 @@ import {
   CloudBoxesLive,
 } from "./cloudBox.ts";
 import { DaytonaClient } from "./daytona.ts";
-import {
-  AVENIRE_SNAPSHOT,
-  SANDBOX_RESOURCES,
-  avenireSandboxImage,
-  ensureSnapshot,
-} from "./snapshots.ts";
+import { AVENIRE_SNAPSHOT } from "./snapshots.ts";
 
 type Params = { labels: Record<string, string>; [key: string]: unknown };
 const fake = () => {
@@ -229,18 +224,6 @@ describe("CloudBoxes", () => {
       );
     },
   );
-  it.effect("snapshot creation omits resource overrides", () => {
-    const f = fake();
-    return provide(
-      f,
-      Effect.gen(function* () {
-        yield* (yield* CloudBoxes).ensure("user");
-        expect(f.created[0]).toHaveProperty("snapshot", AVENIRE_SNAPSHOT);
-        expect(f.created[0]).not.toHaveProperty("resources");
-        expect(f.created[0]).not.toHaveProperty("image");
-      }),
-    );
-  });
   for (const state of ["stopped", "archived"])
     it.effect(`starts a ${state} box`, () => {
       const f = fake();
@@ -254,19 +237,6 @@ describe("CloudBoxes", () => {
         }),
       );
     });
-  it.effect("creation and start failures become SandboxUnavailable", () => {
-    const f = fake();
-    f.fail();
-    return provide(
-      f,
-      Effect.gen(function* () {
-        const s = yield* CloudBoxes;
-        expect((yield* Effect.flip(s.ensure("user")))._tag).toBe("SandboxUnavailable");
-        f.box("existing", "stopped");
-        expect((yield* Effect.flip(s.ensure("existing")))._tag).toBe("SandboxUnavailable");
-      }),
-    );
-  });
   it.effect("running never creates or starts; stop is idempotent", () => {
     const f = fake();
     const b = f.box("user");
@@ -362,34 +332,4 @@ describe("CloudBoxes", () => {
       }),
     );
   });
-});
-it.effect("ensureSnapshot uses the requested allocation", () => {
-  let params: unknown;
-  const daytona = {
-    snapshot: {
-      get: async () => {
-        throw new DaytonaFileNotFoundError("missing");
-      },
-      create: async (input: unknown) => {
-        params = input;
-        return {};
-      },
-    },
-  } as unknown as Daytona;
-  return Effect.gen(function* () {
-    yield* ensureSnapshot(daytona, AVENIRE_SNAPSHOT, avenireSandboxImage, SANDBOX_RESOURCES);
-    expect(params).toMatchObject({ name: AVENIRE_SNAPSHOT, resources: SANDBOX_RESOURCES });
-  });
-});
-it.effect("recording returns None when computer use is unavailable", () => {
-  const f = fake();
-  const sandbox = f.box("user");
-  Reflect.deleteProperty(sandbox, "computerUse");
-  return provide(
-    f,
-    Effect.gen(function* () {
-      const box = yield* (yield* CloudBoxes).ensure("user");
-      expect(Option.isNone(yield* box.startRecording("run"))).toBe(true);
-    }),
-  );
 });

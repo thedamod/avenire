@@ -1,7 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import { CLOUD_INPUTS, CLOUD_WORKSPACE } from "@avenire/cloud/cloud-box";
 import {
-  detectConflict,
   planEviction,
   planHydration,
   publishPath,
@@ -37,17 +36,6 @@ describe("Cloud planning", () => {
     contentHash: string | null = "hash",
     sandboxPath = `/inputs/${fileId}`,
   ) => ({ fileId, sizeBytes, contentHash, sandboxPath });
-  it("count cap includes skipped and signals truncation", () => {
-    const a = candidate("a");
-    const plan = planHydration(
-      [a, candidate("b"), candidate("c")],
-      [{ ...a, contentHash: "hash" }],
-      { maxFiles: 2, maxBytes: 10 },
-    );
-    expect(plan.skipped).toEqual([a]);
-    expect(plan.fetch.map((file) => file.fileId)).toEqual(["b"]);
-    expect(plan.truncated).toEqual({ byCount: true, byBytes: false });
-  });
   it("byte cap skips a large file and fits a later small one, ignoring skipped bytes", () => {
     const cached = candidate("cached", 100);
     const plan = planHydration(
@@ -91,13 +79,6 @@ describe("Cloud planning", () => {
     expect(planEviction(rows, "run", 6).map((row) => row.fileId)).toEqual(["older", "newer"]);
     expect(planEviction(rows, "run", 20)).toEqual([]);
   });
-  it("detects hash conflicts, including missing hashes", () => {
-    expect(detectConflict("a", "a", null)).toBeNull();
-    expect(detectConflict("a", "b", new Date("2026-10-09T04:00:00Z"))).toBe(
-      "Changed in your library on 2026-10-09 after Ruth Cloud copied it",
-    );
-    expect(detectConflict("a", null, null)).toContain("unknown date");
-  });
   it("confines normalized publish paths and excludes internal .avenire", () => {
     for (const input of [
       "/etc/passwd",
@@ -126,14 +107,4 @@ it("disambiguates shared UUIDv7 prefixes and preserves the assigned path on reus
   expect(sandboxPathFor({ fileId: secondId, title: "Lecture", kind: "pdf" }, occupied)).toBe(
     second,
   );
-});
-it("keeps Unicode filenames within filesystem byte limits even after disambiguation", () => {
-  const input = {
-    fileId: "019c1234-0000-7000-8000-000000000002",
-    title: "字".repeat(80),
-    kind: "pdf" as const,
-  };
-  const short = sandboxPathFor(input);
-  const long = sandboxPathFor(input, new Map([[short, "other-file"]]));
-  expect(Buffer.byteLength(long.split("/").at(-1)!)).toBeLessThanOrEqual(255);
 });

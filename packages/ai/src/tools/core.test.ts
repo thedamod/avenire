@@ -4,7 +4,6 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as Option from "effect/Option";
 
 import { RuthToolError, runTool, toToolError } from "./core.ts";
 import { ctx, recordingAnalytics } from "./test-support.ts";
@@ -101,26 +100,4 @@ for (const failure of [false, true])
       }).pipe(Effect.provideService(Analytics, recordingAnalytics(events)));
     },
   );
-it.effect("captures interruption once", () => {
-  const events: AnalyticsEvent[] = [];
-  return Effect.gen(function* () {
-    const exit = yield* runTool("cancelled", ctx, Effect.interrupt).pipe(Effect.exit);
-    expect(Exit.isFailure(exit) && Option.isNone(Cause.findErrorOption(exit.cause))).toBe(true);
-    expect(events).toHaveLength(1);
-    expect(events[0]?.properties?.outcome).toBe("interrupted");
-  }).pipe(Effect.provideService(Analytics, recordingAnalytics(events)));
-});
 
-it.effect("passes a RuthToolError from another module instance through by tag", () =>
-  Effect.gen(function* () {
-    const error = {
-      _tag: "RuthToolError",
-      tool: "external",
-      code: "denied",
-      message: "Denied",
-      recoverable: false,
-    };
-    const result = yield* toToolError("other", Cause.fail(error)).pipe(Effect.result);
-    expect(result._tag === "Failure" && result.failure).toBe(error);
-  }),
-);

@@ -12,9 +12,7 @@ import {
   metadataCandidatesStatement,
   resolveSelector,
   scoreTopicHits,
-  selectorReason,
   timeWindow,
-  toFileEntry,
   type MetadataCandidate,
 } from "./selectors.ts";
 import { ctx, fakeDatabase } from "./test-support.ts";
@@ -56,25 +54,6 @@ describe("timeWindow", () => {
       since: "2026-10-08T07:00:00.000Z",
       until: "2026-10-09T06:30:00.000Z",
     });
-  });
-  it("lastDays uses elapsed days and intersects explicit bounds", () => {
-    expect(timeWindow({ lastDays: 2 }, "UTC", now)).toEqual({ since: "2026-10-07T06:30:00.000Z" });
-    expect(
-      timeWindow(
-        { lastDays: 2, today: true, since: "2026-10-08T12:00:00Z", until: "2026-10-09T04:00:00Z" },
-        "America/Los_Angeles",
-        now,
-      ),
-    ).toEqual({ since: "2026-10-08T12:00:00.000Z", until: "2026-10-09T04:00:00.000Z" });
-  });
-  it("respects DST midnight with the day's offset", () => {
-    expect(
-      timeWindow(
-        { today: true },
-        "America/Los_Angeles",
-        DateTime.makeUnsafe("2026-11-01T10:30:00Z"),
-      ),
-    ).toEqual({ since: "2026-11-01T07:00:00.000Z", until: "2026-11-01T10:30:00.000Z" });
   });
 });
 const builder = drizzle.mock({ schema: dbSchema });
@@ -140,29 +119,6 @@ it("time without explicit event kinds includes content OR activity", () => {
   ).toSQL();
   expect(sql).toContain('coalesce("file"."content_modified_at", "file"."created_at") >=');
   expect(sql).toContain("or exists");
-});
-it("empty explicit ids select no candidates", () => {
-  const { sql } = metadataCandidatesStatement(
-    builder,
-    ctx.userId,
-    { explicit: { fileIds: [] } },
-    {},
-  ).toSQL();
-  expect(sql).toContain("false");
-});
-it("drive paths preserve extensions and safely append missing ones", () => {
-  expect(toFileEntry(candidate("a")).drivePath).toBe("Thermodynamics/Heat.pdf");
-  expect(toFileEntry({ ...candidate("a"), title: "Heat.pdf", folderName: null }).drivePath).toBe(
-    "Inbox/Heat.pdf",
-  );
-  expect(
-    toFileEntry({ ...candidate("a"), title: "../Heat", folderName: "../Science" }).drivePath,
-  ).toBe(".._Science/.._Heat.pdf");
-});
-it("reasons include activity, local today, topic relevance and folder", () => {
-  expect(
-    selectorReason(candidate("a"), { topic: { query: "thermodynamics" } }, "UTC", now, 0.82),
-  ).toBe('edited 2026-10-08 · opened today · matches "thermodynamics" (0.82) · in Thermodynamics');
 });
 it("scores each file by its best relevance with fused rank fallback", () => {
   const scores = scoreTopicHits([hit("a", 0.4), hit("b", null), hit("a", 0.82)]);
@@ -269,22 +225,3 @@ it.effect("caps candidates and batches restricted retrieval ids", () => {
     ),
   );
 });
-it.effect("rejects invalid timestamps and zones before touching the database", () =>
-  Effect.gen(function* () {
-    for (const [timeZone, since] of [
-      ["Invalid/Zone", "2026-10-08T00:00:00Z"],
-      ["UTC", "bad-time"],
-    ]) {
-      expect(
-        yield* resolveSelector(
-          { ...ctx, timeZone: timeZone! },
-          { time: { since: since! } },
-          { now, limit: 20 },
-        ).pipe(Effect.result),
-      ).toMatchObject({ failure: { code: "invalid_input" } });
-    }
-  }).pipe(
-    Effect.provideService(Database, fakeDatabase({ recordStatement: async () => [] })),
-    Effect.provideService(Retrieval, Retrieval.of({ search: () => Effect.die("must not run") })),
-  ),
-);

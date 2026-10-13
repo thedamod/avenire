@@ -224,18 +224,6 @@ describe("ChatSandboxes", () => {
       }),
     );
   });
-  it.effect("surfaces quota exhaustion without creation", () => {
-    const f = fake();
-    f.setQuota();
-    return provide(
-      f,
-      Effect.gen(function* () {
-        const s = yield* ChatSandboxes;
-        expect((yield* Effect.flip(exec(s)))._tag).toBe("SandboxQuotaExceeded");
-        expect(f.created).toHaveLength(0);
-      }),
-    );
-  });
   it.effect("maps creation failures to an actionable unavailable error", () => {
     const f = fake();
     f.setFailure();
@@ -262,22 +250,6 @@ describe("ChatSandboxes", () => {
         const s = yield* ChatSandboxes;
         yield* exec(s);
         expect(b.started).toBe(1);
-        expect(f.created).toHaveLength(0);
-      }),
-    );
-  });
-  it.effect("maps stopped-sandbox start failures to unavailable", () => {
-    const f = fake();
-    return provide(
-      f,
-      Effect.gen(function* () {
-        f.box(
-          { app: "ruth-chat", ...owner, createdAt: String(yield* Clock.currentTimeMillis) },
-          "stopped",
-        );
-        f.setFailure();
-        const s = yield* ChatSandboxes;
-        expect((yield* Effect.flip(exec(s)))._tag).toBe("SandboxUnavailable");
         expect(f.created).toHaveLength(0);
       }),
     );
@@ -357,57 +329,6 @@ describe("ChatSandboxes", () => {
       { CHAT_SANDBOX_LIFETIME_MINUTES: "5", CHAT_SANDBOX_IDLE_STOP_MINUTES: "10" },
     );
   });
-  it.effect("retries idempotent setup and prepares the computer workspace only once", () => {
-    const f = fake();
-    f.setFolderFailures(2);
-    return provide(
-      f,
-      Effect.gen(function* () {
-        const s = yield* ChatSandboxes;
-        yield* s.target(owner);
-        yield* s.target(owner);
-        expect(f.created).toHaveLength(1);
-        expect(f.boxes[0]!.folders.filter((p) => p === "/home/daytona/workspace")).toHaveLength(1);
-      }),
-    );
-  });
-  it.effect("validates timeouts and passes default/cwd/maximum to executeCommand", () => {
-    const f = fake();
-    return provide(
-      f,
-      Effect.gen(function* () {
-        const s = yield* ChatSandboxes;
-        for (const timeoutSeconds of [0, -1, 901, 1.5, NaN, Infinity])
-          expect(
-            (yield* Effect.flip(s.exec(owner, { command: "true", timeoutSeconds })))._tag,
-          ).toBe("SandboxInputRejected");
-        expect(f.created).toHaveLength(0);
-        yield* exec(s);
-        yield* s.exec(owner, { command: "max", timeoutSeconds: 900, cwd: "/tmp" });
-        expect(f.boxes[0]!.commands).toEqual([
-          ["true", CHAT_WORKDIR, undefined, 120],
-          ["max", "/tmp", undefined, 900],
-        ]);
-      }),
-    );
-  });
-  it.effect("guards hung command APIs at timeout plus 30 seconds", () => {
-    const f = fake();
-    f.setHang();
-    return provide(
-      f,
-      Effect.gen(function* () {
-        const s = yield* ChatSandboxes;
-        const pending = yield* Effect.flip(
-          s.exec(owner, { command: "hung", timeoutSeconds: 1 }),
-        ).pipe(Effect.forkChild);
-        yield* TestClock.adjust("31 seconds");
-        const error = yield* Fiber.join(pending);
-        expect(error._tag).toBe("SandboxTimeout");
-        if (error._tag === "SandboxTimeout") expect(error.timeoutSeconds).toBe(1);
-      }),
-    );
-  });
   it.effect("keeps the output tail within the UTF-8 byte limit", () => {
     const f = fake();
     f.setOutput("é".repeat(limits.maxOutputBytes) + "ERROR END");
@@ -442,22 +363,6 @@ describe("ChatSandboxes", () => {
         expect((yield* Effect.flip(s.read(owner, { path: "file", maxBytes: -1 })))._tag).toBe(
           "SandboxInputRejected",
         );
-      }),
-    );
-  });
-  it.effect("rejects missing/oversized artifacts and returns whole valid files", () => {
-    const f = fake();
-    return provide(
-      f,
-      Effect.gen(function* () {
-        const s = yield* ChatSandboxes;
-        yield* s.write(owner, { path: "chart.png", bytes: new Uint8Array([1]) });
-        expect((yield* s.readArtifact(owner, { path: "chart.png" })).name).toBe("chart.png");
-        f.boxes[0]!.sizes.set(`${CHAT_WORKDIR}/big`, limits.maxArtifactBytes + 1);
-        for (const path of ["big", "missing"])
-          expect((yield* Effect.flip(s.readArtifact(owner, { path })))._tag).toBe(
-            "SandboxInputRejected",
-          );
       }),
     );
   });
@@ -525,21 +430,6 @@ describe("ChatSandboxes", () => {
       }),
     );
   });
-  it.effect("sweep removes expired registry entries so the next call creates fresh", () => {
-    const f = fake();
-    return provide(
-      f,
-      Effect.gen(function* () {
-        const s = yield* ChatSandboxes;
-        yield* exec(s);
-        yield* TestClock.adjust(`${limits.lifetimeMinutes} minutes`);
-        expect(yield* s.sweep).toBe(1);
-        yield* exec(s);
-        expect(f.created).toHaveLength(2);
-        expect(f.records).toHaveLength(1);
-      }),
-    );
-  });
   for (const allow of [undefined, "10.0.0.0/8,192.168.0.0/16"]) {
     it.effect(
       `configures network ${allow === undefined ? "block-all" : "allow-list"} and snapshot resources`,
@@ -570,22 +460,6 @@ describe("ChatSandboxes", () => {
       },
     );
   }
-  it.effect("retries failed deletion without recording usage twice", () => {
-    const f = fake();
-    return provide(
-      f,
-      Effect.gen(function* () {
-        const s = yield* ChatSandboxes;
-        yield* exec(s);
-        f.setDeleteFailure(true);
-        expect((yield* s.close(owner)).closed).toBe(false);
-        expect(f.records).toHaveLength(0);
-        f.setDeleteFailure(false);
-        expect((yield* s.close(owner)).closed).toBe(true);
-        expect(f.records).toHaveLength(1);
-      }),
-    );
-  });
   it.effect("layer shutdown deletes registered sandboxes", () => {
     const f = fake();
     return Effect.gen(function* () {

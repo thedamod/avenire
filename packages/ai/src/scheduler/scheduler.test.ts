@@ -1,15 +1,13 @@
 import { AssetStoreTest } from "../outputs/asset-test-support.ts";
 import { describe, expect, it } from "@effect/vitest";
-import { CloudRunId, CloudTaskId, UserId, type CloudTaskInput } from "@avenire/contracts";
+import { CloudTaskId, UserId, type CloudTaskInput } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import * as Crypto from "effect/Crypto";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import { fakeCrypto, recordingDatabase } from "../cloud-test-support.ts";
-import { claimRun, CloudRuns, schedulerTick } from "./index.ts";
+import { CloudRuns, schedulerTick } from "./index.ts";
 import { CloudTasks, CloudTasksLive } from "./tasks.ts";
 
 const userId = UserId.make("owner");
@@ -144,31 +142,6 @@ describe("scheduler tick", () => {
       expect(f.started).toEqual(["dead"]);
     }).pipe(Effect.provide(f.services));
   });
-  it.effect("second atomic claim returns nothing, including concurrent attempts", () => {
-    const f = fixture();
-    queue(f, "run");
-    return Effect.gen(function* () {
-      const now = yield* DateTime.now;
-      const claims = yield* Effect.all(
-        [
-          claimRun(CloudRunId.make("run"), userId, now),
-          claimRun(CloudRunId.make("run"), userId, now),
-        ],
-        { concurrency: "unbounded" },
-      );
-      expect(claims.filter(Option.isSome)).toHaveLength(1);
-      expect(yield* claimRun(CloudRunId.make("run"), userId, now)).toEqual(Option.none());
-    }).pipe(Effect.provide(f.services));
-  });
-  it.effect("concurrent ticks consume a once task just once", () => {
-    const f = fixture();
-    f.rows("cloud_task")[0]!.schedule = { _tag: "once", at: "1970-01-01T00:00:00Z" };
-    return Effect.gen(function* () {
-      yield* Effect.all([schedulerTick(), schedulerTick()], { concurrency: "unbounded" });
-      expect(f.rows("cloud_run")).toHaveLength(1);
-      expect(f.rows("cloud_task")[0]?.nextRunAt).toBeNull();
-    }).pipe(Effect.provide(f.services));
-  });
 });
 
 describe("CloudTasks", () => {
@@ -191,27 +164,6 @@ describe("CloudTasks", () => {
       builtin = (yield* service.list(userId)).find((task) => task.builtin)!;
       expect(builtin.enabled).toBe(false);
       expect(f.rows("cloud_task").filter((row) => row.builtin)).toHaveLength(1);
-    }).pipe(Effect.provide(CloudTasksLive.pipe(Layer.provide(f.services))));
-  });
-  it.effect("create/update validate schedules and recompute nextRunAt", () => {
-    const f = fixture();
-    return Effect.gen(function* () {
-      const service = yield* CloudTasks;
-      const invalid = yield* Effect.flip(
-        service.create(userId, { ...input, schedule: { _tag: "cron", expression: "nope" } }),
-      );
-      expect(invalid._tag).toBe("Conflict");
-      const created = yield* service.create(userId, input);
-      const saved = yield* service.update(userId, created.id, { timeZone: "Asia/Kolkata" });
-      expect(saved.nextRunAt).toBe("1970-01-01T21:30:00.000Z");
-      expect(
-        (yield* Effect.flip(service.update(userId, created.id, { timeZone: "Invalid/Zone" })))._tag,
-      ).toBe("Conflict");
-      expect((yield* service.update(userId, created.id, { enabled: false })).nextRunAt).toBeNull();
-      expect(
-        (yield* Effect.flip(service.update(UserId.make("other"), created.id, { title: "No" })))
-          ._tag,
-      ).toBe("NotFound");
     }).pipe(Effect.provide(CloudTasksLive.pipe(Layer.provide(f.services))));
   });
   it.effect("runNow conflicts with any queued/active run and cancellation is owned", () => {

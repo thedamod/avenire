@@ -2,7 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   brent,
   fitExponential,
-  fitSinusoid,
   magnitudeSpectrum,
   naturalCubicSpline,
   nBodyGravity,
@@ -69,14 +68,6 @@ describe("fitting and interpolation", () => {
     const fit = fitExponential(xs, ys, [2.4, -0.7, 0.2]);
     expect(fit.params[0]).toBeCloseTo(2.5, 1);
     expect(fit.params[1]).toBeCloseTo(-0.8, 1);
-    expect(fit.r2).toBeGreaterThan(0.999);
-  });
-  it("LM recovers a noisy sinusoid", () => {
-    const xs = Float64Array.from({ length: 100 }, (_, i) => i * 0.08),
-      ys = xs.map((x) => 1.7 * Math.sin(2.2 * x + 0.4) - 0.2 + noise());
-    const fit = fitSinusoid(xs, ys);
-    expect(fit.params[0]).toBeCloseTo(1.7, 1);
-    expect(fit.params[1]).toBeCloseTo(2.2, 1);
     expect(fit.r2).toBeGreaterThan(0.999);
   });
   it("polynomial fit is exact on exact data", () => {

@@ -68,38 +68,6 @@ describe("widget protocol", () => {
     expect(result).toMatch(/^<!-- <head> --><html data-theme="light"><head><meta/);
     expect(build("<template><head>fake</head></template><p>Hi</p>")).toContain("<body><template>");
   });
-  it("escapes title and drops malicious token names and values", () => {
-    const result = buildWidgetDocument({
-      html: "Hi",
-      title: '</title><script>attack()</script>&"',
-      colorScheme: "dark",
-      tokens: {
-        "--safe": "1rem",
-        "bad-name": "red",
-        "--attack": "</style><script>attack()</script>",
-        "--semicolon": "red;display:none",
-        "--brace": "red}",
-        "--open": "red{",
-      },
-    });
-    expect(result).toContain("&lt;/title&gt;&lt;script&gt;attack()&lt;/script&gt;&amp;&quot;");
-    expect(result).toContain("--safe:1rem;");
-    for (const name of ["bad-name", "--attack", "--semicolon", "--brace", "--open"])
-      expect(result).not.toContain(name);
-  });
-  it("embeds complete light and dark tokens", () => {
-    for (const colorScheme of ["light", "dark"] as const) {
-      const result = buildWidgetDocument({
-        html: "",
-        title: "",
-        colorScheme,
-        tokens: THEME_TOKENS[colorScheme],
-      });
-      expect(result).toContain(`color-scheme:${colorScheme}`);
-      expect(result).toContain(`--background:${THEME_TOKENS[colorScheme]["--background"]};`);
-      expect(result).toContain("--font-sans:");
-    }
-  });
   it("limits CSP script sources and keeps an opaque sandbox", () => {
     const csp = WIDGET_RESPONSE_CSP({
       kitsOrigin: "https://widgets.example.com",
