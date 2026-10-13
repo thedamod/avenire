@@ -334,7 +334,13 @@ export const CloudTasksLive = Layer.effect(
           await tx.insert(cloudTask).values({
             id: taskId,
             userId,
-            title: prompt.replace(/\s+/g, " ").slice(0, 80),
+            // The first sentence names the run (it also names the run's output folder).
+            title: (
+              prompt
+                .replace(/\s+/g, " ")
+                .trim()
+                .split(/(?<=[.!?])\s/)[0] ?? prompt
+            ).slice(0, 60),
             prompt,
             ...(input.model ? { model: input.model } : {}),
             ...(input.network ? { network: input.network } : {}),

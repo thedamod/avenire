@@ -2,6 +2,7 @@
 import { DaytonaNotFoundError, type Sandbox } from "@daytonaio/sdk";
 import { posix } from "node:path";
 import * as Context from "effect/Context";
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -14,7 +15,7 @@ import {
   SandboxInputRejected,
   SandboxTimeout,
 } from "./daytona.ts";
-import { cloudNetworkSettings } from "./network.ts";
+import { cloudNetworkSettings, type DaytonaNetworkTier } from "./network.ts";
 import { AVENIRE_SNAPSHOT, SANDBOX_RESOURCES } from "./snapshots.ts";
 
 export const CLOUD_WORKSPACE = "/home/daytona/workspace";
@@ -203,6 +204,10 @@ export const CloudBoxesLive: Layer.Layer<CloudBoxes, never, DaytonaClient> = Lay
   CloudBoxes,
   Effect.gen(function* () {
     const daytona = yield* DaytonaClient;
+    const networkTier: DaytonaNetworkTier = yield* Config.Literals(
+      ["restricted", "open"],
+      "DAYTONA_NETWORK_TIER",
+    ).pipe(Config.withDefault("restricted" as const), Effect.orDie);
     const locks = new Map<string, Semaphore.Semaphore>();
     const locked = <A, E, R>(userId: string, effect: Effect.Effect<A, E, R>) =>
       Effect.suspend(() => {
@@ -248,7 +253,7 @@ export const CloudBoxesLive: Layer.Layer<CloudBoxes, never, DaytonaClient> = Lay
                 autoArchiveInterval: CLOUD_LIMITS.autoArchiveMinutes,
                 // Negative disables auto-delete; zero deletes immediately after stopping.
                 autoDeleteInterval: -1,
-                ...cloudNetworkSettings(network),
+                ...cloudNetworkSettings(network, networkTier),
               };
               sandbox = yield* attempt("createCloudBox", () =>
                 daytona.create({ ...common, snapshot: AVENIRE_SNAPSHOT }),
@@ -260,9 +265,15 @@ export const CloudBoxesLive: Layer.Layer<CloudBoxes, never, DaytonaClient> = Lay
               );
             }
             yield* attempt("cloudDetachSecrets", () => sandbox.updateSecrets({}));
-            yield* attempt("cloudNetworkPolicy", () =>
-              sandbox.updateNetworkSettings(cloudNetworkSettings(network)),
-            );
+            if (networkTier === "open")
+              yield* attempt("cloudNetworkPolicy", () =>
+                sandbox.updateNetworkSettings(cloudNetworkSettings(network, networkTier)),
+              );
+            else if (network === "open")
+              yield* Effect.logWarning(
+                "Daytona tier restricts egress; the open network mode is unavailable",
+                { userId },
+              );
             // Retry directory preparation on reuse if the original create succeeded but preparation failed.
             yield* attempt("createCloudWorkspace", () =>
               sandbox.fs.createFolder(CLOUD_WORKSPACE, "755"),

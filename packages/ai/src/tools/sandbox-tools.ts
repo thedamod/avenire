@@ -109,7 +109,8 @@ export const sandboxTools: SandboxImpls = {
     const mediaType = assetMediaType(file.name);
     // Preserve the extension when a title supplies a friendlier download filename.
     const extension = posix.extname(file.name);
-    const title = input.title?.trim();
+    // A title is prose, not a path: "dQ_rev / T" must not become the file name "T)".
+    const title = input.title?.trim().replace(/[\\/]+/g, "-");
     const name = safeAssetName(
       title ? (title.endsWith(extension) ? title : `${title}${extension}`) : file.name,
     );

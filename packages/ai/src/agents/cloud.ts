@@ -100,6 +100,27 @@ export const cloudUsageSegments = (start: number, end: number) => {
   return segments;
 };
 
+/** The most specific human-readable reason in a failure: its reason/detail plus the cause's message. */
+const describeFailure = (error: unknown): string | undefined => {
+  if (typeof error !== "object" || error === null) return undefined;
+  const fields = error as {
+    reason?: unknown;
+    detail?: unknown;
+    message?: unknown;
+    cause?: unknown;
+  };
+  const own = [fields.reason, fields.detail].find((value) => typeof value === "string") as
+    | string
+    | undefined;
+  const cause =
+    typeof fields.cause === "object" && fields.cause !== null && "message" in fields.cause
+      ? String((fields.cause as { message: unknown }).message)
+      : undefined;
+  const text = [own ?? (typeof fields.message === "string" ? fields.message : undefined), cause]
+    .filter(Boolean)
+    .join(": ");
+  return text ? text.slice(0, 1_000) : undefined;
+};
 export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: RuthCloudOptions) {
   const database = yield* Database;
   const boxes = yield* CloudBoxes;
@@ -720,6 +741,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
             yield* Effect.logWarning("Ruth Cloud will resume after an infrastructure failure", {
               runId,
               failures: failures + 1,
+              error: describeFailure(Option.getOrUndefined(error)),
             });
             return;
           }
@@ -728,12 +750,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
             current.summary ?? "Ruth Cloud could not finish this task.",
             cancelledRun
               ? undefined
-              : Option.isSome(error) &&
-                  typeof error.value === "object" &&
-                  error.value !== null &&
-                  "reason" in error.value
-                ? String(error.value.reason)
-                : "The Cloud executor failed.",
+              : (describeFailure(Option.getOrUndefined(error)) ?? "The Cloud executor failed."),
           );
         }),
       ),
