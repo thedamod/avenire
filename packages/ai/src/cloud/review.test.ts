@@ -20,7 +20,7 @@ const setup = () => {
   return { ...f, proposal };
 };
 it.effect(
-  "accept replaces the original, records an edit, queues ingestion and removes proposal",
+  "accept writes a new key, repoints the file, records an edit, queues ingestion and removes proposal",
   () => {
     const f = setup();
     return Effect.gen(function* () {
@@ -31,8 +31,14 @@ it.effect(
         const key = StorageKey.make(f.rows("pending_approval")[0]!.proposedKey as string);
         const review = yield* CloudReview;
         yield* review.resolve(cloudCtx.userId, id, "accept");
-        expect(new TextDecoder().decode(yield* storage.get(StorageKey.make("original")))).toBe(
-          "# report",
+        // Storage keys are write-once: the accepted bytes get a new key and the old one is gone.
+        const accepted = StorageKey.make(f.rows("file")[0]!.storageKey as string);
+        expect(accepted).not.toBe("original");
+        expect(accepted).toMatch(/^users\/user\/files\/.+\/source\/[0-9a-f]{12}-original$/);
+        expect(new TextDecoder().decode(yield* storage.get(accepted))).toBe("# report");
+        expect(f.storageWrites.filter((written) => written === "original")).toEqual([]);
+        expect((yield* Effect.flip(storage.get(StorageKey.make("original"))))._tag).toBe(
+          "ObjectNotFound",
         );
         expect(f.rows("pending_approval")[0]).toMatchObject({
           status: "accepted",

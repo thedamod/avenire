@@ -33,7 +33,7 @@ import type { Retrieval } from "@avenire/ingestion/retrieval";
 import { SemanticCache } from "@avenire/ingestion/retrieval/cache";
 import { enqueueIngestion } from "@avenire/ingestion/worker";
 import { newId } from "@avenire/shared/id";
-import { fileSourceKey, userPrefix } from "@avenire/storage/keys";
+import { cloudProposalKey, fileSourceKey, newKeyVersion } from "@avenire/storage/keys";
 import { Storage } from "@avenire/storage/storage";
 import { and, eq, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
@@ -618,10 +618,9 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
     const approvalId = ctx.toolCallId
       ? PendingApprovalId.make(stableToolId(ctx, "approval"))
       : yield* newId(PendingApprovalId);
-    // Each proposal owns its object; resolving one cannot delete another proposal's bytes.
-    const key = StorageKey.make(
-      `${userPrefix(ctx.userId)}.avenire/cloud/${runId}/sync/${original.id}/${approvalId}/${name}`,
-    );
+    // Each proposal owns its object; resolving one cannot delete another proposal's bytes. The key
+    // is new on every write, even when a resumed tool call repeats this approval id.
+    const key = cloudProposalKey(ctx.userId, yield* newKeyVersion, name);
     yield* storage.put(key, bytes, { contentType: outputMime(name) });
     const conflict = detectConflict(
       workspace.contentHash,
@@ -659,7 +658,7 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
     ? DateTime.formatIsoDate(zoned.value)
     : now.toISOString().slice(0, 10);
   const folderName = `Ruth Cloud · ${day} · ${task?.title ?? "Run"}`;
-  const key = fileSourceKey(ctx.userId, fileId, name);
+  const key = fileSourceKey(ctx.userId, fileId, name, yield* newKeyVersion);
   const mimeType = outputMime(name);
   yield* storage.put(key, bytes, { contentType: mimeType });
   const title = input.title?.trim() || name;

@@ -1,4 +1,8 @@
-/** Morning review is the only Cloud operation that writes to an existing library object. */
+/**
+ * Morning review is the only Cloud operation that changes a library file's content. Storage keys
+ * are write-once, so an accepted proposal is written to a new key and the file points at it; the
+ * old object is deleted after the commit.
+ */
 import {
   Conflict,
   NotFound,
@@ -20,6 +24,7 @@ import { file, pendingApproval, type PendingApprovalRow } from "@avenire/databas
 import { markContentChanged } from "@avenire/ingestion/events";
 import { SemanticCache, type SearchCacheError } from "@avenire/ingestion/retrieval/cache";
 import { enqueueIngestion } from "@avenire/ingestion/worker";
+import { fileSourceKey, keyFilename, newKeyVersion } from "@avenire/storage/keys";
 import { Storage, type ObjectNotFound, type StorageError } from "@avenire/storage/storage";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import * as Context from "effect/Context";
@@ -113,7 +118,7 @@ export const CloudReviewLive = Layer.effect(
         .remove(StorageKey.make(key))
         .pipe(
           Effect.catchTag("StorageError", (error) =>
-            Effect.logWarning("Could not remove resolved Cloud proposal", error),
+            Effect.logWarning("Could not remove a superseded Cloud object", error),
           ),
         );
     const resolve = Effect.fn("CloudReview.resolve")(function* (
@@ -130,58 +135,85 @@ export const CloudReviewLive = Layer.effect(
       if (approval.resolvedAt !== null || !["pending", "conflict"].includes(approval.status))
         return yield* new Conflict({ reason: "Already resolved" });
       const now = DateTime.toDateUtc(yield* DateTime.now);
-      const outcome = yield* database.useTransaction(async (tx) => {
-        const where = and(eq(pendingApproval.id, approvalId), eq(pendingApproval.userId, userId));
-        const [current] = await tx.select().from(pendingApproval).where(where).for("update");
-        if (!current) return { kind: "missing" as const };
-        if (current.resolvedAt !== null || !["pending", "conflict"].includes(current.status))
-          return { kind: "resolved" as const };
-        if (decision === "skip") {
-          await tx.update(pendingApproval).set({ status: "skipped", resolvedAt: now }).where(where);
-          return { kind: "skipped" as const };
-        }
-        const [original] = await tx
-          .select()
-          .from(file)
-          .where(and(eq(file.id, current.fileId), eq(file.userId, userId)))
-          .for("update");
-        if (!original) return { kind: "missingFile" as const };
-        const conflict = !original.storageKey
-          ? "This file can't be updated in place"
-          : detectConflict(current.baseHash, original.contentHash, original.contentModifiedAt);
-        if (conflict) {
-          await tx.update(pendingApproval).set({ status: "conflict", conflict }).where(where);
-          // Unresolved conflicts retain their proposal so review can still skip or retry them.
-          return { kind: "conflict" as const };
-        }
-        // The SDK promise transaction owns both row locks during the external object write.
-        // This bridge prevents another review/server from accepting against a stale file hash.
-        const bytes = await Effect.runPromise(storage.get(StorageKey.make(current.proposedKey)));
-        await Effect.runPromise(
-          storage.put(
-            StorageKey.make(original.storageKey!),
-            bytes,
-            original.mimeType ? { contentType: original.mimeType } : undefined,
-          ),
+      const version = yield* newKeyVersion.pipe(Effect.provideService(Crypto.Crypto, crypto));
+      let written: StorageKey | undefined;
+      const outcome = yield* database
+        .useTransaction(async (tx) => {
+          const where = and(eq(pendingApproval.id, approvalId), eq(pendingApproval.userId, userId));
+          const [current] = await tx.select().from(pendingApproval).where(where).for("update");
+          if (!current) return { kind: "missing" as const };
+          if (current.resolvedAt !== null || !["pending", "conflict"].includes(current.status))
+            return { kind: "resolved" as const };
+          if (decision === "skip") {
+            await tx
+              .update(pendingApproval)
+              .set({ status: "skipped", resolvedAt: now })
+              .where(where);
+            return { kind: "skipped" as const };
+          }
+          const [original] = await tx
+            .select()
+            .from(file)
+            .where(and(eq(file.id, current.fileId), eq(file.userId, userId)))
+            .for("update");
+          if (!original) return { kind: "missingFile" as const };
+          const conflict = !original.storageKey
+            ? "This file can't be updated in place"
+            : detectConflict(current.baseHash, original.contentHash, original.contentModifiedAt);
+          if (conflict) {
+            await tx.update(pendingApproval).set({ status: "conflict", conflict }).where(where);
+            // Unresolved conflicts retain their proposal so review can still skip or retry them.
+            return { kind: "conflict" as const };
+          }
+          // The SDK promise transaction owns both row locks during the external object write.
+          // This bridge prevents another review/server from accepting against a stale file hash.
+          const bytes = await Effect.runPromise(storage.get(StorageKey.make(current.proposedKey)));
+          const storageKey = fileSourceKey(
+            userId,
+            FileId.make(original.id),
+            keyFilename(original.storageKey!),
+            version,
+          );
+          await Effect.runPromise(
+            storage.put(
+              storageKey,
+              bytes,
+              original.mimeType ? { contentType: original.mimeType } : undefined,
+            ),
+          );
+          written = storageKey;
+          // The stored document belongs to the old bytes; ingestion extracts the new ones afresh.
+          await tx
+            .update(file)
+            .set({
+              storageKey,
+              contentHash: current.proposedHash,
+              sizeBytes: bytes.byteLength,
+              documentKey: null,
+              extractorVersion: null,
+            })
+            .where(and(eq(file.id, original.id), eq(file.userId, userId)));
+          const fileId = FileId.make(original.id);
+          const services = Context.make(Database, transactionDatabase(tx)).pipe(
+            Context.add(Crypto.Crypto, crypto),
+          );
+          await Effect.runPromiseWith(services)(
+            markContentChanged(userId, fileId, current.proposedHash),
+          );
+          await Effect.runPromiseWith(services)(enqueueIngestion(userId, fileId));
+          await tx
+            .update(pendingApproval)
+            .set({ status: "accepted", conflict: null, resolvedAt: now })
+            .where(where);
+          return {
+            kind: "accepted" as const,
+            superseded: [original.storageKey!, original.documentKey],
+          };
+        })
+        .pipe(
+          // A rolled-back accept leaves its new object unreferenced; drop it.
+          Effect.onError(() => (written === undefined ? Effect.void : cleanup(written))),
         );
-        await tx
-          .update(file)
-          .set({ contentHash: current.proposedHash, sizeBytes: bytes.byteLength })
-          .where(and(eq(file.id, original.id), eq(file.userId, userId)));
-        const fileId = FileId.make(original.id);
-        const services = Context.make(Database, transactionDatabase(tx)).pipe(
-          Context.add(Crypto.Crypto, crypto),
-        );
-        await Effect.runPromiseWith(services)(
-          markContentChanged(userId, fileId, current.proposedHash),
-        );
-        await Effect.runPromiseWith(services)(enqueueIngestion(userId, fileId));
-        await tx
-          .update(pendingApproval)
-          .set({ status: "accepted", conflict: null, resolvedAt: now })
-          .where(where);
-        return { kind: "accepted" as const };
-      });
       if (outcome.kind === "missing")
         return yield* new NotFound({ entity: "PendingApproval", id: approvalId });
       if (outcome.kind === "missingFile")
@@ -189,7 +221,14 @@ export const CloudReviewLive = Layer.effect(
       if (outcome.kind === "resolved") return yield* new Conflict({ reason: "Already resolved" });
       if (outcome.kind === "conflict") return;
       if (outcome.kind === "accepted") {
-        yield* cache.invalidate(userId).pipe(Effect.ensuring(cleanup(approval.proposedKey)));
+        const stale = [approval.proposedKey, ...outcome.superseded];
+        yield* cache.invalidate(userId).pipe(
+          Effect.ensuring(
+            Effect.forEach(stale, (key) => (key ? cleanup(key) : Effect.void), {
+              discard: true,
+            }),
+          ),
+        );
         return;
       }
       yield* cleanup(approval.proposedKey);

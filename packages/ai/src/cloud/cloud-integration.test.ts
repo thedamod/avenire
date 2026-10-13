@@ -187,9 +187,9 @@ it.effect(
         expect(f.rows("pending_approval")[0]?.proposedKey).not.toBe(
           f.rows("pending_approval")[1]?.proposedKey,
         );
-        expect(
-          f.storageWrites.every((key) => key.startsWith("users/user/.avenire/cloud/run/sync/")),
-        ).toBe(true);
+        expect(f.storageWrites.every((key) => key.startsWith("users/user/.avenire/cloud/"))).toBe(
+          true,
+        );
         expect(new TextDecoder().decode(yield* storage.get(StorageKey.make("original")))).toBe(
           "input",
         );

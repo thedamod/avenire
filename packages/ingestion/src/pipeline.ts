@@ -24,7 +24,7 @@ import * as Schema from "effect/Schema";
 
 import { markContentChanged } from "./events.ts";
 import { assignFolders } from "./folder.ts";
-import { loadDocument, saveDocument } from "./document.ts";
+import { loadDocument, removeDocument, reusableDocumentKey, saveDocument } from "./document.ts";
 import { extract, type ExtractionServices } from "./extract/index.ts";
 import { EXTRACTOR_VERSION } from "./extract/types.ts";
 import { FileIndexer } from "./indexer.ts";
@@ -131,13 +131,9 @@ export const IngestionPipelineLive = Layer.effect(
       bytes: Uint8Array | null,
     ) {
       const contentHash = bytes === null ? null : sha256Hex(bytes);
-      const reusable =
-        contentHash !== null &&
-        found.contentHash === contentHash &&
-        found.extractorVersion === EXTRACTOR_VERSION &&
-        found.documentKey !== null;
-      if (reusable) {
-        const stored = yield* loadDocument(job.userId, job.fileId);
+      const storedKey = reusableDocumentKey(found, contentHash);
+      if (storedKey !== null) {
+        const stored = yield* loadDocument(storedKey);
         if (Option.isSome(stored)) return stored.value;
       }
       const document = yield* extract({ ...found, bytes });
@@ -153,6 +149,7 @@ export const IngestionPipelineLive = Layer.effect(
             .set({ contentHash, documentKey: key, extractorVersion: EXTRACTOR_VERSION })
             .where(and(eq(file.id, found.id), eq(file.userId, found.userId))),
         );
+        if (found.documentKey !== null) yield* removeDocument(StorageKey.make(found.documentKey));
       }
       return document;
     });

@@ -31,7 +31,7 @@ describe("archive", () => {
     Effect.gen(function* () {
       const storage = yield* Storage;
       const source = fileSourceKey(userId, fileId, "source.pdf");
-      const document = fileDocumentKey(userId, fileId, 1);
+      const document = fileDocumentKey(userId, fileId, 1, "abcdef012345");
       const other = fileSourceKey(userId, FileId.make("other"), "source.pdf");
       yield* storage.put(source, "source");
       yield* storage.put(document, "document");

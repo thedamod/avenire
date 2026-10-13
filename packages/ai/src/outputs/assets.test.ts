@@ -57,7 +57,9 @@ it.effect("stores bytes and hash in the hidden prefix and keeps links after year
       threadId: ThreadId.make("thread"),
       runId: CloudRunId.make("run"),
     });
-    expect(entry.storageKey).toBe(`users/${ctx.userId}/.avenire/assets/${entry.id}/plot.png`);
+    expect(entry.storageKey).toMatch(
+      new RegExp(`^users/${ctx.userId}/\\.avenire/assets/[0-9a-f]{12}/plot\\.png$`),
+    );
     expect(entry).toMatchObject({
       kind: "image",
       visibility: "private",

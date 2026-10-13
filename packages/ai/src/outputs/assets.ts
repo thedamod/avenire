@@ -12,7 +12,7 @@ import {
 import { Database, type DatabaseError } from "@avenire/database/client";
 import { asset, type AssetRow } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
-import { assetKey } from "@avenire/storage/keys";
+import { assetKey, newKeyVersion } from "@avenire/storage/keys";
 import { Storage, type ObjectNotFound, type StorageError } from "@avenire/storage/storage";
 import { and, desc, eq } from "drizzle-orm";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -200,7 +200,9 @@ export const makeAssetStore = Effect.fn("AssetStore.make")(function* (options: {
       const existing = yield* options.repository.get(id);
       if (existing && existing.userId === userId) return wire(existing);
       const now = yield* DateTime.now;
-      const key = assetKey(userId, id, safeAssetName(input.name));
+      // A retried idempotent put reuses the id but never the key: a failed or crashed write may
+      // have left (or deleted) an object under the old one, and storage keys are write-once.
+      const key = assetKey(userId, yield* newKeyVersion, safeAssetName(input.name));
       const row: AssetRow = {
         id,
         userId,
