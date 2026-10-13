@@ -100,6 +100,8 @@ async function shot(name: string, x: number, y: number) {
     sessionEnv +
       `ffmpeg -v error -y -f x11grab -draw_mouse 1 -video_size 1600x900 -i "$DISPLAY" -frames:v 1 -update 1 ${native}`,
   );
+  if (["thunar", "terminal", "mousepad", "browser", "browser-unmaximized"].includes(name))
+    await execute(sessionEnv + `python window-edges.py ${name}`);
   return [{ path, bytes: bytes.length }, await download(`${work}/${native}`, `${name}-x11.png`)];
 }
 try {
@@ -110,7 +112,7 @@ try {
     snapshot,
     autoStopInterval: 15,
     autoDeleteInterval: 0,
-    labels: { app: "avenire-v5-verify", verifyRun },
+    labels: { app: "avenire-v7-verify", verifyRun },
     networkBlockAll: true,
   };
   for (let attempt = 1; ; attempt++) {
@@ -162,7 +164,7 @@ try {
     "interaction.html",
     "desktop-cdp.py",
     "x11-state.py",
-    "theme-comparison.py",
+    "window-edges.py",
   ])
     await sandbox.fs.uploadFile(
       await readFile(new URL("./verify/" + file, import.meta.url)),
@@ -250,9 +252,17 @@ try {
     "nohup python -m http.server 8765 --bind 127.0.0.1 >/tmp/widget-server.log 2>&1 </dev/null",
   );
   await sleep(1000);
-  for (const name of ["pendulum", "three-body", "curve-fit", "iso"])
+  await sandbox.fs.uploadFile(
+    Buffer.from(
+      JSON.stringify((await import("../../ui/src/styles/tokens.ts")).WIDGET_THEME_TOKENS),
+    ),
+    `${work}/widget-tokens.json`,
+  );
+  for (const name of (await widgetPages()).map((page) => page.name))
     await run("playwright widget " + name, `python widgets.py ${name}`, [
       `renders/widget-${name}.png`,
+      `renders/widget-${name}-stage.png`,
+      `renders/widget-${name}-phone.png`,
     ]);
   await figure({ box: sandbox, work, check, execute, run, download });
   await run("node SVG", "node node.mjs", ["renders/node.svg"]);

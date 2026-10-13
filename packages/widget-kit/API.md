@@ -205,153 +205,245 @@ For advanced material options, use `src/iso/lathe.mjs`, `tube.mjs`, and `canvas-
 
 `/kits/iso-gl.js` exports `GLSL_ISO`, `GLSL_TURN`, `glslPose(name,prefix?)`, `glCamera(P)`, `glLayer({canvas,fragment,view,camera,uniforms?,fixed?,extensions?,maxRatio?,untransformed?,onError?})`, `smooth(a,b,x)`, `burst(age,rise,fall)`, and `settle(state,target,dt,seconds,calm?)`. The `gl` namespace includes the legacy WebGL variant. These helpers position and animate fragment shaders in the same isometric camera as SVG.
 
-```js
-import { fitProjection, boxCorners, slabOf, solidSvg, figureSvg, ISO_CSS } from "/kits/iso.js";
-const style = document.createElement("style");
-style.textContent = ISO_CSS;
-document.head.append(style);
-const plan = { x: 0, y: 0, w: 80, d: 50, r: 5 };
-const P = fitProjection(boxCorners(plan, 0, 12), 400, 250);
-document.body.innerHTML = figureSvg({
-  width: 400,
-  height: 250,
-  label: "Isometric block",
-  body: solidSvg(slabOf(plan, 0, 12, P)),
-});
-```
+The complete isometric example below installs `ISO_CSS`; geometry alone has no face or stroke styling.
+
+## Complete widgets
+
+These fragments run inside the widget bootstrap, which supplies the real light/dark `--figure-*` tokens. All four install `ISO_CSS` for geometry and `plateHtml` framing. Colours come only from figure tokens; lines and card frames are 0.6px. Keep the reference tables above when looking up signatures.
 
 ## Complete widget: double pendulum on canvas
 
 ```html
-<!doctype html><meta charset="utf-8" /><canvas
-  id="view"
-  width="520"
-  height="360"
-  aria-label="Double pendulum"
-></canvas>
+<style>
+.demo{max-width:650px;margin:auto;padding:1px 20px;font:14px/1.5 var(--font-sans);color:var(--figure-text)}
+.demo .iso-plate{box-shadow:none;border:var(--figure-weight) solid var(--figure-mid)}
+.demo .iso-plate-corner{font-size:11px;color:var(--figure-text)}.demo .iso-legend{color:var(--figure-text)}.demo .iso-swatch path{stroke-width:var(--figure-weight)}
+canvas{display:block;width:100%;max-width:520px;height:auto;margin:auto}svg text{font:12px var(--figure-mono);fill:var(--figure-text)}
+.controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0}
+button,input{accent-color:var(--figure-lit);font:12px var(--figure-mono)}
+button{background:var(--figure-card);color:var(--figure-strong);border:var(--figure-weight) solid var(--figure-mid);padding:6px 12px}
+button:focus-visible,input:focus-visible{outline:1px solid var(--figure-hi);outline-offset:3px}
+.controls label{display:flex;align-items:center;gap:8px}
+@media(max-width:560px){.demo .iso-plate-corner{white-space:normal;max-width:100%;line-height:1.4}.demo .iso-plate-corner[data-corner="hint"]{bottom:28px}.demo .iso-plate{padding-bottom:88px}}
+</style>
+<main class="iso demo" id="demo"></main>
 <script type="module">
   import { doublePendulum, rk4Step, createRk4Workspace } from "/kits/math.js";
-  const canvas = document.querySelector("#view"),
-    ctx = canvas.getContext("2d");
-  const { derivative, initial } = doublePendulum({ gravity: 4, theta1: 1.8, theta2: 2.4 });
-  let state = initial,
-    t = 0,
-    workspace = createRk4Workspace(initial.length);
-  function frame() {
-    for (let i = 0; i < 4; i++) {
-      rk4Step(derivative, t, state, 1 / 240, state, workspace);
-      t += 1 / 240;
+  import { ISO_CSS, plateHtml } from "/kits/iso.js";
+  const host = document.querySelector("#demo");
+  const style = document.createElement("style");
+  style.textContent = ISO_CSS;
+  document.head.append(style);
+  host.innerHTML = plateHtml({fig:"Fig 1",title:"Double pendulum",hint:"Change the initial angle",readout:"",
+    keys:[{mark:"edge",label:"Linked rods"},{mark:"lit",label:"Second bob"}],
+    caption:"Two equal masses, 1 m rods. Energy is measured from the same state that moves the bobs.",
+    body:'<canvas width="520" height="360" aria-label="Two linked pendulum rods and bobs"></canvas>'}) +
+    '<div class="controls"><button data-step>Step</button><button data-run aria-pressed="false">Run</button><button data-reset>Reset</button><label>θ₁ <input data-angle type="range" min="30" max="140" value="103" aria-label="Initial first angle in degrees"></label></div>';
+  const canvas = host.querySelector("canvas"), ctx = canvas.getContext("2d");
+  const ratio=devicePixelRatio||1; canvas.width=520*ratio;canvas.height=360*ratio;ctx.scale(ratio,ratio);
+  const h = 1/120, g = 9.81, work = createRk4Workspace(4);
+  let system, state, t;
+  function reset() { system = doublePendulum({gravity:g,theta1:Number(host.querySelector("[data-angle]").value)*Math.PI/180,theta2:2.4}); state = system.initial.slice(); t=0; }
+  function advance() { rk4Step(system.derivative,t,state,h,state,work); t+=h; if (!state.every(Number.isFinite)) throw new RangeError("Non-finite pendulum state"); }
+  function draw() {
+    const css=getComputedStyle(host), ink=n=>css.getPropertyValue("--figure-"+n).trim();
+    const [a,b,u,v]=state, x1=260+76*Math.sin(a), y1=168+76*Math.cos(a), x2=x1+76*Math.sin(b), y2=y1+76*Math.cos(b);
+    ctx.clearRect(0,0,520,360); ctx.lineWidth=.6;
+    ctx.strokeStyle=ink("lo"); ctx.beginPath(); ctx.moveTo(230,158);ctx.lineTo(290,158);ctx.stroke();
+    ctx.strokeStyle=ink("hi");ctx.beginPath();ctx.moveTo(260,158);ctx.lineTo(260,168);ctx.lineTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    for (const [x,y,fill] of [[260,168,"dot"],[x1,y1,"shade-2"],[x2,y2,"lit"]]) {
+      ctx.fillStyle=ink(fill);ctx.beginPath();ctx.arc(x,y,x===260&&y===168?3:8,0,2*Math.PI);ctx.fill();ctx.stroke();
     }
-    const [a, b] = state,
-      cx = 260,
-      cy = 85,
-      scale = 105;
-    const x1 = cx + scale * Math.sin(a),
-      y1 = cy + scale * Math.cos(a);
-    const x2 = x1 + scale * Math.sin(b),
-      y2 = y1 + scale * Math.cos(b);
-    ctx.clearRect(0, 0, 520, 360);
-    ctx.strokeStyle = "#d7e3ed";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-    ctx.fillStyle = "#4ab9de";
-    for (const [x, y] of [
-      [x1, y1],
-      [x2, y2],
-    ]) {
-      ctx.beginPath();
-      ctx.arc(x, y, 8, 0, Math.PI * 2);
-      ctx.fill();
+    const energy=u*u+.5*v*v+u*v*Math.cos(a-b)-g*(2*Math.cos(a)+Math.cos(b));
+    host.querySelector("[data-readout]").textContent=`t ${t.toFixed(2)} s · E ${energy.toFixed(3)} J`;
+    canvas.dataset.time=String(t);
+  }
+  host.querySelector("[data-angle]").oninput=()=>{reset();draw();};
+  reset();
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  let running = !reduced.matches, visible = true, last = 0, backlog = 0;
+  const run = host.querySelector("[data-run]");
+  const updateRun = () => { run.textContent = running ? "Pause" : "Run"; run.setAttribute("aria-pressed", String(running)); };
+  run.onclick = () => { running = !running; last = 0; updateRun(); };
+  host.querySelector("[data-step]").onclick = () => { running = false; updateRun(); for (let i=0;i<6;i++) advance(); draw(); };
+  host.querySelector("[data-reset]").onclick = () => { reset(); last = backlog = 0; draw(); };
+  document.addEventListener("visibilitychange", () => { last = backlog = 0; });
+  new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; last = backlog = 0; }).observe(host);
+  reduced.addEventListener("change", () => { if (reduced.matches) running = false; updateRun(); last = 0; });
+  window.addEventListener("avenire:themechange", draw);
+  function frame(now) {
+    if (running && visible && !document.hidden) {
+      backlog += last ? Math.min((now-last)/1000, .05) : 0;
+      let steps=0;
+      while (backlog >= h && steps++ < 6) { advance(); backlog -= h; }
+      if (backlog >= h) backlog = 0;
+      draw();
     }
+    last = now;
     requestAnimationFrame(frame);
   }
-  frame();
+  updateRun(); draw(); requestAnimationFrame(frame);
 </script>
 ```
 
 ## Complete widget: three-body figure-eight on canvas
 
 ```html
-<!doctype html><meta charset="utf-8" /><canvas
-  id="view"
-  width="520"
-  height="360"
-  aria-label="Three-body orbit"
-></canvas>
+<style>
+.demo{max-width:650px;margin:auto;padding:1px 20px;font:14px/1.5 var(--font-sans);color:var(--figure-text)}
+.demo .iso-plate{box-shadow:none;border:var(--figure-weight) solid var(--figure-mid)}
+.demo .iso-plate-corner{font-size:11px;color:var(--figure-text)}.demo .iso-legend{color:var(--figure-text)}.demo .iso-swatch path{stroke-width:var(--figure-weight)}
+canvas{display:block;width:100%;max-width:520px;height:auto;margin:auto}svg text{font:12px var(--figure-mono);fill:var(--figure-text)}
+.controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0}
+button,input{accent-color:var(--figure-lit);font:12px var(--figure-mono)}
+button{background:var(--figure-card);color:var(--figure-strong);border:var(--figure-weight) solid var(--figure-mid);padding:6px 12px}
+button:focus-visible,input:focus-visible{outline:1px solid var(--figure-hi);outline-offset:3px}
+.controls label{display:flex;align-items:center;gap:8px}
+@media(max-width:560px){.demo .iso-plate-corner{white-space:normal;max-width:100%;line-height:1.4}.demo .iso-plate-corner[data-corner="hint"]{bottom:28px}.demo .iso-plate{padding-bottom:88px}}
+</style>
+<main class="iso demo" id="demo"></main>
 <script type="module">
   import { threeBodyFigureEight, velocityVerlet, createVerletWorkspace } from "/kits/math.js";
-  const canvas = document.querySelector("#view"),
-    ctx = canvas.getContext("2d");
-  const system = threeBodyFigureEight();
-  let q = system.positions,
-    v = system.velocities,
-    t = 0,
-    workspace = createVerletWorkspace(q.length);
-  const colors = ["#54c6e7", "#e9a45a", "#d983be"];
-  function frame() {
-    ctx.fillStyle = "rgba(8,18,28,0.12)";
-    ctx.fillRect(0, 0, 520, 360);
-    for (let step = 0; step < 8; step++) {
-      velocityVerlet(system.acceleration, t, q, v, 0.004, q, v, workspace);
-      t += 0.004;
-      for (let body = 0; body < 3; body++) {
-        ctx.fillStyle = colors[body];
-        ctx.beginPath();
-        ctx.arc(260 + q[body * 2] * 115, 180 - q[body * 2 + 1] * 115, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
+  import { ISO_CSS, plateHtml } from "/kits/iso.js";
+  const host = document.querySelector("#demo");
+  const style = document.createElement("style");
+  style.textContent = ISO_CSS;
+  document.head.append(style);
+  host.innerHTML=plateHtml({fig:"Fig 2",title:"Three-body orbit",hint:"Step through the orbit",readout:"",
+    keys:[{mark:"lit",label:"Body 1"},{mark:"edge",label:"Body 2"},{mark:"dim",label:"Body 3"}],
+    caption:"Equal masses in a figure-eight orbit, G = 1. The readout tracks relative energy drift.",
+    body:'<canvas width="520" height="330" aria-label="Three equal masses following a figure-eight orbit"></canvas>'}) + '<div class="controls"><button data-step>Step</button><button data-run aria-pressed="false">Run</button><button data-reset>Reset</button></div>';
+  const canvas=host.querySelector("canvas"),ctx=canvas.getContext("2d"),system=threeBodyFigureEight();
+  const ratio=devicePixelRatio||1;canvas.width=520*ratio;canvas.height=330*ratio;ctx.scale(ratio,ratio);
+  const h=1/240,work=createVerletWorkspace(6);
+  let q,v,t,E0;
+  const energy=()=>{let e=Array.from(v).reduce((s,x)=>s+.5*x*x,0);for(let i=0;i<3;i++)for(let j=i+1;j<3;j++)e-=1/Math.hypot(q[2*i]-q[2*j],q[2*i+1]-q[2*j+1]);return e;};
+  function reset(){q=system.positions.slice();v=system.velocities.slice();t=0;E0=energy();}
+  function advance(){velocityVerlet(system.acceleration,t,q,v,h,q,v,work);t+=h;if(!q.every(Number.isFinite))throw new RangeError("Non-finite orbit");}
+  const guide=[],gq=system.positions.slice(),gv=system.velocities.slice(),gw=createVerletWorkspace(6);
+  for(let i=0;i<1510;i++){velocityVerlet(system.acceleration,i*h,gq,gv,h,gq,gv,gw);guide.push([gq[0],gq[1]]);}
+  function draw(){
+    const css=getComputedStyle(host),ink=n=>css.getPropertyValue("--figure-"+n).trim();
+    ctx.clearRect(0,0,520,330);ctx.lineWidth=.6;ctx.strokeStyle=ink("mid");
+    ctx.beginPath();guide.forEach(([x,y],i)=>ctx[i?"lineTo":"moveTo"](260+135*x,165-135*y));ctx.stroke();
+    ctx.strokeStyle=ink("lo");ctx.beginPath();ctx.moveTo(250,165);ctx.lineTo(270,165);ctx.moveTo(260,155);ctx.lineTo(260,175);ctx.stroke();
+    ctx.font="12px "+css.getPropertyValue("--figure-mono");ctx.fillStyle=ink("text");ctx.fillText("x / a.u.",424,302);ctx.fillText("y / a.u.",25,28);
+    for(let i=0;i<3;i++){
+      const x=260+135*q[2*i],y=165-135*q[2*i+1];ctx.fillStyle=ink(["lit","shade-2","paper"][i]);ctx.strokeStyle=ink(["lit","hi","mid"][i]);
+      ctx.beginPath();ctx.arc(x,y,6,0,2*Math.PI);ctx.fill();ctx.stroke();
+      ctx.font="12px "+css.getPropertyValue("--figure-mono");ctx.fillStyle=ink("text");ctx.fillText(String(i+1),x+10,y-8);
     }
+    host.querySelector("[data-readout]").textContent=`t ${t.toFixed(2)} · ΔE ${((energy()-E0)/Math.abs(E0)).toExponential(1)}`;
+    canvas.dataset.time=String(t);
+  }
+  reset();
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  let running = !reduced.matches, visible = true, last = 0, backlog = 0;
+  const run = host.querySelector("[data-run]");
+  const updateRun = () => { run.textContent = running ? "Pause" : "Run"; run.setAttribute("aria-pressed", String(running)); };
+  run.onclick = () => { running = !running; last = 0; updateRun(); };
+  host.querySelector("[data-step]").onclick = () => { running = false; updateRun(); for (let i=0;i<6;i++) advance(); draw(); };
+  host.querySelector("[data-reset]").onclick = () => { reset(); last = backlog = 0; draw(); };
+  document.addEventListener("visibilitychange", () => { last = backlog = 0; });
+  new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; last = backlog = 0; }).observe(host);
+  reduced.addEventListener("change", () => { if (reduced.matches) running = false; updateRun(); last = 0; });
+  window.addEventListener("avenire:themechange", draw);
+  function frame(now) {
+    if (running && visible && !document.hidden) {
+      backlog += last ? Math.min((now-last)/1000, .05) : 0;
+      let steps=0;
+      while (backlog >= h && steps++ < 6) { advance(); backlog -= h; }
+      if (backlog >= h) backlog = 0;
+      draw();
+    }
+    last = now;
     requestAnimationFrame(frame);
   }
-  frame();
+  updateRun(); draw(); requestAnimationFrame(frame);
 </script>
 ```
 
-## Complete widget: noisy curve fit plotted in SVG
+## Complete widget: noisy curve fit in SVG
 
 ```html
-<!doctype html><meta charset="utf-8" /><svg
-  id="plot"
-  viewBox="0 0 520 300"
-  role="img"
-  aria-label="Noisy exponential data and fitted curve"
-></svg>
+<style>
+.demo{max-width:650px;margin:auto;padding:1px 20px;font:14px/1.5 var(--font-sans);color:var(--figure-text)}
+.demo .iso-plate{box-shadow:none;border:var(--figure-weight) solid var(--figure-mid)}
+.demo .iso-plate-corner{font-size:11px;color:var(--figure-text)}.demo .iso-legend{color:var(--figure-text)}.demo .iso-swatch path{stroke-width:var(--figure-weight)}
+canvas{display:block;width:100%;max-width:520px;height:auto;margin:auto}svg text{font:12px var(--figure-mono);fill:var(--figure-text)}
+.controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0}
+button,input{accent-color:var(--figure-lit);font:12px var(--figure-mono)}
+button{background:var(--figure-card);color:var(--figure-strong);border:var(--figure-weight) solid var(--figure-mid);padding:6px 12px}
+button:focus-visible,input:focus-visible{outline:1px solid var(--figure-hi);outline-offset:3px}
+.controls label{display:flex;align-items:center;gap:8px}
+@media(max-width:560px){.demo .iso-plate-corner{white-space:normal;max-width:100%;line-height:1.4}.demo .iso-plate-corner[data-corner="hint"]{bottom:28px}.demo .iso-plate{padding-bottom:88px}}
+</style>
+<main class="iso demo" id="demo"></main>
 <script type="module">
   import { fitExponential, linspace } from "/kits/math.js";
-  let seed = 19;
-  const random = () => (seed = (1664525 * seed + 1013904223) >>> 0) / 2 ** 32 - 0.5;
-  const xs = linspace(0, 4, 25),
-    ys = xs.map((x) => 2.2 * Math.exp(-0.7 * x) + 0.3 + random() * 0.18);
-  const { params } = fitExponential(xs, ys, [2, -0.5, 0.2]);
-  const X = (x) => 36 + x * 112,
-    Y = (y) => 270 - y * 85;
-  const svg = document.querySelector("#plot"),
-    ns = "http://www.w3.org/2000/svg";
-  const path = document.createElementNS(ns, "path"),
-    points = linspace(0, 4, 160);
-  path.setAttribute(
-    "d",
-    Array.from(
-      points,
-      (x, i) =>
-        `${i ? "L" : "M"}${X(x).toFixed(1)} ${Y(params[0] * Math.exp(params[1] * x) + params[2]).toFixed(1)}`,
-    ).join(" "),
-  );
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "#3bc4dd");
-  path.setAttribute("stroke-width", "2");
-  svg.append(path);
-  xs.forEach((x, i) => {
-    const dot = document.createElementNS(ns, "circle");
-    dot.setAttribute("cx", String(X(x)));
-    dot.setAttribute("cy", String(Y(ys[i])));
-    dot.setAttribute("r", "3");
-    dot.setAttribute("fill", "#f1b970");
-    svg.append(dot);
-  });
+  import { ISO_CSS, plateHtml } from "/kits/iso.js";
+  const host = document.querySelector("#demo");
+  const style = document.createElement("style");
+  style.textContent = ISO_CSS;
+  document.head.append(style);
+  let seed=19;
+  const random=()=>(seed=(1664525*seed+1013904223)>>>0)/2**32-.5;
+  const xs=linspace(0,4,25),ys=xs.map(x=>2.2*Math.exp(-.7*x)+.3+random()*.18);
+  const {params,residuals,r2}=fitExponential(xs,ys,[2,-.5,.2]);
+  const rmse=Math.sqrt(Array.from(residuals).reduce((s,r)=>s+r*r,0)/xs.length);
+  host.innerHTML=plateHtml({fig:"Fig 3",title:"Exponential fit",hint:"Observed minus predicted",readout:`RMSE ${rmse.toFixed(3)} · R² ${r2.toFixed(3)}`,
+    keys:[{mark:"edge",label:"Observed"},{mark:"lit",label:"Fitted"},{mark:"red",label:"Residual"}],
+    caption:"25 seeded observations. A least-squares exponential fit; the lower strip shows signed residuals.",
+    body:'<svg class="iso-svg" viewBox="0 0 520 330" role="img" aria-label="Response against time with labelled axes and signed residuals"></svg>'});
+  const svg=host.querySelector(".iso-plate svg"),ns="http://www.w3.org/2000/svg";
+  function add(tag,attrs,text){const e=document.createElementNS(ns,tag);for(const [k,v]of Object.entries(attrs))e.setAttribute(k,String(v));if(text)e.textContent=text;svg.append(e);return e;}
+  const X=x=>60+108*x,Y=y=>213-66*y,R=r=>279-150*r;
+  const line=(x1,y1,x2,y2,tone="lo")=>add("line",{x1,y1,x2,y2,stroke:`var(--figure-${tone})`,"stroke-width":.6,"vector-effect":"non-scaling-stroke"});
+  line(60,35,60,213,"mid");line(60,213,492,213,"mid");
+  for(let x=0;x<=4;x++){line(X(x),213,X(x),218);add("text",{x:X(x),y:236,"text-anchor":"middle"},String(x));}
+  for(let y=0;y<=2.5;y+=.5){line(55,Y(y),60,Y(y));add("text",{x:48,y:Y(y)+4,"text-anchor":"end"},y.toFixed(1));}
+  add("text",{x:60,y:19},"Response / a.u.");add("text",{x:492,y:255,"text-anchor":"end"},"Time / s");
+  line(60,279,492,279,"faint");add("text",{x:60,y:310},"Residual / a.u.");add("text",{x:48,y:283,"text-anchor":"end"},"0");
+  add("path",{d:Array.from(linspace(0,4,160),(x,i)=>`${i?"L":"M"}${X(x)} ${Y(params[0]*Math.exp(params[1]*x)+params[2])}`).join(" "),fill:"none",stroke:"var(--figure-lit)","stroke-width":.6,"vector-effect":"non-scaling-stroke"});
+  xs.forEach((x,i)=>{add("circle",{cx:X(x),cy:Y(ys[i]),r:3,fill:"var(--figure-paper)",stroke:"var(--figure-hi)","stroke-width":.6,"vector-effect":"non-scaling-stroke"});line(X(x),279,X(x),R(residuals[i]),"red");});
+</script>
+```
+
+## Complete widget: isometric carriage assembly
+
+```html
+<style>
+.demo{max-width:650px;margin:auto;padding:1px 20px;font:14px/1.5 var(--font-sans);color:var(--figure-text)}
+.demo .iso-plate{box-shadow:none;border:var(--figure-weight) solid var(--figure-mid)}
+.demo .iso-plate-corner{font-size:11px;color:var(--figure-text)}.demo .iso-legend{color:var(--figure-text)}.demo .iso-swatch path{stroke-width:var(--figure-weight)}
+canvas{display:block;width:100%;max-width:520px;height:auto;margin:auto}svg text{font:12px var(--figure-mono);fill:var(--figure-text)}
+.controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0}
+button,input{accent-color:var(--figure-lit);font:12px var(--figure-mono)}
+button{background:var(--figure-card);color:var(--figure-strong);border:var(--figure-weight) solid var(--figure-mid);padding:6px 12px}
+button:focus-visible,input:focus-visible{outline:1px solid var(--figure-hi);outline-offset:3px}
+.controls label{display:flex;align-items:center;gap:8px}
+@media(max-width:560px){.demo .iso-plate-corner{white-space:normal;max-width:100%;line-height:1.4}.demo .iso-plate-corner[data-corner="hint"]{bottom:28px}.demo .iso-plate{padding-bottom:88px}}
+</style>
+<main class="iso demo" id="demo"></main>
+<script type="module">
+  import { ISO_CSS, plateHtml, fitProjection, boxCorners, slabOf, cylinder, solidSvg, figureSvg, lineSvg, lineOnTop } from "/kits/iso.js";
+  const host = document.querySelector("#demo");
+  const style = document.createElement("style");
+  style.textContent = ISO_CSS;
+  document.head.append(style);
+  const base={x:0,y:0,w:90,d:58,r:5},rail={x:12,y:16,w:66,d:12,r:2},carriage={x:34,y:13,w:22,d:18,r:3};
+  const P=fitProjection(boxCorners(base,0,27),520,330,{pad:45});
+  const body=[
+    solidSvg(slabOf(base,0,6,P),{tone:"lo"}),
+    solidSvg(slabOf(rail,6,7,P),{tone:"mid"}),
+    solidSvg(slabOf(carriage,13,9,P),{tone:"hi"}),
+    solidSvg(cylinder(45,22,5,22,5,P),{tone:"lit",lit:true}),
+    lineSvg(lineOnTop([16,42],[74,42],6,P),{tone:"faint"}),
+    ...[18,28,38,48,58,68].map(x=>lineSvg(lineOnTop([x,40],[x,44],6,P),{tone:"lo"}))
+  ].join("");
+  host.innerHTML=plateHtml({fig:"Fig 4",title:"Carriage assembly",hint:"Four facing shades",readout:"x 45 mm · z 27 mm",
+    keys:[{mark:"dim",label:"Base"},{mark:"raised",label:"Rail"},{mark:"lit",label:"Adjustment"}],
+    caption:"Base, rail, carriage and adjustment knob. Shaded faces show depth.",
+    body:figureSvg({width:520,height:330,label:"Small rail carriage assembly with shaded faces",body})});
 </script>
 ```

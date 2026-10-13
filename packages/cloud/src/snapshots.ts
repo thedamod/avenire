@@ -6,7 +6,7 @@ import { DESKTOP_FILES, DESKTOP_PACKAGES } from "./desktop.ts";
 
 import { attempt } from "./daytona.ts";
 
-export const AVENIRE_SNAPSHOT = "avenire-sandbox-v6";
+export const AVENIRE_SNAPSHOT = "avenire-sandbox-v7";
 /** Daytona 0.220.0 fixes resources on the snapshot; create-from-snapshot has no override.
  * 10 GB is the per-sandbox disk maximum on the current Daytona plan. */
 export const SANDBOX_RESOURCES = { cpu: 4, memory: 8, disk: 10 } as const;
@@ -52,6 +52,10 @@ export const avenireSandboxImage = DESKTOP_FILES.reduce(
     ),
   runtimeImage,
 )
+  .addLocalFile(
+    fileURLToPath(new URL("../assets/desktop/chromium-preferences.json", import.meta.url)),
+    "/home/daytona/.config/avenire-chromium/Default/Preferences",
+  )
   .runCommands(
     "set -eu; sh /tmp/install-graphite.sh; rm /tmp/install-graphite.sh; apt-get purge -y sassc; rm -rf /var/lib/apt/lists/*",
     "set -eu; for package in plank xfce4-screensaver xscreensaver light-locker xfce4-power-manager; do if dpkg-query -W -f='${db:Status-Abbrev}' \"$package\" 2>/dev/null | grep -q '^ii'; then apt-get purge -y \"$package\"; fi; done; rm -rf /home/daytona/.cache/sessions /home/daytona/Desktop/*",

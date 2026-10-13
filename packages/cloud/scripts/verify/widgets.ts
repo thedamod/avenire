@@ -1,23 +1,23 @@
 import { readFile } from "node:fs/promises";
-/** Use the exact end-to-end API examples, rather than reimplementing their algorithms. */
+import { buildWidgetDocument } from "../../../ui/src/widgets/protocol.ts";
+import { WIDGET_THEME_TOKENS } from "../../../ui/src/styles/tokens.ts";
+/** API.md is the source Ruth sees; never keep a second copy of these examples. */
 export async function widgetPages() {
   const api = await readFile(new URL("../../../widget-kit/API.md", import.meta.url), "utf8");
   const examples = [...api.matchAll(/```html\n([\s\S]*?)\n```/g)].map((m) => m[1]!);
-  if (examples.length !== 3)
-    throw new Error(`Expected three complete API widgets, found ${examples.length}`);
-  const iso = `<!doctype html><meta charset="utf-8"><script type="module">
-import {fitProjection,boxCorners,slabOf,solidSvg,figureSvg,ISO_CSS} from '/kits/iso.js';
-const style=document.createElement('style');style.textContent=ISO_CSS;document.head.append(style);
-const plan={x:0,y:0,w:80,d:50,r:5};const P=fitProjection(boxCorners(plan,0,12),520,360);
-document.body.innerHTML=figureSvg({width:520,height:360,label:'Isometric block',body:solidSvg(slabOf(plan,0,12,P))});
-</script>`;
-  const csp =
-    "default-src 'none'; script-src 'unsafe-inline' http://127.0.0.1:8765/kits/; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'";
-  return ["pendulum", "three-body", "curve-fit", "iso"].map((name, i) => ({
-    name,
-    html: (examples[i] ?? iso).replace(
-      "<!doctype html>",
-      `<!doctype html><meta http-equiv="Content-Security-Policy" content="${csp}"><style>body{margin:20px;background:#181818;color:#e4e4e4}svg{width:520px;height:360px}</style>`,
-    ),
-  }));
+  const names = ["pendulum", "three-body", "curve-fit", "iso"];
+  if (examples.length !== names.length)
+    throw new Error(`Expected four complete API widgets, found ${examples.length}`);
+  return names.flatMap((name, i) =>
+    (["light", "dark"] as const).map((theme) => ({
+      name: `${name}-${theme}`,
+      html: buildWidgetDocument({
+        html: examples[i]!,
+        title: `${name} ${theme}`,
+        colorScheme: theme,
+        tokens: WIDGET_THEME_TOKENS[theme],
+        kitsOrigin: "http://127.0.0.1:8765",
+      }),
+    })),
+  );
 }

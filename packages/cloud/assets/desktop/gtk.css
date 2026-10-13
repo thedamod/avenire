@@ -1,5 +1,23 @@
 @define-color theme_selected_bg_color #a5a2e9;
 @define-color theme_selected_fg_color #181818;
+/* GTK's client-side and non-composited solid-CSD decoration must not restore
+ * Graphite's two-pixel primary-colour rim or headerbar highlight. */
+window decoration,
+window decoration:backdrop,
+window.solid-csd decoration,
+window.csd decoration {
+  border: 0;
+  box-shadow: none;
+  outline: none;
+}
+window headerbar,
+window headerbar:backdrop,
+window .titlebar,
+window .titlebar:backdrop {
+  border-color: transparent;
+  box-shadow: none;
+  outline: none;
+}
 .xfce4-panel {
   background-color: #1b2030;
 }

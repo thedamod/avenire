@@ -1,12 +1,12 @@
 # Avenire sandbox snapshot
 
-`avenire-sandbox-v6` is the shared image for ephemeral Ruth chat sandboxes and persistent Cloud boxes. Base: `daytonaio/sandbox:0.9.0-slim`, **Debian trixie**, not Ubuntu. Retaining Debian preserves the verified KiCad/X11/Daytona runtime. Snapshot resources are fixed by SDK 0.220.0: **4 vCPU / 8 GB RAM / 10 GB disk**. The image itself does not consume the sandbox's 10 GB allocation. Existing sandboxes must be recreated to receive v6.
+`avenire-sandbox-v7` is the shared image for ephemeral Ruth chat sandboxes and persistent Cloud boxes. Base: `daytonaio/sandbox:0.9.0-slim`, **Debian trixie**, not Ubuntu. Retaining Debian preserves the verified KiCad/X11/Daytona runtime. Snapshot resources are fixed by SDK 0.220.0: **4 vCPU / 8 GB RAM / 10 GB disk**. The image itself does not consume the sandbox's 10 GB allocation. Existing sandboxes must be recreated to receive v7.
 
 ## Desktop
 
 One **44 px bottom, full-width Xfce panel**, always visible, opaque navy. Left to right: Whisker launcher, Browser (`avenire-browser` → Debian Chromium), Files (`thunar`), Terminal (`xfce4-terminal`), Editor (`mousepad`), icon-only grouped window tasklist, expanding separator, status tray, 24-hour clock. Active tasks have a lavender bottom indicator. Whisker favorites are the same four applications; Xfce preferred-app helpers resolve to the browser wrapper, thunar and xfce4-terminal. No workspace switcher, second panel or Plank. Desktop icons are disabled.
 
-Arc-Dark GTK/XFWM, Papirus-Dark, Bibata-Modern-Ice at 24 px, Inter 10, grayscale antialiasing and slight hinting. The terminal uses DejaVu Sans Mono 10 and a solid dark palette; this is a deliberate typography deviation to preserve a readable installed mono face. Adwaita-dark and Graphite-Dark remain available for comparison. Graphite's release **2026-08-23**, commit `2a8dd5aa1346d77539bf8196061260f353ee8d75`, has archive SHA-256 `a46a5c4bd9562332221c504a58da0d6f4d729c8a74ab26e002b41516df52acb9`; the build checks it before running the installer. Graphite includes a matching XFWM theme; Adwaita uses the stock Default XFWM theme. Graphite's build-only sassc and unrelated shell/HiDPI themes are removed after installation.
+Graphite-Dark GTK/XFWM, Papirus-Dark, Bibata-Modern-Ice at 24 px, Inter 10, grayscale antialiasing and slight hinting. The terminal uses DejaVu Sans Mono 10 and a solid dark palette; this is a deliberate typography deviation to preserve a readable installed mono face. Arc-Dark and Adwaita-dark remain installed as fallback themes. Graphite's release **2026-08-23**, commit `2a8dd5aa1346d77539bf8196061260f353ee8d75`, has archive SHA-256 `a46a5c4bd9562332221c504a58da0d6f4d729c8a74ab26e002b41516df52acb9`; the build checks it before running the installer. Graphite includes a matching XFWM theme; Adwaita uses the stock Default XFWM theme. Graphite installs with `--tweaks rimless`. Its active XFWM XPM frames originally use `gray88 s active_color_1`, which XFWM maps to GTK's light foreground. The installer replaces both that mapping and symbolic `active_color_2` with literal `#2C2C2C`, preserving the resize hit area and window-control glyphs. User GTK CSS removes decoration borders/outlines/shadows, including the non-composited solid-CSD case and headerbar highlights. Chromium's seeded profile uses `browser.custom_chrome_frame=false` and GTK system theme (`system_theme=1`), so unmaximized Chromium uses the same corrected native XFWM frame. Graphite's build-only sassc and unrelated shell/HiDPI themes are removed after installation.
 
 The navy/indigo wallpaper is a real 1600×900 PNG, generated deterministically with Python stdlib by `assets/desktop/generate-wallpaper.py`. It has no text/logo. Both `monitorscreen` (Xvfb's actual output) and `monitor0` are configured. PNG avoids the missing SVG pixbuf loader observed in v3.
 
@@ -83,18 +83,18 @@ Package scripts load `.env.local` with `tsx --env-file-if-exists=../../.env.loca
 | manimgx          | MathTex + axes/sine plot inspect storyboard; 1280×720@30 CPU 2D and ThreeDScene videos/storyboards, wall time and renderer CPU time.                                                                              |
 | KiCad            | Generated native board, schematic, PCB SVG/PDF, CRC-checked Gerber ZIP, schematic SVG. Minimal fixtures test file export, not electrical design correctness.                                                      |
 | LaTeX            | One-page headings/equation/table/embedded matplotlib report PDF and page-one PNG.                                                                                                                                 |
-| Widgets          | Three exact API.md examples plus iso.js; local kits; CSP-constrained loopback server; Playwright captures after 1.5s; any console/page error fails.                                                               |
+| Widgets          | Four exact API.md snippets in both light and dark; production widget bootstrap/tokens/CSP; stage pixels, isometric face tones/hairlines, text/edge contrast, Step/Run/Reset, theme state and 390px layout; any console/page error fails.                                                               |
 | Node             | SVG written by Node.                                                                                                                                                                                              |
-| Desktop          | Direct startup time, display/xrandr/xdpyinfo, XSETTINGS/cursor metadata, one panel/no dock/theme/scaling/hygiene, clean desktop/menu/Thunar/terminal/browser, actual pinned launcher clicks and window existence. |
-| Theme/compositor | Identical three-theme window arrangements plus maximized browser; compositor off/on screenshots.                                                                                                                  |
+| Desktop          | Direct startup time, display/xrandr/xdpyinfo, XSETTINGS/cursor metadata, one panel/no dock/theme/scaling/hygiene, clean desktop/menu/Thunar/terminal/Mousepad/browser, actual pinned launcher clicks and window existence; maximized and unmaximized browser; 3x edge crops and light-rim pixel checks. |
+| Theme/compositor | Graphite native frames, disposable reproduction of original symbolic light rims, final perimeter pixel checks; compositor off/on screenshots.                                                                                                                  |
 | Screenshots      | PNG and JPEG at qualities 60/80/95, scales 0.8/0.64, exact decoded sizes/bytes; region and half-scale compressed region.                                                                                          |
 | Interaction      | Every profile: full-screen mouse location and browser event coordinates, ±1 pixel/model unit; click/double-click counts, drag endpoint, up/down wheel, exact text with newline, Ctrl+A and Enter.                 |
 | Recording        | ~30s menu/browser/typing/scrolling/Thunar/terminal session; MP4, ffprobe, blackdetect/freezedetect, MB/min and 4h size projection.                                                                                |
 | Integrity        | All PNGs decode, GIF animated, SVG XML, Gerber ZIP CRC, one-page PDF, manimgx dimensions/fps/duration.                                                                                                            |
 
-Widget CSP: `default-src 'none'; script-src 'unsafe-inline' http://127.0.0.1:8765/kits/; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'`.
+Widget fixtures use `buildWidgetDocument` and `WIDGET_THEME_TOKENS` from the production UI runtime. Its CSP allows the loopback kits, inline scripts/styles, data/blob images/media and data fonts, with `connect-src 'none'`, `base-uri 'none'` and `form-action 'none'`. There is no independent fixture theme or copy of the four examples.
 
-Outputs: `/tmp/avenire-snapshot/avenire-sandbox-v4/verify.json`, `sandbox.json`, and **`renders/index.html`** plus every downloaded artifact. `SNAPSHOT` and `OUT_DIR` can override the target/root; use a different output root to retain failed/earlier evidence. Each JSON row records PASS/FAIL (`ok`), wall seconds, command, diagnostic output and absolute artifact paths/bytes. The gallery embeds every image/video/PDF as a data URL so it is self-contained, while retaining links to raw downloaded files.
+Current outputs: `/tmp/avenire-snapshot/avenire-sandbox-v7/verify.json`, `sandbox.json`, and **`renders/index.html`** plus every downloaded artifact. `SNAPSHOT` and `OUT_DIR` can override the target/root; use a different output root to retain failed/earlier evidence. Each JSON row records PASS/FAIL (`ok`), wall seconds, command, diagnostic output and absolute artifact paths/bytes. The gallery embeds every image/video/PDF as a data URL so it is self-contained, while retaining links to raw downloaded files.
 
 ### API limitations to verify explicitly
 
@@ -126,7 +126,7 @@ The owner-authorized cancelled-attempt scratch v4 snapshot and scratch sandbox w
 
 ## Server-owned agent box policy
 
-Cloud boxes use the same v4 image; no image rebuild was required for the server-agent
+Cloud boxes use the shared snapshot; no image rebuild was required for the server-agent
 migration. Pi and model/API credentials are not installed or mounted. Reused boxes detach
 legacy vault mounts. Task egress defaults to the domain firewall for `registry.npmjs.org`,
 `pypi.org` and `files.pythonhosted.org`; explicit `network: open` clears both allow lists.
@@ -140,17 +140,17 @@ cache cap is 4 GiB of the 10 GB writable allocation. Run work/outputs remain und
 outside the box. Conformance uses a temporary v4 box, the same tool executors, and a local
 fixture. Its `--mock` option spends no model credit and the box is deleted in cleanup.
 
-## Figure toolchain (v5)
+## Pinned figure toolchain (v5 history)
 
-Pinned upstream dbf697a527bbf7d358668e1557cb1e35ff725d46, Figure by wheresryan22, MIT. `assets/figure` contains SKILL.md, LICENSE, kit/, scripts/, references/ and all eight examples’ source (67 files, SHA-256 MANIFEST.json); generated HTML is excluded. Installed root-owned, readable but not writable at `/opt/avenire/figures`. `CHROME_PATH=/usr/local/bin/avenire-figure-chromium` (Debian Chromium with `--no-sandbox`, required by Daytona’s namespace isolation) drives the upstream capture/drive/lines scripts over CDP using Node built-ins. Copy sources into a writable tree preserving relative imports, then `node build.mjs` / `--light` / `--audit`.
+Pinned upstream `dbf697a527bbf7d358668e1557cb1e35ff725d46`, MIT; attribution is in README files. The historical source directory contained SKILL.md, LICENSE, kit/, scripts/, references/ and all eight examples’ source (67 files, SHA-256 MANIFEST.json); generated HTML is excluded. Installed root-owned, readable but not writable at `/opt/avenire/figures`. `CHROME_PATH=/usr/local/bin/avenire-figure-chromium` (Debian Chromium with `--no-sandbox`, required by Daytona’s namespace isolation) drives the upstream capture/drive/lines scripts over CDP using Node built-ins. Copy sources into a writable tree preserving relative imports, then `node build.mjs` / `--light` / `--audit`.
 
 `snapshot:verify` checks the manifest/read-only inventory, dial builds in both themes, desktop/390 captures, line ends zero in both themes, 4x details, arcade geometry audit, rebuilt raptor size, and production widget CSP/theme/WebGL/fallback. PNGs and results join the existing gallery under `/tmp/avenire-snapshot/avenire-sandbox-v5`.
 
 Chat sandbox defaults: `CHAT_SANDBOX_LIFETIME_MINUTES=120`, `CHAT_SANDBOX_IDLE_STOP_MINUTES=120`. Commands remain 120s by default with 900s maximum. Read-only tools may read `/opt/avenire/figures`; write/artifact paths keep their workspace boundary. Widgets accept exactly one inline html (512,000 bytes) or sandbox .html path (8 MiB), with size checked before download. App shadcn colours are unchanged; an app-wide theme switch would separately replace semantic UI colours and review controls, text, focus/contrast, desktop/mobile and all charts.
 
-For the approved Fireworks-only prompt demo, set `RUTH_OPENROUTER_CATALOG_ENABLED=false`; the sprint registry model remains Fireworks GLM 5.3 Flash. Keep v4 available to the reviewer after v5 verifies. No commits.
+The sprint registry model is Fireworks GLM 5.3 Flash. No commits.
 
-The first full Figure demo exhausted 80 steps before delivery; an experimental 120-step budget was used for the second run. The owner then clarified that ordinary visuals must be fast: chat uses figure as appearance/behaviour guidance with flexible code, and performs one preview before delivery. Full capture/drive/lines/audit loops and the 30–90 minute production estimate apply only to explicitly requested deep builds/verification. The configurable 120-minute sandbox hard lifetime is retained. Directory setup retries transport errors twice and prepares the computer workspace once per sandbox. User commands are not automatically retried. The widget frame waits up to 30 seconds for larger pages; the card footer wraps and stacks on narrow widths.
+The first full visual demo exhausted 80 steps before delivery; an experimental 120-step budget was used for the second run. The owner then clarified that ordinary visuals must be fast: chat uses figure as appearance/behaviour guidance with flexible code, and performs one preview before delivery. Full capture/drive/lines/audit loops and the 30–90 minute production estimate apply only to explicitly requested deep builds/verification. The configurable 120-minute sandbox hard lifetime is retained. Directory setup retries transport errors twice and prepares the computer workspace once per sandbox. User commands are not automatically retried. The widget frame waits up to 30 seconds for larger pages; the card footer wraps and stacks on narrow widths.
 
 
 ## Fast interactive explainers
@@ -159,10 +159,25 @@ The combined `explainer` skill replaces the separate visual/physical-model guide
 
 ## Neutral figure runtime (v6)
 
-Figure sources are installed at `/opt/avenire/figures`; the launcher is `/usr/local/bin/avenire-figure-chromium`. Runtime CSS, adapters and example sources use `--figure-*`. The adapted inventory has 67 files with a refreshed local SHA-256 manifest. Attribution is in README files and original MIT copyright notices remain in LICENSE files. Existing v4/v5 snapshots are retained for review.
+Pinned sources are installed at `/opt/avenire/figures`; the launcher is `/usr/local/bin/avenire-figure-chromium`. Runtime CSS, adapters and example sources use `--figure-*`. The adapted inventory has 67 files with a refreshed local SHA-256 manifest. Attribution is in README files and original MIT copyright notices remain in LICENSE files. The v4/v5 images are historical; they were deleted after the final v7 verifier passed.
 
 ## Live v6 results
 
 Snapshot `avenire-sandbox-v6` (`6ba54939-cd5a-4629-8ca9-9150cb05c537`) passed **74/74** live checks on 2026-10-13. Both figure themes built and captured at desktop/390px without console errors or sideways scrolling; both line checks reported `line ends: 0`; the arcade audit passed. The largest built example was 1,610,425 bytes. Production CSP, theme messages, WebGL and SVG fallback passed. Verification sandbox `8dca8264-14f2-4620-99e7-17c1915898ba` was deleted at 04:28:12 UTC.
 
 Evidence: `/tmp/avenire-snapshot/avenire-sandbox-v6/verify.json`, `sandbox.json`, and `renders/index.html`. Build submission returned a gateway error after creating the snapshot; the same build was recovered by ID and completed, without another snapshot creation. Previous v4/v5 snapshots were retained.
+
+
+## Live v7 results
+
+The existing `avenire-sandbox-v7` (`c68cc85a-99b9-4720-ac9c-cba98e26462b`) was already active when this task resumed. A disposable inspection sandbox confirmed that its GTK CSS, Xfce settings and Chromium preferences match the final local configuration and its XFWM active frame is literal `#2C2C2C`; no replacement build or intermediate snapshot was needed.
+
+The final `OUT_DIR=/tmp/avenire-snapshot/avenire-sandbox-v7-final pnpm --filter @avenire/cloud snapshot:verify` run passed **78/78** checks on 2026-10-13. All four API.md snippets passed in both light and dark, using the production bootstrap/CSP/theme tokens. Coverage includes stage pixels (with a lower coverage floor for deliberately sparse, crisp pendulum rods), isometric face colours and 0.6px edges, text contrast (6.95:1 light / 7.37:1 dark), real legend colours, Step/Run/Reset, theme changes without state reset and 390px layout. The canvas examples use device-pixel-ratio backing stores. The curve includes labelled axes and residuals; the isometric example installs `ISO_CSS` and renders a base, rail, carriage and adjustment knob.
+
+Desktop screenshots were visually inspected, including enlarged edge strips: desktop/taskbar, Thunar, terminal, Mousepad, maximized/unmaximized Chromium and Whisker. The verifier recreates the original XFWM symbolic foreground mapping in a disposable user theme and then restores the shipped theme. Its reproduced original frame has a 774-pixel light run; each final app perimeter has zero. Resize hit areas remain. Display is 1600×900 at 96 DPI, one bottom panel, Papirus-Dark, Bibata 24px, compositing off. All screen-profile input checks passed. Recording: 1600×900, 30 fps, 30.033 s, 1,476,520 bytes, no detected black or frozen intervals at the verifier thresholds.
+
+Final evidence: `/tmp/avenire-snapshot/avenire-sandbox-v7-final/verify.json`, `sandbox.json`, `resource-lifecycle.json`, `renders/index.html`, and the self-contained `renders/widgets.html`. Widget PNGs are `renders/widget-{pendulum,three-body,curve-fit,iso}-{light,dark}.png`; stage and phone captures use `-stage.png` / `-phone.png`. The original/fixed border captures are `renders/border-before-x11.png` and `renders/browser-unmaximized-x11.png`, with corresponding `-edges.png` / `-edges.json`; `renders/desktop-contact.png` assembles all eight desktop views. Verification sandbox `6a7452e4-7222-4655-b362-761043c3407a` was deleted at 09:46:08 UTC. Cloud typecheck, the four existing snapshot tests and scoped formatting/diff checks passed. No unit tests were added, no model calls were made and nothing was committed.
+
+Earlier evidence is preserved under `avenire-sandbox-v7` (initial 78/78), `avenire-sandbox-v7-capacity-attempt` (no sandbox accepted while the prior 8 GiB sandbox occupied the 10 GiB account memory limit), and `avenire-sandbox-v7-hi-dpi-attempt` (76/78 before the sparse-pendulum pixel threshold correction; both corrected pendulums also passed focused live rechecks). The final 78/78 run uses the corrected fixtures throughout.
+
+After that final pass, `avenire-sandbox-v4` (`0d1210b4-488b-499c-8696-ebc0c1a365f8`) and `avenire-sandbox-v5` (`81c4195d-6202-46f1-8727-aa0ee928020d`) were deleted. At 09:47:12 UTC the SDK confirmed only v6 and v7 remain among the Avenire snapshots, both active. All four sandboxes created during the resumed inspection/verification work are confirmed absent, and no owned verification sandbox remains. No new/intermediate snapshot was created; v7 was reused. IDs and current state are recorded in `resource-lifecycle.json`.

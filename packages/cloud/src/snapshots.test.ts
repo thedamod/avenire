@@ -9,7 +9,7 @@ import { AVENIRE_SNAPSHOT, SANDBOX_RESOURCES, avenireSandboxImage } from "./snap
 const dockerfile = avenireSandboxImage.dockerfile;
 
 it("defines one Daytona desktop image with all runtime stacks", () => {
-  expect(AVENIRE_SNAPSHOT).toBe("avenire-sandbox-v6");
+  expect(AVENIRE_SNAPSHOT).toBe("avenire-sandbox-v7");
   expect(dockerfile).toContain("FROM daytonaio/sandbox");
   for (const packageName of [
     "bibata-cursor-theme",
@@ -97,6 +97,7 @@ it("fixes the display and bakes one clean bottom taskbar", () => {
   for (const plugin of ["whiskermenu", "tasklist", "systray", "clock"])
     expect(panel).toContain(plugin);
   const wm = asset("xfwm4.xml");
+  expect(wm).toContain('name="theme" type="string" value="Graphite-Dark"');
   expect(wm).toContain('name="use_compositing" type="bool" value="false"');
   expect(wm).toContain('name="titleless_maximize" type="bool" value="true"');
   const settings = asset("xsettings.xml");
@@ -136,7 +137,13 @@ it("bakes the desktop configuration and usable browser launcher", () => {
   );
   expect(settings).toContain("Bibata-Modern-Ice");
   expect(settings).toContain("Papirus-Dark");
-  expect(settings).toContain("Arc-Dark");
+  expect(settings).toContain("Graphite-Dark");
+  const preferences = JSON.parse(
+    readFileSync(new URL("../assets/desktop/chromium-preferences.json", import.meta.url), "utf8"),
+  );
+  expect(preferences.browser.custom_chrome_frame).toBe(false);
+  expect(preferences.extensions.theme.system_theme).toBe(1);
+  expect(dockerfile).toContain("/home/daytona/.config/avenire-chromium/Default/Preferences");
   const browser = readFileSync(
     new URL("../assets/desktop/avenire-browser", import.meta.url),
     "utf8",

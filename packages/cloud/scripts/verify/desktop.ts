@@ -84,7 +84,7 @@ export async function desktop(h: Harness) {
   await run(
     "desktop configuration",
     sessionEnv +
-      `test "$(xfconf-query -c xsettings -p /Gtk/CursorThemeName)" = Bibata-Modern-Ice && test "$(xfconf-query -c xsettings -p /Gtk/CursorThemeSize)" = 24 && test "$(xfconf-query -c xsettings -p /Xft/DPI)" = 96 && test "$(xfconf-query -c xsettings -p /Gdk/WindowScalingFactor)" = 1 && test "$(xfconf-query -c xsettings -p /Xft/RGBA)" = none && test "$(xfconf-query -c xsettings -p /Net/IconThemeName)" = Papirus-Dark && test "$(xfconf-query -c xsettings -p /Net/ThemeName)" = Arc-Dark && test "$(xfconf-query -c xfce4-desktop -p /desktop-icons/style)" = 0 && test "$(xfconf-query -c xfwm4 -p /general/use_compositing)" = false && test "$(xfconf-query -c xfwm4 -p /general/workspace_count)" = 1 && test "$XCURSOR_THEME" = Bibata-Modern-Ice && test "$XCURSOR_SIZE" = 24 && test "$(pgrep -cx xfce4-panel)" = 1 && ! pgrep -x plank && ! pgrep -x xfce4-screensaver && ! pgrep -x xscreensaver && ! pgrep -x light-locker && xfconf-query -c xfce4-panel -p /panels && xfconf-query -c xfce4-panel -lv && xfconf-query -c xfwm4 -lv && xrdb -query && xset q`,
+      `test "$(xfconf-query -c xsettings -p /Gtk/CursorThemeName)" = Bibata-Modern-Ice && test "$(xfconf-query -c xsettings -p /Gtk/CursorThemeSize)" = 24 && test "$(xfconf-query -c xsettings -p /Xft/DPI)" = 96 && test "$(xfconf-query -c xsettings -p /Gdk/WindowScalingFactor)" = 1 && test "$(xfconf-query -c xsettings -p /Xft/RGBA)" = none && test "$(xfconf-query -c xsettings -p /Net/IconThemeName)" = Papirus-Dark && test "$(xfconf-query -c xsettings -p /Net/ThemeName)" = Graphite-Dark && test "$(xfconf-query -c xfwm4 -p /general/theme)" = Graphite-Dark && test "$(xfconf-query -c xfce4-desktop -p /desktop-icons/style)" = 0 && test "$(xfconf-query -c xfwm4 -p /general/use_compositing)" = false && test "$(xfconf-query -c xfwm4 -p /general/workspace_count)" = 1 && test "$XCURSOR_THEME" = Bibata-Modern-Ice && test "$XCURSOR_SIZE" = 24 && test "$(pgrep -cx xfce4-panel)" = 1 && ! pgrep -x plank && ! pgrep -x xfce4-screensaver && ! pgrep -x xscreensaver && ! pgrep -x light-locker && xfconf-query -c xfce4-panel -p /panels && xfconf-query -c xfce4-panel -lv && xfconf-query -c xfwm4 -lv && xrdb -query && xset q`,
   );
   await run("XSETTINGS and cursor", sessionEnv + "python x11-state.py > renders/x11-state.json", [
     "renders/x11-state.json",
@@ -133,8 +133,10 @@ export async function desktop(h: Harness) {
     await box.computerUse.mouse.click(198, 878);
     await sleep(1300);
     const detail = await exec("xdotool search --onlyvisible --class mousepad");
+    await exec('wmctrl -r "Untitled" -e 0,60,60,740,480');
+    const outputs = await shot("mousepad", 350, 280);
     await exec('wmctrl -c "Untitled"');
-    return { detail };
+    return { detail, outputs };
   });
   await check("pinned browser", "mouse.click taskbar Browser → Chromium", async () => {
     await box.computerUse.mouse.click(66, 878);
@@ -192,37 +194,45 @@ export async function desktop(h: Harness) {
       };
     },
   );
-  // Same window arrangement and cursor position for each theme, plus maximized browser.
   await check(
-    "theme comparison",
-    "Adwaita-dark / Arc-Dark / Graphite-Dark GTK + XFWM captures",
+    "Graphite window borders",
+    "unmaximized Chromium and native window edge pixels",
     async () => {
-      const outputs: Output[] = [];
+      await exec(
+        `wmctrl -r 'Ruth input verification' -b remove,maximized_vert,maximized_horz; wmctrl -r 'Ruth input verification' -e 0,770,470,790,350; wmctrl -a 'Ruth input verification'`,
+      );
+      await sleep(700);
+      const outputs = await shot("browser-unmaximized", 1000, 620);
+      // Reproduce the upstream symbolic foreground mapping in a disposable copy.
+      // Leave the shipped theme/config untouched, and restore it even on failure.
       try {
-        for (const [theme, wm] of [
-          ["Adwaita-dark", "Default"],
-          ["Arc-Dark", "Arc-Dark"],
-          ["Graphite-Dark", "Graphite-Dark"],
-        ] as const) {
-          await exec(
-            `xfconf-query -c xsettings -p /Net/ThemeName -s ${theme}; xfconf-query -c xfwm4 -p /general/theme -s ${wm}; wmctrl -r 'Ruth input verification' -b remove,maximized_vert,maximized_horz; wmctrl -r 'Ruth input verification' -e 0,770,470,790,350; wmctrl -a mixed; wmctrl -a Terminal; wmctrl -a 'Ruth input verification'`,
-          );
-          await sleep(1000);
-          outputs.push(...(await shot("theme-" + theme, 900, 550)));
-          await browserFocus();
-          outputs.push(...(await shot("theme-" + theme + "-browser", 1100, 450)));
-        }
+        await exec(
+          `mkdir -p "$HOME/.themes"; cp -r /usr/share/themes/Graphite-Dark "$HOME/.themes/Graphite-Before"; sed -i 's/ c #2C2C2C"/ c gray88 s active_color_1"/' "$HOME/.themes/Graphite-Before/xfwm4/left-active.xpm" "$HOME/.themes/Graphite-Before/xfwm4/right-active.xpm" "$HOME/.themes/Graphite-Before/xfwm4/bottom-active.xpm"; xfconf-query -c xfwm4 -p /general/theme -s Graphite-Before`,
+        );
+        await sleep(700);
+        outputs.push(...(await shot("border-before", 1000, 620)));
+        await exec("python window-edges.py border-before --expect-light");
+        outputs.push(
+          await download(`${work}/renders/border-before-edges.png`, "border-before-edges.png"),
+          await download(`${work}/renders/border-before-edges.json`, "border-before-edges.json"),
+        );
       } finally {
         await exec(
-          "xfconf-query -c xsettings -p /Net/ThemeName -s Arc-Dark; xfconf-query -c xfwm4 -p /general/theme -s Arc-Dark",
+          'xfconf-query -c xfwm4 -p /general/theme -s Graphite-Dark; rm -rf "$HOME/.themes/Graphite-Before"',
         );
-        await browserFocus();
       }
-      await execute("python theme-comparison.py");
-      outputs.push(await download(`${work}/renders/theme-comparison.png`, "theme-comparison.png"));
+      for (const name of ["thunar", "terminal", "mousepad", "browser", "browser-unmaximized"])
+        for (const extension of ["png", "json"])
+          outputs.push(
+            await download(
+              `${work}/renders/${name}-edges.${extension}`,
+              `${name}-edges.${extension}`,
+            ),
+          );
+      await browserFocus();
       return {
         detail:
-          "Theme candidates; identical Thunar, terminal and browser arrangement. Adwaita has no packaged matching XFWM theme; Default used. Arc-Dark selected after visual comparison: cohesive navy-gray surfaces and minimal borders; Graphite has bright outlines and Adwaita is more neutral.",
+          "Graphite-Dark GTK/XFWM, native Chromium frame; frame perimeter pixels contain no long light rim. Enlarged edge crops retained for visual inspection.",
         outputs,
       };
     },
