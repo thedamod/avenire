@@ -83,6 +83,10 @@
       "types": "./src/cloud/tools.ts",
       "import": "./src/cloud/tools.ts"
     },
+    "./cloud/events": {
+      "types": "./src/cloud/events.ts",
+      "import": "./src/cloud/events.ts"
+    },
     "./cloud/review": {
       "types": "./src/cloud/review.ts",
       "import": "./src/cloud/review.ts"
@@ -117,7 +121,9 @@
     "typecheck": "tsc --noEmit",
     "test": "pnpm --filter @avenire/widget-kit build && vp test run --config ../../vite.config.ts --dir . --passWithNoTests",
     "conformance": "node --env-file-if-exists=../../.env.local --experimental-strip-types scripts/computer-use-conformance.ts",
-    "model:smoke": "tsx --env-file-if-exists=../../.env.local scripts/model-smoke.ts"
+    "model:smoke": "tsx --env-file-if-exists=../../.env.local scripts/model-smoke.ts",
+    "preview:setup": "agent-browser install",
+    "preview:check": "node --experimental-strip-types src/tools/preview/check.ts"
   },
   "dependencies": {
     "@avenire/cloud": "workspace:*",
@@ -130,6 +136,7 @@
     "@avenire/widget-kit": "workspace:*",
     "@ai-sdk/fireworks": "catalog:",
     "@openrouter/ai-sdk-provider": "3.1.0",
+    "agent-browser": "0.33.1",
     "ai": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"

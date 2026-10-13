@@ -21,7 +21,14 @@ const nextConfig: NextConfig = {
     "@avenire/ui",
     "@avenire/widget-kit",
   ],
-  outputFileTracingIncludes: { "/*": ["../../packages/widget-kit/dist/kits/**/*"] },
+  serverExternalPackages: ["agent-browser"],
+  outputFileTracingIncludes: {
+    "/*": [
+      "../../packages/widget-kit/dist/kits/**/*",
+      "../../node_modules/.pnpm/agent-browser@*/node_modules/agent-browser/package.json",
+      "../../node_modules/.pnpm/agent-browser@*/node_modules/agent-browser/bin/**/*",
+    ],
+  },
   typescript: { ignoreBuildErrors: true },
 };
 

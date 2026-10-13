@@ -1114,29 +1114,125 @@ description: Show v1 versus v2 metrics as plain grouped SVG bars with labelled d
 Use actual source values in place of these labelled demonstration values. The default is a direct chart, with a thin-line card and one useful annotation. Preview at 390 px and both themes before rendering.
 
 \`\`\`html
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-body{margin:0;font:var(--text-base)/var(--leading-normal) var(--font-sans);color:var(--foreground)}
-figure{margin:auto;max-width:700px;padding:var(--space-4);background:var(--card);border:var(--stroke-hairline) solid var(--figure-frame);border-radius:var(--radius)}
-h2{margin:0;font-size:var(--text-lg)}p{margin:var(--space-2) 0 0;color:var(--muted-foreground);font-size:var(--text-sm)}figcaption{font-size:var(--text-sm);color:var(--muted-foreground)}
-svg{display:block;width:100%;height:auto;margin-top:var(--space-3)}.axis{stroke:var(--figure-leader);stroke-width:var(--stroke-hairline)}
-.tick{fill:var(--figure-label);font-size:calc(var(--figure-label-size)*1.3);font-family:var(--font-sans)}.value{fill:var(--foreground);font-size:calc(var(--figure-label-size)*1.3);font-family:var(--font-mono)}
-</style></head><body><figure><h2>v1 and v2 · example metrics</h2><p>Demonstration values, units in percent. Replace with measured data.</p><svg id="plot" viewBox="0 0 480 285" role="img" aria-label="Grouped bars comparing v1 and v2 on recall and accuracy"></svg><figcaption id="caption"></figcaption></figure>
-<script type="module">
-const data=[{label:'Recall',unit:'%',v1:64,v2:76},{label:'Accuracy',unit:'%',v1:71,v2:74}];
-const svg=document.getElementById('plot'), ns='http://www.w3.org/2000/svg';
-function add(tag,attrs,text){const el=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))el.setAttribute(k,String(v));if(text!==undefined)el.textContent=text;svg.append(el);return el}
-const top=28,bottom=225,left=54,right=448,y=v=>bottom-v/100*(bottom-top);
-for(let t=0;t<=100;t+=25){add('line',{x1:left,x2:right,y1:y(t),y2:y(t),class:'axis'});add('text',{x:left-10,y:y(t)+4,'text-anchor':'end',class:'tick'},\`\${t}%\`)}
-data.forEach((d,i)=>{const cx=158+i*184;
-  for(const [j,key] of ['v1','v2'].entries()){const x=cx-42+j*43,v=d[key];add('rect',{x,y:y(v),width:34,height:bottom-y(v),fill:\`var(--chart-\${j+1})\`});add('text',{x:x+17,y:y(v)-6,'text-anchor':'middle',class:'value'},\`\${v}%\`)}
-  add('text',{x:cx-4,y:bottom+22,'text-anchor':'middle',class:'tick'},d.label);
-  add('text',{x:cx-4,y:bottom+41,'text-anchor':'middle',class:'value'},\`+\${d.v2-d.v1} pp\`);
-});
-add('text',{x:175,y:18,class:'tick'},'v1');add('rect',{x:157,y:8,width:11,height:11,fill:'var(--chart-1)'});
-add('text',{x:236,y:18,class:'tick'},'v2');add('rect',{x:218,y:8,width:11,height:11,fill:'var(--chart-2)'});
-document.getElementById('caption').textContent='Recall improves by 12 percentage points; accuracy by 3 percentage points.';
-</script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      body {
+        margin: 0;
+        font: var(--text-base)/var(--leading-normal) var(--font-sans);
+        color: var(--foreground);
+      }
+      figure {
+        margin: auto;
+        max-width: 700px;
+        padding: var(--space-4);
+        background: var(--card);
+        border: var(--stroke-hairline) solid var(--figure-frame);
+        border-radius: var(--radius);
+      }
+      h2 {
+        margin: 0;
+        font-size: var(--text-lg);
+      }
+      p {
+        margin: var(--space-2) 0 0;
+        color: var(--muted-foreground);
+        font-size: var(--text-sm);
+      }
+      figcaption {
+        font-size: var(--text-sm);
+        color: var(--muted-foreground);
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        margin-top: var(--space-3);
+      }
+      .axis {
+        stroke: var(--figure-leader);
+        stroke-width: var(--stroke-hairline);
+      }
+      .tick {
+        fill: var(--figure-label);
+        font-size: calc(var(--figure-label-size) * 1.3);
+        font-family: var(--font-sans);
+      }
+      .value {
+        fill: var(--foreground);
+        font-size: calc(var(--figure-label-size) * 1.3);
+        font-family: var(--font-mono);
+      }
+    </style>
+  </head>
+  <body>
+    <figure>
+      <h2>v1 and v2 · example metrics</h2>
+      <p>Demonstration values, units in percent. Replace with measured data.</p>
+      <svg
+        id="plot"
+        viewBox="0 0 480 285"
+        role="img"
+        aria-label="Grouped bars comparing v1 and v2 on recall and accuracy"
+      ></svg>
+      <figcaption id="caption"></figcaption>
+    </figure>
+    <script type="module">
+      const data = [
+        { label: "Recall", unit: "%", v1: 64, v2: 76 },
+        { label: "Accuracy", unit: "%", v1: 71, v2: 74 },
+      ];
+      const svg = document.getElementById("plot"),
+        ns = "http://www.w3.org/2000/svg";
+      function add(tag, attrs, text) {
+        const el = document.createElementNS(ns, tag);
+        for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+        if (text !== undefined) el.textContent = text;
+        svg.append(el);
+        return el;
+      }
+      const top = 28,
+        bottom = 225,
+        left = 54,
+        right = 448,
+        y = (v) => bottom - (v / 100) * (bottom - top);
+      for (let t = 0; t <= 100; t += 25) {
+        add("line", { x1: left, x2: right, y1: y(t), y2: y(t), class: "axis" });
+        add("text", { x: left - 10, y: y(t) + 4, "text-anchor": "end", class: "tick" }, \`\${t}%\`);
+      }
+      data.forEach((d, i) => {
+        const cx = 158 + i * 184;
+        for (const [j, key] of ["v1", "v2"].entries()) {
+          const x = cx - 42 + j * 43,
+            v = d[key];
+          add("rect", {
+            x,
+            y: y(v),
+            width: 34,
+            height: bottom - y(v),
+            fill: \`var(--chart-\${j + 1})\`,
+          });
+          add("text", { x: x + 17, y: y(v) - 6, "text-anchor": "middle", class: "value" }, \`\${v}%\`);
+        }
+        add("text", { x: cx - 4, y: bottom + 22, "text-anchor": "middle", class: "tick" }, d.label);
+        add(
+          "text",
+          { x: cx - 4, y: bottom + 41, "text-anchor": "middle", class: "value" },
+          \`+\${d.v2 - d.v1} pp\`,
+        );
+      });
+      add("text", { x: 175, y: 18, class: "tick" }, "v1");
+      add("rect", { x: 157, y: 8, width: 11, height: 11, fill: "var(--chart-1)" });
+      add("text", { x: 236, y: 18, class: "tick" }, "v2");
+      add("rect", { x: 218, y: 8, width: 11, height: 11, fill: "var(--chart-2)" });
+      document.getElementById("caption").textContent =
+        "Recall improves by 12 percentage points; accuracy by 3 percentage points.";
+    </script>
+  </body>
+</html>
 \`\`\`
 `,
   },
@@ -1169,25 +1265,102 @@ print(json.dumps(monthly.to_dict(orient='records'), separators=(',',':')))
 \`\`\`
 
 \`\`\`html
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-body{margin:0;font:var(--text-base)/var(--leading-normal) var(--font-sans);color:var(--foreground)}
-figure{margin:auto;max-width:700px;padding:var(--space-4);border:var(--stroke-hairline) solid var(--figure-frame);border-radius:var(--radius);background:var(--card)}
-h2{margin:0;font-size:var(--text-lg)}p,figcaption{font-size:var(--text-sm);color:var(--muted-foreground)}
-svg{width:100%;height:auto;display:block}.rule{stroke:var(--figure-leader);stroke-width:var(--stroke-hairline)}
-.label{fill:var(--figure-label);font:calc(var(--figure-label-size)*1.3) var(--font-sans)}
-</style></head><body><figure><h2>Monthly average · example index</h2><p>Index units. Replace the embedded values and unit with the spreadsheet aggregate.</p><svg id="plot" viewBox="0 0 480 260" role="img" aria-label="Monthly trend in index units"></svg><figcaption id="caption"></figcaption></figure>
-<script type="module">
-const rows=[{"date":"2026-01","value":21},{"date":"2026-02","value":24},{"date":"2026-03","value":22},{"date":"2026-04","value":29}];
-const svg=document.getElementById('plot'),ns='http://www.w3.org/2000/svg';
-function add(tag,attrs,text){const e=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v));if(text!==undefined)e.textContent=text;svg.append(e)}
-const values=rows.map(r=>r.value),min=Math.floor(Math.min(0,...values)/10)*10,max=Math.ceil(Math.max(...values)/10)*10||10;
-const X=i=>50+i*390/Math.max(1,rows.length-1),Y=v=>210-(v-min)/(max-min)*160;
-for(let v=min;v<=max;v+=10){add('line',{x1:50,x2:440,y1:Y(v),y2:Y(v),class:'rule'});add('text',{x:42,y:Y(v)+4,'text-anchor':'end',class:'label'},String(v))}
-const line=rows.map((r,i)=>\`\${i?'L':'M'}\${X(i)} \${Y(r.value)}\`).join(' ');
-add('path',{d:line,fill:'none',stroke:'var(--chart-1)','stroke-width':'var(--stroke-regular)','stroke-linejoin':'round'});
-rows.forEach((r,i)=>{add('circle',{cx:X(i),cy:Y(r.value),r:3,fill:'var(--chart-1)'});add('text',{x:X(i),y:234,'text-anchor':'middle',class:'label'},r.date.slice(5))});
-document.getElementById('caption').textContent=\`From \${rows[0].value} to \${rows.at(-1).value} over \${rows.length} months (demonstration values).\`;
-</script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      body {
+        margin: 0;
+        font: var(--text-base)/var(--leading-normal) var(--font-sans);
+        color: var(--foreground);
+      }
+      figure {
+        margin: auto;
+        max-width: 700px;
+        padding: var(--space-4);
+        border: var(--stroke-hairline) solid var(--figure-frame);
+        border-radius: var(--radius);
+        background: var(--card);
+      }
+      h2 {
+        margin: 0;
+        font-size: var(--text-lg);
+      }
+      p,
+      figcaption {
+        font-size: var(--text-sm);
+        color: var(--muted-foreground);
+      }
+      svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .rule {
+        stroke: var(--figure-leader);
+        stroke-width: var(--stroke-hairline);
+      }
+      .label {
+        fill: var(--figure-label);
+        font: calc(var(--figure-label-size) * 1.3) var(--font-sans);
+      }
+    </style>
+  </head>
+  <body>
+    <figure>
+      <h2>Monthly average · example index</h2>
+      <p>Index units. Replace the embedded values and unit with the spreadsheet aggregate.</p>
+      <svg
+        id="plot"
+        viewBox="0 0 480 260"
+        role="img"
+        aria-label="Monthly trend in index units"
+      ></svg>
+      <figcaption id="caption"></figcaption>
+    </figure>
+    <script type="module">
+      const rows = [
+        { date: "2026-01", value: 21 },
+        { date: "2026-02", value: 24 },
+        { date: "2026-03", value: 22 },
+        { date: "2026-04", value: 29 },
+      ];
+      const svg = document.getElementById("plot"),
+        ns = "http://www.w3.org/2000/svg";
+      function add(tag, attrs, text) {
+        const e = document.createElementNS(ns, tag);
+        for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+        if (text !== undefined) e.textContent = text;
+        svg.append(e);
+      }
+      const values = rows.map((r) => r.value),
+        min = Math.floor(Math.min(0, ...values) / 10) * 10,
+        max = Math.ceil(Math.max(...values) / 10) * 10 || 10;
+      const X = (i) => 50 + (i * 390) / Math.max(1, rows.length - 1),
+        Y = (v) => 210 - ((v - min) / (max - min)) * 160;
+      for (let v = min; v <= max; v += 10) {
+        add("line", { x1: 50, x2: 440, y1: Y(v), y2: Y(v), class: "rule" });
+        add("text", { x: 42, y: Y(v) + 4, "text-anchor": "end", class: "label" }, String(v));
+      }
+      const line = rows.map((r, i) => \`\${i ? "L" : "M"}\${X(i)} \${Y(r.value)}\`).join(" ");
+      add("path", {
+        d: line,
+        fill: "none",
+        stroke: "var(--chart-1)",
+        "stroke-width": "var(--stroke-regular)",
+        "stroke-linejoin": "round",
+      });
+      rows.forEach((r, i) => {
+        add("circle", { cx: X(i), cy: Y(r.value), r: 3, fill: "var(--chart-1)" });
+        add("text", { x: X(i), y: 234, "text-anchor": "middle", class: "label" }, r.date.slice(5));
+      });
+      document.getElementById("caption").textContent =
+        \`From \${rows[0].value} to \${rows.at(-1).value} over \${rows.length} months (demonstration values).\`;
+    </script>
+  </body>
+</html>
 \`\`\`
 `,
   },
@@ -1207,34 +1380,240 @@ description: A concise direct physical figure: two linked pendulum rods, native 
 Use \`explainer\` and \`style\`. This system explains itself through two rods and bobs; it does not need an unrelated machine or a text panel. The four-state solver and energy use equal 1kg masses and 1m rods. Explanation belongs in chat. The page contains only a short caption and compact controls/readout.
 
 \`\`\`html
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-body{margin:0;color:var(--figure-text);background:var(--figure-page);font:14px/1.5 var(--font-sans)}
-figure{max-width:680px;margin:auto;padding:12px}.plate{background:var(--figure-card);border:var(--figure-weight) solid var(--figure-mid);padding:16px}
-.corners{display:flex;justify-content:space-between;gap:12px;font:11px/1.4 var(--figure-mono);color:var(--figure-muted)}.title{text-align:right;color:var(--figure-strong)}
-svg{display:block;width:100%;height:auto}.rod{stroke:var(--figure-hi);stroke-width:var(--figure-weight);vector-effect:non-scaling-stroke}
-.controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 12px;font:12px var(--figure-mono)}button{font:inherit;color:var(--figure-strong);background:transparent;border:var(--figure-weight) solid var(--figure-mid);padding:6px 10px}
-label{display:flex;align-items:center;gap:8px}input{accent-color:var(--figure-lit);max-width:125px}:focus-visible{outline:2px solid var(--figure-hi);outline-offset:3px}
-output{font:11px/1.4 var(--figure-mono);color:var(--figure-strong);font-variant-numeric:tabular-nums}figcaption{margin-top:10px;font-size:12px;color:var(--figure-text)}
-@media(max-width:440px){.footer{flex-direction:column}.title{max-width:75%}.plate{padding:12px}}
-</style></head><body><figure><div class="plate"><div class="corners"><span>Fig 1</span><span class="title">DOUBLE PENDULUM</span></div><svg viewBox="0 0 440 400" role="img" aria-label="Two linked rods with bobs swinging about a fixed pivot"><line x1="200" y1="195" x2="240" y2="195" class="rod"/><line id="a" class="rod"/><line id="b" class="rod"/><circle cx="220" cy="200" r="4" fill="var(--figure-dot)"/><circle id="bob1" r="7" fill="var(--figure-face)" class="rod"/><circle id="bob2" r="9" fill="var(--figure-lit)" class="rod"/></svg><div class="controls"><button id="step" type="button">Step</button><button id="toggle" type="button">Run</button><button id="reset" type="button">Reset</button><label>Start angle <input id="angle" aria-label="First rod starting angle in degrees" type="range" min="20" max="150" value="90"><span id="degrees">90°</span></label></div><div class="corners footer"><span>Change angle · step or run</span><output id="energy" aria-live="off"></output></div></div><figcaption>Two equal 1kg masses on 1m rods, without damping. Small changes to the starting angle can lead to very different paths.</figcaption></figure>
-<script type="module">
-import { doublePendulum, rk4Step, createRk4Workspace } from '/kits/math.js';
-const angle=document.getElementById('angle'),toggle=document.getElementById('toggle'),out=document.getElementById('energy');
-let system,state,work,t=0,last=0,acc=0,visible=true,playing=false;
-new IntersectionObserver(([entry])=>{visible=entry.isIntersecting;last=0}).observe(document.querySelector('figure'));
-function reset(){system=doublePendulum({m1:1,m2:1,l1:1,l2:1,gravity:9.81,theta1:Number(angle.value)*Math.PI/180,theta2:.35});state=system.initial;work=createRk4Workspace(state.length);t=0;acc=0;last=0;document.getElementById('degrees').textContent=angle.value+'°';draw()}
-function advance(){state=rk4Step(system.derivative,t,state,1/120,undefined,work);t+=1/120;if(!state.every(Number.isFinite)){playing=false;reset()}}
-function draw(){const [a,b,w1,w2]=state,x1=220+90*Math.sin(a),y1=200+90*Math.cos(a),x2=x1+90*Math.sin(b),y2=y1+90*Math.cos(b);
-const set=(id,attrs)=>{const e=document.getElementById(id);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v))};
-set('a',{x1:220,y1:200,x2:x1,y2:y1});set('b',{x1,y1,x2,y2});set('bob1',{cx:x1,cy:y1});set('bob2',{cx:x2,cy:y2});
-const kinetic=.5*(2*w1*w1+w2*w2+2*w1*w2*Math.cos(a-b));const potential=9.81*(3-2*Math.cos(a)-Math.cos(b));
-out.textContent=\`t \${t.toFixed(1)} s · E \${(kinetic+potential).toFixed(2)} J\`;toggle.textContent=playing?'Pause':'Run';}
-angle.addEventListener('input',reset);document.getElementById('reset').addEventListener('click',reset);
-document.getElementById('step').addEventListener('click',()=>{playing=false;for(let i=0;i<4;i++)advance();acc=0;last=0;draw()});
-toggle.addEventListener('click',()=>{playing=!playing;last=0;draw()});document.addEventListener('visibilitychange',()=>{last=0;acc=0});
-function frame(now){if(playing&&!document.hidden&&visible){acc+=last?Math.min((now-last)/1000,.05):0;let steps=0;while(acc>=1/120&&steps<6){advance();acc-=1/120;steps++}if(acc>=1/120)acc=0;draw()}last=now;requestAnimationFrame(frame)}
-reset();requestAnimationFrame(frame);
-</script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      body {
+        margin: 0;
+        color: var(--figure-text);
+        background: var(--figure-page);
+        font: 14px/1.5 var(--font-sans);
+      }
+      figure {
+        max-width: 680px;
+        margin: auto;
+        padding: 12px;
+      }
+      .plate {
+        background: var(--figure-card);
+        border: var(--figure-weight) solid var(--figure-mid);
+        padding: 16px;
+      }
+      .corners {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font: 11px/1.4 var(--figure-mono);
+        color: var(--figure-muted);
+      }
+      .title {
+        text-align: right;
+        color: var(--figure-strong);
+      }
+      svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      .rod {
+        stroke: var(--figure-hi);
+        stroke-width: var(--figure-weight);
+        vector-effect: non-scaling-stroke;
+      }
+      .controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin: 8px 0 12px;
+        font: 12px var(--figure-mono);
+      }
+      button {
+        font: inherit;
+        color: var(--figure-strong);
+        background: transparent;
+        border: var(--figure-weight) solid var(--figure-mid);
+        padding: 6px 10px;
+      }
+      label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      input {
+        accent-color: var(--figure-lit);
+        max-width: 125px;
+      }
+      :focus-visible {
+        outline: 2px solid var(--figure-hi);
+        outline-offset: 3px;
+      }
+      output {
+        font: 11px/1.4 var(--figure-mono);
+        color: var(--figure-strong);
+        font-variant-numeric: tabular-nums;
+      }
+      figcaption {
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--figure-text);
+      }
+      @media (max-width: 440px) {
+        .footer {
+          flex-direction: column;
+        }
+        .title {
+          max-width: 75%;
+        }
+        .plate {
+          padding: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <figure>
+      <div class="plate">
+        <div class="corners"><span>Fig 1</span><span class="title">DOUBLE PENDULUM</span></div>
+        <svg
+          viewBox="0 0 440 400"
+          role="img"
+          aria-label="Two linked rods with bobs swinging about a fixed pivot"
+        >
+          <line x1="200" y1="195" x2="240" y2="195" class="rod" />
+          <line id="a" class="rod" />
+          <line id="b" class="rod" />
+          <circle cx="220" cy="200" r="4" fill="var(--figure-dot)" />
+          <circle id="bob1" r="7" fill="var(--figure-face)" class="rod" />
+          <circle id="bob2" r="9" fill="var(--figure-lit)" class="rod" />
+        </svg>
+        <div class="controls">
+          <button id="step" type="button">Step</button><button id="toggle" type="button">Run</button
+          ><button id="reset" type="button">Reset</button
+          ><label
+            >Start angle
+            <input
+              id="angle"
+              aria-label="First rod starting angle in degrees"
+              type="range"
+              min="20"
+              max="150"
+              value="90"
+            /><span id="degrees">90°</span></label
+          >
+        </div>
+        <div class="corners footer">
+          <span>Change angle · step or run</span><output id="energy" aria-live="off"></output>
+        </div>
+      </div>
+      <figcaption>
+        Two equal 1kg masses on 1m rods, without damping. Small changes to the starting angle can
+        lead to very different paths.
+      </figcaption>
+    </figure>
+    <script type="module">
+      import { doublePendulum, rk4Step, createRk4Workspace } from "/kits/math.js";
+      const angle = document.getElementById("angle"),
+        toggle = document.getElementById("toggle"),
+        out = document.getElementById("energy");
+      let system,
+        state,
+        work,
+        t = 0,
+        last = 0,
+        acc = 0,
+        visible = true,
+        playing = false;
+      new IntersectionObserver(([entry]) => {
+        visible = entry.isIntersecting;
+        last = 0;
+      }).observe(document.querySelector("figure"));
+      function reset() {
+        system = doublePendulum({
+          m1: 1,
+          m2: 1,
+          l1: 1,
+          l2: 1,
+          gravity: 9.81,
+          theta1: (Number(angle.value) * Math.PI) / 180,
+          theta2: 0.35,
+        });
+        state = system.initial;
+        work = createRk4Workspace(state.length);
+        t = 0;
+        acc = 0;
+        last = 0;
+        document.getElementById("degrees").textContent = angle.value + "°";
+        draw();
+      }
+      function advance() {
+        state = rk4Step(system.derivative, t, state, 1 / 120, undefined, work);
+        t += 1 / 120;
+        if (!state.every(Number.isFinite)) {
+          playing = false;
+          reset();
+        }
+      }
+      function draw() {
+        const [a, b, w1, w2] = state,
+          x1 = 220 + 90 * Math.sin(a),
+          y1 = 200 + 90 * Math.cos(a),
+          x2 = x1 + 90 * Math.sin(b),
+          y2 = y1 + 90 * Math.cos(b);
+        const set = (id, attrs) => {
+          const e = document.getElementById(id);
+          for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+        };
+        set("a", { x1: 220, y1: 200, x2: x1, y2: y1 });
+        set("b", { x1, y1, x2, y2 });
+        set("bob1", { cx: x1, cy: y1 });
+        set("bob2", { cx: x2, cy: y2 });
+        const kinetic = 0.5 * (2 * w1 * w1 + w2 * w2 + 2 * w1 * w2 * Math.cos(a - b));
+        const potential = 9.81 * (3 - 2 * Math.cos(a) - Math.cos(b));
+        out.textContent = \`t \${t.toFixed(1)} s · E \${(kinetic + potential).toFixed(2)} J\`;
+        toggle.textContent = playing ? "Pause" : "Run";
+      }
+      angle.addEventListener("input", reset);
+      document.getElementById("reset").addEventListener("click", reset);
+      document.getElementById("step").addEventListener("click", () => {
+        playing = false;
+        for (let i = 0; i < 4; i++) advance();
+        acc = 0;
+        last = 0;
+        draw();
+      });
+      toggle.addEventListener("click", () => {
+        playing = !playing;
+        last = 0;
+        draw();
+      });
+      document.addEventListener("visibilitychange", () => {
+        last = 0;
+        acc = 0;
+      });
+      function frame(now) {
+        if (playing && !document.hidden && visible) {
+          acc += last ? Math.min((now - last) / 1000, 0.05) : 0;
+          let steps = 0;
+          while (acc >= 1 / 120 && steps < 6) {
+            advance();
+            acc -= 1 / 120;
+            steps++;
+          }
+          if (acc >= 1 / 120) acc = 0;
+          draw();
+        }
+        last = now;
+        requestAnimationFrame(frame);
+      }
+      reset();
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>
 \`\`\`
 
 The model starts still in both motion modes, so the learner chooses Step or Run. Its screen coordinates allow every angle without clipping; lengths used for drawing have the same ratio as the solver. Energy includes a constant offset so zero is the lowest hanging state; that does not change the dynamics. Keep these numerical/representation notes in chat, not as extra widget paragraphs.
@@ -1273,11 +1652,19 @@ Use neutral ink \`--figure-hi\`, \`--figure-mid\`, \`--figure-lo\` for ordinary 
 Use the user's supplied numbers, search/read tools for cited sources, or the sandbox for CSV/XLSX. In the sandbox, inspect columns and missing values with pandas, parse dates and numeric fields explicitly, compute aggregates there, and print compact JSON. Embed that JSON literal in the HTML; never use \`fetch\` in the widget. See \`chart-from-spreadsheet\` for a complete example. If there are many thousands of marks, if the user needs a static export, or if frame-by-frame animation is the point, draw with matplotlib and \`publish_asset\` instead; keep the same colours and thin-line rules. Use SVG for normal interactive, small to medium data.
 
 \`\`\`js
-const rows = [{ label: 'v1', value: 24 }, { label: 'v2', value: 31 }];
-const max = Math.max(0, ...rows.map(r => r.value));
-const y = v => 170 - 130 * v / (max || 1);
-const bars = rows.map((r, i) => \`<rect x="\${60 + i * 110}" y="\${y(r.value)}" width="54" height="\${170-y(r.value)}" fill="var(--chart-\${i+1})"/>\`).join('');
-document.querySelector('svg').insertAdjacentHTML('beforeend', bars);
+const rows = [
+  { label: "v1", value: 24 },
+  { label: "v2", value: 31 },
+];
+const max = Math.max(0, ...rows.map((r) => r.value));
+const y = (v) => 170 - (130 * v) / (max || 1);
+const bars = rows
+  .map(
+    (r, i) =>
+      \`<rect x="\${60 + i * 110}" y="\${y(r.value)}" width="54" height="\${170 - y(r.value)}" fill="var(--chart-\${i + 1})"/>\`,
+  )
+  .join("");
+document.querySelector("svg").insertAdjacentHTML("beforeend", bars);
 \`\`\`
 
 For untrusted labels, build text nodes with DOM APIs or escape HTML before \`innerHTML\`.
@@ -1287,12 +1674,21 @@ For untrusted labels, build text nodes with DOM APIs or escape HTML before \`inn
 After computing \`x(value)\` and \`y(value)\` from a shared plot box, use these compact SVG patterns. Keep marks in data order; create text through \`textContent\` if labels come from outside data. \`H\` is the zero baseline and \`W\` is a category band's width.
 
 \`\`\`js
-const bar = (x0, v, W, H, y) => \`<rect x="\${x0}" y="\${y(v)}" width="\${W}" height="\${H-y(v)}" fill="var(--chart-1)"/>\`;
-const grouped = (x0, values, W, H, y) => values.map((v,i) =>
-  \`<rect x="\${x0+i*W/values.length}" y="\${y(v)}" width="\${W/values.length-2}" height="\${H-y(v)}" fill="var(--chart-\${i+1})"/>\`).join('');
-const line = (points, x, y) => \`<path d="\${points.map((p,i) => \`\${i?'L':'M'}\${x(p)} \${y(p)}\`).join(' ')}" fill="none" stroke="var(--chart-1)" stroke-width="var(--stroke-regular)"/>\`;
-const area = (points, x, y, H) => \`<path d="\${linePath(points,x,y)} L\${x(points.at(-1))} \${H} L\${x(points[0])} \${H}Z" fill="var(--chart-1)" opacity=".16"/>\`;
-const linePath = (points,x,y) => points.map((p,i) => \`\${i?'L':'M'}\${x(p)} \${y(p)}\`).join(' ');
+const bar = (x0, v, W, H, y) =>
+  \`<rect x="\${x0}" y="\${y(v)}" width="\${W}" height="\${H - y(v)}" fill="var(--chart-1)"/>\`;
+const grouped = (x0, values, W, H, y) =>
+  values
+    .map(
+      (v, i) =>
+        \`<rect x="\${x0 + (i * W) / values.length}" y="\${y(v)}" width="\${W / values.length - 2}" height="\${H - y(v)}" fill="var(--chart-\${i + 1})"/>\`,
+    )
+    .join("");
+const line = (points, x, y) =>
+  \`<path d="\${points.map((p, i) => \`\${i ? "L" : "M"}\${x(p)} \${y(p)}\`).join(" ")}" fill="none" stroke="var(--chart-1)" stroke-width="var(--stroke-regular)"/>\`;
+const area = (points, x, y, H) =>
+  \`<path d="\${linePath(points, x, y)} L\${x(points.at(-1))} \${H} L\${x(points[0])} \${H}Z" fill="var(--chart-1)" opacity=".16"/>\`;
+const linePath = (points, x, y) =>
+  points.map((p, i) => \`\${i ? "L" : "M"}\${x(p)} \${y(p)}\`).join(" ");
 \`\`\`
 
 For scatter, draw one \`<circle>\` per valid \`(x,y)\` observation and use \`linearRegression(xs,ys)\` for an optional fit line from \`fit.intercept + fit.slope*x\`; show \`fit.r2\` and label the line “least squares fit.” For a histogram, use \`histogram(values,bins,min,max)\` from \`/kits/math.js\`, then draw \`counts[i]\` as touching bars between \`edges[i]\` and \`edges[i+1]\` (or divide by \`count * binWidth\` for density). For small multiples, call the same chart rendering function on each subgroup with one shared numeric domain and the same tick step; title each panel. These recipes use no data smoothing. A line chart with gaps should split into separate paths, not join across missing rows.
@@ -1388,7 +1784,7 @@ Use concise inline HTML/SVG/Canvas and optional bundled kit imports (\`/kits/mat
 
 Use ES modules or a private IIFE for live code. An inlined kit already declares its helpers: do not redeclare names such as \`lineOnTop\` in the same global scope. Pin kit imports to the page's bundled runtime; no network, external scripts/fonts or CDN libraries. Inline \`ISO_CSS\` if using the isometric kit. For sandbox builds copy sources to a writable directory and preserve relative imports; reference sources are read only.
 
-Batch skill/context lookups, then build, preview and deliver. Do not announce a 30–90 minute production workflow for normal chat. Review one \`preview_widget({html})\` or \`{path}\` screenshot and console. An \`error\`, \`uncaught\` exception, broken interaction or visible clipping is a failure: repair it, rebuild if needed, and preview again until it is clean. Use as many steps as necessary to fix the error, freshly preview and deliver. Avoid unnecessary reference browsing, decoration or unrelated audits. Never render a known-broken page or claim an unrun check passed.
+Batch skill/context lookups, then build, preview and deliver. Do not announce a 30–90 minute production workflow for normal chat. Run \`preview_widget({html})\` or \`{path}\` once to load and exercise the page in an isolated local browser on the chat server. Inspect its labeled screenshots, \`ok\`, summary, overflow, console, errors and per-action interaction report. The preview varies controls (min/mid/max, selects, toggles, buttons and detectable drags), checks labels/focus and watches for freezes within a 25-action/20-second exploration budget; coverage beyond that budget is unverified. \`path\` reads the built file from the thread sandbox, then renders locally. An \`error\`, \`uncaught\` exception, broken interaction or visible clipping is a failure: repair it, rebuild if needed, and preview again until it is clean. Use as many steps as necessary to fix the error, freshly preview and deliver. Avoid unnecessary reference browsing, decoration or unrelated audits. Never render a known-broken page or claim an unrun check passed.
 
 After a clean preview call \`render_widget({title,html})\` or \`{title,path}\`, explain what to notice in chat, and close the sandbox when finished. A file in the sandbox is not delivery. Use \`path\` for large built pages; never read a multi-MB HTML file into model context. Full geometry audits and exhaustive theme/orbit checks are for explicitly requested deep verification.
 
@@ -1711,154 +2107,246 @@ For advanced material options, use \`src/iso/lathe.mjs\`, \`tube.mjs\`, and \`ca
 
 \`/kits/iso-gl.js\` exports \`GLSL_ISO\`, \`GLSL_TURN\`, \`glslPose(name,prefix?)\`, \`glCamera(P)\`, \`glLayer({canvas,fragment,view,camera,uniforms?,fixed?,extensions?,maxRatio?,untransformed?,onError?})\`, \`smooth(a,b,x)\`, \`burst(age,rise,fall)\`, and \`settle(state,target,dt,seconds,calm?)\`. The \`gl\` namespace includes the legacy WebGL variant. These helpers position and animate fragment shaders in the same isometric camera as SVG.
 
-\`\`\`js
-import { fitProjection, boxCorners, slabOf, solidSvg, figureSvg, ISO_CSS } from "/kits/iso.js";
-const style = document.createElement("style");
-style.textContent = ISO_CSS;
-document.head.append(style);
-const plan = { x: 0, y: 0, w: 80, d: 50, r: 5 };
-const P = fitProjection(boxCorners(plan, 0, 12), 400, 250);
-document.body.innerHTML = figureSvg({
-  width: 400,
-  height: 250,
-  label: "Isometric block",
-  body: solidSvg(slabOf(plan, 0, 12, P)),
-});
-\`\`\`
+The complete isometric example below installs \`ISO_CSS\`; geometry alone has no face or stroke styling.
+
+## Complete widgets
+
+These fragments run inside the widget bootstrap, which supplies the real light/dark \`--figure-*\` tokens. All four install \`ISO_CSS\` for geometry and \`plateHtml\` framing. Colours come only from figure tokens; lines and card frames are 0.6px. Keep the reference tables above when looking up signatures.
 
 ## Complete widget: double pendulum on canvas
 
 \`\`\`html
-<!doctype html><meta charset="utf-8" /><canvas
-  id="view"
-  width="520"
-  height="360"
-  aria-label="Double pendulum"
-></canvas>
+<style>
+.demo{max-width:650px;margin:auto;padding:1px 20px;font:14px/1.5 var(--font-sans);color:var(--figure-text)}
+.demo .iso-plate{box-shadow:none;border:var(--figure-weight) solid var(--figure-mid)}
+.demo .iso-plate-corner{font-size:11px;color:var(--figure-text)}.demo .iso-legend{color:var(--figure-text)}.demo .iso-swatch path{stroke-width:var(--figure-weight)}
+canvas{display:block;width:100%;max-width:520px;height:auto;margin:auto}svg text{font:12px var(--figure-mono);fill:var(--figure-text)}
+.controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0}
+button,input{accent-color:var(--figure-lit);font:12px var(--figure-mono)}
+button{background:var(--figure-card);color:var(--figure-strong);border:var(--figure-weight) solid var(--figure-mid);padding:6px 12px}
+button:focus-visible,input:focus-visible{outline:1px solid var(--figure-hi);outline-offset:3px}
+.controls label{display:flex;align-items:center;gap:8px}
+@media(max-width:560px){.demo .iso-plate-corner{white-space:normal;max-width:100%;line-height:1.4}.demo .iso-plate-corner[data-corner="hint"]{bottom:28px}.demo .iso-plate{padding-bottom:88px}}
+</style>
+<main class="iso demo" id="demo"></main>
 <script type="module">
   import { doublePendulum, rk4Step, createRk4Workspace } from "/kits/math.js";
-  const canvas = document.querySelector("#view"),
-    ctx = canvas.getContext("2d");
-  const { derivative, initial } = doublePendulum({ gravity: 4, theta1: 1.8, theta2: 2.4 });
-  let state = initial,
-    t = 0,
-    workspace = createRk4Workspace(initial.length);
-  function frame() {
-    for (let i = 0; i < 4; i++) {
-      rk4Step(derivative, t, state, 1 / 240, state, workspace);
-      t += 1 / 240;
+  import { ISO_CSS, plateHtml } from "/kits/iso.js";
+  const host = document.querySelector("#demo");
+  const style = document.createElement("style");
+  style.textContent = ISO_CSS;
+  document.head.append(style);
+  host.innerHTML = plateHtml({fig:"Fig 1",title:"Double pendulum",hint:"Change the initial angle",readout:"",
+    keys:[{mark:"edge",label:"Linked rods"},{mark:"lit",label:"Second bob"}],
+    caption:"Two equal masses, 1 m rods. Energy is measured from the same state that moves the bobs.",
+    body:'<canvas width="520" height="360" aria-label="Two linked pendulum rods and bobs"></canvas>'}) +
+    '<div class="controls"><button data-step>Step</button><button data-run aria-pressed="false">Run</button><button data-reset>Reset</button><label>θ₁ <input data-angle type="range" min="30" max="140" value="103" aria-label="Initial first angle in degrees"></label></div>';
+  const canvas = host.querySelector("canvas"), ctx = canvas.getContext("2d");
+  const ratio=devicePixelRatio||1; canvas.width=520*ratio;canvas.height=360*ratio;ctx.scale(ratio,ratio);
+  const h = 1/120, g = 9.81, work = createRk4Workspace(4);
+  let system, state, t;
+  function reset() { system = doublePendulum({gravity:g,theta1:Number(host.querySelector("[data-angle]").value)*Math.PI/180,theta2:2.4}); state = system.initial.slice(); t=0; }
+  function advance() { rk4Step(system.derivative,t,state,h,state,work); t+=h; if (!state.every(Number.isFinite)) throw new RangeError("Non-finite pendulum state"); }
+  function draw() {
+    const css=getComputedStyle(host), ink=n=>css.getPropertyValue("--figure-"+n).trim();
+    const [a,b,u,v]=state, x1=260+76*Math.sin(a), y1=168+76*Math.cos(a), x2=x1+76*Math.sin(b), y2=y1+76*Math.cos(b);
+    ctx.clearRect(0,0,520,360); ctx.lineWidth=.6;
+    ctx.strokeStyle=ink("lo"); ctx.beginPath(); ctx.moveTo(230,158);ctx.lineTo(290,158);ctx.stroke();
+    ctx.strokeStyle=ink("hi");ctx.beginPath();ctx.moveTo(260,158);ctx.lineTo(260,168);ctx.lineTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    for (const [x,y,fill] of [[260,168,"dot"],[x1,y1,"shade-2"],[x2,y2,"lit"]]) {
+      ctx.fillStyle=ink(fill);ctx.beginPath();ctx.arc(x,y,x===260&&y===168?3:8,0,2*Math.PI);ctx.fill();ctx.stroke();
     }
-    const [a, b] = state,
-      cx = 260,
-      cy = 85,
-      scale = 105;
-    const x1 = cx + scale * Math.sin(a),
-      y1 = cy + scale * Math.cos(a);
-    const x2 = x1 + scale * Math.sin(b),
-      y2 = y1 + scale * Math.cos(b);
-    ctx.clearRect(0, 0, 520, 360);
-    ctx.strokeStyle = "#d7e3ed";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-    ctx.fillStyle = "#4ab9de";
-    for (const [x, y] of [
-      [x1, y1],
-      [x2, y2],
-    ]) {
-      ctx.beginPath();
-      ctx.arc(x, y, 8, 0, Math.PI * 2);
-      ctx.fill();
+    const energy=u*u+.5*v*v+u*v*Math.cos(a-b)-g*(2*Math.cos(a)+Math.cos(b));
+    host.querySelector("[data-readout]").textContent=\`t \${t.toFixed(2)} s · E \${energy.toFixed(3)} J\`;
+    canvas.dataset.time=String(t);
+  }
+  host.querySelector("[data-angle]").oninput=()=>{reset();draw();};
+  reset();
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  let running = !reduced.matches, visible = true, last = 0, backlog = 0;
+  const run = host.querySelector("[data-run]");
+  const updateRun = () => { run.textContent = running ? "Pause" : "Run"; run.setAttribute("aria-pressed", String(running)); };
+  run.onclick = () => { running = !running; last = 0; updateRun(); };
+  host.querySelector("[data-step]").onclick = () => { running = false; updateRun(); for (let i=0;i<6;i++) advance(); draw(); };
+  host.querySelector("[data-reset]").onclick = () => { reset(); last = backlog = 0; draw(); };
+  document.addEventListener("visibilitychange", () => { last = backlog = 0; });
+  new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; last = backlog = 0; }).observe(host);
+  reduced.addEventListener("change", () => { if (reduced.matches) running = false; updateRun(); last = 0; });
+  window.addEventListener("avenire:themechange", draw);
+  function frame(now) {
+    if (running && visible && !document.hidden) {
+      backlog += last ? Math.min((now-last)/1000, .05) : 0;
+      let steps=0;
+      while (backlog >= h && steps++ < 6) { advance(); backlog -= h; }
+      if (backlog >= h) backlog = 0;
+      draw();
     }
+    last = now;
     requestAnimationFrame(frame);
   }
-  frame();
+  updateRun(); draw(); requestAnimationFrame(frame);
 </script>
 \`\`\`
 
 ## Complete widget: three-body figure-eight on canvas
 
 \`\`\`html
-<!doctype html><meta charset="utf-8" /><canvas
-  id="view"
-  width="520"
-  height="360"
-  aria-label="Three-body orbit"
-></canvas>
+<style>
+.demo{max-width:650px;margin:auto;padding:1px 20px;font:14px/1.5 var(--font-sans);color:var(--figure-text)}
+.demo .iso-plate{box-shadow:none;border:var(--figure-weight) solid var(--figure-mid)}
+.demo .iso-plate-corner{font-size:11px;color:var(--figure-text)}.demo .iso-legend{color:var(--figure-text)}.demo .iso-swatch path{stroke-width:var(--figure-weight)}
+canvas{display:block;width:100%;max-width:520px;height:auto;margin:auto}svg text{font:12px var(--figure-mono);fill:var(--figure-text)}
+.controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0}
+button,input{accent-color:var(--figure-lit);font:12px var(--figure-mono)}
+button{background:var(--figure-card);color:var(--figure-strong);border:var(--figure-weight) solid var(--figure-mid);padding:6px 12px}
+button:focus-visible,input:focus-visible{outline:1px solid var(--figure-hi);outline-offset:3px}
+.controls label{display:flex;align-items:center;gap:8px}
+@media(max-width:560px){.demo .iso-plate-corner{white-space:normal;max-width:100%;line-height:1.4}.demo .iso-plate-corner[data-corner="hint"]{bottom:28px}.demo .iso-plate{padding-bottom:88px}}
+</style>
+<main class="iso demo" id="demo"></main>
 <script type="module">
   import { threeBodyFigureEight, velocityVerlet, createVerletWorkspace } from "/kits/math.js";
-  const canvas = document.querySelector("#view"),
-    ctx = canvas.getContext("2d");
-  const system = threeBodyFigureEight();
-  let q = system.positions,
-    v = system.velocities,
-    t = 0,
-    workspace = createVerletWorkspace(q.length);
-  const colors = ["#54c6e7", "#e9a45a", "#d983be"];
-  function frame() {
-    ctx.fillStyle = "rgba(8,18,28,0.12)";
-    ctx.fillRect(0, 0, 520, 360);
-    for (let step = 0; step < 8; step++) {
-      velocityVerlet(system.acceleration, t, q, v, 0.004, q, v, workspace);
-      t += 0.004;
-      for (let body = 0; body < 3; body++) {
-        ctx.fillStyle = colors[body];
-        ctx.beginPath();
-        ctx.arc(260 + q[body * 2] * 115, 180 - q[body * 2 + 1] * 115, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
+  import { ISO_CSS, plateHtml } from "/kits/iso.js";
+  const host = document.querySelector("#demo");
+  const style = document.createElement("style");
+  style.textContent = ISO_CSS;
+  document.head.append(style);
+  host.innerHTML=plateHtml({fig:"Fig 2",title:"Three-body orbit",hint:"Step through the orbit",readout:"",
+    keys:[{mark:"lit",label:"Body 1"},{mark:"edge",label:"Body 2"},{mark:"dim",label:"Body 3"}],
+    caption:"Equal masses in a figure-eight orbit, G = 1. The readout tracks relative energy drift.",
+    body:'<canvas width="520" height="330" aria-label="Three equal masses following a figure-eight orbit"></canvas>'}) + '<div class="controls"><button data-step>Step</button><button data-run aria-pressed="false">Run</button><button data-reset>Reset</button></div>';
+  const canvas=host.querySelector("canvas"),ctx=canvas.getContext("2d"),system=threeBodyFigureEight();
+  const ratio=devicePixelRatio||1;canvas.width=520*ratio;canvas.height=330*ratio;ctx.scale(ratio,ratio);
+  const h=1/240,work=createVerletWorkspace(6);
+  let q,v,t,E0;
+  const energy=()=>{let e=Array.from(v).reduce((s,x)=>s+.5*x*x,0);for(let i=0;i<3;i++)for(let j=i+1;j<3;j++)e-=1/Math.hypot(q[2*i]-q[2*j],q[2*i+1]-q[2*j+1]);return e;};
+  function reset(){q=system.positions.slice();v=system.velocities.slice();t=0;E0=energy();}
+  function advance(){velocityVerlet(system.acceleration,t,q,v,h,q,v,work);t+=h;if(!q.every(Number.isFinite))throw new RangeError("Non-finite orbit");}
+  const guide=[],gq=system.positions.slice(),gv=system.velocities.slice(),gw=createVerletWorkspace(6);
+  for(let i=0;i<1510;i++){velocityVerlet(system.acceleration,i*h,gq,gv,h,gq,gv,gw);guide.push([gq[0],gq[1]]);}
+  function draw(){
+    const css=getComputedStyle(host),ink=n=>css.getPropertyValue("--figure-"+n).trim();
+    ctx.clearRect(0,0,520,330);ctx.lineWidth=.6;ctx.strokeStyle=ink("mid");
+    ctx.beginPath();guide.forEach(([x,y],i)=>ctx[i?"lineTo":"moveTo"](260+135*x,165-135*y));ctx.stroke();
+    ctx.strokeStyle=ink("lo");ctx.beginPath();ctx.moveTo(250,165);ctx.lineTo(270,165);ctx.moveTo(260,155);ctx.lineTo(260,175);ctx.stroke();
+    ctx.font="12px "+css.getPropertyValue("--figure-mono");ctx.fillStyle=ink("text");ctx.fillText("x / a.u.",424,302);ctx.fillText("y / a.u.",25,28);
+    for(let i=0;i<3;i++){
+      const x=260+135*q[2*i],y=165-135*q[2*i+1];ctx.fillStyle=ink(["lit","shade-2","paper"][i]);ctx.strokeStyle=ink(["lit","hi","mid"][i]);
+      ctx.beginPath();ctx.arc(x,y,6,0,2*Math.PI);ctx.fill();ctx.stroke();
+      ctx.font="12px "+css.getPropertyValue("--figure-mono");ctx.fillStyle=ink("text");ctx.fillText(String(i+1),x+10,y-8);
     }
+    host.querySelector("[data-readout]").textContent=\`t \${t.toFixed(2)} · ΔE \${((energy()-E0)/Math.abs(E0)).toExponential(1)}\`;
+    canvas.dataset.time=String(t);
+  }
+  reset();
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  let running = !reduced.matches, visible = true, last = 0, backlog = 0;
+  const run = host.querySelector("[data-run]");
+  const updateRun = () => { run.textContent = running ? "Pause" : "Run"; run.setAttribute("aria-pressed", String(running)); };
+  run.onclick = () => { running = !running; last = 0; updateRun(); };
+  host.querySelector("[data-step]").onclick = () => { running = false; updateRun(); for (let i=0;i<6;i++) advance(); draw(); };
+  host.querySelector("[data-reset]").onclick = () => { reset(); last = backlog = 0; draw(); };
+  document.addEventListener("visibilitychange", () => { last = backlog = 0; });
+  new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; last = backlog = 0; }).observe(host);
+  reduced.addEventListener("change", () => { if (reduced.matches) running = false; updateRun(); last = 0; });
+  window.addEventListener("avenire:themechange", draw);
+  function frame(now) {
+    if (running && visible && !document.hidden) {
+      backlog += last ? Math.min((now-last)/1000, .05) : 0;
+      let steps=0;
+      while (backlog >= h && steps++ < 6) { advance(); backlog -= h; }
+      if (backlog >= h) backlog = 0;
+      draw();
+    }
+    last = now;
     requestAnimationFrame(frame);
   }
-  frame();
+  updateRun(); draw(); requestAnimationFrame(frame);
 </script>
 \`\`\`
 
-## Complete widget: noisy curve fit plotted in SVG
+## Complete widget: noisy curve fit in SVG
 
 \`\`\`html
-<!doctype html><meta charset="utf-8" /><svg
-  id="plot"
-  viewBox="0 0 520 300"
-  role="img"
-  aria-label="Noisy exponential data and fitted curve"
-></svg>
+<style>
+.demo{max-width:650px;margin:auto;padding:1px 20px;font:14px/1.5 var(--font-sans);color:var(--figure-text)}
+.demo .iso-plate{box-shadow:none;border:var(--figure-weight) solid var(--figure-mid)}
+.demo .iso-plate-corner{font-size:11px;color:var(--figure-text)}.demo .iso-legend{color:var(--figure-text)}.demo .iso-swatch path{stroke-width:var(--figure-weight)}
+canvas{display:block;width:100%;max-width:520px;height:auto;margin:auto}svg text{font:12px var(--figure-mono);fill:var(--figure-text)}
+.controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0}
+button,input{accent-color:var(--figure-lit);font:12px var(--figure-mono)}
+button{background:var(--figure-card);color:var(--figure-strong);border:var(--figure-weight) solid var(--figure-mid);padding:6px 12px}
+button:focus-visible,input:focus-visible{outline:1px solid var(--figure-hi);outline-offset:3px}
+.controls label{display:flex;align-items:center;gap:8px}
+@media(max-width:560px){.demo .iso-plate-corner{white-space:normal;max-width:100%;line-height:1.4}.demo .iso-plate-corner[data-corner="hint"]{bottom:28px}.demo .iso-plate{padding-bottom:88px}}
+</style>
+<main class="iso demo" id="demo"></main>
 <script type="module">
   import { fitExponential, linspace } from "/kits/math.js";
-  let seed = 19;
-  const random = () => (seed = (1664525 * seed + 1013904223) >>> 0) / 2 ** 32 - 0.5;
-  const xs = linspace(0, 4, 25),
-    ys = xs.map((x) => 2.2 * Math.exp(-0.7 * x) + 0.3 + random() * 0.18);
-  const { params } = fitExponential(xs, ys, [2, -0.5, 0.2]);
-  const X = (x) => 36 + x * 112,
-    Y = (y) => 270 - y * 85;
-  const svg = document.querySelector("#plot"),
-    ns = "http://www.w3.org/2000/svg";
-  const path = document.createElementNS(ns, "path"),
-    points = linspace(0, 4, 160);
-  path.setAttribute(
-    "d",
-    Array.from(
-      points,
-      (x, i) =>
-        \`\${i ? "L" : "M"}\${X(x).toFixed(1)} \${Y(params[0] * Math.exp(params[1] * x) + params[2]).toFixed(1)}\`,
-    ).join(" "),
-  );
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "#3bc4dd");
-  path.setAttribute("stroke-width", "2");
-  svg.append(path);
-  xs.forEach((x, i) => {
-    const dot = document.createElementNS(ns, "circle");
-    dot.setAttribute("cx", String(X(x)));
-    dot.setAttribute("cy", String(Y(ys[i])));
-    dot.setAttribute("r", "3");
-    dot.setAttribute("fill", "#f1b970");
-    svg.append(dot);
-  });
+  import { ISO_CSS, plateHtml } from "/kits/iso.js";
+  const host = document.querySelector("#demo");
+  const style = document.createElement("style");
+  style.textContent = ISO_CSS;
+  document.head.append(style);
+  let seed=19;
+  const random=()=>(seed=(1664525*seed+1013904223)>>>0)/2**32-.5;
+  const xs=linspace(0,4,25),ys=xs.map(x=>2.2*Math.exp(-.7*x)+.3+random()*.18);
+  const {params,residuals,r2}=fitExponential(xs,ys,[2,-.5,.2]);
+  const rmse=Math.sqrt(Array.from(residuals).reduce((s,r)=>s+r*r,0)/xs.length);
+  host.innerHTML=plateHtml({fig:"Fig 3",title:"Exponential fit",hint:"Observed minus predicted",readout:\`RMSE \${rmse.toFixed(3)} · R² \${r2.toFixed(3)}\`,
+    keys:[{mark:"edge",label:"Observed"},{mark:"lit",label:"Fitted"},{mark:"red",label:"Residual"}],
+    caption:"25 seeded observations. A least-squares exponential fit; the lower strip shows signed residuals.",
+    body:'<svg class="iso-svg" viewBox="0 0 520 330" role="img" aria-label="Response against time with labelled axes and signed residuals"></svg>'});
+  const svg=host.querySelector(".iso-plate svg"),ns="http://www.w3.org/2000/svg";
+  function add(tag,attrs,text){const e=document.createElementNS(ns,tag);for(const [k,v]of Object.entries(attrs))e.setAttribute(k,String(v));if(text)e.textContent=text;svg.append(e);return e;}
+  const X=x=>60+108*x,Y=y=>213-66*y,R=r=>279-150*r;
+  const line=(x1,y1,x2,y2,tone="lo")=>add("line",{x1,y1,x2,y2,stroke:\`var(--figure-\${tone})\`,"stroke-width":.6,"vector-effect":"non-scaling-stroke"});
+  line(60,35,60,213,"mid");line(60,213,492,213,"mid");
+  for(let x=0;x<=4;x++){line(X(x),213,X(x),218);add("text",{x:X(x),y:236,"text-anchor":"middle"},String(x));}
+  for(let y=0;y<=2.5;y+=.5){line(55,Y(y),60,Y(y));add("text",{x:48,y:Y(y)+4,"text-anchor":"end"},y.toFixed(1));}
+  add("text",{x:60,y:19},"Response / a.u.");add("text",{x:492,y:255,"text-anchor":"end"},"Time / s");
+  line(60,279,492,279,"faint");add("text",{x:60,y:310},"Residual / a.u.");add("text",{x:48,y:283,"text-anchor":"end"},"0");
+  add("path",{d:Array.from(linspace(0,4,160),(x,i)=>\`\${i?"L":"M"}\${X(x)} \${Y(params[0]*Math.exp(params[1]*x)+params[2])}\`).join(" "),fill:"none",stroke:"var(--figure-lit)","stroke-width":.6,"vector-effect":"non-scaling-stroke"});
+  xs.forEach((x,i)=>{add("circle",{cx:X(x),cy:Y(ys[i]),r:3,fill:"var(--figure-paper)",stroke:"var(--figure-hi)","stroke-width":.6,"vector-effect":"non-scaling-stroke"});line(X(x),279,X(x),R(residuals[i]),"red");});
+</script>
+\`\`\`
+
+## Complete widget: isometric carriage assembly
+
+\`\`\`html
+<style>
+.demo{max-width:650px;margin:auto;padding:1px 20px;font:14px/1.5 var(--font-sans);color:var(--figure-text)}
+.demo .iso-plate{box-shadow:none;border:var(--figure-weight) solid var(--figure-mid)}
+.demo .iso-plate-corner{font-size:11px;color:var(--figure-text)}.demo .iso-legend{color:var(--figure-text)}.demo .iso-swatch path{stroke-width:var(--figure-weight)}
+canvas{display:block;width:100%;max-width:520px;height:auto;margin:auto}svg text{font:12px var(--figure-mono);fill:var(--figure-text)}
+.controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0}
+button,input{accent-color:var(--figure-lit);font:12px var(--figure-mono)}
+button{background:var(--figure-card);color:var(--figure-strong);border:var(--figure-weight) solid var(--figure-mid);padding:6px 12px}
+button:focus-visible,input:focus-visible{outline:1px solid var(--figure-hi);outline-offset:3px}
+.controls label{display:flex;align-items:center;gap:8px}
+@media(max-width:560px){.demo .iso-plate-corner{white-space:normal;max-width:100%;line-height:1.4}.demo .iso-plate-corner[data-corner="hint"]{bottom:28px}.demo .iso-plate{padding-bottom:88px}}
+</style>
+<main class="iso demo" id="demo"></main>
+<script type="module">
+  import { ISO_CSS, plateHtml, fitProjection, boxCorners, slabOf, cylinder, solidSvg, figureSvg, lineSvg, lineOnTop } from "/kits/iso.js";
+  const host = document.querySelector("#demo");
+  const style = document.createElement("style");
+  style.textContent = ISO_CSS;
+  document.head.append(style);
+  const base={x:0,y:0,w:90,d:58,r:5},rail={x:12,y:16,w:66,d:12,r:2},carriage={x:34,y:13,w:22,d:18,r:3};
+  const P=fitProjection(boxCorners(base,0,27),520,330,{pad:45});
+  const body=[
+    solidSvg(slabOf(base,0,6,P),{tone:"lo"}),
+    solidSvg(slabOf(rail,6,7,P),{tone:"mid"}),
+    solidSvg(slabOf(carriage,13,9,P),{tone:"hi"}),
+    solidSvg(cylinder(45,22,5,22,5,P),{tone:"lit",lit:true}),
+    lineSvg(lineOnTop([16,42],[74,42],6,P),{tone:"faint"}),
+    ...[18,28,38,48,58,68].map(x=>lineSvg(lineOnTop([x,40],[x,44],6,P),{tone:"lo"}))
+  ].join("");
+  host.innerHTML=plateHtml({fig:"Fig 4",title:"Carriage assembly",hint:"Four facing shades",readout:"x 45 mm · z 27 mm",
+    keys:[{mark:"dim",label:"Base"},{mark:"raised",label:"Rail"},{mark:"lit",label:"Adjustment"}],
+    caption:"Base, rail, carriage and adjustment knob. Shaded faces show depth.",
+    body:figureSvg({width:520,height:330,label:"Small rail carriage assembly with shaded faces",body})});
 </script>
 \`\`\`
 `,

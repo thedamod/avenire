@@ -25,11 +25,19 @@ Use neutral ink `--figure-hi`, `--figure-mid`, `--figure-lo` for ordinary series
 Use the user's supplied numbers, search/read tools for cited sources, or the sandbox for CSV/XLSX. In the sandbox, inspect columns and missing values with pandas, parse dates and numeric fields explicitly, compute aggregates there, and print compact JSON. Embed that JSON literal in the HTML; never use `fetch` in the widget. See `chart-from-spreadsheet` for a complete example. If there are many thousands of marks, if the user needs a static export, or if frame-by-frame animation is the point, draw with matplotlib and `publish_asset` instead; keep the same colours and thin-line rules. Use SVG for normal interactive, small to medium data.
 
 ```js
-const rows = [{ label: 'v1', value: 24 }, { label: 'v2', value: 31 }];
-const max = Math.max(0, ...rows.map(r => r.value));
-const y = v => 170 - 130 * v / (max || 1);
-const bars = rows.map((r, i) => `<rect x="${60 + i * 110}" y="${y(r.value)}" width="54" height="${170-y(r.value)}" fill="var(--chart-${i+1})"/>`).join('');
-document.querySelector('svg').insertAdjacentHTML('beforeend', bars);
+const rows = [
+  { label: "v1", value: 24 },
+  { label: "v2", value: 31 },
+];
+const max = Math.max(0, ...rows.map((r) => r.value));
+const y = (v) => 170 - (130 * v) / (max || 1);
+const bars = rows
+  .map(
+    (r, i) =>
+      `<rect x="${60 + i * 110}" y="${y(r.value)}" width="54" height="${170 - y(r.value)}" fill="var(--chart-${i + 1})"/>`,
+  )
+  .join("");
+document.querySelector("svg").insertAdjacentHTML("beforeend", bars);
 ```
 
 For untrusted labels, build text nodes with DOM APIs or escape HTML before `innerHTML`.
@@ -39,12 +47,21 @@ For untrusted labels, build text nodes with DOM APIs or escape HTML before `inne
 After computing `x(value)` and `y(value)` from a shared plot box, use these compact SVG patterns. Keep marks in data order; create text through `textContent` if labels come from outside data. `H` is the zero baseline and `W` is a category band's width.
 
 ```js
-const bar = (x0, v, W, H, y) => `<rect x="${x0}" y="${y(v)}" width="${W}" height="${H-y(v)}" fill="var(--chart-1)"/>`;
-const grouped = (x0, values, W, H, y) => values.map((v,i) =>
-  `<rect x="${x0+i*W/values.length}" y="${y(v)}" width="${W/values.length-2}" height="${H-y(v)}" fill="var(--chart-${i+1})"/>`).join('');
-const line = (points, x, y) => `<path d="${points.map((p,i) => `${i?'L':'M'}${x(p)} ${y(p)}`).join(' ')}" fill="none" stroke="var(--chart-1)" stroke-width="var(--stroke-regular)"/>`;
-const area = (points, x, y, H) => `<path d="${linePath(points,x,y)} L${x(points.at(-1))} ${H} L${x(points[0])} ${H}Z" fill="var(--chart-1)" opacity=".16"/>`;
-const linePath = (points,x,y) => points.map((p,i) => `${i?'L':'M'}${x(p)} ${y(p)}`).join(' ');
+const bar = (x0, v, W, H, y) =>
+  `<rect x="${x0}" y="${y(v)}" width="${W}" height="${H - y(v)}" fill="var(--chart-1)"/>`;
+const grouped = (x0, values, W, H, y) =>
+  values
+    .map(
+      (v, i) =>
+        `<rect x="${x0 + (i * W) / values.length}" y="${y(v)}" width="${W / values.length - 2}" height="${H - y(v)}" fill="var(--chart-${i + 1})"/>`,
+    )
+    .join("");
+const line = (points, x, y) =>
+  `<path d="${points.map((p, i) => `${i ? "L" : "M"}${x(p)} ${y(p)}`).join(" ")}" fill="none" stroke="var(--chart-1)" stroke-width="var(--stroke-regular)"/>`;
+const area = (points, x, y, H) =>
+  `<path d="${linePath(points, x, y)} L${x(points.at(-1))} ${H} L${x(points[0])} ${H}Z" fill="var(--chart-1)" opacity=".16"/>`;
+const linePath = (points, x, y) =>
+  points.map((p, i) => `${i ? "L" : "M"}${x(p)} ${y(p)}`).join(" ");
 ```
 
 For scatter, draw one `<circle>` per valid `(x,y)` observation and use `linearRegression(xs,ys)` for an optional fit line from `fit.intercept + fit.slope*x`; show `fit.r2` and label the line “least squares fit.” For a histogram, use `histogram(values,bins,min,max)` from `/kits/math.js`, then draw `counts[i]` as touching bars between `edges[i]` and `edges[i+1]` (or divide by `count * binWidth` for density). For small multiples, call the same chart rendering function on each subgroup with one shared numeric domain and the same tick step; title each panel. These recipes use no data smoothing. A line chart with gaps should split into separate paths, not join across missing rows.
