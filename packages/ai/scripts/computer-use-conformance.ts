@@ -35,10 +35,9 @@ const args = process.argv.slice(2).filter((a) => a !== "--");
 const option = (name: string) => args[args.indexOf(name) + 1];
 const mock = args.includes("--mock");
 const modelId = args.includes("--model") ? option("--model") : undefined;
-const maxSteps = args.includes("--max-steps") ? Number(option("--max-steps")) : 20;
-if ((!mock && !modelId) || !Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 100) {
+if (!mock && !modelId) {
   process.stderr.write(
-    "Usage: conformance -- --model <OpenRouter id> --max-steps 20 | --mock [--profile <profile id>]\n",
+    "Usage: conformance -- --model <OpenRouter id> | --mock [--profile <profile id>]\n",
   );
   process.exitCode = 1;
 } else {
@@ -180,7 +179,6 @@ if ((!mock && !modelId) || !Number.isInteger(maxSteps) || maxSteps < 1 || maxSte
         images,
         capabilities,
         checkpoint,
-        maxSteps,
         maxActions: 50,
         maxCost: 1,
         deadline: (yield* Clock.currentTimeMillis) + 10 * 60_000,

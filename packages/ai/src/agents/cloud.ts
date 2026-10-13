@@ -83,7 +83,6 @@ export class RuthCloud extends Context.Service<
 >()("avenire/ai/RuthCloud") {}
 export interface RuthCloudOptions {
   readonly appUrl: string;
-  readonly maxSteps?: number;
   readonly maxActions?: number;
   readonly maxCost?: number;
   readonly hydrate?: typeof hydrate;
@@ -608,7 +607,6 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
           kind: "ruth-cloud",
           models,
           name,
-          maxSteps: options.maxSteps ?? 500,
           bindTools: () =>
             toAiSdkTools<CloudToolServices | RuthToolServices | ComputerServices>(
               [
@@ -632,7 +630,6 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
           images,
           capabilities,
           checkpoint,
-          maxSteps: options.maxSteps ?? 500,
           deadline,
           maxActions: options.maxActions ?? 500,
           maxCost: options.maxCost ?? 5,

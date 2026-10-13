@@ -8,7 +8,6 @@ import { ruthKitSpecs, ruthSandboxSpecs } from "./specs.ts";
 import { tool } from "ai";
 import * as Schema from "effect/Schema";
 
-import { AVAILABLE_SKILLS } from "../skills/index.ts";
 import { standardSchema } from "./schema.ts";
 
 export const PageContextResult = Schema.Struct({
@@ -17,8 +16,13 @@ export const PageContextResult = Schema.Struct({
     version: Schema.String,
     kits: Schema.Array(Schema.String),
     capabilities: Schema.Array(Schema.String),
+    sourceRoot: Schema.String,
   }),
-  budgets: Schema.Struct({ maxSourceBytes: Schema.Int, frameBudgetMs: Schema.Number }),
+  budgets: Schema.Struct({
+    maxSourceBytes: Schema.Int,
+    maxInlineSourceBytes: Schema.Int,
+    frameBudgetMs: Schema.Number,
+  }),
   existingVisuals: Schema.Array(Schema.Struct({ id: Schema.String, title: Schema.String })),
 });
 export type PageContextResult = typeof PageContextResult.Type;
@@ -52,7 +56,9 @@ export const loadSkillSpec = {
     "Load skill instructions into context before acting. Ask only for the skills the task " +
     "needs; the system prompt lists them.",
   inputSchema: standardSchema(
-    Schema.Struct({ skills: Schema.NonEmptyArray(Schema.Literals(AVAILABLE_SKILLS)) }),
+    Schema.Struct({
+      skills: Schema.NonEmptyArray(Schema.String),
+    }),
   ),
   outputSchema: standardSchema(
     Schema.Struct({ skills: Schema.Array(Schema.String), content: Schema.String }),

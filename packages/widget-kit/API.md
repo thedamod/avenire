@@ -132,7 +132,7 @@ The core also exports `vec*`, `mat*`, `quat*`, `euler`, `spherical`, and `polar`
 
 ## Isometric drawing
 
-`/kits/iso.js` exports the anatomy SVG geometry functions and namespace helpers below. Inline `ISO_CSS` in a `<style>` element, since the widget CSP allows inline styles. `iso.css` is also emitted for hosts whose style policy permits a stylesheet.
+`/kits/iso.js` exports the isometric SVG geometry functions and namespace helpers below. Inline `ISO_CSS` in a `<style>` element, since the widget CSP allows inline styles. `iso.css` is also emitted for hosts whose style policy permits a stylesheet.
 
 | Export                                                                                   | Purpose                                       |
 | ---------------------------------------------------------------------------------------- | --------------------------------------------- |

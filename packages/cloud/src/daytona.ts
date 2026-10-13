@@ -26,7 +26,7 @@ export class SandboxTimeout extends Schema.TaggedError<SandboxTimeout>()("Sandbo
 }) {
   override get message(): string {
     if (this.operation === "lifetime") {
-      return "The sandbox hit its 60-minute lifetime limit and was deleted. The next call starts a fresh sandbox if your daily allowance permits.";
+      return `The sandbox hit its ${this.timeoutSeconds / 60}-minute lifetime limit and was deleted. The next call starts a fresh sandbox if your daily allowance permits.`;
     }
     return `Sandbox ${this.operation} timed out after ${this.timeoutSeconds} seconds`;
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { DaytonaFileNotFoundError, type Daytona } from "@daytonaio/sdk";
+import { DaytonaFileNotFoundError, DaytonaConnectionError, type Daytona } from "@daytonaio/sdk";
 import * as Clock from "effect/Clock";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
@@ -41,6 +41,7 @@ const fake = () => {
   let output = "ok";
   let hang = false;
   let deleteFailure = false;
+  let folderFailures = 0;
   const makeBox = (labels: Record<string, string>, state = "started", createdAt?: string) => {
     const files = new Map<string, Buffer>();
     const sizes = new Map<string, number>();
@@ -72,6 +73,10 @@ const fake = () => {
       },
       fs: {
         async createFolder(path: string) {
+          if (folderFailures > 0) {
+            folderFailures--;
+            throw new DaytonaConnectionError("read ECONNRESET");
+          }
           folders.push(path);
         },
         async uploadFile(bytes: Buffer, path: string) {
@@ -148,6 +153,9 @@ const fake = () => {
     },
     setHang: () => {
       hang = true;
+    },
+    setFolderFailures: (value: number) => {
+      folderFailures = value;
     },
     setDeleteFailure: (value: boolean) => {
       deleteFailure = value;
@@ -305,6 +313,64 @@ describe("ChatSandboxes", () => {
       }),
     );
   });
+  it.effect(
+    "allows figure source reads but rejects toolchain writes and oversized artifact downloads",
+    () => {
+      const f = fake();
+      return provide(
+        f,
+        Effect.gen(function* () {
+          const s = yield* ChatSandboxes;
+          yield* exec(s);
+          const box = f.boxes[0]!;
+          const path = "/opt/avenire/figures/references/craft.md";
+          box.files.set(path, Buffer.from("Craft"));
+          expect(new TextDecoder().decode((yield* s.read(owner, { path })).bytes)).toBe("Craft");
+          expect((yield* Effect.flip(s.write(owner, { path, bytes: new Uint8Array() })))._tag).toBe(
+            "SandboxInputRejected",
+          );
+          expect(
+            (yield* Effect.flip(s.read(owner, { path: "/opt/avenire/figuresx/LICENSE" })))._tag,
+          ).toBe("SandboxInputRejected");
+          box.sizes.set(`${CHAT_WORKDIR}/large.html`, 8 * 1024 * 1024 + 1);
+          expect(
+            (yield* Effect.flip(
+              s.readArtifact(owner, { path: "large.html", maxBytes: 8 * 1024 * 1024 }),
+            ))._tag,
+          ).toBe("SandboxInputRejected");
+        }),
+      );
+    },
+  );
+  it.effect("honours configured hard lifetime and idle stop", () => {
+    const f = fake();
+    return provide(
+      f,
+      Effect.gen(function* () {
+        const s = yield* ChatSandboxes;
+        yield* exec(s);
+        expect(f.created[0]!.autoStopInterval).toBe(10);
+        yield* TestClock.adjust("5 minutes");
+        expect((yield* Effect.flip(exec(s)))._tag).toBe("SandboxTimeout");
+        expect(f.boxes[0]!.deleted).toBe(1);
+      }),
+      { CHAT_SANDBOX_LIFETIME_MINUTES: "5", CHAT_SANDBOX_IDLE_STOP_MINUTES: "10" },
+    );
+  });
+  it.effect("retries idempotent setup and prepares the computer workspace only once", () => {
+    const f = fake();
+    f.setFolderFailures(2);
+    return provide(
+      f,
+      Effect.gen(function* () {
+        const s = yield* ChatSandboxes;
+        yield* s.target(owner);
+        yield* s.target(owner);
+        expect(f.created).toHaveLength(1);
+        expect(f.boxes[0]!.folders.filter((p) => p === "/home/daytona/workspace")).toHaveLength(1);
+      }),
+    );
+  });
   it.effect("validates timeouts and passes default/cwd/maximum to executeCommand", () => {
     const f = fake();
     return provide(
@@ -417,13 +483,13 @@ describe("ChatSandboxes", () => {
       Effect.gen(function* () {
         const s = yield* ChatSandboxes;
         yield* exec(s);
-        yield* TestClock.adjust("60 minutes");
+        yield* TestClock.adjust(`${limits.lifetimeMinutes} minutes`);
         const error = yield* Effect.flip(exec(s));
         expect(error._tag).toBe("SandboxTimeout");
         if (error._tag === "SandboxTimeout") expect(error.operation).toBe("lifetime");
         expect(error.message).toContain("next call");
         expect(f.boxes[0]!.deleted).toBe(1);
-        expect(f.records[0]!.seconds).toBe(3600);
+        expect(f.records[0]!.seconds).toBe(limits.lifetimeMinutes * 60);
         f.setQuota();
         expect((yield* Effect.flip(exec(s)))._tag).toBe("SandboxQuotaExceeded");
         expect(f.created).toHaveLength(1);
@@ -435,14 +501,14 @@ describe("ChatSandboxes", () => {
     return provide(
       f,
       Effect.gen(function* () {
-        yield* TestClock.adjust("2 hours");
+        yield* TestClock.adjust("3 hours");
         const s = yield* ChatSandboxes;
         yield* exec(s);
         const now = yield* Clock.currentTimeMillis;
         const old = f.box(
           { app: "ruth-chat", userId: "other", threadId: "old" },
           "started",
-          new Date(now - 3_600_001).toISOString(),
+          new Date(now - limits.lifetimeMinutes * 60_000 - 1).toISOString(),
         );
         const fresh = f.box({
           app: "ruth-chat",
@@ -466,7 +532,7 @@ describe("ChatSandboxes", () => {
       Effect.gen(function* () {
         const s = yield* ChatSandboxes;
         yield* exec(s);
-        yield* TestClock.adjust("60 minutes");
+        yield* TestClock.adjust(`${limits.lifetimeMinutes} minutes`);
         expect(yield* s.sweep).toBe(1);
         yield* exec(s);
         expect(f.created).toHaveLength(2);
@@ -487,7 +553,7 @@ describe("ChatSandboxes", () => {
             const params = f.created[0]!;
             expect(params.ephemeral).toBe(true);
             expect(params.autoDeleteInterval).toBe(0);
-            expect(params.autoStopInterval).toBe(15);
+            expect(params.autoStopInterval).toBe(limits.idleStopMinutes);
             if (allow === undefined) {
               expect(params.networkBlockAll).toBe(true);
               expect(params.networkAllowList).toBeUndefined();

@@ -1,6 +1,13 @@
-import { AssetId, MAX_WIDGET_HTML_BYTES, type Widget } from "@avenire/contracts";
+import { ChatSandboxes } from "@avenire/cloud/chat-sandbox";
+import {
+  AssetId,
+  MAX_WIDGET_HTML_BYTES,
+  MAX_WIDGET_INLINE_HTML_BYTES,
+  type WidgetSource,
+  type Widget,
+} from "@avenire/contracts";
 import { ObjectNotFound, type StorageError } from "@avenire/storage/storage";
-import { THEME_TOKENS } from "@avenire/ui/tokens";
+import { WIDGET_THEME_TOKENS } from "@avenire/ui/tokens";
 import { buildWidgetDocument } from "@avenire/ui/widget-protocol";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import * as Clock from "effect/Clock";
@@ -43,6 +50,46 @@ export const verifyWidgetToken = (
     ? Option.some(AssetId.make(id))
     : Option.none();
 };
+/** Resolve only this thread's sandbox, checking size before downloading. Never echo source. */
+export const resolveWidgetSource = Effect.fn("Widget.resolveSource")(function* (
+  ctx: AgentContext,
+  input: WidgetSource,
+) {
+  const invalid = (message: string) =>
+    new RuthToolError({
+      tool: "render_widget",
+      code: "invalid_input",
+      message,
+      recoverable: true,
+    });
+  if ((typeof input.html === "string") === (typeof input.path === "string"))
+    return yield* invalid("Pass exactly one of html or path.");
+  if (input.html !== undefined) {
+    if (Buffer.byteLength(input.html) > MAX_WIDGET_INLINE_HTML_BYTES)
+      return yield* invalid(
+        "Inline HTML exceeds 512,000 bytes. Build in the sandbox and pass path.",
+      );
+    return input.html;
+  }
+  if (!ctx.threadId) return yield* invalid("A thread is required for a widget path.");
+  if (!input.path.toLowerCase().endsWith(".html"))
+    return yield* invalid("Widget path must name an HTML file.");
+  const sandboxes = yield* ChatSandboxes;
+  const file = yield* sandboxes
+    .readArtifact(
+      { userId: ctx.userId, threadId: ctx.threadId },
+      { path: input.path, maxBytes: MAX_WIDGET_HTML_BYTES },
+    )
+    .pipe(
+      Effect.mapError(() =>
+        invalid("Cannot read the thread's HTML file; check the path and 8 MiB limit."),
+      ),
+    );
+  return yield* Effect.try({
+    try: () => new TextDecoder("utf-8", { fatal: true }).decode(file.bytes),
+    catch: () => invalid("Widget HTML must be UTF-8."),
+  });
+});
 /** Preview and render share the exact validation, CSP and first-paint bootstrap. */
 export const wrapWidget = Effect.fn("WidgetStore.wrap")(function* (
   ctx: AgentContext,
@@ -64,7 +111,10 @@ export const wrapWidget = Effect.fn("WidgetStore.wrap")(function* (
         html: input.html,
         title: input.title,
         colorScheme: scheme,
-        tokens: ctx.page?.colorScheme === scheme ? ctx.page.themeTokens : THEME_TOKENS[scheme],
+        tokens: {
+          ...(ctx.page?.colorScheme === scheme ? ctx.page.themeTokens : {}),
+          ...WIDGET_THEME_TOKENS[scheme],
+        },
         kitsOrigin,
       }),
     catch: () =>

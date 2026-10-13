@@ -1,76 +1,54 @@
 ---
 name: style
-description: Apply every Avenire theme token and the shared thin-line visual grammar to charts, simulations, and anatomy figures.
+description: Shared figure tokens and figure framing for all Ruth widgets, charts and simulations; app UI palette stays separate.
 ---
 
-# Avenire visual style and token system
+# Figure style
 
-Use `var(--token)` in HTML/SVG CSS. The host injects all `:root` values at first paint and sends updated values on `avenire:themechange`. Dark overrides colours; it inherits the same font, type, spacing, radius and stroke metrics. For Canvas, read `getComputedStyle(document.documentElement).getPropertyValue('--token')` on startup and each theme event. Avoid hardcoded colours or external fonts. The CSS `@theme inline` names are Tailwind aliases for app UI, not additional widget tokens.
+Every widget uses the shared two-theme token layer. The host injects it before first paint and on `avenire:themechange`; it updates `.iso` wrappers’ data-theme and values. Standalone kit `--light` pages retain their own theme outside the host. Read Canvas/WebGL tokens on its nearest `.iso` wrapper (and redraw/reconfigure on themechange). Use CSS variables for every colour and preserve the kit’s four facing shades; do not replace them with opacity approximations.
 
-| Token | Purpose and use | Light/dark |
-| --- | --- | --- |
-| `--background` | Page ground outside a card | Warm paper / deep ink |
-| `--foreground` | Main explanatory text | Dark / light ink |
-| `--card` | Figure/chart card surface | Near-white / dark panel |
-| `--card-foreground` | Text on the card | Dark / light ink |
-| `--popover` | Floating tip surface, when needed | Near-white / dark panel |
-| `--popover-foreground` | Floating tip text | Dark / light ink |
-| `--primary` | Primary action or a single semantic emphasis | Indigo shifts lighter in dark |
-| `--primary-foreground` | Text on primary fill | Light / dark contrast |
-| `--secondary` | Secondary control surface | Pale / dark surface |
-| `--secondary-foreground` | Text on secondary fill | Dark / light contrast |
-| `--muted` | Quiet control or key background | Pale / dark surface |
-| `--muted-foreground` | Supporting prose, never tiny critical data alone | Medium / lighter ink |
-| `--accent` | Selected or hovered surface, sparingly | Pale violet / deep violet |
-| `--accent-foreground` | Text on accent surface | Dark / light violet contrast |
-| `--destructive` | Error, invalid state or destructive control only | Red tuned per theme |
-| `--border` | General UI outlines and dividers | Soft warm / translucent light |
-| `--input` | Input outline | Soft warm / translucent light |
-| `--ring` | Visible keyboard focus indicator | Indigo in both themes |
-| `--canvas` | Drawing ground inside a figure | Paper tint / dark drawing plane |
-| `--canvas-grid` | Subtle graph or construction grid | Translucent in both themes |
-| `--chart-1` | First data series; preferred focused curve | Indigo, lighter in dark |
-| `--chart-2` | Second series | Teal, lighter in dark |
-| `--chart-3` | Third series | Warm orange, lighter in dark |
-| `--chart-4` | Fourth series | Green, lighter in dark |
-| `--chart-5` | Fifth series | Pink, lighter in dark |
-| `--chart-6` | Sixth series | Olive, lighter in dark |
-| `--font-sans` | UI, labels, captions, axes | System stack; inherited |
-| `--font-serif` | Long-form prose or editorial quote only | System serif; inherited |
-| `--font-mono` | Numeric readouts, code, technical scales | System mono; inherited |
-| `--text-xs` | Tick/quiet label, if still readable at phone width | 0.75rem; inherited |
-| `--text-sm` | Secondary label, control and figure caption | 0.875rem; inherited |
-| `--text-base` | Body explanation and normal control | 1rem; inherited |
-| `--text-lg` | Figure title or key readout | 1.125rem; inherited |
-| `--text-xl` | Larger card heading only | 1.25rem; inherited |
-| `--text-2xl` | Section heading outside compact widgets | 1.5rem; inherited |
-| `--leading-tight` | Titles and compact numbers | 1.25; inherited |
-| `--leading-normal` | Prose, controls and captions | 1.5; inherited |
-| `--space-1` | Tiny gap between glyph and value | 0.25rem; inherited |
-| `--space-2` | Tick/key/internal control gap | 0.5rem; inherited |
-| `--space-3` | Closely related control/label pair | 0.75rem; inherited |
-| `--space-4` | Default card inset or section gap | 1rem; inherited |
-| `--space-5` | Spacious figure inset | 1.25rem; inherited |
-| `--space-6` | Figure/title separation | 1.5rem; inherited |
-| `--space-8` | Between separate panels | 2rem; inherited |
-| `--radius` | Base card/input rounding; reduce for tiny mechanical plates | 0.625rem; inherited |
-| `--stroke-hairline` | Construction lines, fine seams, ticks and leaders | 0.6px; inherited |
-| `--stroke-thin` | Part edges, axes and small outlines | 1px; inherited |
-| `--stroke-regular` | Data paths, main mechanics and measured trajectory | 1.5px; inherited |
-| `--stroke-emphasis` | Single focal edge or selected trace; use sparingly | 2px; inherited |
-| `--stroke-dash` | Hidden/secondary edges or comparison line; SVG `stroke-dasharray` | `3 3`; inherited |
-| `--stroke-dash-open` | Long projection/motion guide; SVG `stroke-dasharray` | `6 4`; inherited |
-| `--figure-label` | Quiet labels, ticks and small part names | Tracks muted ink per theme |
-| `--figure-leader` | Leader lines and measured guides | Tracks border per theme |
-| `--figure-frame` | Outer visual card frame | Tracks border per theme |
-| `--figure-label-size` | Small labels in CSS/HTML; increase if cramped | Tracks `--text-xs`; inherited |
+| Token | Purpose | Light | Dark |
+| --- | --- | --- | --- |
+| `--figure-page` | Page ground | `#f2f2ef` | `#0b0b0b` |
+| `--figure-card` | Framed card surface | `#fbfbfa` | `#131313` |
+| `--figure-text` | Caption and live readout ink | `#57575a` | `#a3a3a3` |
+| `--figure-strong` | Strong explanatory ink | `#18181a` | `#e6e6e6` |
+| `--figure-muted` | Hints, quiet labels, legend | `#8c8c90` | `#6e6e6e` |
+| `--figure-paper` | Opaque backing fill hiding parts behind | `#fbfbfa` | `#131313` |
+| `--figure-face` | Lit subject backing | `#ffffff` | `#1b1b1b` |
+| `--figure-top` | Normal upper faces | `#ffffff` | `#1c1c1c` |
+| `--figure-shade-0` | Side facing away from light | `#dcdcd9` | `#0f0f0f` |
+| `--figure-shade-1` | Second side tone | `#e5e5e2` | `#121212` |
+| `--figure-shade-2` | Third side tone | `#ededea` | `#151515` |
+| `--figure-shade-3` | Side facing toward light | `#f4f4f1` | `#181818` |
+| `--figure-lit-top` | Selected upper face | `#ffffff` | `#262626` |
+| `--figure-lit-shade` | Selected side faces | `#eeeeeb` | `#1d1d1d` |
+| `--figure-hi` | Subject outlines | `#26262a` | `#d4d4d4` |
+| `--figure-mid` | Structural outlines and card frame | `#8a8a8f` | `#6a6a6a` |
+| `--figure-lo` | Base outlines and minor ticks | `#b4b4b8` | `#3e3e3e` |
+| `--figure-faint` | Grooves, creases and quiet detail | `#d4d4d6` | `#2a2a2a` |
+| `--figure-lit` | Exactly one active accent | `#000000` | `#ffffff` |
+| `--figure-halo` | Contact shadow colour | `#8a8a80` | `#050505` |
+| `--figure-halo-opacity` | Contact shadow alpha | `.32` | `.9` |
+| `--figure-dot` | Screws and rivets | `#3a3a3e` | `#e6e6e6` |
+| `--figure-red` | Red signal, when semantic | `#e5484d` | `#ff6b6b` |
+| `--figure-green` | Green signal, when semantic | `#30a46c` | `#6be0a0` |
+| `--figure-blue` | Blue signal, when semantic | `#3e63dd` | `#6b9bff` |
+| `--figure-weight` | Non-scaling 0.6px hairlines | `.6px` | `.6px` |
+| `--figure-ease` | Calm motion easing | `cubic-bezier(.32,.72,0,1)` | `cubic-bezier(.32,.72,0,1)` |
+| `--figure-mono` | Technical labels and tabular readout font | `ui-monospace,"SF Mono",Menlo,Consolas,monospace` | `ui-monospace,"SF Mono",Menlo,Consolas,monospace` |
+| `--figure-lift` | Subtle inset/drop shadow | `inset 0 1px 0 0 #ffffff,0 0 0 1px #0000000f,0 1px 1px -.5px #0000000a,0 3px 3px -1.5px #0000000a,0 6px 6px -3px #0000000a,0 12px 12px -6px #0000000a` | `inset 0 1px 0 0 #ffffff0a,inset 0 0 0 1px #ffffff06,0 0 0 1px #00000026,0 1px 1px -.5px #00000014,0 3px 3px -1.5px #00000014,0 6px 6px -3px #00000014,0 12px 12px -6px #00000014` |
 
-## Shared thin-line grammar
+The mono stack, weight and easing are identical in both themes. The lift shadow stays subtle; the card itself has a square hairline frame. Base/feet are lo, structure mid, subject hi, and exactly one lit accent (black in light, white in dark). True red/green/blue are for signals, never a rainbow series palette.
 
-All charts, simulations, and anatomy figures use one deliberate finish: hairline construction marks, restrained fills, exact small parts, quiet labels with short leader lines where useful, and a framed `--card` on `--background`. Put title, concise hint and live readout in the card when they clarify interaction. In charts, make axes and grid hairline while data stay regular. In simulations, show the mechanism and one measured quantity with a labelled control. Anatomy figures add a recognisable instrument with a base, support, moving subject, scale and fasteners; every part has a physical job. Use `--chart-1` for the focal mechanism and `--chart-2` onward only for distinct variables. Keep solids mostly neutral; use four value levels through opacity and `--canvas`, `--card`, `--muted`, and `--foreground`, not anatomy's original palette.
+## Frame and controls
 
-Use a fixed `viewBox`, `width:100%`, and `vector-effect:non-scaling-stroke` where scaled SVG strokes would become too heavy. Check labels at 390 px. A subtle grid can orient a plot but should not compete with data. Lines should meet another part, an axis, or the frame; deliberate callouts may end in dots. Depth order matters for isometric parts. Reduce or remove decorative detail when it obscures the relationship.
+Use `plateHtml` from the sandbox kit, or reproduce its exact framing: Fig n top left; short mono uppercase title top right; interaction hint bottom left; mono tabular live readout bottom right. Legend keys and a concise true caption sit underneath the card. Keep legend plus caption under about 50 words; put the explanation/derivation in chat. At most one tiny engraved label is inside the machine. Native Step / Run / Reset buttons and parameter sliders have labels and visible focus. Use the same model for readout, part motion and caption. Ensure readout/hint wrap or stack at 390px without colliding. Reduced motion shows a meaningful still state with explicit stepping; stop loops while hidden/offscreen.
 
-Do: label units, direct-label a series when space permits, show visible focus, test both themes, keep primary action high contrast, and update Canvas on theme changes. Don't: encode meaning by colour alone, use raw hex values in widgets, use multiple glowing accents, fake 3D for simple stats, use tiny pale text for key numbers, draw arbitrary hatching, or let motion change a displayed value independently of its model.
+## Widget compatibility aliases
 
-This grammar is adapted from Anatomy (MIT, wheresryan22); the palette and semantic tokens are Avenire's.
+Widget semantic tokens map onto the figure layer: background→page; foreground→text; card/popover→card with strong ink; primary→lit on card ink; secondary→shade-2; muted→shade-3 with muted ink; accent→lit-shade with lit ink; destructive→red; border→mid; input→lo; ring→hi; canvas→paper; canvas-grid→faint; radius→0px. App shadcn tokens remain unchanged. `--chart-1..6` map to hi, mid, lo, red, green, blue respectively. Label or dash every series; use signals only when their meaning earns colour.
+
+The shared typography/layout metrics remain: font-sans system UI, font-serif system serif, font-mono figure-mono; text-xs/sm/base/lg/xl/2xl = 0.75/0.875/1/1.125/1.25/1.5rem; leading-tight/normal = 1.25/1.5; space-1/2/3/4/5/6/8 = 0.25/0.5/0.75/1/1.25/1.5/2rem. Stroke-hairline = figure-weight, thin/regular/emphasis = 1/1.5/2px; dash = 3 3, dash-open = 6 4; figure-label = muted, figure-leader = lo, figure-frame = mid, figure-label-size = text-xs. These aliases exist for charts; interactive figures use the tokens directly.
+
+Use fixed SVG viewBox, width:100%, vector-effect:non-scaling-stroke, opaque filled solids and correct painter order. Ground line ends on a stroke, dot or outline. Ordinary chat starts with one CSP-wrapped preview. Repair errors and preview again before delivery; continue as long as the task needs. Full capture/drive/lines/audit and repeated theme/phone checks are for explicitly requested deep verification. Reuse components and example patterns with any concise browser code; deliver large built pages with path.

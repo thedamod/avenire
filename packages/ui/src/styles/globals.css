@@ -5,6 +5,39 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
+  /* Widget figure layer; app semantic colours below stay unchanged. */
+  --figure-page: #f2f2ef;
+  --figure-card: #fbfbfa;
+  --figure-text: #57575a;
+  --figure-strong: #18181a;
+  --figure-muted: #8c8c90;
+  --figure-paper: #fbfbfa;
+  --figure-face: #ffffff;
+  --figure-top: #ffffff;
+  --figure-shade-0: #dcdcd9;
+  --figure-shade-1: #e5e5e2;
+  --figure-shade-2: #ededea;
+  --figure-shade-3: #f4f4f1;
+  --figure-lit-top: #ffffff;
+  --figure-lit-shade: #eeeeeb;
+  --figure-hi: #26262a;
+  --figure-mid: #8a8a8f;
+  --figure-lo: #b4b4b8;
+  --figure-faint: #d4d4d6;
+  --figure-lit: #000000;
+  --figure-halo: #8a8a80;
+  --figure-halo-opacity: 0.32;
+  --figure-dot: #3a3a3e;
+  --figure-red: #e5484d;
+  --figure-green: #30a46c;
+  --figure-blue: #3e63dd;
+  --figure-weight: 0.6px;
+  --figure-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --figure-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --figure-lift:
+    inset 0 1px 0 0 #ffffff, 0 0 0 1px #0000000f, 0 1px 1px -0.5px #0000000a,
+    0 3px 3px -1.5px #0000000a, 0 6px 6px -3px #0000000a, 0 12px 12px -6px #0000000a;
+
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
@@ -69,6 +102,40 @@
 }
 
 .dark {
+  /* Widget figure layer; app semantic colours below stay unchanged. */
+  --figure-page: #0b0b0b;
+  --figure-card: #131313;
+  --figure-text: #a3a3a3;
+  --figure-strong: #e6e6e6;
+  --figure-muted: #6e6e6e;
+  --figure-paper: #131313;
+  --figure-face: #1b1b1b;
+  --figure-top: #1c1c1c;
+  --figure-shade-0: #0f0f0f;
+  --figure-shade-1: #121212;
+  --figure-shade-2: #151515;
+  --figure-shade-3: #181818;
+  --figure-lit-top: #262626;
+  --figure-lit-shade: #1d1d1d;
+  --figure-hi: #d4d4d4;
+  --figure-mid: #6a6a6a;
+  --figure-lo: #3e3e3e;
+  --figure-faint: #2a2a2a;
+  --figure-lit: #ffffff;
+  --figure-halo: #050505;
+  --figure-halo-opacity: 0.9;
+  --figure-dot: #e6e6e6;
+  --figure-red: #ff6b6b;
+  --figure-green: #6be0a0;
+  --figure-blue: #6b9bff;
+  --figure-weight: 0.6px;
+  --figure-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --figure-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --figure-lift:
+    inset 0 1px 0 0 #ffffff0a, inset 0 0 0 1px #ffffff06, 0 0 0 1px #00000026,
+    0 1px 1px -0.5px #00000014, 0 3px 3px -1.5px #00000014, 0 6px 6px -3px #00000014,
+    0 12px 12px -6px #00000014;
+
   --chart-1: oklch(0.75 0.13 276);
   --chart-2: oklch(0.75 0.12 190);
   --chart-3: oklch(0.75 0.15 35);

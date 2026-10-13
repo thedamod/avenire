@@ -95,7 +95,14 @@ it.effect(
       expect(
         new TextDecoder().decode(f.files.get(`${CHAT_WORKDIR}/.avenire-preview/source.html`)!),
       ).toContain("color-scheme:dark");
-      const second = yield* previews.preview({ html: "<p>Second</p>", width: 2000 }, turn);
+      f.files.set(`${CHAT_WORKDIR}/figure.html`, new TextEncoder().encode("<p>Built page</p>"));
+      const second = yield* previews.preview(
+        { path: `${CHAT_WORKDIR}/figure.html`, width: 2000 },
+        turn,
+      );
+      expect(
+        new TextDecoder().decode(f.files.get(`${CHAT_WORKDIR}/.avenire-preview/source.html`)!),
+      ).toContain("Built page");
       expect(second.width).toBe(1600);
       expect(f.kitWrites()).toBe(uploads);
       f.files.delete(`${CHAT_WORKDIR}/.avenire-preview/manifest.sha256`);

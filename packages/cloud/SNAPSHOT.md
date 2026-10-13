@@ -1,6 +1,6 @@
 # Avenire sandbox snapshot
 
-`avenire-sandbox-v4` is the shared image for ephemeral Ruth chat sandboxes and persistent Cloud boxes. Base: `daytonaio/sandbox:0.9.0-slim`, **Debian trixie**, not Ubuntu. Retaining Debian preserves the verified KiCad/X11/Daytona runtime. Snapshot resources are fixed by SDK 0.220.0: **4 vCPU / 8 GB RAM / 10 GB disk**. The image itself does not consume the sandbox's 10 GB allocation. Existing sandboxes must be recreated to receive v4.
+`avenire-sandbox-v6` is the shared image for ephemeral Ruth chat sandboxes and persistent Cloud boxes. Base: `daytonaio/sandbox:0.9.0-slim`, **Debian trixie**, not Ubuntu. Retaining Debian preserves the verified KiCad/X11/Daytona runtime. Snapshot resources are fixed by SDK 0.220.0: **4 vCPU / 8 GB RAM / 10 GB disk**. The image itself does not consume the sandbox's 10 GB allocation. Existing sandboxes must be recreated to receive v6.
 
 ## Desktop
 
@@ -139,3 +139,30 @@ cache cap is 4 GiB of the 10 GB writable allocation. Run work/outputs remain und
 `takeCompressed` or `takeCompressedRegion(scale:1)`; credentials and model calls remain
 outside the box. Conformance uses a temporary v4 box, the same tool executors, and a local
 fixture. Its `--mock` option spends no model credit and the box is deleted in cleanup.
+
+## Figure toolchain (v5)
+
+Pinned upstream dbf697a527bbf7d358668e1557cb1e35ff725d46, Figure by wheresryan22, MIT. `assets/figure` contains SKILL.md, LICENSE, kit/, scripts/, references/ and all eight examples’ source (67 files, SHA-256 MANIFEST.json); generated HTML is excluded. Installed root-owned, readable but not writable at `/opt/avenire/figures`. `CHROME_PATH=/usr/local/bin/avenire-figure-chromium` (Debian Chromium with `--no-sandbox`, required by Daytona’s namespace isolation) drives the upstream capture/drive/lines scripts over CDP using Node built-ins. Copy sources into a writable tree preserving relative imports, then `node build.mjs` / `--light` / `--audit`.
+
+`snapshot:verify` checks the manifest/read-only inventory, dial builds in both themes, desktop/390 captures, line ends zero in both themes, 4x details, arcade geometry audit, rebuilt raptor size, and production widget CSP/theme/WebGL/fallback. PNGs and results join the existing gallery under `/tmp/avenire-snapshot/avenire-sandbox-v5`.
+
+Chat sandbox defaults: `CHAT_SANDBOX_LIFETIME_MINUTES=120`, `CHAT_SANDBOX_IDLE_STOP_MINUTES=120`. Commands remain 120s by default with 900s maximum. Read-only tools may read `/opt/avenire/figures`; write/artifact paths keep their workspace boundary. Widgets accept exactly one inline html (512,000 bytes) or sandbox .html path (8 MiB), with size checked before download. App shadcn colours are unchanged; an app-wide theme switch would separately replace semantic UI colours and review controls, text, focus/contrast, desktop/mobile and all charts.
+
+For the approved Fireworks-only prompt demo, set `RUTH_OPENROUTER_CATALOG_ENABLED=false`; the sprint registry model remains Fireworks GLM 5.3 Flash. Keep v4 available to the reviewer after v5 verifies. No commits.
+
+The first full Figure demo exhausted 80 steps before delivery; an experimental 120-step budget was used for the second run. The owner then clarified that ordinary visuals must be fast: chat uses figure as appearance/behaviour guidance with flexible code, and performs one preview before delivery. Full capture/drive/lines/audit loops and the 30–90 minute production estimate apply only to explicitly requested deep builds/verification. The configurable 120-minute sandbox hard lifetime is retained. Directory setup retries transport errors twice and prepares the computer workspace once per sandbox. User commands are not automatically retried. The widget frame waits up to 30 seconds for larger pages; the card footer wraps and stacks on narrow widths.
+
+
+## Fast interactive explainers
+
+The combined `explainer` skill replaces the separate visual/physical-model guides. It selects direct pendulum-style models, actual machine mechanisms or faithful analogies, and keeps explanations outside the widget. Runtime and example figure tokens use the same neutral `--figure-*` namespace. Previously stored HTML must be regenerated to adopt it. Chat and Cloud have no model step-count cap. Preview errors are returned to the same model and prevent rendering until repaired. Rendering is withheld while a preview fails, and a repaired page is delivered after a clean preview. Unrepairable errors end with an explicit failure explanation. Snapshot v6 carries the renamed source directory and neutral CSS namespace; v5 is historical.
+
+## Neutral figure runtime (v6)
+
+Figure sources are installed at `/opt/avenire/figures`; the launcher is `/usr/local/bin/avenire-figure-chromium`. Runtime CSS, adapters and example sources use `--figure-*`. The adapted inventory has 67 files with a refreshed local SHA-256 manifest. Attribution is in README files and original MIT copyright notices remain in LICENSE files. Existing v4/v5 snapshots are retained for review.
+
+## Live v6 results
+
+Snapshot `avenire-sandbox-v6` (`6ba54939-cd5a-4629-8ca9-9150cb05c537`) passed **74/74** live checks on 2026-10-13. Both figure themes built and captured at desktop/390px without console errors or sideways scrolling; both line checks reported `line ends: 0`; the arcade audit passed. The largest built example was 1,610,425 bytes. Production CSP, theme messages, WebGL and SVG fallback passed. Verification sandbox `8dca8264-14f2-4620-99e7-17c1915898ba` was deleted at 04:28:12 UTC.
+
+Evidence: `/tmp/avenire-snapshot/avenire-sandbox-v6/verify.json`, `sandbox.json`, and `renders/index.html`. Build submission returned a gateway error after creating the snapshot; the same build was recovered by ID and completed, without another snapshot creation. Previous v4/v5 snapshots were retained.

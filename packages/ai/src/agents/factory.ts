@@ -1,18 +1,18 @@
 /** One AI SDK configuration for chat streaming and checkpointed Cloud steps. */
-import { stepCountIs, type ModelMessage, type ToolSet } from "ai";
+import { type ModelMessage, type StepResult, type ToolSet } from "ai";
 import type { RuthModels, RuthModelName } from "../models/index.ts";
-import { RUTH_DEFAULT_MODEL, screenProfileForModel } from "../models/index.ts";
+import { RUTH_DEFAULT_MODEL, RUTH_FAST_MODEL, screenProfileForModel } from "../models/index.ts";
 import { createImageTransport } from "../tools/images.ts";
 import { coordinateContract } from "../tools/computer.ts";
 import { RUTH_PROMPT } from "../prompts/ruth.ts";
 import { RUTH_CLOUD_PROMPT } from "../prompts/cloud.ts";
+import { previewRepairPolicy } from "./preview-repair.ts";
 
 export const createAgent = (options: {
   kind: "ruth" | "ruth-cloud";
   models: RuthModels["Service"];
   name?: RuthModelName;
   fullAccess?: boolean;
-  maxSteps: number;
   bindTools: (
     images: ReturnType<typeof createImageTransport>,
     profile: import("@avenire/cloud/screen").ScreenProfile,
@@ -23,12 +23,27 @@ export const createAgent = (options: {
   const profile = capabilities.screenProfile ?? screenProfileForModel("");
   const images = createImageTransport(capabilities, options.models.maxImages);
   const bound = options.bindTools(images, profile);
+  const system = `${options.kind === "ruth" ? RUTH_PROMPT({ fullAccess: options.fullAccess }) : RUTH_CLOUD_PROMPT()}\n\n${coordinateContract(profile)}`;
+  const repair = previewRepairPolicy({
+    tools: bound.tools,
+    system,
+  });
   return {
     model: options.models.languageModel(name),
-    system: `${options.kind === "ruth" ? RUTH_PROMPT({ fullAccess: options.fullAccess }) : RUTH_CLOUD_PROMPT()}\n\n${coordinateContract(profile)}`,
+    // GLM Flash otherwise defaults to maximum thinking; sprint chat prioritizes latency.
+    ...(options.kind === "ruth" && name === RUTH_FAST_MODEL ? { reasoning: "low" as const } : {}),
+    system,
     ...bound,
-    stopWhen: stepCountIs(options.maxSteps),
-    prepareStep: ({ messages }: { messages: ModelMessage[] }) => ({
+    // Override the SDK's one-step default. Finish naturally, on approval or cancellation.
+    stopWhen: () => false,
+    prepareStep: ({
+      messages,
+      steps,
+    }: {
+      messages: ModelMessage[];
+      steps: StepResult<ToolSet>[];
+    }) => ({
+      ...(options.kind === "ruth" ? repair.prepare(steps) : {}),
       messages: images.prepareMessages(messages),
     }),
   };

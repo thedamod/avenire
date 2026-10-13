@@ -56,8 +56,6 @@ import { ruthToolSpecs } from "../tools/index.ts";
 import { findVisuals } from "../tools/page.ts";
 import { createRuthTools, type RuthToolServices, type RuthTurn } from "../tools/ruth.ts";
 
-/** Sandbox work alone (write, run, fix, run, download, close) takes several steps. */
-const MAX_STEPS = 20;
 const DEFAULT_THREAD_TITLE = "New thread";
 const STREAM_ERROR = "Ruth ran into a problem. Please try again.";
 
@@ -177,7 +175,6 @@ export const createRuthAgent = (options: {
     models: options.models,
     name: options.fast === true ? RUTH_FAST_MODEL : RUTH_DEFAULT_MODEL,
     fullAccess: options.fullAccess,
-    maxSteps: MAX_STEPS,
     bindTools: (images, profile) =>
       createRuthTools(
         options.services,

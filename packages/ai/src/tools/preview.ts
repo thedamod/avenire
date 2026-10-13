@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { wrapWidget } from "../outputs/widgets.ts";
+import { wrapWidget, resolveWidgetSource } from "../outputs/widgets.ts";
 import { type AgentContext, RuthToolError, toToolError } from "./core.ts";
 import { pngImage } from "./images.ts";
 
@@ -32,11 +32,10 @@ export const PreviewResult = Schema.Struct({
     height: Schema.Int,
   }),
 });
-export interface PreviewInput {
-  readonly html: string;
+export type PreviewInput = import("@avenire/contracts").WidgetSource & {
   readonly width?: number;
   readonly appearance?: "light" | "dark";
-}
+};
 const failure = (message: string) =>
   new RuthToolError({ tool: "preview_widget", code: "failed", message, recoverable: true });
 const localRead = (path: string) =>
@@ -169,7 +168,12 @@ export const makeWidgetPreview = Effect.fn("WidgetPreview.make")(function* () {
           // Port is dynamic; 'self' includes exactly this local /kits endpoint during preview.
           const document = yield* wrapWidget(
             ctx,
-            { html: input.html, title: "Widget preview" },
+            {
+              html: yield* resolveWidgetSource(ctx, input).pipe(
+                Effect.provideService(ChatSandboxes, sandboxes),
+              ),
+              title: "Widget preview",
+            },
             "http://127.0.0.1",
             appearance,
           );

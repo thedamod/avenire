@@ -61,7 +61,6 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
   images: ImageTransport;
   capabilities: ModelCapabilities;
   checkpoint: LoopCheckpoint;
-  maxSteps: number;
   deadline: number;
   maxCost: number;
   maxActions: number;
@@ -150,13 +149,9 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
       yield* options.save(state);
     }
     if (completedReport !== undefined) return { checkpoint: state, text: completedReport };
-    if (
-      state.stepIndex >= options.maxSteps ||
-      state.usage.cost >= options.maxCost ||
-      state.usage.actions >= options.maxActions
-    )
+    if (state.usage.cost >= options.maxCost || state.usage.actions >= options.maxActions)
       return yield* new CloudLoopError({
-        reason: "The model step, spend or action budget is exhausted.",
+        reason: "The spend or action budget is exhausted.",
       });
     state = Object.assign({}, state, { messages: options.images.prepareMessages(state.messages) });
     yield* options.save(state);

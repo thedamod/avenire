@@ -1,10 +1,18 @@
-import { AssetId, MAX_WIDGET_HTML_BYTES } from "@avenire/contracts";
-import { THEME_TOKENS, WIDGET_TOKEN_SHEET } from "@avenire/ui/tokens";
+import {
+  AssetId,
+  MAX_WIDGET_HTML_BYTES,
+  MAX_WIDGET_INLINE_HTML_BYTES,
+  ThreadId,
+  WidgetSource,
+} from "@avenire/contracts";
+import { WIDGET_THEME_TOKENS, WIDGET_TOKEN_SHEET } from "@avenire/ui/tokens";
 import { WIDGET_RESPONSE_CSP } from "@avenire/ui/widget-protocol";
 import { expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import { ChatSandboxes } from "@avenire/cloud/chat-sandbox";
 import * as Redacted from "effect/Redacted";
 import * as TestClock from "effect/testing/TestClock";
 import { ctx, testCrypto } from "../tools/test-support.ts";
@@ -13,6 +21,7 @@ import { AssetStore } from "./assets.ts";
 import { AssetStoreTest } from "./asset-test-support.ts";
 import {
   makeWidgetStore,
+  resolveWidgetSource,
   signWidgetToken,
   verifyWidgetToken,
   wrapWidget,
@@ -33,7 +42,7 @@ for (const appearance of ["light", "dark"] as const)
         appearance,
       );
       expect(document).toContain(`color-scheme:${appearance}`);
-      for (const [key, value] of Object.entries(THEME_TOKENS[appearance]))
+      for (const [key, value] of Object.entries(WIDGET_THEME_TOKENS[appearance]))
         expect(document).toContain(`${key}:${value};`);
       expect(document).toContain("https://widgets.test/kits/");
       expect(document).toContain("connect-src &#39;none&#39;");
@@ -96,3 +105,58 @@ it("advertises drawing tokens and the real preview tool", () => {
   expect(renderWidgetSpec.description).toContain(WIDGET_TOKEN_SHEET);
   expect(renderWidgetSpec.description).toContain("preview_widget");
 });
+
+it("widget source schema accepts one source and rejects both or neither", () => {
+  const decode = Schema.decodeUnknownOption(WidgetSource);
+  for (const input of [{ html: "" }, { path: "figure.html" }])
+    expect(Option.isSome(decode(input))).toBe(true);
+  for (const input of [{}, { html: "x", path: "figure.html" }, { path: "" }])
+    expect(Option.isNone(decode(input))).toBe(true);
+});
+it.effect(
+  "resolves large built HTML using only the owning thread, enforces inline size and UTF-8",
+  () => {
+    const calls: unknown[] = [];
+    let bytes = new TextEncoder().encode(
+      "<main>" + "x".repeat(MAX_WIDGET_INLINE_HTML_BYTES) + "</main>",
+    );
+    const service = ChatSandboxes.of({
+      target: () => Effect.die("unexpected"),
+      exec: () => Effect.die("unexpected"),
+      write: () => Effect.die("unexpected"),
+      read: () => Effect.die("unexpected"),
+      close: () => Effect.die("unexpected"),
+      sweep: Effect.succeed(0),
+      readArtifact: (owner, input) =>
+        Effect.sync(() => {
+          calls.push({ owner, input });
+          return { path: input.path, name: "figure.html", bytes };
+        }),
+    });
+    return Effect.gen(function* () {
+      const turn = { ...ctx, threadId: ThreadId.make("figure-thread") };
+      expect(yield* resolveWidgetSource(turn, { path: "figure.html" })).toContain("<main>");
+      expect(calls).toEqual([
+        {
+          owner: { userId: ctx.userId, threadId: turn.threadId },
+          input: { path: "figure.html", maxBytes: MAX_WIDGET_HTML_BYTES },
+        },
+      ]);
+      expect(
+        yield* resolveWidgetSource(turn, {
+          html: "x".repeat(MAX_WIDGET_INLINE_HTML_BYTES + 1),
+        }).pipe(Effect.result),
+      ).toMatchObject({ failure: { code: "invalid_input" } });
+      expect(
+        yield* resolveWidgetSource(ctx, { path: "figure.html" }).pipe(Effect.result),
+      ).toMatchObject({ failure: { code: "invalid_input" } });
+      expect(
+        yield* resolveWidgetSource(turn, { path: "figure.png" }).pipe(Effect.result),
+      ).toMatchObject({ failure: { code: "invalid_input" } });
+      bytes = new Uint8Array([0xff]);
+      expect(
+        yield* resolveWidgetSource(turn, { path: "figure.html" }).pipe(Effect.result),
+      ).toMatchObject({ failure: { code: "invalid_input" } });
+    }).pipe(Effect.provideService(ChatSandboxes, service));
+  },
+);

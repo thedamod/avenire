@@ -12,12 +12,13 @@ import {
   SearchDepth,
   SearchHit,
   Widget,
+  WidgetSource,
 } from "@avenire/contracts";
 import { THEME_TOKEN_NAMES, WIDGET_TOKEN_SHEET } from "@avenire/ui/tokens";
 import { tool } from "ai";
 import * as Schema from "effect/Schema";
 
-import { standardSchema } from "./schema.ts";
+import { standardSchema, standardObjectSchema } from "./schema.ts";
 
 export const FileEntry = Schema.Struct({
   fileId: FileId,
@@ -153,17 +154,23 @@ export const archiveFileSpec = {
 export const renderWidgetSpec = {
   name: "render_widget",
   description:
-    "Render a standalone, self-contained HTML widget with inline CSS/JS only. Preview first with preview_widget; import bundled /kits/math.js and /kits/iso.js. No network or other external scripts, fonts, or images: CSP blocks them; data: URIs are allowed. Respond to the container width and provide accessible text alternatives and labels. Keep HTML under 512 KB. Explain the visual in chat prose.\n\n" +
+    "Render a standalone, self-contained HTML widget with inline CSS/JS only. Preview first with preview_widget. Small hand-written pages may import bundled /kits/math.js and /kits/iso.js; Node builds can inline the sandbox runtime. No network or other external scripts, fonts, or images: CSP blocks them; data: URIs are allowed. Respond to the container width and provide accessible text alternatives and labels. Pass exactly one of html (at most 512,000 bytes) or path (a built HTML file in the thread sandbox, at most 8 MiB). Shared figure components and examples guide appearance and behaviour; concise browser code and optional Node builds are both valid. Use path for built files and never read finished HTML into context. Explain the visual in chat prose.\n\n" +
     WIDGET_TOKEN_SHEET +
     (() => {
       const missing = THEME_TOKEN_NAMES.filter((name) => !WIDGET_TOKEN_SHEET.includes(name));
       return missing.length === 0 ? "" : `\n- Additional drawing tokens: ${missing.join(", ")}.`;
     })(),
-  inputSchema: standardSchema(
-    Schema.Struct({
-      title: Schema.NonEmptyString.check(Schema.isMaxLength(120)),
-      html: Schema.String,
-    }),
+  inputSchema: standardObjectSchema(
+    Schema.Union([
+      Schema.Struct({
+        ...WidgetSource.members[0].fields,
+        title: Schema.NonEmptyString.check(Schema.isMaxLength(120)),
+      }),
+      Schema.Struct({
+        ...WidgetSource.members[1].fields,
+        title: Schema.NonEmptyString.check(Schema.isMaxLength(120)),
+      }),
+    ]),
   ),
   outputSchema: standardSchema(Widget),
 };

@@ -2,6 +2,7 @@
 
 import * as Option from "effect/Option";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { WIDGET_THEME_TOKENS } from "../styles/tokens.ts";
 import { cn } from "../lib/utils.ts";
 import { decodeWidgetMessage, WIDGET_IFRAME_SANDBOX } from "./protocol.ts";
 
@@ -35,7 +36,7 @@ function FrameAttempt({
   tokens,
   initialHeight = 320,
   maxHeight = 1200,
-  loadTimeoutMs = 10_000,
+  loadTimeoutMs = 30_000,
   className,
   onError,
   retry,
@@ -59,7 +60,11 @@ function FrameAttempt({
   const postTheme = useCallback(
     () =>
       frameRef.current?.contentWindow?.postMessage(
-        { type: "avenire:theme", colorScheme, tokens },
+        {
+          type: "avenire:theme",
+          colorScheme,
+          tokens: { ...tokens, ...WIDGET_THEME_TOKENS[colorScheme] },
+        },
         "*",
       ),
     [colorScheme, tokens],

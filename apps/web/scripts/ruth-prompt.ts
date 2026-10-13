@@ -32,6 +32,29 @@ if (!prompt) throw new Error("Pass the prompt text");
 const out = `/tmp/ruth-demo/${slug}`;
 const DEMO_USER = UserId.make("demo-ruth-user");
 
+// A fast demo is Fireworks-only, including service startup. Guard the transport before
+// creating services so accidental catalog/model configuration cannot contact OpenRouter.
+const originalFetch = globalThis.fetch;
+const network = {
+  fireworksModelRequests: 0,
+  fireworksCatalogRequests: 0,
+  openRouterRequestsBlocked: 0,
+};
+if (fast)
+  globalThis.fetch = (input, init) => {
+    const url = new URL(
+      typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+    );
+    if (url.hostname === "openrouter.ai" || url.hostname.endsWith(".openrouter.ai")) {
+      network.openRouterRequestsBlocked++;
+      return Promise.reject(new Error("OpenRouter requests are disabled in Fireworks-only demos"));
+    }
+    if (url.hostname === "api.fireworks.ai") {
+      if (url.pathname.endsWith("/models")) network.fireworksCatalogRequests++;
+      else network.fireworksModelRequests++;
+    }
+    return originalFetch(input, init);
+  };
 const runtime = ManagedRuntime.make(ServerLive);
 const transcript: Array<Record<string, unknown>> = [];
 let text = "";
@@ -137,7 +160,10 @@ try {
     }
   }
   transcript.push({ at: Date.now() - started, text });
-  await writeFile(`${out}/transcript.json`, JSON.stringify({ prompt, fast, transcript }, null, 2));
+  await writeFile(
+    `${out}/transcript.json`,
+    JSON.stringify({ prompt, fast, threadId, network, transcript }, null, 2),
+  );
   process.stdout.write(
     `\n${text}\n\nSaved to ${out} in ${((Date.now() - started) / 1000).toFixed(1)} s\n`,
   );
@@ -152,7 +178,12 @@ try {
         }),
       )
       .catch((error: unknown) => ({ closed: false, error: String(error) }));
+    await writeFile(
+      `${out}/sandbox-cleanup.json`,
+      JSON.stringify({ threadId: threadForCleanup, ...closed }, null, 2),
+    );
     process.stdout.write(`Chat sandbox: ${JSON.stringify(closed)}\n`);
   }
   await runtime.dispose();
+  globalThis.fetch = originalFetch;
 }

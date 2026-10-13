@@ -5,7 +5,7 @@ description: Draw correct, restrained hand-written SVG charts for comparisons, t
 
 # Chart
 
-Default to a plain chart. Use hand-written SVG and embedded computed JSON, with no chart library. Call `get_page_context`, load `style`, preview with `preview_widget`, then `render_widget`. Start from a question, identify the relevant fields and units, and do not invent observations.
+Use a plain chart for data questions, comparisons, and trends. For how/why concept explanations, use `explainer` to choose a direct model, mechanism or analogy. Use hand-written SVG and embedded computed JSON, with no chart library. Call `get_page_context`, load `style`, preview with `preview_widget`, then `render_widget`. Start from a question, identify the relevant fields and units, and do not invent observations.
 
 | Question | Marks and scale |
 | --- | --- |
@@ -18,7 +18,7 @@ Default to a plain chart. Use hand-written SVG and embedded computed JSON, with 
 
 For a numeric axis, compute a “nice” step from `10^floor(log10(range/targetTicks)) × {1,2,5,10}`. Round domain outward; include zero for bars and area. Map y with `bottom - (value - min)/(max - min) * plotHeight`; guard equal min/max. Render 3–6 ticks with units and localized formatting (`Intl.NumberFormat`). Keep date spacing proportional to time unless the data are categories. Never silently connect across nulls or truncate an axis to dramatize a change. Use sufficient margins for tick labels, then measure the narrow preview.
 
-Use `--chart-1` through `--chart-6` in order, `--stroke-regular` for data lines, `--stroke-hairline` and `--figure-leader` for axes and rules, `--figure-label` and `--figure-label-size` for ticks, and `--figure-frame` for the card. No gradient is needed for ordinary charts. Label each line directly at its end when possible; use a legend for crowded lines or grouped bars. Pair colour with text, point shape, or dash. Annotate the one comparison or inflection that answers the question; keep annotation lines thin. Include a short caption or accessible table with precise values. Explain the takeaway in chat prose, with denominator and uncertainty if relevant.
+Use neutral ink `--figure-hi`, `--figure-mid`, `--figure-lo` for ordinary series; reserve `--figure-red/green/blue` for real signals. Widget aliases `--chart-1..6` follow those tones. Use `--stroke-regular` for data lines, `--stroke-hairline` and `--figure-leader` for axes and rules, `--figure-label` and `--figure-label-size` for ticks, and `--figure-frame` for the card. No gradient is needed for ordinary charts. Label each line directly at its end when possible; use a legend for crowded lines or grouped bars. Pair colour with text, point shape, or dash. Annotate the one comparison or inflection that answers the question; keep annotation lines thin. Include a short caption or accessible table with precise values. Explain the takeaway in chat prose, with denominator and uncertainty if relevant.
 
 ## Data workflow
 
@@ -48,3 +48,7 @@ const linePath = (points,x,y) => points.map((p,i) => `${i?'L':'M'}${x(p)} ${y(p)
 ```
 
 For scatter, draw one `<circle>` per valid `(x,y)` observation and use `linearRegression(xs,ys)` for an optional fit line from `fit.intercept + fit.slope*x`; show `fit.r2` and label the line “least squares fit.” For a histogram, use `histogram(values,bins,min,max)` from `/kits/math.js`, then draw `counts[i]` as touching bars between `edges[i]` and `edges[i+1]` (or divide by `count * binWidth` for density). For small multiples, call the same chart rendering function on each subgroup with one shared numeric domain and the same tick step; title each panel. These recipes use no data smoothing. A line chart with gaps should split into separate paths, not join across missing rows.
+
+## Figure frame
+
+Frame every page with Fig n at top left and a short mono uppercase title at top right; hint bottom left and mono tabular live readout bottom right. Put the legend and a true caption under the card, not inside the drawing. Use square corners, --figure-card on --figure-page, a hairline --figure-mid frame, 0.6px construction strokes, and calm --figure-ease motion. Charts keep units/tick labels in their plot; simulations use one model for readout and motion. Use kit plateHtml if working in Node. Keep it responsive at 390px, fix preview errors before delivery, and deliver built files by path.

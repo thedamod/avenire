@@ -6,7 +6,7 @@ import { DESKTOP_FILES, DESKTOP_PACKAGES } from "./desktop.ts";
 
 import { attempt } from "./daytona.ts";
 
-export const AVENIRE_SNAPSHOT = "avenire-sandbox-v4";
+export const AVENIRE_SNAPSHOT = "avenire-sandbox-v6";
 /** Daytona 0.220.0 fixes resources on the snapshot; create-from-snapshot has no override.
  * 10 GB is the per-sandbox disk maximum on the current Daytona plan. */
 export const SANDBOX_RESOURCES = { cpu: 4, memory: 8, disk: 10 } as const;
@@ -38,6 +38,7 @@ const runtimeImage = Image.base("daytonaio/sandbox:0.9.0-slim")
   )
   .env({
     PLAYWRIGHT_BROWSERS_PATH: "/opt/avenire/browsers",
+    CHROME_PATH: "/usr/local/bin/avenire-figure-chromium",
     VNC_RESOLUTION: "1600x900",
     XCURSOR_THEME: "Bibata-Modern-Ice",
     XCURSOR_SIZE: "24",
@@ -56,6 +57,16 @@ export const avenireSandboxImage = DESKTOP_FILES.reduce(
     "set -eu; for package in plank xfce4-screensaver xscreensaver light-locker xfce4-power-manager; do if dpkg-query -W -f='${db:Status-Abbrev}' \"$package\" 2>/dev/null | grep -q '^ii'; then apt-get purge -y \"$package\"; fi; done; rm -rf /home/daytona/.cache/sessions /home/daytona/Desktop/*",
     "chmod +x /usr/local/bin/avenire-browser /usr/local/bin/avenire-desktop-session; chown -R daytona:daytona /home/daytona/.config /home/daytona/.Xresources",
   )
+  .addLocalFile(
+    fileURLToPath(new URL("../assets/figure-chromium", import.meta.url)),
+    "/usr/local/bin/avenire-figure-chromium",
+  )
+  .runCommands("chmod 755 /usr/local/bin/avenire-figure-chromium")
+  .addLocalDir(
+    fileURLToPath(new URL("../assets/figures/", import.meta.url)),
+    "/opt/avenire/figures",
+  )
+  .runCommands("chown -R root:root /opt/avenire/figures; chmod -R a+rX,a-w /opt/avenire/figures")
   .dockerfileCommands(["USER daytona"]);
 
 export const ensureSnapshot = Effect.fn("Snapshots.ensureSnapshot")(function* (

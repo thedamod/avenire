@@ -8,6 +8,8 @@ import {
   ensureSnapshot,
 } from "../src/snapshots.ts";
 
+const started = Date.now();
+process.stdout.write(`Snapshot build started: ${new Date(started).toISOString()}\n`);
 const build = Effect.gen(function* () {
   const daytona = yield* DaytonaClient;
   // SDK 0.220.0's optional log stream can reject before its polling promise awaits it.
@@ -34,7 +36,10 @@ const build = Effect.gen(function* () {
 }).pipe(Effect.provide(DaytonaClientLive));
 
 Effect.runPromise(build).then(
-  (name) => process.stdout.write(`Snapshot ready: ${name}\n`),
+  (name) =>
+    process.stdout.write(
+      `Snapshot ready: ${name}; elapsed ${((Date.now() - started) / 1000).toFixed(1)}s\n`,
+    ),
   (error: unknown) => {
     process.stderr.write(`Snapshot build failed: ${String(error)}\n`);
     process.exitCode = 1;

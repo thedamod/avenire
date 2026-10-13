@@ -687,7 +687,7 @@ function cpMount(stage, controller, { keepSvg = false, vary = null, only = null,
       const css = [...document.querySelectorAll("style")].map((s) => s.textContent).join("\n");
       const holder = stage.closest("[data-theme]");
       const theme = holder ? holder.getAttribute("data-theme") : "dark";
-      const card = getComputedStyle(stage.closest(".iso-plate") || stage).getPropertyValue("--anatomy-card").trim() || "#fff";
+      const card = getComputedStyle(stage.closest(".iso-plate") || stage).getPropertyValue("--figure-card").trim() || "#fff";
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><style>${css.replace(/<\/style/gi, "")}</style><g class="iso" data-theme="${theme}"><g class="iso-plate" style="padding:0;box-shadow:none">${background ? `<rect width="${W}" height="${H}" fill="${card}"/>` : ""}<g class="${stage.getAttribute("class") || ""}">${out.join("")}</g></g></g></svg>`;
     },
     set incremental(on) {

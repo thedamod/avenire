@@ -26,7 +26,7 @@ description: ELI5-style explanations with analogies and multiple examples. Expla
 
 # Concept Explainer
 
-Clear explanations with analogies and examples at multiple difficulty levels.
+Clear explanations at the appropriate difficulty level. Choose a direct physical model, a real mechanism, or an analogy according to what makes the causal relationship clearest. Do not force an analogy onto a pendulum or other self-explanatory physical system. For interactive figures load \`explainer\`; keep this verbal explanation in chat, not inside the widget.
 
 ## Explanation Levels
 
@@ -180,7 +180,7 @@ Think of [concept] like [familiar thing]. Just as [familiar thing does X], [conc
 ## Quality Checklist
 
 - [ ] Opens with simple one-liner
-- [ ] Includes relatable analogy
+- [ ] Uses a relatable analogy when it is clearer than the direct explanation
 - [ ] Provides 2-3 examples at different scales
 - [ ] Addresses common misconceptions
 - [ ] Builds from simple to complex
@@ -1098,432 +1098,6 @@ Use \`import manimgx as m\`, \`class SceneName(m.Scene)\`, and \`manimgx inspect
 Use \`kicad-cli sch export svg|pdf\` or \`kicad-cli pcb export svg|pdf|gerbers\` on the actual design, inspect CLI help for exact options, and publish the generated file. For Node scripts, write then run with \`node\` or \`pnpm\`, capture bounded output, and publish only useful artifacts. Do not install packages just to make an ordinary chart.
 `,
   },
-  "anatomy-arcade-cabinet": {
-    id: "anatomy-arcade-cabinet",
-    title: "Arcade cabinet example",
-    description: "A cabinet cutaway: a coin travels from slot through chute to switch and lights the screen.",
-    section: "visual-examples",
-    path: "sections/visual-examples/anatomy-arcade-cabinet.md",
-    content: `---
-name: anatomy-arcade-cabinet
-description: A cabinet cutaway: a coin travels from slot through chute to switch and lights the screen.
----
-
-# Arcade cabinet example
-
-A compact Avenire-token adaptation of the corresponding Anatomy example. Load \`anatomy\`, \`style\`, and \`kit-api\` before adapting it. The example is standalone HTML for \`preview_widget\` then \`render_widget\`; explain the mechanism and the simplified model in prose.
-
-\`\`\`html
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-*{box-sizing:border-box}body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans)}
-.card{border:var(--stroke-hairline) solid var(--figure-frame);border-radius:var(--radius);background:var(--card);padding:var(--space-4);max-width:700px;margin:auto}
-.head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);font-size:var(--text-sm)}
-.head strong{font-size:var(--text-lg)}.read{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--foreground)}
-.hint,.caption{color:var(--muted-foreground);font-size:var(--text-sm);line-height:var(--leading-normal)}
-.stage{min-height:260px;display:grid;place-items:center;margin:var(--space-3) 0}.stage svg{max-width:100%}
-.controls{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap}.controls label{display:flex;gap:var(--space-2);align-items:center;font-size:var(--text-sm)}
-input[type=range]{width:min(250px,65vw);accent-color:var(--primary)}button,input[type=text]{font:inherit;border:var(--stroke-thin) solid var(--border);border-radius:calc(var(--radius) / 2);background:var(--secondary);color:var(--secondary-foreground);padding:var(--space-2)}
-:focus-visible{outline:var(--stroke-emphasis) solid var(--ring);outline-offset:2px}
-</style></head><body class="iso"><figure class="card"><div class="head"><strong>Arcade cabinet</strong><output class="read" id="readout" aria-live="polite"></output></div><div class="stage" id="stage"></div><div class="controls"><button id="coin" type="button">Insert coin</button></div><p class="hint">Insert a coin to follow the switch pulse</p><figcaption class="caption">The coin trips a switch; the board then lights the CRT. The chute and screen share one event state.</figcaption></figure><script type="module">
-import { fitProjection, boxCorners, slabOf, cylinder, solidSvg, lineSvg, lineOnTop, ring, iso, figureSvg, ISO_CSS } from '/kits/iso.js';
-const css = document.createElement('style');
-css.textContent = ISO_CSS + \`.iso{--anatomy-page:var(--background);--anatomy-card:var(--card);--anatomy-text:var(--foreground);--anatomy-strong:var(--foreground);--anatomy-muted:var(--figure-label);--anatomy-paper:var(--card);--anatomy-face:var(--card);--anatomy-top:var(--secondary);--anatomy-shade-0:var(--muted);--anatomy-shade-1:var(--secondary);--anatomy-shade-2:var(--card);--anatomy-shade-3:var(--canvas);--anatomy-lit-top:var(--accent);--anatomy-lit-shade:var(--secondary);--anatomy-hi:var(--foreground);--anatomy-mid:var(--muted-foreground);--anatomy-lo:var(--border);--anatomy-faint:var(--canvas-grid);--anatomy-lit:var(--chart-1);--anatomy-halo:var(--foreground);--anatomy-halo-opacity:.08;--anatomy-dot:var(--foreground);--anatomy-red:var(--destructive);--anatomy-green:var(--chart-4);--anatomy-blue:var(--chart-2);--anatomy-weight:var(--stroke-hairline);--anatomy-mono:var(--font-mono);--anatomy-lift:none}\`;
-document.head.append(css);
-const base={x:-100,y:-55,w:200,d:110,r:6};
-const P=fitProjection(boxCorners(base,-8,80),480,260,{pad:30});
-const block=(p,z,h,tone='mid',lit=false)=>solidSvg(slabOf(p,z,h,P,6,0.7),{tone,lit});
-const round=(x,y,r,z,h,tone='mid',lit=false)=>solidSvg(cylinder(x,y,r,z,h,P,28,0.5),{tone,lit});
-const edge=(a,b,z,tone='lo')=>lineSvg(lineOnTop(a,b,z,P),{tone});
-const feet=()=>[[-82,-40],[82,-40],[-82,40],[82,40]].map(([x,y])=>round(x,y,5,-8,3,'lo')).join('');
-const foundation=()=>feet()+block(base,-5,5,'mid')+block({x:-88,y:-43,w:176,d:86,r:4},0,1,'faint');
-const show=(body,label,readout)=>{document.getElementById('stage').innerHTML=figureSvg({width:480,height:260,label,body});document.getElementById('readout').textContent=readout};
-
-let step=0;
-function draw(){let b=foundation();
-b+=block({x:-70,y:-25,w:42,d:48,r:2},1,62,'hi');
-b+=block({x:-22,y:-23,w:65,d:46,r:2},1,35,'mid');
-b+=block({x:45,y:-20,w:29,d:38,r:2},1,12,'mid');
-b+=edge([-53,-8],[-25,-8],57,'hi')+edge([-25,-8],[5,-8],35,'hi');
-b+=round(-51,-8,4,58,2,'lit',step>=1);
-b+=round(9,-8,3,36,2,step>=2?'lit':'mid',step>=2);
-b+=block({x:51,y:-13,w:16,d:24,r:1},13,1,step>=3?'lit':'lo',step>=3);
-show(b,'Arcade cabinet cutaway with chute, switch, board and screen',step===0?'ready':step===1?'coin in chute':step===2?'switch closed':'screen on');}
-document.getElementById('coin').addEventListener('click',()=>{step=1;draw();setTimeout(()=>{step=2;draw()},380);setTimeout(()=>{step=3;draw()},760)});draw();
-</script></body></html>
-\`\`\`
-`,
-  },
-  "anatomy-desk-computer": {
-    id: "anatomy-desk-computer",
-    title: "Desk computer example",
-    description: "A desk computer whose typed input appears on its screen and collapses when power is off.",
-    section: "visual-examples",
-    path: "sections/visual-examples/anatomy-desk-computer.md",
-    content: `---
-name: anatomy-desk-computer
-description: A desk computer whose typed input appears on its screen and collapses when power is off.
----
-
-# Desk computer example
-
-A compact Avenire-token adaptation of the corresponding Anatomy example. Load \`anatomy\`, \`style\`, and \`kit-api\` before adapting it. The example is standalone HTML for \`preview_widget\` then \`render_widget\`; explain the mechanism and the simplified model in prose.
-
-\`\`\`html
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-*{box-sizing:border-box}body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans)}
-.card{border:var(--stroke-hairline) solid var(--figure-frame);border-radius:var(--radius);background:var(--card);padding:var(--space-4);max-width:700px;margin:auto}
-.head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);font-size:var(--text-sm)}
-.head strong{font-size:var(--text-lg)}.read{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--foreground)}
-.hint,.caption{color:var(--muted-foreground);font-size:var(--text-sm);line-height:var(--leading-normal)}
-.stage{min-height:260px;display:grid;place-items:center;margin:var(--space-3) 0}.stage svg{max-width:100%}
-.controls{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap}.controls label{display:flex;gap:var(--space-2);align-items:center;font-size:var(--text-sm)}
-input[type=range]{width:min(250px,65vw);accent-color:var(--primary)}button,input[type=text]{font:inherit;border:var(--stroke-thin) solid var(--border);border-radius:calc(var(--radius) / 2);background:var(--secondary);color:var(--secondary-foreground);padding:var(--space-2)}
-:focus-visible{outline:var(--stroke-emphasis) solid var(--ring);outline-offset:2px}
-</style></head><body class="iso"><figure class="card"><div class="head"><strong>Desk computer</strong><output class="read" id="readout" aria-live="polite"></output></div><div class="stage" id="stage"></div><div class="controls"><label>Keys <input id="keys" type="text" maxlength="12" value="HELLO" aria-label="Text to display"></label><button id="power" type="button">Power off</button></div><p class="hint">Type a short line; toggle power</p><figcaption class="caption">The keyboard feeds the screen; turning power off removes the displayed line.</figcaption></figure><script type="module">
-import { fitProjection, boxCorners, slabOf, cylinder, solidSvg, lineSvg, lineOnTop, ring, iso, figureSvg, ISO_CSS } from '/kits/iso.js';
-const css = document.createElement('style');
-css.textContent = ISO_CSS + \`.iso{--anatomy-page:var(--background);--anatomy-card:var(--card);--anatomy-text:var(--foreground);--anatomy-strong:var(--foreground);--anatomy-muted:var(--figure-label);--anatomy-paper:var(--card);--anatomy-face:var(--card);--anatomy-top:var(--secondary);--anatomy-shade-0:var(--muted);--anatomy-shade-1:var(--secondary);--anatomy-shade-2:var(--card);--anatomy-shade-3:var(--canvas);--anatomy-lit-top:var(--accent);--anatomy-lit-shade:var(--secondary);--anatomy-hi:var(--foreground);--anatomy-mid:var(--muted-foreground);--anatomy-lo:var(--border);--anatomy-faint:var(--canvas-grid);--anatomy-lit:var(--chart-1);--anatomy-halo:var(--foreground);--anatomy-halo-opacity:.08;--anatomy-dot:var(--foreground);--anatomy-red:var(--destructive);--anatomy-green:var(--chart-4);--anatomy-blue:var(--chart-2);--anatomy-weight:var(--stroke-hairline);--anatomy-mono:var(--font-mono);--anatomy-lift:none}\`;
-document.head.append(css);
-const base={x:-100,y:-55,w:200,d:110,r:6};
-const P=fitProjection(boxCorners(base,-8,80),480,260,{pad:30});
-const block=(p,z,h,tone='mid',lit=false)=>solidSvg(slabOf(p,z,h,P,6,0.7),{tone,lit});
-const round=(x,y,r,z,h,tone='mid',lit=false)=>solidSvg(cylinder(x,y,r,z,h,P,28,0.5),{tone,lit});
-const edge=(a,b,z,tone='lo')=>lineSvg(lineOnTop(a,b,z,P),{tone});
-const feet=()=>[[-82,-40],[82,-40],[-82,40],[82,40]].map(([x,y])=>round(x,y,5,-8,3,'lo')).join('');
-const foundation=()=>feet()+block(base,-5,5,'mid')+block({x:-88,y:-43,w:176,d:86,r:4},0,1,'faint');
-const show=(body,label,readout)=>{document.getElementById('stage').innerHTML=figureSvg({width:480,height:260,label,body});document.getElementById('readout').textContent=readout};
-
-let on=true;const keys=document.getElementById('keys');
-function draw(){let b=foundation();
-b+=block({x:-70,y:-30,w:95,d:58,r:3},1,37,'hi');
-b+=block({x:32,y:-31,w:52,d:60,r:3},1,4,'mid');
-for(let row=0;row<3;row++)for(let col=0;col<8;col++)b+=block({x:35+col*5.6,y:-25+row*12,w:4,d:7,r:.4},5,.6,'lo');
-const [sx,sy]=iso([-48,-8,39],P);
-b+=\`<g><rect x="\${sx-34}" y="\${sy-22}" width="68" height="37" rx="2" fill="var(--canvas)" stroke="var(--figure-frame)" stroke-width="var(--stroke-thin)"/><text x="\${sx-29}" y="\${sy+1}" fill="var(--chart-1)" font-size="9" font-family="var(--font-mono)">\${on?keys.value.replaceAll('&','&amp;').replaceAll('<','&lt;'):''}</text></g>\`;
-show(b,'Desk computer with keyboard and lit display',on?'power on · '+keys.value:'power off');}
-keys.addEventListener('input',draw);document.getElementById('power').addEventListener('click',e=>{on=!on;e.currentTarget.textContent=on?'Power off':'Power on';draw()});draw();
-</script></body></html>
-\`\`\`
-`,
-  },
-  "anatomy-dial-indicator": {
-    id: "anatomy-dial-indicator",
-    title: "Dial indicator example",
-    description: "A dial indicator whose plunger displacement moves a needle and numeric reading together.",
-    section: "visual-examples",
-    path: "sections/visual-examples/anatomy-dial-indicator.md",
-    content: `---
-name: anatomy-dial-indicator
-description: A dial indicator whose plunger displacement moves a needle and numeric reading together.
----
-
-# Dial indicator example
-
-A compact Avenire-token adaptation of the corresponding Anatomy example. Load \`anatomy\`, \`style\`, and \`kit-api\` before adapting it. The example is standalone HTML for \`preview_widget\` then \`render_widget\`; explain the mechanism and the simplified model in prose.
-
-\`\`\`html
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-*{box-sizing:border-box}body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans)}
-.card{border:var(--stroke-hairline) solid var(--figure-frame);border-radius:var(--radius);background:var(--card);padding:var(--space-4);max-width:700px;margin:auto}
-.head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);font-size:var(--text-sm)}
-.head strong{font-size:var(--text-lg)}.read{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--foreground)}
-.hint,.caption{color:var(--muted-foreground);font-size:var(--text-sm);line-height:var(--leading-normal)}
-.stage{min-height:260px;display:grid;place-items:center;margin:var(--space-3) 0}.stage svg{max-width:100%}
-.controls{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap}.controls label{display:flex;gap:var(--space-2);align-items:center;font-size:var(--text-sm)}
-input[type=range]{width:min(250px,65vw);accent-color:var(--primary)}button,input[type=text]{font:inherit;border:var(--stroke-thin) solid var(--border);border-radius:calc(var(--radius) / 2);background:var(--secondary);color:var(--secondary-foreground);padding:var(--space-2)}
-:focus-visible{outline:var(--stroke-emphasis) solid var(--ring);outline-offset:2px}
-</style></head><body class="iso"><figure class="card"><div class="head"><strong>Dial indicator</strong><output class="read" id="readout" aria-live="polite"></output></div><div class="stage" id="stage"></div><div class="controls"><label>Displacement <input id="value" type="range" min="0" max="10" step="0.1" value="4"></label></div><p class="hint">Move the specimen under the plunger</p><figcaption class="caption">The plunger height, needle angle, and readout all derive from the same displacement.</figcaption></figure><script type="module">
-import { fitProjection, boxCorners, slabOf, cylinder, solidSvg, lineSvg, lineOnTop, ring, iso, figureSvg, ISO_CSS } from '/kits/iso.js';
-const css = document.createElement('style');
-css.textContent = ISO_CSS + \`.iso{--anatomy-page:var(--background);--anatomy-card:var(--card);--anatomy-text:var(--foreground);--anatomy-strong:var(--foreground);--anatomy-muted:var(--figure-label);--anatomy-paper:var(--card);--anatomy-face:var(--card);--anatomy-top:var(--secondary);--anatomy-shade-0:var(--muted);--anatomy-shade-1:var(--secondary);--anatomy-shade-2:var(--card);--anatomy-shade-3:var(--canvas);--anatomy-lit-top:var(--accent);--anatomy-lit-shade:var(--secondary);--anatomy-hi:var(--foreground);--anatomy-mid:var(--muted-foreground);--anatomy-lo:var(--border);--anatomy-faint:var(--canvas-grid);--anatomy-lit:var(--chart-1);--anatomy-halo:var(--foreground);--anatomy-halo-opacity:.08;--anatomy-dot:var(--foreground);--anatomy-red:var(--destructive);--anatomy-green:var(--chart-4);--anatomy-blue:var(--chart-2);--anatomy-weight:var(--stroke-hairline);--anatomy-mono:var(--font-mono);--anatomy-lift:none}\`;
-document.head.append(css);
-const base={x:-100,y:-55,w:200,d:110,r:6};
-const P=fitProjection(boxCorners(base,-8,80),480,260,{pad:30});
-const block=(p,z,h,tone='mid',lit=false)=>solidSvg(slabOf(p,z,h,P,6,0.7),{tone,lit});
-const round=(x,y,r,z,h,tone='mid',lit=false)=>solidSvg(cylinder(x,y,r,z,h,P,28,0.5),{tone,lit});
-const edge=(a,b,z,tone='lo')=>lineSvg(lineOnTop(a,b,z,P),{tone});
-const feet=()=>[[-82,-40],[82,-40],[-82,40],[82,40]].map(([x,y])=>round(x,y,5,-8,3,'lo')).join('');
-const foundation=()=>feet()+block(base,-5,5,'mid')+block({x:-88,y:-43,w:176,d:86,r:4},0,1,'faint');
-const show=(body,label,readout)=>{document.getElementById('stage').innerHTML=figureSvg({width:480,height:260,label,body});document.getElementById('readout').textContent=readout};
-
-const value=document.getElementById('value');
-function draw(){const v=Number(value.value);let b=foundation();
-b+=block({x:-62,y:-18,w:9,d:34,r:1},1,68,'hi');
-b+=block({x:-62,y:-17,w:112,d:5,r:1},64,5,'mid');
-b+=round(36,-14,22,68,7,'hi');
-const a=-2.4+v/10*4.8;const start=[36,-14],end=[36+18*Math.cos(a),-14+18*Math.sin(a)];
-b+=edge(start,end,76,'lit')+lineSvg(ring(36,-14,18,76,P,48),{tone:'lo'});
-b+=block({x:-12,y:-18,w:24,d:34,r:2},1,4,'mid');
-b+=round(36,-14,2,44+v,24-v,'lit',true);
-show(b,'Dial gauge with plunger and needle',v.toFixed(1)+' mm');}
-value.addEventListener('input',draw);draw();
-</script></body></html>
-\`\`\`
-`,
-  },
-  "anatomy-raptor-engine": {
-    id: "anatomy-raptor-engine",
-    title: "Raptor engine example",
-    description: "A rocket engine test-stand cutaway with pressure and ignition controls.",
-    section: "visual-examples",
-    path: "sections/visual-examples/anatomy-raptor-engine.md",
-    content: `---
-name: anatomy-raptor-engine
-description: A rocket engine test-stand cutaway with pressure and ignition controls.
----
-
-# Raptor engine example
-
-A compact Avenire-token adaptation of the corresponding Anatomy example. Load \`anatomy\`, \`style\`, and \`kit-api\` before adapting it. The example is standalone HTML for \`preview_widget\` then \`render_widget\`; explain the mechanism and the simplified model in prose.
-
-\`\`\`html
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-*{box-sizing:border-box}body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans)}
-.card{border:var(--stroke-hairline) solid var(--figure-frame);border-radius:var(--radius);background:var(--card);padding:var(--space-4);max-width:700px;margin:auto}
-.head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);font-size:var(--text-sm)}
-.head strong{font-size:var(--text-lg)}.read{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--foreground)}
-.hint,.caption{color:var(--muted-foreground);font-size:var(--text-sm);line-height:var(--leading-normal)}
-.stage{min-height:260px;display:grid;place-items:center;margin:var(--space-3) 0}.stage svg{max-width:100%}
-.controls{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap}.controls label{display:flex;gap:var(--space-2);align-items:center;font-size:var(--text-sm)}
-input[type=range]{width:min(250px,65vw);accent-color:var(--primary)}button,input[type=text]{font:inherit;border:var(--stroke-thin) solid var(--border);border-radius:calc(var(--radius) / 2);background:var(--secondary);color:var(--secondary-foreground);padding:var(--space-2)}
-:focus-visible{outline:var(--stroke-emphasis) solid var(--ring);outline-offset:2px}
-</style></head><body class="iso"><figure class="card"><div class="head"><strong>Raptor engine</strong><output class="read" id="readout" aria-live="polite"></output></div><div class="stage" id="stage"></div><div class="controls"><label>Pressure <input id="pressure" type="range" min="0" max="100" value="45"></label><button id="ignite" type="button">Ignite</button></div><p class="hint">Increase chamber pressure; ignite to trace thrust</p><figcaption class="caption">A simplified test stand: higher model pressure lengthens the exhaust, while the readout reports proportional thrust. This is an analogy, not flight data.</figcaption></figure><script type="module">
-import { fitProjection, boxCorners, slabOf, cylinder, solidSvg, lineSvg, lineOnTop, ring, iso, figureSvg, ISO_CSS } from '/kits/iso.js';
-const css = document.createElement('style');
-css.textContent = ISO_CSS + \`.iso{--anatomy-page:var(--background);--anatomy-card:var(--card);--anatomy-text:var(--foreground);--anatomy-strong:var(--foreground);--anatomy-muted:var(--figure-label);--anatomy-paper:var(--card);--anatomy-face:var(--card);--anatomy-top:var(--secondary);--anatomy-shade-0:var(--muted);--anatomy-shade-1:var(--secondary);--anatomy-shade-2:var(--card);--anatomy-shade-3:var(--canvas);--anatomy-lit-top:var(--accent);--anatomy-lit-shade:var(--secondary);--anatomy-hi:var(--foreground);--anatomy-mid:var(--muted-foreground);--anatomy-lo:var(--border);--anatomy-faint:var(--canvas-grid);--anatomy-lit:var(--chart-1);--anatomy-halo:var(--foreground);--anatomy-halo-opacity:.08;--anatomy-dot:var(--foreground);--anatomy-red:var(--destructive);--anatomy-green:var(--chart-4);--anatomy-blue:var(--chart-2);--anatomy-weight:var(--stroke-hairline);--anatomy-mono:var(--font-mono);--anatomy-lift:none}\`;
-document.head.append(css);
-const base={x:-100,y:-55,w:200,d:110,r:6};
-const P=fitProjection(boxCorners(base,-8,80),480,260,{pad:30});
-const block=(p,z,h,tone='mid',lit=false)=>solidSvg(slabOf(p,z,h,P,6,0.7),{tone,lit});
-const round=(x,y,r,z,h,tone='mid',lit=false)=>solidSvg(cylinder(x,y,r,z,h,P,28,0.5),{tone,lit});
-const edge=(a,b,z,tone='lo')=>lineSvg(lineOnTop(a,b,z,P),{tone});
-const feet=()=>[[-82,-40],[82,-40],[-82,40],[82,40]].map(([x,y])=>round(x,y,5,-8,3,'lo')).join('');
-const foundation=()=>feet()+block(base,-5,5,'mid')+block({x:-88,y:-43,w:176,d:86,r:4},0,1,'faint');
-const show=(body,label,readout)=>{document.getElementById('stage').innerHTML=figureSvg({width:480,height:260,label,body});document.getElementById('readout').textContent=readout};
-
-let firing=false;const pressure=document.getElementById('pressure');
-function draw(){const p=Number(pressure.value);let b=foundation();
-b+=block({x:-60,y:-43,w:8,d:86,r:1},1,68,'hi')+block({x:54,y:-43,w:8,d:86,r:1},1,68,'hi');
-b+=block({x:-60,y:-43,w:122,d:8,r:1},69,4,'mid');
-b+=round(0,0,23,28,38,'hi');b+=round(0,0,13,3,25,'mid');
-for(const y of [-24,24])b+=block({x:-47,y:y-2,w:33,d:4,r:1},36,3,'lo');
-if(firing&&p>0){const [x,y]=iso([0,0,3],P);b+=\`<path d="M\${x-10} \${y} Q\${x-5} \${y+24+p*.18} \${x} \${y+35+p*.3} Q\${x+7} \${y+20+p*.18} \${x+10} \${y}Z" fill="var(--chart-3)" opacity=".58"/>\`;}
-show(b,'Rocket engine on a simplified test stand',firing?\`ignited · \${p}% relative thrust\`:'cold · 0% relative thrust');}
-pressure.addEventListener('input',draw);document.getElementById('ignite').addEventListener('click',e=>{firing=!firing;e.currentTarget.textContent=firing?'Shut down':'Ignite';draw()});draw();
-</script></body></html>
-\`\`\`
-`,
-  },
-  "anatomy-ripple-tank": {
-    id: "anatomy-ripple-tank",
-    title: "Ripple tank example",
-    description: "A ripple tank where frequency and source separation change the interference pattern.",
-    section: "visual-examples",
-    path: "sections/visual-examples/anatomy-ripple-tank.md",
-    content: `---
-name: anatomy-ripple-tank
-description: A ripple tank where frequency and source separation change the interference pattern.
----
-
-# Ripple tank example
-
-A compact Avenire-token adaptation of the corresponding Anatomy example. Load \`anatomy\`, \`style\`, and \`kit-api\` before adapting it. The example is standalone HTML for \`preview_widget\` then \`render_widget\`; explain the mechanism and the simplified model in prose.
-
-\`\`\`html
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-*{box-sizing:border-box}body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans)}
-.card{border:var(--stroke-hairline) solid var(--figure-frame);border-radius:var(--radius);background:var(--card);padding:var(--space-4);max-width:700px;margin:auto}
-.head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);font-size:var(--text-sm)}
-.head strong{font-size:var(--text-lg)}.read{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--foreground)}
-.hint,.caption{color:var(--muted-foreground);font-size:var(--text-sm);line-height:var(--leading-normal)}
-.stage{min-height:260px;display:grid;place-items:center;margin:var(--space-3) 0}.stage svg{max-width:100%}
-.controls{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap}.controls label{display:flex;gap:var(--space-2);align-items:center;font-size:var(--text-sm)}
-input[type=range]{width:min(250px,65vw);accent-color:var(--primary)}button,input[type=text]{font:inherit;border:var(--stroke-thin) solid var(--border);border-radius:calc(var(--radius) / 2);background:var(--secondary);color:var(--secondary-foreground);padding:var(--space-2)}
-:focus-visible{outline:var(--stroke-emphasis) solid var(--ring);outline-offset:2px}
-</style></head><body class="iso"><figure class="card"><div class="head"><strong>Ripple tank</strong><output class="read" id="readout" aria-live="polite"></output></div><div class="stage" id="stage"></div><div class="controls"><label>Frequency <input id="frequency" type="range" min="2" max="8" value="4"></label><label>Spacing <input id="spacing" type="range" min="12" max="50" value="30"></label></div><p class="hint">Change frequency and source spacing</p><figcaption class="caption">Two dippers emit circular waves. Their overlap creates the familiar interference pattern; this compact model omits reflection and depth effects.</figcaption></figure><script type="module">
-import { fitProjection, boxCorners, slabOf, cylinder, solidSvg, lineSvg, lineOnTop, ring, iso, figureSvg, ISO_CSS } from '/kits/iso.js';
-const css = document.createElement('style');
-css.textContent = ISO_CSS + \`.iso{--anatomy-page:var(--background);--anatomy-card:var(--card);--anatomy-text:var(--foreground);--anatomy-strong:var(--foreground);--anatomy-muted:var(--figure-label);--anatomy-paper:var(--card);--anatomy-face:var(--card);--anatomy-top:var(--secondary);--anatomy-shade-0:var(--muted);--anatomy-shade-1:var(--secondary);--anatomy-shade-2:var(--card);--anatomy-shade-3:var(--canvas);--anatomy-lit-top:var(--accent);--anatomy-lit-shade:var(--secondary);--anatomy-hi:var(--foreground);--anatomy-mid:var(--muted-foreground);--anatomy-lo:var(--border);--anatomy-faint:var(--canvas-grid);--anatomy-lit:var(--chart-1);--anatomy-halo:var(--foreground);--anatomy-halo-opacity:.08;--anatomy-dot:var(--foreground);--anatomy-red:var(--destructive);--anatomy-green:var(--chart-4);--anatomy-blue:var(--chart-2);--anatomy-weight:var(--stroke-hairline);--anatomy-mono:var(--font-mono);--anatomy-lift:none}\`;
-document.head.append(css);
-const base={x:-100,y:-55,w:200,d:110,r:6};
-const P=fitProjection(boxCorners(base,-8,80),480,260,{pad:30});
-const block=(p,z,h,tone='mid',lit=false)=>solidSvg(slabOf(p,z,h,P,6,0.7),{tone,lit});
-const round=(x,y,r,z,h,tone='mid',lit=false)=>solidSvg(cylinder(x,y,r,z,h,P,28,0.5),{tone,lit});
-const edge=(a,b,z,tone='lo')=>lineSvg(lineOnTop(a,b,z,P),{tone});
-const feet=()=>[[-82,-40],[82,-40],[-82,40],[82,40]].map(([x,y])=>round(x,y,5,-8,3,'lo')).join('');
-const foundation=()=>feet()+block(base,-5,5,'mid')+block({x:-88,y:-43,w:176,d:86,r:4},0,1,'faint');
-const show=(body,label,readout)=>{document.getElementById('stage').innerHTML=figureSvg({width:480,height:260,label,body});document.getElementById('readout').textContent=readout};
-
-const f=document.getElementById('frequency'),s=document.getElementById('spacing');
-function draw(){const hz=Number(f.value),gap=Number(s.value);let b=foundation();
-b+=block({x:-74,y:-39,w:148,d:78,r:2},2,5,'hi');
-for(const y of [-gap/2,gap/2]){b+=round(-35,y,3,9,5,'lit',true);const [cx,cy]=iso([-35,y,9],P);for(let n=1;n<=4;n++)b+=\`<ellipse cx="\${cx}" cy="\${cy}" rx="\${n*11*4/hz}" ry="\${n*5*4/hz}" fill="none" stroke="var(--chart-2)" stroke-width="var(--stroke-hairline)" opacity="\${1-n*.17}"/>\`;}
-show(b,'Ripple tank with two dippers and spreading wavefronts',\`\${hz} Hz · \${gap} mm apart\`);}
-f.addEventListener('input',draw);s.addEventListener('input',draw);draw();
-</script></body></html>
-\`\`\`
-`,
-  },
-  "anatomy-spot-plate": {
-    id: "anatomy-spot-plate",
-    title: "Spot plate example",
-    description: "Six drop pairs merge as a feeler fan adjusts one shared threshold.",
-    section: "visual-examples",
-    path: "sections/visual-examples/anatomy-spot-plate.md",
-    content: `---
-name: anatomy-spot-plate
-description: Six drop pairs merge as a feeler fan adjusts one shared threshold.
----
-
-# Spot plate example
-
-A compact Avenire-token adaptation of the corresponding Anatomy example. Load \`anatomy\`, \`style\`, and \`kit-api\` before adapting it. The example is standalone HTML for \`preview_widget\` then \`render_widget\`; explain the mechanism and the simplified model in prose.
-
-\`\`\`html
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-*{box-sizing:border-box}body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans)}
-.card{border:var(--stroke-hairline) solid var(--figure-frame);border-radius:var(--radius);background:var(--card);padding:var(--space-4);max-width:700px;margin:auto}
-.head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);font-size:var(--text-sm)}
-.head strong{font-size:var(--text-lg)}.read{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--foreground)}
-.hint,.caption{color:var(--muted-foreground);font-size:var(--text-sm);line-height:var(--leading-normal)}
-.stage{min-height:260px;display:grid;place-items:center;margin:var(--space-3) 0}.stage svg{max-width:100%}
-.controls{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap}.controls label{display:flex;gap:var(--space-2);align-items:center;font-size:var(--text-sm)}
-input[type=range]{width:min(250px,65vw);accent-color:var(--primary)}button,input[type=text]{font:inherit;border:var(--stroke-thin) solid var(--border);border-radius:calc(var(--radius) / 2);background:var(--secondary);color:var(--secondary-foreground);padding:var(--space-2)}
-:focus-visible{outline:var(--stroke-emphasis) solid var(--ring);outline-offset:2px}
-</style></head><body class="iso"><figure class="card"><div class="head"><strong>Spot plate</strong><output class="read" id="readout" aria-live="polite"></output></div><div class="stage" id="stage"></div><div class="controls"><label>Merge threshold <input id="merge" type="range" min="4" max="28" value="14"></label></div><p class="hint">Slide the merge threshold</p><figcaption class="caption">One threshold controls six pair states. Each close pair becomes a joined drop and its feeler blade opens.</figcaption></figure><script type="module">
-import { fitProjection, boxCorners, slabOf, cylinder, solidSvg, lineSvg, lineOnTop, ring, iso, figureSvg, ISO_CSS } from '/kits/iso.js';
-const css = document.createElement('style');
-css.textContent = ISO_CSS + \`.iso{--anatomy-page:var(--background);--anatomy-card:var(--card);--anatomy-text:var(--foreground);--anatomy-strong:var(--foreground);--anatomy-muted:var(--figure-label);--anatomy-paper:var(--card);--anatomy-face:var(--card);--anatomy-top:var(--secondary);--anatomy-shade-0:var(--muted);--anatomy-shade-1:var(--secondary);--anatomy-shade-2:var(--card);--anatomy-shade-3:var(--canvas);--anatomy-lit-top:var(--accent);--anatomy-lit-shade:var(--secondary);--anatomy-hi:var(--foreground);--anatomy-mid:var(--muted-foreground);--anatomy-lo:var(--border);--anatomy-faint:var(--canvas-grid);--anatomy-lit:var(--chart-1);--anatomy-halo:var(--foreground);--anatomy-halo-opacity:.08;--anatomy-dot:var(--foreground);--anatomy-red:var(--destructive);--anatomy-green:var(--chart-4);--anatomy-blue:var(--chart-2);--anatomy-weight:var(--stroke-hairline);--anatomy-mono:var(--font-mono);--anatomy-lift:none}\`;
-document.head.append(css);
-const base={x:-100,y:-55,w:200,d:110,r:6};
-const P=fitProjection(boxCorners(base,-8,80),480,260,{pad:30});
-const block=(p,z,h,tone='mid',lit=false)=>solidSvg(slabOf(p,z,h,P,6,0.7),{tone,lit});
-const round=(x,y,r,z,h,tone='mid',lit=false)=>solidSvg(cylinder(x,y,r,z,h,P,28,0.5),{tone,lit});
-const edge=(a,b,z,tone='lo')=>lineSvg(lineOnTop(a,b,z,P),{tone});
-const feet=()=>[[-82,-40],[82,-40],[-82,40],[82,40]].map(([x,y])=>round(x,y,5,-8,3,'lo')).join('');
-const foundation=()=>feet()+block(base,-5,5,'mid')+block({x:-88,y:-43,w:176,d:86,r:4},0,1,'faint');
-const show=(body,label,readout)=>{document.getElementById('stage').innerHTML=figureSvg({width:480,height:260,label,body});document.getElementById('readout').textContent=readout};
-
-const merge=document.getElementById('merge');const gaps=[5,9,13,17,21,25];
-function draw(){const threshold=Number(merge.value);let b=foundation();let joined=0;
-for(let i=0;i<6;i++){const x=-72+i*28,y=4,g=gaps[i],hit=g<=threshold;if(hit)joined++;
-b+=block({x:x-10,y:-30,w:20,d:50,r:2},1,3,'lo');
-if(hit)b+=round(x,y,6+g*.12,5,2,'lit',true);else{b+=round(x-g*.24,y,5,5,2,'mid')+round(x+g*.24,y,5,5,2,'mid');}
-b+=edge([x,-30],[x,-30+(hit?18:8)],5,hit?'lit':'lo');}
-show(b,'Spot plate with six drop pairs and feeler blades',\`\${joined} of 6 joined · \${threshold} px threshold\`);}
-merge.addEventListener('input',draw);draw();
-</script></body></html>
-\`\`\`
-`,
-  },
-  "anatomy-test-rig": {
-    id: "anatomy-test-rig",
-    title: "Press and pull test rig example",
-    description: "A spring-mounted glass button responds to press and sideways pull with a gauge readout.",
-    section: "visual-examples",
-    path: "sections/visual-examples/anatomy-test-rig.md",
-    content: `---
-name: anatomy-test-rig
-description: A spring-mounted glass button responds to press and sideways pull with a gauge readout.
----
-
-# Press and pull test rig example
-
-A compact Avenire-token adaptation of the corresponding Anatomy example. Load \`anatomy\`, \`style\`, and \`kit-api\` before adapting it. The example is standalone HTML for \`preview_widget\` then \`render_widget\`; explain the mechanism and the simplified model in prose.
-
-\`\`\`html
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-*{box-sizing:border-box}body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans)}
-.card{border:var(--stroke-hairline) solid var(--figure-frame);border-radius:var(--radius);background:var(--card);padding:var(--space-4);max-width:700px;margin:auto}
-.head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);font-size:var(--text-sm)}
-.head strong{font-size:var(--text-lg)}.read{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--foreground)}
-.hint,.caption{color:var(--muted-foreground);font-size:var(--text-sm);line-height:var(--leading-normal)}
-.stage{min-height:260px;display:grid;place-items:center;margin:var(--space-3) 0}.stage svg{max-width:100%}
-.controls{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap}.controls label{display:flex;gap:var(--space-2);align-items:center;font-size:var(--text-sm)}
-input[type=range]{width:min(250px,65vw);accent-color:var(--primary)}button,input[type=text]{font:inherit;border:var(--stroke-thin) solid var(--border);border-radius:calc(var(--radius) / 2);background:var(--secondary);color:var(--secondary-foreground);padding:var(--space-2)}
-:focus-visible{outline:var(--stroke-emphasis) solid var(--ring);outline-offset:2px}
-</style></head><body class="iso"><figure class="card"><div class="head"><strong>Press and pull test rig</strong><output class="read" id="readout" aria-live="polite"></output></div><div class="stage" id="stage"></div><div class="controls"><button id="press" type="button">Press</button><label>Pull <input id="pull" type="range" min="-80" max="80" value="0"></label></div><p class="hint">Press, then pull the probe sideways</p><figcaption class="caption">A simplified spring response: the held probe displaces the glass carriage, and the gauge reports its lean.</figcaption></figure><script type="module">
-import { fitProjection, boxCorners, slabOf, cylinder, solidSvg, lineSvg, lineOnTop, ring, iso, figureSvg, ISO_CSS } from '/kits/iso.js';
-const css = document.createElement('style');
-css.textContent = ISO_CSS + \`.iso{--anatomy-page:var(--background);--anatomy-card:var(--card);--anatomy-text:var(--foreground);--anatomy-strong:var(--foreground);--anatomy-muted:var(--figure-label);--anatomy-paper:var(--card);--anatomy-face:var(--card);--anatomy-top:var(--secondary);--anatomy-shade-0:var(--muted);--anatomy-shade-1:var(--secondary);--anatomy-shade-2:var(--card);--anatomy-shade-3:var(--canvas);--anatomy-lit-top:var(--accent);--anatomy-lit-shade:var(--secondary);--anatomy-hi:var(--foreground);--anatomy-mid:var(--muted-foreground);--anatomy-lo:var(--border);--anatomy-faint:var(--canvas-grid);--anatomy-lit:var(--chart-1);--anatomy-halo:var(--foreground);--anatomy-halo-opacity:.08;--anatomy-dot:var(--foreground);--anatomy-red:var(--destructive);--anatomy-green:var(--chart-4);--anatomy-blue:var(--chart-2);--anatomy-weight:var(--stroke-hairline);--anatomy-mono:var(--font-mono);--anatomy-lift:none}\`;
-document.head.append(css);
-const base={x:-100,y:-55,w:200,d:110,r:6};
-const P=fitProjection(boxCorners(base,-8,80),480,260,{pad:30});
-const block=(p,z,h,tone='mid',lit=false)=>solidSvg(slabOf(p,z,h,P,6,0.7),{tone,lit});
-const round=(x,y,r,z,h,tone='mid',lit=false)=>solidSvg(cylinder(x,y,r,z,h,P,28,0.5),{tone,lit});
-const edge=(a,b,z,tone='lo')=>lineSvg(lineOnTop(a,b,z,P),{tone});
-const feet=()=>[[-82,-40],[82,-40],[-82,40],[82,40]].map(([x,y])=>round(x,y,5,-8,3,'lo')).join('');
-const foundation=()=>feet()+block(base,-5,5,'mid')+block({x:-88,y:-43,w:176,d:86,r:4},0,1,'faint');
-const show=(body,label,readout)=>{document.getElementById('stage').innerHTML=figureSvg({width:480,height:260,label,body});document.getElementById('readout').textContent=readout};
-
-let held=false;const pull=document.getElementById('pull');
-function draw(){const px=held?Number(pull.value):0,lean=Math.round(px*.16*10)/10;let b=foundation();
-for(const y of [-22,22])b+=block({x:-65,y:y-2,w:126,d:4,r:1},2,4,'mid');
-b+=block({x:-28+lean,y:-31,w:56,d:62,r:3},7,5,held?'lit':'hi',held);
-b+=round(60,-25,14,16,6,'mid');
-b+=edge([60,-25],[60+lean,-25],23,'lit');
-b+=block({x:-82,y:-4,w:25,d:8,r:1},14,6,'mid');
-show(b,'Spring carriage, finger probe and dial gauge',\`\${held?'pressed':'released'} · lean \${lean.toFixed(1)} mm\`);}
-pull.addEventListener('input',draw);document.getElementById('press').addEventListener('click',e=>{held=!held;e.currentTarget.textContent=held?'Release':'Press';draw()});draw();
-</script></body></html>
-\`\`\`
-`,
-  },
-  "anatomy-turning-dial": {
-    id: "anatomy-turning-dial",
-    title: "Turning dial example",
-    description: "A turning combination dial carries a small hand and a detachable pod.",
-    section: "visual-examples",
-    path: "sections/visual-examples/anatomy-turning-dial.md",
-    content: `---
-name: anatomy-turning-dial
-description: A turning combination dial carries a small hand and a detachable pod.
----
-
-# Turning dial example
-
-A compact Avenire-token adaptation of the corresponding Anatomy example. Load \`anatomy\`, \`style\`, and \`kit-api\` before adapting it. The example is standalone HTML for \`preview_widget\` then \`render_widget\`; explain the mechanism and the simplified model in prose.
-
-\`\`\`html
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-*{box-sizing:border-box}body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans)}
-.card{border:var(--stroke-hairline) solid var(--figure-frame);border-radius:var(--radius);background:var(--card);padding:var(--space-4);max-width:700px;margin:auto}
-.head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);font-size:var(--text-sm)}
-.head strong{font-size:var(--text-lg)}.read{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--foreground)}
-.hint,.caption{color:var(--muted-foreground);font-size:var(--text-sm);line-height:var(--leading-normal)}
-.stage{min-height:260px;display:grid;place-items:center;margin:var(--space-3) 0}.stage svg{max-width:100%}
-.controls{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap}.controls label{display:flex;gap:var(--space-2);align-items:center;font-size:var(--text-sm)}
-input[type=range]{width:min(250px,65vw);accent-color:var(--primary)}button,input[type=text]{font:inherit;border:var(--stroke-thin) solid var(--border);border-radius:calc(var(--radius) / 2);background:var(--secondary);color:var(--secondary-foreground);padding:var(--space-2)}
-:focus-visible{outline:var(--stroke-emphasis) solid var(--ring);outline-offset:2px}
-</style></head><body class="iso"><figure class="card"><div class="head"><strong>Turning dial</strong><output class="read" id="readout" aria-live="polite"></output></div><div class="stage" id="stage"></div><div class="controls"><label>Dial <input id="angle" type="range" min="0" max="360" value="0"></label><button id="pod" type="button">Detach pod</button></div><p class="hint">Turn the dial; detach the pod</p><figcaption class="caption">The pointer and hand rotate from one angle. The pod can detach; a real assembly would need a joint and clearance audit.</figcaption></figure><script type="module">
-import { fitProjection, boxCorners, slabOf, cylinder, solidSvg, lineSvg, lineOnTop, ring, iso, figureSvg, ISO_CSS } from '/kits/iso.js';
-const css = document.createElement('style');
-css.textContent = ISO_CSS + \`.iso{--anatomy-page:var(--background);--anatomy-card:var(--card);--anatomy-text:var(--foreground);--anatomy-strong:var(--foreground);--anatomy-muted:var(--figure-label);--anatomy-paper:var(--card);--anatomy-face:var(--card);--anatomy-top:var(--secondary);--anatomy-shade-0:var(--muted);--anatomy-shade-1:var(--secondary);--anatomy-shade-2:var(--card);--anatomy-shade-3:var(--canvas);--anatomy-lit-top:var(--accent);--anatomy-lit-shade:var(--secondary);--anatomy-hi:var(--foreground);--anatomy-mid:var(--muted-foreground);--anatomy-lo:var(--border);--anatomy-faint:var(--canvas-grid);--anatomy-lit:var(--chart-1);--anatomy-halo:var(--foreground);--anatomy-halo-opacity:.08;--anatomy-dot:var(--foreground);--anatomy-red:var(--destructive);--anatomy-green:var(--chart-4);--anatomy-blue:var(--chart-2);--anatomy-weight:var(--stroke-hairline);--anatomy-mono:var(--font-mono);--anatomy-lift:none}\`;
-document.head.append(css);
-const base={x:-100,y:-55,w:200,d:110,r:6};
-const P=fitProjection(boxCorners(base,-8,80),480,260,{pad:30});
-const block=(p,z,h,tone='mid',lit=false)=>solidSvg(slabOf(p,z,h,P,6,0.7),{tone,lit});
-const round=(x,y,r,z,h,tone='mid',lit=false)=>solidSvg(cylinder(x,y,r,z,h,P,28,0.5),{tone,lit});
-const edge=(a,b,z,tone='lo')=>lineSvg(lineOnTop(a,b,z,P),{tone});
-const feet=()=>[[-82,-40],[82,-40],[-82,40],[82,40]].map(([x,y])=>round(x,y,5,-8,3,'lo')).join('');
-const foundation=()=>feet()+block(base,-5,5,'mid')+block({x:-88,y:-43,w:176,d:86,r:4},0,1,'faint');
-const show=(body,label,readout)=>{document.getElementById('stage').innerHTML=figureSvg({width:480,height:260,label,body});document.getElementById('readout').textContent=readout};
-
-let detached=false;const angle=document.getElementById('angle');
-function draw(){const a=Number(angle.value)*Math.PI/180;let b=foundation();
-b+=round(0,0,38,4,8,'hi');b+=lineSvg(ring(0,0,31,13,P,60),{tone:'lo'});
-for(let i=0;i<12;i++){const t=i*Math.PI/6;b+=edge([30*Math.cos(t),30*Math.sin(t)],[36*Math.cos(t),36*Math.sin(t)],13,'lo');}
-b+=round(0,0,8,13,4,'lit',true);
-b+=edge([0,0],[27*Math.cos(a),27*Math.sin(a)],18,'lit');
-const handX=18*Math.cos(a),handY=18*Math.sin(a);b+=round(handX,handY,5,18,6,'mid');
-b+=block({x:handX-3,y:handY-2,w:20,d:4,r:1},24,3,'hi');
-b+=round(detached?70:handX+20,detached?30:handY,5,20,6,detached?'lo':'lit',!detached);
-show(b,'Combination dial with a rotating hand and detachable pod',\`\${Math.round(Number(angle.value)/3.6)%100} · \${detached?'pod detached':'pod attached'}\`);}
-angle.addEventListener('input',draw);document.getElementById('pod').addEventListener('click',e=>{detached=!detached;e.currentTarget.textContent=detached?'Attach pod':'Detach pod';draw()});draw();
-</script></body></html>
-\`\`\`
-`,
-  },
   "chart-comparison": {
     id: "chart-comparison",
     title: "Comparison chart example",
@@ -1617,151 +1191,53 @@ document.getElementById('caption').textContent=\`From \${rows[0].value} to \${ro
 \`\`\`
 `,
   },
-  "sim-double-pendulum": {
-    id: "sim-double-pendulum",
+  "explainer-double-pendulum": {
+    id: "explainer-double-pendulum",
     title: "Double pendulum example",
-    description: "Run a two-link pendulum with math.js RK4, a fixed-step loop, pause control, and energy readout.",
+    description: "A concise direct physical figure: two linked pendulum rods, native Step/Run/Reset controls, a start-angle slider and an energy readout, using fixed-step RK4.",
     section: "visual-examples",
-    path: "sections/visual-examples/sim-double-pendulum.md",
+    path: "sections/visual-examples/explainer-double-pendulum.md",
     content: `---
-name: sim-double-pendulum
-description: Run a two-link pendulum with math.js RK4, a fixed-step loop, pause control, and energy readout.
+name: explainer-double-pendulum
+description: A concise direct physical figure: two linked pendulum rods, native Step/Run/Reset controls, a start-angle slider and an energy readout, using fixed-step RK4.
 ---
 
 # Double pendulum example
 
-This shows a sensitive dynamical system without adding an elaborate machine. The readout and the drawn rods use one state. Load \`simulation\`, \`style\`, and \`kit-api\`; preview start, pause, and slider reset.
+Use \`explainer\` and \`style\`. This system explains itself through two rods and bobs; it does not need an unrelated machine or a text panel. The four-state solver and energy use equal 1kg masses and 1m rods. Explanation belongs in chat. The page contains only a short caption and compact controls/readout.
 
 \`\`\`html
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-body{margin:0;font:var(--text-base)/var(--leading-normal) var(--font-sans);color:var(--foreground)}
-figure{margin:auto;max-width:700px;padding:var(--space-4);border:var(--stroke-hairline) solid var(--figure-frame);border-radius:var(--radius);background:var(--card)}
-h2{margin:0;font-size:var(--text-lg)}p{color:var(--muted-foreground);font-size:var(--text-sm)}
-svg{width:100%;height:auto;display:block;background:var(--canvas);border-radius:var(--radius)}.rod{stroke:var(--foreground);stroke-width:var(--stroke-regular)}
-.controls{display:flex;gap:var(--space-4);align-items:center;flex-wrap:wrap;margin-top:var(--space-3)}button{font:inherit;padding:var(--space-2);color:var(--secondary-foreground);background:var(--secondary);border:var(--stroke-thin) solid var(--border);border-radius:var(--radius)}
-input{accent-color:var(--primary)}:focus-visible{outline:var(--stroke-emphasis) solid var(--ring);outline-offset:2px}output{font:var(--text-sm) var(--font-mono)}
-</style></head><body><figure><h2>Double pendulum</h2><p>Change the first starting angle to reset the motion.</p><svg viewBox="0 0 440 300" role="img" aria-label="Two linked pendulum rods"><line id="a" class="rod"/><line id="b" class="rod"/><circle cx="220" cy="68" r="4" fill="var(--foreground)"/><circle id="bob1" r="7" fill="var(--chart-1)"/><circle id="bob2" r="9" fill="var(--chart-2)"/></svg><div class="controls"><label>Start angle <input id="angle" type="range" min="20" max="140" value="90">°</label><button id="toggle" type="button">Pause</button><output id="energy"></output></div><p>Model: two equal masses and lengths, no damping. Energy is in normalized units.</p></figure>
+body{margin:0;color:var(--figure-text);background:var(--figure-page);font:14px/1.5 var(--font-sans)}
+figure{max-width:680px;margin:auto;padding:12px}.plate{background:var(--figure-card);border:var(--figure-weight) solid var(--figure-mid);padding:16px}
+.corners{display:flex;justify-content:space-between;gap:12px;font:11px/1.4 var(--figure-mono);color:var(--figure-muted)}.title{text-align:right;color:var(--figure-strong)}
+svg{display:block;width:100%;height:auto}.rod{stroke:var(--figure-hi);stroke-width:var(--figure-weight);vector-effect:non-scaling-stroke}
+.controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 12px;font:12px var(--figure-mono)}button{font:inherit;color:var(--figure-strong);background:transparent;border:var(--figure-weight) solid var(--figure-mid);padding:6px 10px}
+label{display:flex;align-items:center;gap:8px}input{accent-color:var(--figure-lit);max-width:125px}:focus-visible{outline:2px solid var(--figure-hi);outline-offset:3px}
+output{font:11px/1.4 var(--figure-mono);color:var(--figure-strong);font-variant-numeric:tabular-nums}figcaption{margin-top:10px;font-size:12px;color:var(--figure-text)}
+@media(max-width:440px){.footer{flex-direction:column}.title{max-width:75%}.plate{padding:12px}}
+</style></head><body><figure><div class="plate"><div class="corners"><span>Fig 1</span><span class="title">DOUBLE PENDULUM</span></div><svg viewBox="0 0 440 400" role="img" aria-label="Two linked rods with bobs swinging about a fixed pivot"><line x1="200" y1="195" x2="240" y2="195" class="rod"/><line id="a" class="rod"/><line id="b" class="rod"/><circle cx="220" cy="200" r="4" fill="var(--figure-dot)"/><circle id="bob1" r="7" fill="var(--figure-face)" class="rod"/><circle id="bob2" r="9" fill="var(--figure-lit)" class="rod"/></svg><div class="controls"><button id="step" type="button">Step</button><button id="toggle" type="button">Run</button><button id="reset" type="button">Reset</button><label>Start angle <input id="angle" aria-label="First rod starting angle in degrees" type="range" min="20" max="150" value="90"><span id="degrees">90°</span></label></div><div class="corners footer"><span>Change angle · step or run</span><output id="energy" aria-live="off"></output></div></div><figcaption>Two equal 1kg masses on 1m rods, without damping. Small changes to the starting angle can lead to very different paths.</figcaption></figure>
 <script type="module">
 import { doublePendulum, rk4Step, createRk4Workspace } from '/kits/math.js';
 const angle=document.getElementById('angle'),toggle=document.getElementById('toggle'),out=document.getElementById('energy');
-let system,state,work,t=0,last=0,acc=0,visible=true,playing=!matchMedia('(prefers-reduced-motion: reduce)').matches;
+let system,state,work,t=0,last=0,acc=0,visible=true,playing=false;
 new IntersectionObserver(([entry])=>{visible=entry.isIntersecting;last=0}).observe(document.querySelector('figure'));
-function reset(){system=doublePendulum({theta1:Number(angle.value)*Math.PI/180,theta2:0.35});state=system.initial;work=createRk4Workspace(state.length);t=0;acc=0;draw()}
-function draw(){const [a,b,w1,w2]=state,x1=220+90*Math.sin(a),y1=68+90*Math.cos(a),x2=x1+90*Math.sin(b),y2=y1+90*Math.cos(b);
+function reset(){system=doublePendulum({m1:1,m2:1,l1:1,l2:1,gravity:9.81,theta1:Number(angle.value)*Math.PI/180,theta2:.35});state=system.initial;work=createRk4Workspace(state.length);t=0;acc=0;last=0;document.getElementById('degrees').textContent=angle.value+'°';draw()}
+function advance(){state=rk4Step(system.derivative,t,state,1/120,undefined,work);t+=1/120;if(!state.every(Number.isFinite)){playing=false;reset()}}
+function draw(){const [a,b,w1,w2]=state,x1=220+90*Math.sin(a),y1=200+90*Math.cos(a),x2=x1+90*Math.sin(b),y2=y1+90*Math.cos(b);
 const set=(id,attrs)=>{const e=document.getElementById(id);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,String(v))};
-set('a',{x1:220,y1:68,x2:x1,y2:y1});set('b',{x1,y1,x2,y2});set('bob1',{cx:x1,cy:y1});set('bob2',{cx:x2,cy:y2});
-const kinetic=.5*(2*w1*w1+w2*w2+2*w1*w2*Math.cos(a-b));const potential=-9.81*(2*Math.cos(a)+Math.cos(b));
-out.textContent=\`t \${t.toFixed(1)} s · energy \${(kinetic+potential).toFixed(2)}\`;}
-angle.addEventListener('input',reset);toggle.addEventListener('click',()=>{playing=!playing;toggle.textContent=playing?'Pause':'Play';last=0});
-document.addEventListener('visibilitychange',()=>{last=0});
-function frame(now){if(playing&&!document.hidden&&visible){const dt=last?Math.min((now-last)/1000,.05):0;acc+=dt;let steps=0;while(acc>=1/120&&steps++<7){state=rk4Step(system.derivative,t,state,1/120,undefined,work);t+=1/120;acc-=1/120}if(steps>7)acc=0;draw()}last=now;requestAnimationFrame(frame)}
-reset();if(!playing)toggle.textContent='Play';requestAnimationFrame(frame);
+set('a',{x1:220,y1:200,x2:x1,y2:y1});set('b',{x1,y1,x2,y2});set('bob1',{cx:x1,cy:y1});set('bob2',{cx:x2,cy:y2});
+const kinetic=.5*(2*w1*w1+w2*w2+2*w1*w2*Math.cos(a-b));const potential=9.81*(3-2*Math.cos(a)-Math.cos(b));
+out.textContent=\`t \${t.toFixed(1)} s · E \${(kinetic+potential).toFixed(2)} J\`;toggle.textContent=playing?'Pause':'Run';}
+angle.addEventListener('input',reset);document.getElementById('reset').addEventListener('click',reset);
+document.getElementById('step').addEventListener('click',()=>{playing=false;for(let i=0;i<4;i++)advance();acc=0;last=0;draw()});
+toggle.addEventListener('click',()=>{playing=!playing;last=0;draw()});document.addEventListener('visibilitychange',()=>{last=0;acc=0});
+function frame(now){if(playing&&!document.hidden&&visible){acc+=last?Math.min((now-last)/1000,.05):0;let steps=0;while(acc>=1/120&&steps<6){advance();acc-=1/120;steps++}if(acc>=1/120)acc=0;draw()}last=now;requestAnimationFrame(frame)}
+reset();requestAnimationFrame(frame);
 </script></body></html>
 \`\`\`
-`,
-  },
-  "anatomy-3d": {
-    id: "anatomy-3d",
-    title: "Anatomy depth and WebGL",
-    description: "Use true depth rotation or a restrained WebGL layer only when anatomy's explanation requires it.",
-    section: "visual-guidelines",
-    path: "sections/visual-guidelines/anatomy-3d.md",
-    content: `---
-name: anatomy-3d
-description: Use true depth rotation or a restrained WebGL layer only when anatomy's explanation requires it.
----
 
-# Anatomy depth and WebGL
-
-A static isometric SVG is enough for most anatomy widgets. Use 3D only when turning in depth, a hinge, or a detachable body *is* the explanation. \`/kits/iso.js\` supplies projection, depth (\`depthOf\`), solid paths, \`lathe\` and \`tube\`; \`/kits/iso-gl.js\` supplies \`glCamera(P)\`, \`glLayer(...)\`, \`GLSL_ISO\`, \`GLSL_TURN\`, \`glslPose\`, \`smooth\`, \`burst\` and \`settle\`. Load \`kit-api\` for the exact API. A simple turning dial can instead reproject a small handful of parts each frame with an updated projection azimuth, then depth-sort by \`depthOf\`; avoid a dense live 3D scene for a simple control.
-
-Keep static clutter fixed and turn one small subject. Move mounts and children together. Split parts at occlusion boundaries and draw back/phenomenon/front layers in that order. Every tube ends on an actual port and keeps clearance from solids. An effect belongs in world coordinates tied to the same camera as the SVG, not an unrelated screen-space overlay. Fade uniforms in/out; make every term reach zero before canvas edges, and offer a static SVG fallback when WebGL is absent. Re-read theme tokens on \`avenire:themechange\`, redraw, and cap device pixel ratio and work per frame. Reduced motion gets a still frame.
-
-Preview at several angles (including 0°, side and near-overlap), at phone width, in both themes. Look for depth inversions, disappearing contacts, a shader crossing a foreground line, and parts that jump at wraparound. Use \`preview_widget\` screenshots/console rather than anatomy's local Node audit scripts. If geometry is very dense, simplify the mechanism or publish a short manimgx video through \`sandbox\`.
-`,
-  },
-  "anatomy-craft": {
-    id: "anatomy-craft",
-    title: "Anatomy craft",
-    description: "Construct convincing thin-line isometric parts, card composition, and depth order with the iso kit.",
-    section: "visual-guidelines",
-    path: "sections/visual-guidelines/anatomy-craft.md",
-    content: `---
-name: anatomy-craft
-description: Construct convincing thin-line isometric parts, card composition, and depth order with the iso kit.
----
-
-# Anatomy craft
-
-Begin with the physical parts list and their mounts. Put a thick base on feet, a rail or post, a moving subject, one measuring feature, and restrained hardware where it would actually hold something. Draw from back to front. \`fitProjection(boxCorners(plan,z0,z1),width,height,{pad})\` fits the *extremes*; include moving extremes too. \`slabOf(plan,z,h,P,steps,bevel)\` and \`cylinder(cx,cy,r,z,h,P,steps,bevel)\` return paths for \`solidSvg(paths,{tone,crease,lit,inner})\`. Use \`planOutline\` and \`sideSeam\` for lines that finish on the silhouette; \`ring\`, \`radialTicks\`, \`knurl\` for dials; \`coil\` for springs; \`lathe\` and \`tube\` only when actual round bodies or pipes carry meaning. Verify signatures in \`kit-api\` and \`iso-kit.ts\`.
-
-\`\`\`
-back: floor halo, feet, far rail/post
-middle: base, support, behind-the-subject spring or cable
-front: carriage, subject, pointer, near guard, labels
-\`\`\`
-
-A solid has thickness, a brighter top, darker sides and a fine visible outline. Keep most parts neutral and one part lit. A fastener sits on a flange, never floats. A spring wraps a rod in two halves; draw \`coil(...).back\`, the rod, then \`.front\`. A seam ends on a true edge or fades; no detached ticks on an empty plate. On a cabinet, make a cutaway physically open so the viewer can follow the chute or cable. A pipe ends on a port or connector; crossings get clear depth order. A screen's content stays clipped to its glass and follows the face plane. At 390 px, the main object should still read; at 4×, missing joints and bad contacts should become obvious.
-
-Use a framed card (\`--figure-frame\`, \`--card\`) with a small title, hint and readout. Reserve about 55–65% of its stage for the instrument. Place labels in the margins; short \`--figure-leader\` lines may point to parts, but the geometry itself should do the teaching. Avoid a forest of annotation lines. Prefer SVG for linework. A single Canvas or WebGL layer is justified for phenomena lines cannot draw (water, light, exhaust), between a back SVG and front SVG, using the same projection and a static SVG fallback. For light theme, draw ink on paper; don't reuse a dark glow through blend modes.
-`,
-  },
-  "anatomy-motion": {
-    id: "anatomy-motion",
-    title: "Anatomy motion",
-    description: "Drive anatomy figures with a small truthful model, calm input response, and accessible controls.",
-    section: "visual-guidelines",
-    path: "sections/visual-guidelines/anatomy-motion.md",
-    content: `---
-name: anatomy-motion
-description: Drive anatomy figures with a small truthful model, calm input response, and accessible controls.
----
-
-# Anatomy motion
-
-Use one state model for pose, labels, readout and caption. Treat pointer and keyboard as ways to set the *same* target. Ease the displayed state with \`shown += (target-shown)*(1-Math.exp(-dt/0.12))\`; clamp \`dt\` after tab inactivity. For physics use the \`simulation\` skill and math kit instead. Start from a legible settled pose, move only parts whose motion teaches the idea, and stop scheduling frames once motion settles. Pause when hidden or outside the viewport. Reduced motion should jump to the target state and keep controls usable.
-
-Use native \`<input type="range">\` or buttons for the primary control. A draggable stage needs \`tabindex="0"\`, an appropriate \`role="slider"\`, \`aria-valuemin/max/now\`, a concise \`aria-valuetext\`, Arrow/Home/End handling, and visible focus. Call \`setPointerCapture\` on a *real* pointerdown only; release it on pointerup/cancel. If a demonstration tour exists, stop it at the first user action and do not fight the user. Speak discrete meaningful changes through an \`aria-live="polite"\` text node, not every frame. Keep all controls reachable at phone width.
-
-Animate an exploded view only if it reveals the path of assembly or a hidden causal chain. Stagger parts so the outside leaves first, keep every connector attached to the moving group or show an intentional unplug, and check intermediate states. For one-shot light, use attack and decay envelopes; no abrupt phase or colour switch. Any shader should ease its uniforms and render only while active.
-
-After writing HTML, call \`preview_widget\` at start, midpoint and endpoint; inspect the console, readout, clipping, focus and both themes. Test pointer and keyboard actions. Render only after the object and number agree.
-`,
-  },
-  "anatomy": {
-    id: "anatomy",
-    title: "Anatomy figure",
-    description: "Explain a concept as a small working physical object when a mechanism or analogy teaches more than a chart.",
-    section: "visual-guidelines",
-    path: "sections/visual-guidelines/anatomy.md",
-    content: `---
-name: anatomy
-description: Explain a concept as a small working physical object when a mechanism or analogy teaches more than a chart.
----
-
-# Anatomy figure
-
-Use this option when the question is about *how* parts cooperate or a state propagates and a physical mechanism maps cleanly to the idea. A lock can explain cache validity, a gauge can explain feedback, and a ripple tank can explain interference. Use a plain chart for ordinary comparisons and trends, and a simple simulation for direct parameter exploration. Do not turn “v1 versus v2 stats” into a machine.
-
-Write one sentence before drawing: “As **X** changes, **part A** moves, causing **part B** to indicate **Y**.” Check that this is truthful. Build a small pure model returning pose and readout from the same state. Invent a recognizable instrument with base, supports, the thing that moves, a scale, controls and a few true fasteners; do not draw labelled boxes with arbitrary arrows. Every small part needs a mount or joint. Keep one focal colour (\`--chart-1\`), quiet neutral solids, and fine lines per \`style\`. A card can show a title, hint, readout and short caption. Consult \`anatomy-craft\` for geometry, \`anatomy-motion\` for interaction, and \`anatomy-3d\` only if actual depth rotation matters.
-
-For SVG isometric work, import \`/kits/iso.js\`; load \`kit-api\` for exact signatures. A minimal construction:
-
-\`\`\`html
-<div id="figure" aria-label="Isometric indicator with a raised base"></div>
-<script type="module">
-import { fitProjection, boxCorners, slabOf, solidSvg, figureSvg, ISO_CSS } from '/kits/iso.js';
-const s = document.createElement('style'); s.textContent = ISO_CSS; document.head.append(s);
-const base = { x:0, y:0, w:80, d:50, r:5 };
-const P = fitProjection(boxCorners(base,0,10),400,250);
-document.getElementById('figure').innerHTML = figureSvg({ width:400, height:250, label:'Raised indicator base',
-  body:solidSvg(slabOf(base,0,10,P,8,1),{tone:'mid'}) });
-</script>
-\`\`\`
-
-The host provides theme variables, but the kit's \`ISO_CSS\` uses its own \`--anatomy-*\` vars. Override those variables on \`.iso-figure\`/\`.iso-svg\` from Avenire tokens before using kit markup (see the examples); do not ship the source palette. When only a few paths are needed, style the returned SVG markup directly with Avenire variables.
-
-Build the static pose first, then add the control. Reserve height and include a clear fallback state. Check 1× and 4× for floating ends, impossible overlaps and misleading labels. Use \`preview_widget\` at the actual page width and in both appearances; inspect console and screenshot after input. Explain the analogy and its limits in chat prose. Anatomy source: MIT, wheresryan22.
+The model starts still in both motion modes, so the learner chooses Step or Run. Its screen coordinates allow every angle without clipping; lengths used for drawing have the same ratio as the solver. Energy includes a constant offset so zero is the lowest hanging state; that does not change the dynamics. Keep these numerical/representation notes in chat, not as extra widget paragraphs.
 `,
   },
   "chart": {
@@ -1777,7 +1253,7 @@ description: Draw correct, restrained hand-written SVG charts for comparisons, t
 
 # Chart
 
-Default to a plain chart. Use hand-written SVG and embedded computed JSON, with no chart library. Call \`get_page_context\`, load \`style\`, preview with \`preview_widget\`, then \`render_widget\`. Start from a question, identify the relevant fields and units, and do not invent observations.
+Use a plain chart for data questions, comparisons, and trends. For how/why concept explanations, use \`explainer\` to choose a direct model, mechanism or analogy. Use hand-written SVG and embedded computed JSON, with no chart library. Call \`get_page_context\`, load \`style\`, preview with \`preview_widget\`, then \`render_widget\`. Start from a question, identify the relevant fields and units, and do not invent observations.
 
 | Question | Marks and scale |
 | --- | --- |
@@ -1790,7 +1266,7 @@ Default to a plain chart. Use hand-written SVG and embedded computed JSON, with 
 
 For a numeric axis, compute a “nice” step from \`10^floor(log10(range/targetTicks)) × {1,2,5,10}\`. Round domain outward; include zero for bars and area. Map y with \`bottom - (value - min)/(max - min) * plotHeight\`; guard equal min/max. Render 3–6 ticks with units and localized formatting (\`Intl.NumberFormat\`). Keep date spacing proportional to time unless the data are categories. Never silently connect across nulls or truncate an axis to dramatize a change. Use sufficient margins for tick labels, then measure the narrow preview.
 
-Use \`--chart-1\` through \`--chart-6\` in order, \`--stroke-regular\` for data lines, \`--stroke-hairline\` and \`--figure-leader\` for axes and rules, \`--figure-label\` and \`--figure-label-size\` for ticks, and \`--figure-frame\` for the card. No gradient is needed for ordinary charts. Label each line directly at its end when possible; use a legend for crowded lines or grouped bars. Pair colour with text, point shape, or dash. Annotate the one comparison or inflection that answers the question; keep annotation lines thin. Include a short caption or accessible table with precise values. Explain the takeaway in chat prose, with denominator and uncertainty if relevant.
+Use neutral ink \`--figure-hi\`, \`--figure-mid\`, \`--figure-lo\` for ordinary series; reserve \`--figure-red/green/blue\` for real signals. Widget aliases \`--chart-1..6\` follow those tones. Use \`--stroke-regular\` for data lines, \`--stroke-hairline\` and \`--figure-leader\` for axes and rules, \`--figure-label\` and \`--figure-label-size\` for ticks, and \`--figure-frame\` for the card. No gradient is needed for ordinary charts. Label each line directly at its end when possible; use a legend for crowded lines or grouped bars. Pair colour with text, point shape, or dash. Annotate the one comparison or inflection that answers the question; keep annotation lines thin. Include a short caption or accessible table with precise values. Explain the takeaway in chat prose, with denominator and uncertainty if relevant.
 
 ## Data workflow
 
@@ -1820,189 +1296,199 @@ const linePath = (points,x,y) => points.map((p,i) => \`\${i?'L':'M'}\${x(p)} \${
 \`\`\`
 
 For scatter, draw one \`<circle>\` per valid \`(x,y)\` observation and use \`linearRegression(xs,ys)\` for an optional fit line from \`fit.intercept + fit.slope*x\`; show \`fit.r2\` and label the line “least squares fit.” For a histogram, use \`histogram(values,bins,min,max)\` from \`/kits/math.js\`, then draw \`counts[i]\` as touching bars between \`edges[i]\` and \`edges[i+1]\` (or divide by \`count * binWidth\` for density). For small multiples, call the same chart rendering function on each subgroup with one shared numeric domain and the same tick step; title each panel. These recipes use no data smoothing. A line chart with gaps should split into separate paths, not join across missing rows.
+
+## Figure frame
+
+Frame every page with Fig n at top left and a short mono uppercase title at top right; hint bottom left and mono tabular live readout bottom right. Put the legend and a true caption under the card, not inside the drawing. Use square corners, --figure-card on --figure-page, a hairline --figure-mid frame, 0.6px construction strokes, and calm --figure-ease motion. Charts keep units/tick labels in their plot; simulations use one model for readout and motion. Use kit plateHtml if working in Node. Keep it responsive at 390px, fix preview errors before delivery, and deliver built files by path.
 `,
   },
-  "simulation": {
-    id: "simulation",
-    title: "Simulation",
-    description: "Build small interactive models with the math kit, fixed timesteps, accessible controls, and a live readout.",
+  "explainer": {
+    id: "explainer",
+    title: "Interactive explainer",
+    description: "Explain concepts with crafted interactive figures: direct physical models for simple systems, real mechanisms for machines, and faithful analogies for abstract ideas. Combine precise numerical models with restrained isometric craft and concise controls/readouts.",
     section: "visual-guidelines",
-    path: "sections/visual-guidelines/simulation.md",
+    path: "sections/visual-guidelines/explainer.md",
     content: `---
-name: simulation
-description: Build small interactive models with the math kit, fixed timesteps, accessible controls, and a live readout.
+name: explainer
+description: Explain concepts with crafted interactive figures: direct physical models for simple systems, real mechanisms for machines, and faithful analogies for abstract ideas. Combine precise numerical models with restrained isometric craft and concise controls/readouts.
 ---
 
-# Simulation
+# Interactive explainer
 
-Use a simple simulation when changing a parameter reveals the answer. A static chart is enough when only precomputed outcomes matter. Call \`get_page_context\`; load \`kit-api\` for exact signatures and \`style\` for visual rules. Preview both a start state and an interacted state before \`render_widget\`.
+Choose the representation that makes the causal relationship easiest to understand. Visual style guides the finish and behaviour, not a required code structure, part count, or long build process. Load \`style\` for tokens and \`kit-api\` only for signatures you need. Keep the explanation in chat and let the widget demonstrate it.
 
-## Solver choice
+## Choose the explanation before drawing
+
+Ask: what should the learner be able to predict after moving one control?
+
+| Concept | Best starting view | What changes and what it teaches |
+| --- | --- | --- |
+| Simple pendulum | Direct side view of a pivot, rod, bob and a faint trail | Change length/damping; angle, speed and period follow the same physical model |
+| Double pendulum | Two linked rods and two bobs; a short trail, optional nearby initial state | Change starting angle; distinguish sensitive dependence from random motion |
+| Projectile or spring | Direct trajectory or mass/spring | Change drag/stiffness; show the resulting path or oscillation with real units |
+| How an engine works | Cutaway of the actual piston, crank, cylinder and valves | Step through intake, compression, power and exhaust; show which motion causes the next |
+| Gradient descent | A follower on a machined loss profile with a feed linked to learning rate, or a direct curve if the mathematical geometry is clearer | The slope determines direction; learning rate determines distance; all positions/readouts use the same update |
+| Cache or another abstract system | A familiar mechanism with a one-to-one mapping, such as matching pins releasing a lock | Matching state avoids repeated work; label the meaningful correspondences |
+| Compare measurements or show a trend | \`chart\` | Preserve the actual data, scales and units |
+
+A real physical system often explains itself: do not turn a pendulum into an elaborate unrelated machine. For an existing machine, reveal its actual mechanism before inventing an analogy. Use an analogy for a complex/abstract idea only when it reduces mental work and preserves the important causal relationships. Briefly state its limit in the caption or chat. Complexity is a reason to choose the view carefully, not to add parts or prose indiscriminately.
+
+## A quiet widget
+
+One dominant figure. A small \`Fig n\` at top left and a short mono uppercase title at top right. Put a short interaction hint bottom left and 2–4 relevant tabular values bottom right. Native labelled sliders and Step/Run/Reset controls where useful. Below the card: an optional legend with 2–4 short labels and one caption, at most two short sentences. Keep legend plus caption under about 50 words.
+
+Do not place a lesson, derivation, assumptions panel, instructions list, repeated explanation, equation wall or multiple text cards inside the widget. Put those explanations in chat. A symbol/unit beside a control or readout is enough. Accessible descriptions may be fuller without being visibly repeated. Choose the minimum controls that expose the concept; changing an initial condition resets the state, while a live parameter change clearly continues or resets it.
+
+## Physical craft
+
+Use \`--figure-*\` tokens, opaque faces, four facing shades, 0.6px non-scaling hairlines and calm motion. Ground the object on a base or pivot with a subtle contact shadow. Base/detail use lo/faint, structure mid, the explanatory subject hi, and one lit accent. Red/green/blue are meaningful signals, never a decorative rainbow.
+
+For mechanisms and analogies, borrow the finish of a small real instrument: feet, rails, carriage bushings, end stops, groove/ruler, screw heads, a knurled control, a dial and a probe. Each detail has a purpose and sits on another part. Keep simple physical models simple; a pivot, two rods and bobs can be the whole double pendulum.
+
+- Solid parts have filled top and side faces, convincing volume and consistent lighting. Do not approximate a solid by translucent wireframes or a pile of disconnected polygons.
+- Paint back to front and bottom to top; split a part that wraps a moving component into back/front pieces. Moving pieces stay in their physical depth slot.
+- A seam, tick, rod or needle ends on a real edge, stroke, dot or mount. Avoid floating line ends, unsupported parts and visibly interpenetrating solids.
+- Round parts are actually round: circles/ellipses or kit cylinders, lathes, rings and spheres, with only the visible rim outlined. The bob/probe must remain visible where it contacts its track.
+- Reuse component functions and procedural detail; never author thousands of raw paths. Precompute static geometry, move rigid pieces by transforms, and rebuild only a shape that changes.
+- Isometric camera: roughly 45° azimuth and 30° elevation, adjusted to reveal the working surfaces. A pendulum's direct side view can be clearer. Do not force 3D onto every concept.
+- Fit the camera/stage around the working object; avoid huge empty faces and corners. The focal part, controls and values must remain legible at 390px.
+- Motion carries meaning: a feed advances because of the actual update, a crank drives a piston, a valve opens at the appropriate stroke. Decorative wiggle is not an explanation.
+
+## The maths drives everything
+
+Use one state and one model for the drawing, readout, controls and caption. Keep the numerical model in a small pure function/module. Never animate a plausible-looking path independently of the numbers. State units and material simplifications compactly; a mechanism analogy must not pretend to be an exact physical simulation.
 
 | Model | Solver |
 | --- | --- |
-| Smooth nonconservative dynamics, short live integration, known small step | \`rk4Step(derivative,t,y,h, out?, workspace?)\` |
+| Smooth short live dynamics with a known small step | \`rk4Step(derivative,t,state,h,out?,workspace?)\` |
 | Offline trajectory with sharp changes or unknown time scale | \`rk45(derivative,y0,t0,t1,{rtol,atol,sampleStep,maxSteps})\`, then animate samples |
-| Conservative positions and velocities with position-dependent acceleration | \`velocityVerlet(acceleration,t,q,v,h,...)\`; monitor energy drift |
-| Fit rather than dynamics | \`linearRegression\`, \`polynomialFit\`, or \`nonlinearLeastSquares\`; render residuals |
+| Conservative positions/velocities with position-dependent acceleration | \`velocityVerlet(...)\`; monitor energy drift |
+| Fit observed data | \`linearRegression\`, \`polynomialFit\`, \`nonlinearLeastSquares\`; chart residuals |
+| Algorithm or engine cycle with discrete phases | Exact state update / phase transitions; no ODE solver unless the model requires one |
 
-Use typed \`Float64Array\` state; derivative writes *every* output component. Keep the numerical model separate from drawing. For live motion, accumulate \`Math.min((now-last)/1000, 0.05)\`, integrate fixed \`h=1/120\` steps, cap at 6–8 steps per frame, and drop excessive backlog rather than spiralling. Reuse RK4 workspace and output arrays when possible. Render once per animation frame, at most ~60 fps; reduce DOM writes and Canvas device ratio. Pause on \`document.hidden\` and offscreen; reset \`last\` when resuming. Reduced motion shows a representative static state and allows button/slider stepping without autoplay. Never advance physical time by the number of frames.
-
-Make range inputs and buttons native and labelled; keyboard arrows should work. Show current parameters, units, model assumptions, and one derived quantity such as energy, range, error, or fit \`r²\`. A slider change should reset the state if it changes initial conditions, or clearly continue with a changed parameter. Do not re-run Python on each input; precompute a small grid in the sandbox and interpolate locally if the model is expensive. Use the thin-line tokens on axes, trails and parts, and avoid screen-filling animation.
-
-Minimal pendulum state and energy:
+Use \`Float64Array\` state and write every derivative component. Reuse solver workspaces/output buffers. Integrate fixed physical steps (often \`h=1/120\`), not one step per animation frame. Accumulate elapsed time with a 0.05s clamp, perform at most 6 substeps/frame, drop an excessive backlog, and draw once. Check finite state, boundary conditions and a meaningful invariant such as energy; stop or reset when the model leaves its domain. Do not silently clamp a divergent optimizer and describe it as convergence.
 
 \`\`\`js
 import { pendulum, rk4Step, createRk4Workspace } from '/kits/math.js';
-const length = 1.4, gravity = 9.81;
-const system = pendulum({ length, gravity, damping: 0.08, angle: 0.8 });
-let state = system.initial, t = 0;
-const work = createRk4Workspace(state.length);
-function advance(h = 1/120) { state = rk4Step(system.derivative, t, state, h, undefined, work); t += h; }
-function energy() { const [a,w] = state; return 0.5 * (length*w)**2 + gravity*length*(1-Math.cos(a)); }
+const length=1.4, gravity=9.81;
+const system=pendulum({length,gravity,damping:0.08,angle:0.8});
+let state=system.initial,t=0;
+const work=createRk4Workspace(state.length);
+function advance(h=1/120){state=rk4Step(system.derivative,t,state,h,undefined,work);t+=h;}
+function energyPerMass(){const [a,w]=state;return .5*(length*w)**2+gravity*length*(1-Math.cos(a));}
 \`\`\`
 
-Projectile with quadratic drag uses \`projectileWithDrag({gravity:9.81,drag:0.02,vx:14,vy:12})\`; integrate its four-state \`[x,y,vx,vy]\` with \`rk4Step\`, stop at y=0 and report approximate range. For curve fit on observed data, call \`linearRegression(xs,ys)\`, draw points and \`fit.intercept + fit.slope*x\`, and show \`fit.r2\`; a fitted line is analysis, not an animation. See \`sim-double-pendulum\` for the complete loop. Use a short manimgx MP4 through \`sandbox\` when the sequence is timed, cinematic, or cannot benefit from input; publish it with \`publish_asset\`.
+\`doublePendulum({m1,m2,l1,l2,gravity,theta1,theta2,omega1,omega2})\` returns \`[θ1,θ2,ω1,ω2]\` state with its derivative. Use the same lengths/masses in geometry and energy. See \`explainer-double-pendulum\` for a complete concise page. For \`projectileWithDrag\`, integrate \`[x,y,vx,vy]\` until ground contact and interpolate the last crossing. Expensive computation can be precomputed in the sandbox and interpolated locally; do not call Python/network on every slider input.
 
-\`\`\`js
-import { projectileWithDrag, rk4Step, linearRegression } from '/kits/math.js';
-const shot = projectileWithDrag({ gravity:9.81, drag:0.02, vx:14, vy:12 });
-let p = shot.initial, time = 0;
-const trail = [[p[0],p[1]]];
-while (p[1] >= 0 && time < 10) {
-  p = rk4Step(shot.derivative,time,p,1/120);
-  time += 1/120;
-  trail.push([p[0],p[1]]);
-}
-const [x0,y0] = trail.at(-2), [x1,y1] = trail.at(-1);
-const range = y1 < 0 ? x0 + (0-y0)*(x1-x0)/(y1-y0) : x1;
-const xs = [0,1,2,3], ys = [1,2.1,2.9,4.2];
-const fit = linearRegression(xs,ys);
-const fittedAt = x => fit.intercept + fit.slope*x;
-console.log({ range, r2:fit.r2, fittedAt2:fittedAt(2) });
-\`\`\`
+For gradient descent use \`next = x - learningRate * derivative(x)\`. The gauge reads that derivative and the feed applies that update. A ball on a loss profile is a controlled follower, not a claim that gravity implements gradient descent. Distinguish local from global minima and a zero gradient at a maximum from convergence; large learning rate can overshoot or diverge.
+
+## Runtime and delivery
+
+Use concise inline HTML/SVG/Canvas and optional bundled kit imports (\`/kits/math.js\`, \`/kits/iso.js\`, \`/kits/iso-gl.js\`). A Node example is an option, not the mandatory authoring pipeline. Aim for under 24 KiB of authored code. \`get_page_context\` provides the sandbox \`runtime.sourceRoot\`; when needed read a relevant source/reference there, in one batch rather than repeatedly browsing an entire example. Available source examples include dial-indicator, test-rig, arcade-cabinet, raptor-engine, ripple-tank, turning-dial, desk-computer and spot-plate. Craft, kit, motion and verify references are available under that root. Read only what improves this figure.
+
+Use ES modules or a private IIFE for live code. An inlined kit already declares its helpers: do not redeclare names such as \`lineOnTop\` in the same global scope. Pin kit imports to the page's bundled runtime; no network, external scripts/fonts or CDN libraries. Inline \`ISO_CSS\` if using the isometric kit. For sandbox builds copy sources to a writable directory and preserve relative imports; reference sources are read only.
+
+Batch skill/context lookups, then build, preview and deliver. Do not announce a 30–90 minute production workflow for normal chat. Review one \`preview_widget({html})\` or \`{path}\` screenshot and console. An \`error\`, \`uncaught\` exception, broken interaction or visible clipping is a failure: repair it, rebuild if needed, and preview again until it is clean. Use as many steps as necessary to fix the error, freshly preview and deliver. Avoid unnecessary reference browsing, decoration or unrelated audits. Never render a known-broken page or claim an unrun check passed.
+
+After a clean preview call \`render_widget({title,html})\` or \`{title,path}\`, explain what to notice in chat, and close the sandbox when finished. A file in the sandbox is not delivery. Use \`path\` for large built pages; never read a multi-MB HTML file into model context. Full geometry audits and exhaustive theme/orbit checks are for explicitly requested deep verification.
+
+Native keyboard controls, visible focus, an accessible SVG/Canvas description and a discrete live readout are required. Reduced motion starts in a meaningful still state with manual stepping; pause while hidden/offscreen, cap frame work and reset the clock on resume. Read theme variables again on \`avenire:themechange\`; redraw Canvas/WebGL without resetting model state. Hint/readout must wrap or stack on phones.
 `,
   },
   "style": {
     id: "style",
-    title: "Avenire visual style and token system",
-    description: "Apply every Avenire theme token and the shared thin-line visual grammar to charts, simulations, and anatomy figures.",
+    title: "Figure style",
+    description: "Shared figure tokens and figure framing for all Ruth widgets, charts and simulations; app UI palette stays separate.",
     section: "visual-guidelines",
     path: "sections/visual-guidelines/style.md",
     content: `---
 name: style
-description: Apply every Avenire theme token and the shared thin-line visual grammar to charts, simulations, and anatomy figures.
+description: Shared figure tokens and figure framing for all Ruth widgets, charts and simulations; app UI palette stays separate.
 ---
 
-# Avenire visual style and token system
+# Figure style
 
-Use \`var(--token)\` in HTML/SVG CSS. The host injects all \`:root\` values at first paint and sends updated values on \`avenire:themechange\`. Dark overrides colours; it inherits the same font, type, spacing, radius and stroke metrics. For Canvas, read \`getComputedStyle(document.documentElement).getPropertyValue('--token')\` on startup and each theme event. Avoid hardcoded colours or external fonts. The CSS \`@theme inline\` names are Tailwind aliases for app UI, not additional widget tokens.
+Every widget uses the shared two-theme token layer. The host injects it before first paint and on \`avenire:themechange\`; it updates \`.iso\` wrappers’ data-theme and values. Standalone kit \`--light\` pages retain their own theme outside the host. Read Canvas/WebGL tokens on its nearest \`.iso\` wrapper (and redraw/reconfigure on themechange). Use CSS variables for every colour and preserve the kit’s four facing shades; do not replace them with opacity approximations.
 
-| Token | Purpose and use | Light/dark |
-| --- | --- | --- |
-| \`--background\` | Page ground outside a card | Warm paper / deep ink |
-| \`--foreground\` | Main explanatory text | Dark / light ink |
-| \`--card\` | Figure/chart card surface | Near-white / dark panel |
-| \`--card-foreground\` | Text on the card | Dark / light ink |
-| \`--popover\` | Floating tip surface, when needed | Near-white / dark panel |
-| \`--popover-foreground\` | Floating tip text | Dark / light ink |
-| \`--primary\` | Primary action or a single semantic emphasis | Indigo shifts lighter in dark |
-| \`--primary-foreground\` | Text on primary fill | Light / dark contrast |
-| \`--secondary\` | Secondary control surface | Pale / dark surface |
-| \`--secondary-foreground\` | Text on secondary fill | Dark / light contrast |
-| \`--muted\` | Quiet control or key background | Pale / dark surface |
-| \`--muted-foreground\` | Supporting prose, never tiny critical data alone | Medium / lighter ink |
-| \`--accent\` | Selected or hovered surface, sparingly | Pale violet / deep violet |
-| \`--accent-foreground\` | Text on accent surface | Dark / light violet contrast |
-| \`--destructive\` | Error, invalid state or destructive control only | Red tuned per theme |
-| \`--border\` | General UI outlines and dividers | Soft warm / translucent light |
-| \`--input\` | Input outline | Soft warm / translucent light |
-| \`--ring\` | Visible keyboard focus indicator | Indigo in both themes |
-| \`--canvas\` | Drawing ground inside a figure | Paper tint / dark drawing plane |
-| \`--canvas-grid\` | Subtle graph or construction grid | Translucent in both themes |
-| \`--chart-1\` | First data series; preferred focused curve | Indigo, lighter in dark |
-| \`--chart-2\` | Second series | Teal, lighter in dark |
-| \`--chart-3\` | Third series | Warm orange, lighter in dark |
-| \`--chart-4\` | Fourth series | Green, lighter in dark |
-| \`--chart-5\` | Fifth series | Pink, lighter in dark |
-| \`--chart-6\` | Sixth series | Olive, lighter in dark |
-| \`--font-sans\` | UI, labels, captions, axes | System stack; inherited |
-| \`--font-serif\` | Long-form prose or editorial quote only | System serif; inherited |
-| \`--font-mono\` | Numeric readouts, code, technical scales | System mono; inherited |
-| \`--text-xs\` | Tick/quiet label, if still readable at phone width | 0.75rem; inherited |
-| \`--text-sm\` | Secondary label, control and figure caption | 0.875rem; inherited |
-| \`--text-base\` | Body explanation and normal control | 1rem; inherited |
-| \`--text-lg\` | Figure title or key readout | 1.125rem; inherited |
-| \`--text-xl\` | Larger card heading only | 1.25rem; inherited |
-| \`--text-2xl\` | Section heading outside compact widgets | 1.5rem; inherited |
-| \`--leading-tight\` | Titles and compact numbers | 1.25; inherited |
-| \`--leading-normal\` | Prose, controls and captions | 1.5; inherited |
-| \`--space-1\` | Tiny gap between glyph and value | 0.25rem; inherited |
-| \`--space-2\` | Tick/key/internal control gap | 0.5rem; inherited |
-| \`--space-3\` | Closely related control/label pair | 0.75rem; inherited |
-| \`--space-4\` | Default card inset or section gap | 1rem; inherited |
-| \`--space-5\` | Spacious figure inset | 1.25rem; inherited |
-| \`--space-6\` | Figure/title separation | 1.5rem; inherited |
-| \`--space-8\` | Between separate panels | 2rem; inherited |
-| \`--radius\` | Base card/input rounding; reduce for tiny mechanical plates | 0.625rem; inherited |
-| \`--stroke-hairline\` | Construction lines, fine seams, ticks and leaders | 0.6px; inherited |
-| \`--stroke-thin\` | Part edges, axes and small outlines | 1px; inherited |
-| \`--stroke-regular\` | Data paths, main mechanics and measured trajectory | 1.5px; inherited |
-| \`--stroke-emphasis\` | Single focal edge or selected trace; use sparingly | 2px; inherited |
-| \`--stroke-dash\` | Hidden/secondary edges or comparison line; SVG \`stroke-dasharray\` | \`3 3\`; inherited |
-| \`--stroke-dash-open\` | Long projection/motion guide; SVG \`stroke-dasharray\` | \`6 4\`; inherited |
-| \`--figure-label\` | Quiet labels, ticks and small part names | Tracks muted ink per theme |
-| \`--figure-leader\` | Leader lines and measured guides | Tracks border per theme |
-| \`--figure-frame\` | Outer visual card frame | Tracks border per theme |
-| \`--figure-label-size\` | Small labels in CSS/HTML; increase if cramped | Tracks \`--text-xs\`; inherited |
+| Token | Purpose | Light | Dark |
+| --- | --- | --- | --- |
+| \`--figure-page\` | Page ground | \`#f2f2ef\` | \`#0b0b0b\` |
+| \`--figure-card\` | Framed card surface | \`#fbfbfa\` | \`#131313\` |
+| \`--figure-text\` | Caption and live readout ink | \`#57575a\` | \`#a3a3a3\` |
+| \`--figure-strong\` | Strong explanatory ink | \`#18181a\` | \`#e6e6e6\` |
+| \`--figure-muted\` | Hints, quiet labels, legend | \`#8c8c90\` | \`#6e6e6e\` |
+| \`--figure-paper\` | Opaque backing fill hiding parts behind | \`#fbfbfa\` | \`#131313\` |
+| \`--figure-face\` | Lit subject backing | \`#ffffff\` | \`#1b1b1b\` |
+| \`--figure-top\` | Normal upper faces | \`#ffffff\` | \`#1c1c1c\` |
+| \`--figure-shade-0\` | Side facing away from light | \`#dcdcd9\` | \`#0f0f0f\` |
+| \`--figure-shade-1\` | Second side tone | \`#e5e5e2\` | \`#121212\` |
+| \`--figure-shade-2\` | Third side tone | \`#ededea\` | \`#151515\` |
+| \`--figure-shade-3\` | Side facing toward light | \`#f4f4f1\` | \`#181818\` |
+| \`--figure-lit-top\` | Selected upper face | \`#ffffff\` | \`#262626\` |
+| \`--figure-lit-shade\` | Selected side faces | \`#eeeeeb\` | \`#1d1d1d\` |
+| \`--figure-hi\` | Subject outlines | \`#26262a\` | \`#d4d4d4\` |
+| \`--figure-mid\` | Structural outlines and card frame | \`#8a8a8f\` | \`#6a6a6a\` |
+| \`--figure-lo\` | Base outlines and minor ticks | \`#b4b4b8\` | \`#3e3e3e\` |
+| \`--figure-faint\` | Grooves, creases and quiet detail | \`#d4d4d6\` | \`#2a2a2a\` |
+| \`--figure-lit\` | Exactly one active accent | \`#000000\` | \`#ffffff\` |
+| \`--figure-halo\` | Contact shadow colour | \`#8a8a80\` | \`#050505\` |
+| \`--figure-halo-opacity\` | Contact shadow alpha | \`.32\` | \`.9\` |
+| \`--figure-dot\` | Screws and rivets | \`#3a3a3e\` | \`#e6e6e6\` |
+| \`--figure-red\` | Red signal, when semantic | \`#e5484d\` | \`#ff6b6b\` |
+| \`--figure-green\` | Green signal, when semantic | \`#30a46c\` | \`#6be0a0\` |
+| \`--figure-blue\` | Blue signal, when semantic | \`#3e63dd\` | \`#6b9bff\` |
+| \`--figure-weight\` | Non-scaling 0.6px hairlines | \`.6px\` | \`.6px\` |
+| \`--figure-ease\` | Calm motion easing | \`cubic-bezier(.32,.72,0,1)\` | \`cubic-bezier(.32,.72,0,1)\` |
+| \`--figure-mono\` | Technical labels and tabular readout font | \`ui-monospace,"SF Mono",Menlo,Consolas,monospace\` | \`ui-monospace,"SF Mono",Menlo,Consolas,monospace\` |
+| \`--figure-lift\` | Subtle inset/drop shadow | \`inset 0 1px 0 0 #ffffff,0 0 0 1px #0000000f,0 1px 1px -.5px #0000000a,0 3px 3px -1.5px #0000000a,0 6px 6px -3px #0000000a,0 12px 12px -6px #0000000a\` | \`inset 0 1px 0 0 #ffffff0a,inset 0 0 0 1px #ffffff06,0 0 0 1px #00000026,0 1px 1px -.5px #00000014,0 3px 3px -1.5px #00000014,0 6px 6px -3px #00000014,0 12px 12px -6px #00000014\` |
 
-## Shared thin-line grammar
+The mono stack, weight and easing are identical in both themes. The lift shadow stays subtle; the card itself has a square hairline frame. Base/feet are lo, structure mid, subject hi, and exactly one lit accent (black in light, white in dark). True red/green/blue are for signals, never a rainbow series palette.
 
-All charts, simulations, and anatomy figures use one deliberate finish: hairline construction marks, restrained fills, exact small parts, quiet labels with short leader lines where useful, and a framed \`--card\` on \`--background\`. Put title, concise hint and live readout in the card when they clarify interaction. In charts, make axes and grid hairline while data stay regular. In simulations, show the mechanism and one measured quantity with a labelled control. Anatomy figures add a recognisable instrument with a base, support, moving subject, scale and fasteners; every part has a physical job. Use \`--chart-1\` for the focal mechanism and \`--chart-2\` onward only for distinct variables. Keep solids mostly neutral; use four value levels through opacity and \`--canvas\`, \`--card\`, \`--muted\`, and \`--foreground\`, not anatomy's original palette.
+## Frame and controls
 
-Use a fixed \`viewBox\`, \`width:100%\`, and \`vector-effect:non-scaling-stroke\` where scaled SVG strokes would become too heavy. Check labels at 390 px. A subtle grid can orient a plot but should not compete with data. Lines should meet another part, an axis, or the frame; deliberate callouts may end in dots. Depth order matters for isometric parts. Reduce or remove decorative detail when it obscures the relationship.
+Use \`plateHtml\` from the sandbox kit, or reproduce its exact framing: Fig n top left; short mono uppercase title top right; interaction hint bottom left; mono tabular live readout bottom right. Legend keys and a concise true caption sit underneath the card. Keep legend plus caption under about 50 words; put the explanation/derivation in chat. At most one tiny engraved label is inside the machine. Native Step / Run / Reset buttons and parameter sliders have labels and visible focus. Use the same model for readout, part motion and caption. Ensure readout/hint wrap or stack at 390px without colliding. Reduced motion shows a meaningful still state with explicit stepping; stop loops while hidden/offscreen.
 
-Do: label units, direct-label a series when space permits, show visible focus, test both themes, keep primary action high contrast, and update Canvas on theme changes. Don't: encode meaning by colour alone, use raw hex values in widgets, use multiple glowing accents, fake 3D for simple stats, use tiny pale text for key numbers, draw arbitrary hatching, or let motion change a displayed value independently of its model.
+## Widget compatibility aliases
 
-This grammar is adapted from Anatomy (MIT, wheresryan22); the palette and semantic tokens are Avenire's.
+Widget semantic tokens map onto the figure layer: background→page; foreground→text; card/popover→card with strong ink; primary→lit on card ink; secondary→shade-2; muted→shade-3 with muted ink; accent→lit-shade with lit ink; destructive→red; border→mid; input→lo; ring→hi; canvas→paper; canvas-grid→faint; radius→0px. App shadcn tokens remain unchanged. \`--chart-1..6\` map to hi, mid, lo, red, green, blue respectively. Label or dash every series; use signals only when their meaning earns colour.
+
+The shared typography/layout metrics remain: font-sans system UI, font-serif system serif, font-mono figure-mono; text-xs/sm/base/lg/xl/2xl = 0.75/0.875/1/1.125/1.25/1.5rem; leading-tight/normal = 1.25/1.5; space-1/2/3/4/5/6/8 = 0.25/0.5/0.75/1/1.25/1.5/2rem. Stroke-hairline = figure-weight, thin/regular/emphasis = 1/1.5/2px; dash = 3 3, dash-open = 6 4; figure-label = muted, figure-leader = lo, figure-frame = mid, figure-label-size = text-xs. These aliases exist for charts; interactive figures use the tokens directly.
+
+Use fixed SVG viewBox, width:100%, vector-effect:non-scaling-stroke, opaque filled solids and correct painter order. Ground line ends on a stroke, dot or outline. Ordinary chat starts with one CSP-wrapped preview. Repair errors and preview again before delivery; continue as long as the task needs. Full capture/drive/lines/audit and repeated theme/phone checks are for explicitly requested deep verification. Reuse components and example patterns with any concise browser code; deliver large built pages with path.
 `,
   },
   "visuals": {
     id: "visuals",
     title: "Visuals",
-    description: "Route a Ruth visual to a plain chart, simple simulation, optional anatomy figure, or published sandbox media.",
+    description: "Choose a direct model, mechanism, analogy, data chart or published media for the clearest explanation.",
     section: "visual-guidelines",
     path: "sections/visual-guidelines/visuals.md",
     content: `---
 name: visuals
-description: Route a Ruth visual to a plain chart, simple simulation, optional anatomy figure, or published sandbox media.
+description: Choose a direct model, mechanism, analogy, data chart or published media for the clearest explanation.
 ---
 
 # Visuals
 
-Prefer the smallest truthful visual that answers the student's question. A normal request for a comparison, trend, spreadsheet plot, or parameter sweep usually needs a plain chart or simple simulation. The fine thin-line finish in \`style\` applies to *every* visual; it does not require an elaborate isometric machine.
+Start with the learning question and choose the simplest faithful representation. Load \`explainer\` for interactive concept figures and physical models, \`style\` for the common frame/tokens, and \`kit-api\` only when exact signatures are needed. The code can be concise SVG/Canvas, kit components or an optional Node build.
 
-| Request or purpose | Make | Load |
-| --- | --- | --- |
-| “Compare v1 and v2 stats”; “plot this SEBI spreadsheet”; “show the trend” | Plain SVG grouped bars, line, area, scatter or histogram | \`chart\`, \`style\` |
-| “What happens if drag changes?”; “move the initial angle” | Small interactive SVG/Canvas model with labelled controls and readout | \`simulation\`, \`style\`, \`kit-api\` |
-| “Explain how gradient descent works as a mechanism”; “show the lock's pins” | Optional working physical analogy with real parts and one model | \`anatomy\`, \`anatomy-craft\`, \`style\`, \`kit-api\` |
-| Huge static data, print/export, or a frame GIF | Python/pandas and matplotlib PNG/SVG/GIF | \`sandbox\`, \`style\` |
-| A short narrated or timed math sequence that need not respond to input | manimgx MP4 | \`sandbox\` |
-| PCB, schematic, or enclosure drawing from actual design files | \`kicad-cli\` export | \`sandbox\` |
+| Request | Representation |
+| --- | --- |
+| “Show a simple pendulum”; “play with a double pendulum” | Direct physical model: pivot, rods and bobs; real numerical state |
+| “Explain how an engine works” | The actual mechanism/cutaway: piston, crank, valves and four strokes |
+| “Explain how gradient descent finds a minimum, with the help of an interactive visualization” | A follower on a loss profile with slope-controlled feed, or direct mathematical geometry if clearer |
+| “Why does a cache avoid repeated work?” | A faithful analogy/mechanism showing the matching state and avoided work |
+| “Compare v1 and v2 numbers”; “plot this spreadsheet”; “show the trend” | \`chart\` with actual data, units and shared scales |
+| Large static data or print/export | \`sandbox\` computation and published PNG/SVG/PDF |
+| A timed sequence that does not benefit from input | \`sandbox\` video, published with \`publish_asset\` |
 
-Use prose or a small table if a visual adds no explanatory value. Never invent data, numeric results, or citations. An analogy must preserve the important causal relationships; if it would distort the concept, choose a chart or simulation.
+Do not invent an elaborate analogy for a physical system that already explains itself. Prefer a real mechanism for a real machine. Use analogy for abstract/complex concepts when its correspondences make the cause and effect easier to see. Never invent observations, numeric results or citations. Use prose or a small table if a visual adds no value.
 
-## Widget workflow
+Keep the widget quiet: one figure, a short title/hint, minimal labelled controls and 2–4 live values. A small legend and at most two short caption sentences can sit below the card. Explanations, derivations, examples and detailed assumptions belong in chat, not text panels inside the widget.
 
-1. Call \`get_page_context\` for width, platform, appearance, and theme tokens. Load the relevant skills and, for kit calls, \`kit-api\`.
-2. Write one self-contained HTML document with inline \`<style>\` and \`<script type="module">\`. Embed computed data as JSON. Reserve the stage height (\`aspect-ratio\` or \`min-height\`) before module loading, set \`width:100%\`, use a fixed SVG \`viewBox\`, and keep text legible near 390 px.
-3. Call \`preview_widget({ html, width?, appearance? })\`. Inspect screenshot, content height, and console. Check clipping, small labels, contrast, axis units, wrapping, zero or empty states, keyboard focus, theme, and whether the drawn state agrees with the readout. Revise and preview again, including dark and light and a narrow width when possible.
-4. Call \`render_widget({ title, html })\` only after the preview is sound. Explain in chat prose what the learner should notice; name data source, units, and uncertainty where relevant. A tool result by itself is not an explanation.
+Batch skill/context lookup, build concisely, call \`preview_widget\` once, and repair actual errors with a fresh preview before \`render_widget\`. There is no step-count cap: continue until the error is fixed and the page is delivered, or explain an actual blocking failure. Avoid unnecessary redesign. Close the sandbox when finished.
 
-The widget runs in an opaque-origin sandbox. CSP allows inline scripts/styles and imports only from \`/kits/math.js\`, \`/kits/iso.js\`, \`/kits/iso-gl.js\`; use inline \`ISO_CSS\` from \`/kits/iso.js\` because external stylesheet loads are not guaranteed. Images/media are \`data:\` or \`blob:\` only. No network requests, external fonts, chart libraries, fetch, CDN imports, or links to sandbox files. \`connect-src 'none'\`. Assets published with \`publish_asset\` are chat links, not widget imports.
-
-Use semantic headings and a concise figure description or data table. SVG needs an accessible name; decorative parts are \`aria-hidden\`. All controls need labels, visible focus, native keyboard input, and a textual readout (\`aria-live\` only for discrete changes). Provide a static meaningful state when \`prefers-reduced-motion: reduce\` is set. Pause animation when the document is hidden or the figure is offscreen; cap work per frame. For Canvas, re-read computed tokens on \`avenire:themechange\` and redraw. Use \`var(--…)\` for the palette and type system.
+Pass exactly one of \`html\` (512,000 bytes maximum) or \`path\` (8 MiB maximum). Built pages travel directly from the thread sandbox to preview/storage. Never read a multi-MB page into context. CSP permits inline scripts/styles and bundled \`/kits\` modules; images/media are \`data:\` or \`blob:\` only. No external libraries, fonts, network requests or sandbox file links. Use \`--figure-*\` tokens, accessible native controls, reduced-motion/manual stepping and a responsive stage.
 `,
   },
   "kit-api": {
@@ -2152,7 +1638,7 @@ The core also exports \`vec*\`, \`mat*\`, \`quat*\`, \`euler\`, \`spherical\`, a
 
 ## Isometric drawing
 
-\`/kits/iso.js\` exports the anatomy SVG geometry functions and namespace helpers below. Inline \`ISO_CSS\` in a \`<style>\` element, since the widget CSP allows inline styles. \`iso.css\` is also emitted for hosts whose style policy permits a stylesheet.
+\`/kits/iso.js\` exports the isometric SVG geometry functions and namespace helpers below. Inline \`ISO_CSS\` in a \`<style>\` element, since the widget CSP allows inline styles. \`iso.css\` is also emitted for hosts whose style policy permits a stylesheet.
 
 | Export                                                                                   | Purpose                                       |
 | ---------------------------------------------------------------------------------------- | --------------------------------------------- |
@@ -2381,8 +1867,8 @@ document.body.innerHTML = figureSvg({
 
 export type SkillId = keyof typeof SKILL_MAP;
 
-export const AVAILABLE_SKILLS = ["concept-explainer","flashcard-generator","quiz-creator","study-notes-creator","summary-generator","sandbox","anatomy-arcade-cabinet","anatomy-desk-computer","anatomy-dial-indicator","anatomy-raptor-engine","anatomy-ripple-tank","anatomy-spot-plate","anatomy-test-rig","anatomy-turning-dial","chart-comparison","chart-from-spreadsheet","sim-double-pendulum","anatomy-3d","anatomy-craft","anatomy-motion","anatomy","chart","simulation","style","visuals","kit-api"] as const;
+export const AVAILABLE_SKILLS = ["concept-explainer","flashcard-generator","quiz-creator","study-notes-creator","summary-generator","sandbox","chart-comparison","chart-from-spreadsheet","explainer-double-pendulum","chart","explainer","style","visuals","kit-api"] as const;
 export const STUDY_SKILLS = ["concept-explainer","flashcard-generator","quiz-creator","study-notes-creator","summary-generator"] as const;
-export const VISUAL_SKILLS = ["anatomy-3d","anatomy-craft","anatomy-motion","anatomy","chart","simulation","style","visuals"] as const;
-export const VISUAL_EXAMPLE_SKILLS = ["anatomy-arcade-cabinet","anatomy-desk-computer","anatomy-dial-indicator","anatomy-raptor-engine","anatomy-ripple-tank","anatomy-spot-plate","anatomy-test-rig","anatomy-turning-dial","chart-comparison","chart-from-spreadsheet","sim-double-pendulum"] as const;
+export const VISUAL_SKILLS = ["chart","explainer","style","visuals"] as const;
+export const VISUAL_EXAMPLE_SKILLS = ["chart-comparison","chart-from-spreadsheet","explainer-double-pendulum"] as const;
 export const TOOL_SKILLS = ["sandbox","kit-api"] as const;

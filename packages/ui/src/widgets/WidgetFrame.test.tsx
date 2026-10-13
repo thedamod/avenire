@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "@effect/vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { WIDGET_THEME_TOKENS } from "../styles/tokens.ts";
 import { WidgetFrame } from "./WidgetFrame.tsx";
 
 const props = {
@@ -49,13 +50,21 @@ describe("WidgetFrame", () => {
     expect(post).not.toHaveBeenCalled();
     message({ type: "avenire:widget:ready" });
     expect(post).toHaveBeenLastCalledWith(
-      { type: "avenire:theme", colorScheme: "light", tokens: props.tokens },
+      {
+        type: "avenire:theme",
+        colorScheme: "light",
+        tokens: { ...props.tokens, ...WIDGET_THEME_TOKENS.light },
+      },
       "*",
     );
     const tokens = { "--foreground": "white" };
     rerender(<WidgetFrame {...props} colorScheme="dark" tokens={tokens} />);
     expect(post).toHaveBeenLastCalledWith(
-      { type: "avenire:theme", colorScheme: "dark", tokens },
+      {
+        type: "avenire:theme",
+        colorScheme: "dark",
+        tokens: { ...tokens, ...WIDGET_THEME_TOKENS.dark },
+      },
       "*",
     );
   });

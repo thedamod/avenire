@@ -94,27 +94,32 @@ export const RuthModelsLive = Layer.effect(
   Effect.gen(function* () {
     const apiKey = yield* Config.Redacted("OPENROUTER_API_KEY");
     const provider = createOpenRouter({ apiKey: Redacted.value(apiKey) });
-    const catalog = yield* Effect.tryPromise({
-      try: () =>
-        fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(10_000) }).then(
-          (r) => r.json(),
-        ),
-      catch: (cause) => new ModelCatalogError({ cause }),
-    }).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(Catalog)),
-      Effect.catchCause(() =>
-        Effect.logWarning(
-          "OpenRouter catalog unavailable; unknown models default to text only",
-        ).pipe(
-          Effect.as({
-            data: Object.values(RUTH_MODEL_DEFAULTS).map((id) => ({
-              id,
-              architecture: { input_modalities: ["text", "image"] },
-            })),
-          }),
-        ),
-      ),
+    const catalogEnabled = yield* Config.Boolean("RUTH_OPENROUTER_CATALOG_ENABLED").pipe(
+      Config.withDefault(true),
     );
+    const catalog = catalogEnabled
+      ? yield* Effect.tryPromise({
+          try: () =>
+            fetch("https://openrouter.ai/api/v1/models", {
+              signal: AbortSignal.timeout(10_000),
+            }).then((r) => r.json()),
+          catch: (cause) => new ModelCatalogError({ cause }),
+        }).pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(Catalog)),
+          Effect.catchCause(() =>
+            Effect.logWarning(
+              "OpenRouter catalog unavailable; unknown models default to text only",
+            ).pipe(
+              Effect.as({
+                data: Object.values(RUTH_MODEL_DEFAULTS).map((id) => ({
+                  id,
+                  architecture: { input_modalities: ["text", "image"] },
+                })),
+              }),
+            ),
+          ),
+        )
+      : { data: [] };
     const metadata = new Map(catalog.data.map((m) => [m.id, m.architecture.input_modalities]));
     const fireworksKey = yield* Config.option(Config.Redacted("FIREWORKS_API_KEY"));
     const fireworks = Option.map(fireworksKey, (key) =>

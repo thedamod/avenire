@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { MockLanguageModelV4 } from "ai/test";
+import { jsonSchema, tool } from "ai";
 import { CloudRunId } from "@avenire/contracts";
 import { Database, DatabaseError } from "@avenire/database/client";
 import { AnalyticsNoop } from "@avenire/shared/observability";
@@ -19,6 +20,60 @@ const usage = {
   inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
   outputTokens: { total: 5, text: 5, reasoning: 0 },
 };
+it.effect("continues sandbox work past 500 checkpointed steps and finishes naturally", () => {
+  let next = 0;
+  let executed = 0;
+  const model = new MockLanguageModelV4({
+    doGenerate: async () => ({
+      content:
+        next++ < 3
+          ? [
+              {
+                type: "tool-call" as const,
+                toolName: "box_exec",
+                toolCallId: `work-${next}`,
+                input: "{}",
+              },
+            ]
+          : [{ type: "text" as const, text: "Finished sandbox work." }],
+      usage,
+      finishReason: {
+        unified: next <= 3 ? ("tool-calls" as const) : ("stop" as const),
+        raw: next <= 3 ? "tool_calls" : "stop",
+      },
+      warnings: [],
+    }),
+  });
+  const capabilities = { vision: false, toolResultImages: false };
+  return Effect.gen(function* () {
+    const result = yield* runCloudLoop({
+      model,
+      system: "Finish the work",
+      tools: {
+        box_exec: tool({
+          inputSchema: jsonSchema<Record<string, never>>({ type: "object", properties: {} }),
+          execute: async () => ({ executed: ++executed }),
+        }),
+      },
+      images: createImageTransport(capabilities),
+      capabilities,
+      checkpoint: {
+        messages: [{ role: "user", content: "Continue" }],
+        stepIndex: 501,
+        usage: { inputTokens: 0, outputTokens: 0, cost: 0, actions: 0 },
+      },
+      deadline: 100000,
+      maxCost: 1,
+      maxActions: 10,
+      check: () => Effect.void,
+      save: () => Effect.void,
+    });
+    expect(result.text).toBe("Finished sandbox work.");
+    expect(result.checkpoint.stepIndex).toBe(505);
+    expect(executed).toBe(3);
+    expect(model.doGenerateCalls).toHaveLength(4);
+  });
+});
 it.effect(
   "resumes after crash between publish completion and checkpoint without duplicate hydrate/publish",
   () => {
@@ -99,7 +154,7 @@ it.effect(
           images,
           capabilities,
           checkpoint: persisted,
-          maxSteps: 5,
+
           maxActions: 10,
           maxCost: 1,
           deadline: 100000,
@@ -194,7 +249,7 @@ it.effect("halts on a failed journal write while preserving the unresolved publi
         images,
         capabilities,
         checkpoint: persisted,
-        maxSteps: 5,
+
         maxActions: 10,
         maxCost: 1,
         deadline: 100000,

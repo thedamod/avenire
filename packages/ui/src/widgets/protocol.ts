@@ -1,3 +1,4 @@
+import { adaptFigureTheme } from "./figure-theme.ts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -63,8 +64,17 @@ export function WIDGET_RESPONSE_CSP(options: {
   return `sandbox allow-scripts; ${contentPolicy(options.kitsOrigin)}; frame-ancestors ${ancestors.join(" ") || "'none'"}`;
 }
 
-const BASE_CSS =
-  "body{font-family:var(--font-sans);font-size:var(--text-base);line-height:var(--leading-normal);color:var(--foreground);background:transparent;margin:0}code,pre,kbd,samp{font-family:var(--font-mono)}";
+/** Preserve Figure's corners while allowing long live values to wrap inside the card. */
+const BASE_CSS = `body{font-family:var(--font-sans);font-size:var(--text-base);line-height:var(--leading-normal);color:var(--foreground);background:transparent;margin:0}code,pre,kbd,samp{font-family:var(--font-mono)}
+.iso .iso-plate-corners{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto 1fr auto;column-gap:16px}
+.iso .iso-plate-corners .iso-plate-corner{position:static;min-width:0;white-space:normal;overflow-wrap:anywhere;line-height:1.4}
+.iso .iso-plate-corners [data-corner="fig"]{grid-column:1;grid-row:1}
+.iso .iso-plate-corners [data-corner="title"]{grid-column:2;grid-row:1;text-align:right}
+.iso .iso-plate-corners [data-corner="hint"]{grid-column:1;grid-row:3;align-self:end}
+.iso .iso-plate-corners [data-corner="readout"]{grid-column:2;grid-row:3;align-self:end;text-align:right}
+@media(max-width:560px){.iso .iso-plate-corners{grid-template-rows:auto 1fr auto auto;row-gap:6px}.iso .iso-plate-corners [data-corner="hint"]{grid-column:1 / -1;grid-row:3}.iso .iso-plate-corners [data-corner="readout"]{grid-column:1 / -1;grid-row:4}}
+`;
+
 const validToken = (name: string, value: unknown): value is string =>
   /^--[a-z0-9-]+$/.test(name) && typeof value === "string" && !/[<>{};]/.test(value);
 const escapeHtml = (value: string) =>
@@ -77,6 +87,21 @@ const escapeHtml = (value: string) =>
 
 // No user input is interpolated into this script. Updates use the same token allowlist as first paint.
 const BOOTSTRAP = `(()=>{
+const syncIso=()=>{
+ const scheme=document.documentElement.dataset.theme;
+ const root=getComputedStyle(document.documentElement);
+ document.querySelectorAll(".iso").forEach(el=>{
+  el.dataset.theme=scheme;
+  for(let i=0;i<root.length;i++){
+   const name=root[i];
+   if(name.startsWith("--figure-"))el.style.setProperty(name,root.getPropertyValue(name));
+  }
+ });
+};
+// Sync parsed .iso wrappers before deferred module scripts read their initial theme.
+const initialObserver=new MutationObserver(syncIso);
+initialObserver.observe(document.documentElement,{childList:true,subtree:true});
+document.addEventListener("DOMContentLoaded",()=>{syncIso();initialObserver.disconnect();});
 const style=document.getElementById("avenire-theme");
 const base=${JSON.stringify(BASE_CSS)};
 const send=msg=>parent.postMessage(msg,"*");
@@ -89,6 +114,7 @@ window.addEventListener("message",event=>{
  const tokens=entries.filter(([k,v])=>/^--[a-z0-9-]+$/.test(k)&&!/[<>{};]/.test(v));
  style.textContent=":root{color-scheme:"+d.colorScheme+";"+tokens.map(([k,v])=>k+":"+v+";").join("")+"}"+base;
  document.documentElement.dataset.theme=d.colorScheme;
+ syncIso();
  window.dispatchEvent(new CustomEvent("avenire:themechange",{detail:{...d,tokens:Object.fromEntries(tokens)}}));
 });
 let lastHeight,scheduled=false;
@@ -144,6 +170,7 @@ export function buildWidgetDocument({
   tokens,
   kitsOrigin,
 }: WidgetDocumentOptions): string {
+  html = adaptFigureTheme(html);
   const scheme = colorScheme === "dark" ? "dark" : "light";
   const declarations = Object.entries(tokens)
     .filter(([name, value]) => validToken(name, value))

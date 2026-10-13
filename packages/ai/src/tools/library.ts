@@ -24,7 +24,8 @@ import {
   toFileEntry,
 } from "./selectors.ts";
 import { RUTH_TOOL_SPECS, type RuthToolName } from "./specs.ts";
-import { WidgetStore } from "../outputs/widgets.ts";
+import { ChatSandboxes } from "@avenire/cloud/chat-sandbox";
+import { WidgetStore, resolveWidgetSource } from "../outputs/widgets.ts";
 
 /** enqueueIngestion requires only Database and Crypto, rather than the worker's runtime layer. */
 export type RuthKitServices =
@@ -34,7 +35,8 @@ export type RuthKitServices =
   | SemanticCache
   | Crypto.Crypto
   | Analytics
-  | WidgetStore;
+  | WidgetStore
+  | ChatSandboxes;
 export type RuthToolImplementations = {
   [K in RuthToolName]: ToolImpl<
     (typeof RUTH_TOOL_SPECS)[K]["inputSchema"]["Type"],
@@ -306,6 +308,9 @@ export const ruthKitTools: RuthToolImplementations = {
   }),
   render_widget: Effect.fn("RuthKit.renderWidget")(function* (input, ctx) {
     const widgets = yield* WidgetStore;
-    return yield* widgets.render(ctx, input);
+    return yield* widgets.render(ctx, {
+      title: input.title,
+      html: yield* resolveWidgetSource(ctx, input),
+    });
   }),
 };

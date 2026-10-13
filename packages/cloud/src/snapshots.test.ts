@@ -9,7 +9,7 @@ import { AVENIRE_SNAPSHOT, SANDBOX_RESOURCES, avenireSandboxImage } from "./snap
 const dockerfile = avenireSandboxImage.dockerfile;
 
 it("defines one Daytona desktop image with all runtime stacks", () => {
-  expect(AVENIRE_SNAPSHOT).toBe("avenire-sandbox-v4");
+  expect(AVENIRE_SNAPSHOT).toBe("avenire-sandbox-v6");
   expect(dockerfile).toContain("FROM daytonaio/sandbox");
   for (const packageName of [
     "bibata-cursor-theme",

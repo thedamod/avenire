@@ -1,14 +1,14 @@
 /** Sandbox contracts are client-safe; implementations and storage live in separate modules. */
-import { AssetId, AssetKind } from "@avenire/contracts";
+import { AssetId, AssetKind, WidgetSource } from "@avenire/contracts";
 import { tool } from "ai";
 import * as Schema from "effect/Schema";
-import { standardSchema } from "./schema.ts";
+import { standardSchema, standardObjectSchema } from "./schema.ts";
 
 const encoding = Schema.Literals(["utf8", "base64"]);
 export const sandboxExecSpec = {
   name: "sandbox_exec",
   description:
-    "Run a command in the thread's ephemeral Linux box: Python 3.13, scientific stack, manimgx and document tools are preinstalled. Network is blocked; lifetime is capped at 60 minutes. Write a script with sandbox_write, then run it here. For manimgx, inspect then render to a file, then publish_asset.",
+    "Run a command in the thread's ephemeral Linux box: Python 3.13, scientific stack, manimgx and document tools are preinstalled. Network is blocked; lifetime is capped at 120 minutes. Write a script with sandbox_write, then run it here. For manimgx, inspect then render to a file, then publish_asset.",
   inputSchema: standardSchema(
     Schema.Struct({
       command: Schema.NonEmptyString,
@@ -91,13 +91,20 @@ export const sandboxCloseSpec = {
 export const previewWidgetSpec = {
   name: "preview_widget",
   description:
-    "Preview standalone widget HTML in the chat sandbox. Inspect the full-page screenshot, height and console, revise, then render_widget. Kits at /kits/math.js and /kits/iso.js are available. Never requires approval.",
-  inputSchema: standardSchema(
-    Schema.Struct({
-      html: Schema.String,
-      width: Schema.optionalKey(Schema.Int),
-      appearance: Schema.optionalKey(Schema.Literals(["light", "dark"])),
-    }),
+    "Pass exactly one of html (512,000 bytes max) or path (built HTML in this thread sandbox, 8 MiB max). Preview standalone widget HTML in the chat sandbox. Inspect the full-page screenshot, height and console, revise, then render_widget. Kits at /kits/math.js and /kits/iso.js are available. Never requires approval.",
+  inputSchema: standardObjectSchema(
+    Schema.Union([
+      Schema.Struct({
+        ...WidgetSource.members[0].fields,
+        width: Schema.optionalKey(Schema.Int),
+        appearance: Schema.optionalKey(Schema.Literals(["light", "dark"])),
+      }),
+      Schema.Struct({
+        ...WidgetSource.members[1].fields,
+        width: Schema.optionalKey(Schema.Int),
+        appearance: Schema.optionalKey(Schema.Literals(["light", "dark"])),
+      }),
+    ]),
   ),
   outputSchema: standardSchema(
     Schema.Struct({

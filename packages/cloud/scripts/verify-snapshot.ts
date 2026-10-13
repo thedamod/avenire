@@ -1,9 +1,11 @@
 /** Real render/desktop verification. One disposable sandbox, downloaded artifacts, no secrets. */
 import { Daytona, type Sandbox } from "@daytonaio/sdk";
+import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { AVENIRE_SNAPSHOT } from "../src/snapshots.ts";
+import { figure } from "./verify/figures.ts";
 import { gallery, type Check, type Output } from "./verify/gallery.ts";
 import { desktop, sessionEnv } from "./verify/desktop.ts";
 import { widgetPages } from "./verify/widgets.ts";
@@ -102,16 +104,34 @@ async function shot(name: string, x: number, y: number) {
 }
 try {
   log(`Creating ${snapshot} verification sandbox`);
-  sandbox = await new Daytona().create(
-    {
-      snapshot,
-      autoStopInterval: 15,
-      autoDeleteInterval: 0,
-      labels: { app: "avenire-v4-verify" },
-      networkBlockAll: true,
-    },
-    { timeout: 300 },
-  );
+  const client = new Daytona();
+  const verifyRun = randomUUID();
+  const params = {
+    snapshot,
+    autoStopInterval: 15,
+    autoDeleteInterval: 0,
+    labels: { app: "avenire-v5-verify", verifyRun },
+    networkBlockAll: true,
+  };
+  for (let attempt = 1; ; attempt++) {
+    try {
+      sandbox = await client.create(params, { timeout: 300 });
+      break;
+    } catch (error) {
+      // Creation can reset the connection after acceptance; reconcile before retrying.
+      for await (const existing of client.list({ labels: { verifyRun } })) {
+        sandbox = existing;
+        break;
+      }
+      if (sandbox) {
+        await sandbox.waitUntilStarted(300);
+        break;
+      }
+      if (attempt === 3) throw error;
+      log(`Sandbox creation transport failed; reconciled no accepted sandbox, retry ${attempt}`);
+      await sleep(2000 * attempt);
+    }
+  }
   await writeFile(
     `${out}/sandbox.json`,
     JSON.stringify(
@@ -234,6 +254,7 @@ try {
     await run("playwright widget " + name, `python widgets.py ${name}`, [
       `renders/widget-${name}.png`,
     ]);
+  await figure({ box: sandbox, work, check, execute, run, download });
   await run("node SVG", "node node.mjs", ["renders/node.svg"]);
   await desktop({ box: sandbox, work, renders, check, execute, run, launch, download, shot });
   await run("media integrity", "python integrity.py");

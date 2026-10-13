@@ -18,7 +18,7 @@ for (const [index, [name, entry]] of Object.entries(entries).entries()) {
       rollupOptions: {
         output: {
           banner:
-            "/*! Includes MIT licensed pmndrs/math by Isaac Mason and anatomy by Ryan; see LICENSES.txt. */",
+            "/*! Includes MIT licensed pmndrs/math by Isaac Mason and isometric geometry by Ryan; see LICENSES.txt. */",
         },
       },
     },
@@ -29,13 +29,13 @@ const mathLicense = await readFile(
   fileURLToPath(new URL("../src/math/LICENSE", import.meta.url)),
   "utf8",
 );
-const anatomyLicense = await readFile(
+const isoLicense = await readFile(
   fileURLToPath(new URL("../src/iso/LICENSE", import.meta.url)),
   "utf8",
 );
 await writeFile(
   `${dir}LICENSES.txt`,
-  `pmndrs/math (Isaac Mason)\n${mathLicense}\n\nAnatomy (Ryan / wheresryan22)\n${anatomyLicense}`,
+  `pmndrs/math (Isaac Mason)\n${mathLicense}\n\nIsometric geometry (Ryan / wheresryan22)\n${isoLicense}`,
 );
 const files = (await readdir(dir)).filter((name) => name !== "manifest.json").sort();
 const manifest = {};

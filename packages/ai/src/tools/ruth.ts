@@ -1,6 +1,7 @@
 /** Bind the shared tool backbone to one request; local tools supply skills and page context. */
 import type { PageContext, ThreadId, UserId } from "@avenire/contracts";
 import type { ChatSandboxes } from "@avenire/cloud/chat-sandbox";
+import { WIDGET_THEME_TOKENS } from "@avenire/ui/tokens";
 import type { ImageTransport } from "./images.ts";
 import { toAiSdkTools } from "./ai-sdk.ts";
 import type { AssetStore } from "../outputs/assets.ts";
@@ -61,6 +62,14 @@ export const createRuthTools = (
       ...getPageContextSpec,
       execute: (): PageContextResult => ({
         ...turn.page,
+        themeTokens: {
+          ...turn.page.themeTokens,
+          ...WIDGET_THEME_TOKENS[turn.page.colorScheme],
+        },
+        fonts: {
+          ...turn.page.fonts,
+          mono: WIDGET_THEME_TOKENS[turn.page.colorScheme]["--font-mono"],
+        },
         runtime: VISUAL_RUNTIME,
         budgets: VISUAL_BUDGETS,
         existingVisuals: turn.existingVisuals,

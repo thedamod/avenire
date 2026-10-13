@@ -151,12 +151,17 @@ function bootstrapHarness() {
       documentElement: root,
       body,
       getElementById: () => style,
+      querySelectorAll: () => [],
       addEventListener: (type: string, listener: Listener) => {
         documentListeners[type] = listener;
       },
     },
     requestAnimationFrame: (callback: () => void) => frames.push(callback),
     getComputedStyle: () => ({ marginTop: "4px", marginBottom: "4px" }),
+    MutationObserver: class {
+      observe() {}
+      disconnect() {}
+    },
     ResizeObserver: class {
       constructor(callback: () => void) {
         observers.push(callback);
