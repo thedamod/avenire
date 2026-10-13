@@ -59,10 +59,8 @@ minimumReleaseAgeExclude:
 overrides:
   # vite-plus bundles its own Vitest; the patched @effect/vitest imports it instead.
   "@effect/vitest>vitest": "-"
-  effect: "catalog:"
-  # UploadThing (files-sdk's uploadthing adapter) is built on Effect 3; keep it off our Effect 4.
-  "uploadthing>effect": 3.17.7
-  "@uploadthing/shared>effect": 3.17.7
+  # @effect/tsgo 0.48 still declares effect ^4.0.0-rc; give it our stable Effect 4.
+  "@effect/tsgo>effect": "catalog:"
   "@types/node": "catalog:"
 
 packageExtensions:
