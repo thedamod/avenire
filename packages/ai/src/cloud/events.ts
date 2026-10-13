@@ -23,6 +23,8 @@ export class RunEventConflict extends Schema.TaggedError<RunEventConflict>()("Ru
 }) {}
 
 const POLL_INTERVAL = "400 millis";
+/** How long a finished run's stream waits for the executor's closing events (10 x 400 ms). */
+const SETTLE_POLLS = 10;
 const PAGE_SIZE = 500;
 
 /** Merge consecutive deltas of one part so a token stream becomes a handful of rows. */
@@ -182,6 +184,7 @@ export const CloudRunEventsLive = Layer.effect(
       );
     const poll = (userId: UserId, runId: CloudRunId) => (cursor: number) =>
       Effect.gen(function* () {
+        let settling = 0;
         while (true) {
           const rows = yield* page(runId, cursor);
           if (rows.length) {
@@ -195,9 +198,12 @@ export const CloudRunEventsLive = Layer.effect(
           const run = yield* owned(userId, runId);
           if (!run) return [[], Option.none<number>()] as const;
           if (FINISHED.has(run.status)) {
-            // Events are written before the status flips; one more read closes that race.
-            const settled = yield* page(runId, cursor);
-            if (settled.length) continue;
+            // The executor commits the terminal status before it writes the closing events, so give
+            // them a moment to land; synthesize the close only if they never do (that write is best effort).
+            if (settling++ < SETTLE_POLLS) {
+              yield* Effect.sleep(POLL_INTERVAL);
+              continue;
+            }
             return [closingChunks(run.status, run.error), Option.none<number>()] as const;
           }
           yield* Effect.sleep(POLL_INTERVAL);
