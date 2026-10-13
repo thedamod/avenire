@@ -21,6 +21,12 @@ export interface ModelCapabilities {
   readonly screenProfile?: ScreenProfile;
   /** Reasoning effort for Ruth chat, for models that otherwise default to maximum thinking. */
   readonly reasoning?: "low";
+  /** USD per 1M tokens, for providers that report no cost (OpenRouter reports it per call). */
+  readonly pricing?: {
+    readonly input: number;
+    readonly cachedInput: number;
+    readonly output: number;
+  };
 }
 
 const screen = (id: (typeof SCREEN_PROFILES)[number]["id"]) =>
@@ -32,6 +38,8 @@ export const RUTH_MODEL_CAPABILITIES: Record<RuthModelName, ModelCapabilities> =
     toolResultImages: false,
     screenProfile: screen("normalized-1000"),
     reasoning: "low",
+    // Fireworks serverless list price (fireworks.ai/models/fireworks/glm-5p3-flash, 2026-10-13).
+    pricing: { input: 0.15, cachedInput: 0.03, output: 0.5 },
   },
   "ruth-core": { vision: true, toolResultImages: true, screenProfile: screen("pixels-1280x720") },
   "ruth-apex": { vision: true, toolResultImages: true, screenProfile: screen("pixels-1280x720") },

@@ -4,6 +4,7 @@ import {
   toUIMessageStream,
   type FinishReason,
   type LanguageModel,
+  type LanguageModelUsage,
   type ModelMessage,
   type ToolCallPart,
   type ToolExecutionOptions,
@@ -54,6 +55,23 @@ export const openRouterCost = (metadata: unknown): number => {
     if (typeof record[key] === "number" && Number.isFinite(record[key]) && record[key] >= 0)
       return record[key];
   return Object.values(record).reduce<number>((sum, child) => sum + openRouterCost(child), 0);
+};
+
+/** A step's cost: what the provider reported, else an estimate from the model's list price, so the
+ * spend cap holds for providers that report none (Fireworks). */
+export const stepCost = (
+  step: { readonly metadata?: unknown; readonly usage: LanguageModelUsage },
+  pricing: ModelCapabilities["pricing"],
+): number => {
+  const reported = openRouterCost(step.metadata);
+  if (reported > 0 || !pricing) return reported;
+  const input = step.usage.inputTokens ?? 0;
+  const cached = Math.min(input, step.usage.inputTokenDetails?.cacheReadTokens ?? 0);
+  const output = step.usage.outputTokens ?? 0;
+  return (
+    ((input - cached) * pricing.input + cached * pricing.cachedInput + output * pricing.output) /
+    1e6
+  );
 };
 
 /** How many times in a row a cut-off answer may be continued before the run fails. */
@@ -294,7 +312,7 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
         ...state.usage,
         inputTokens: state.usage.inputTokens + (step.usage.inputTokens ?? 0),
         outputTokens: state.usage.outputTokens + (step.usage.outputTokens ?? 0),
-        cost: state.usage.cost + openRouterCost(step.metadata),
+        cost: state.usage.cost + stepCost(step, options.capabilities.pricing),
       },
     });
     yield* options.save(state);

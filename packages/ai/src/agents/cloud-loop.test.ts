@@ -12,6 +12,7 @@ import {
   runCloudLoop,
   stepOutcome,
   type LoopCheckpoint,
+  stepCost,
 } from "./cloud-loop.ts";
 import { scriptedModel } from "./conformance.ts";
 import { createImageTransport } from "../tools/images.ts";
@@ -87,6 +88,20 @@ it.effect(
     });
   },
 );
+it("prices steps a provider reports no cost for, and prefers a reported cost", () => {
+  const usage = {
+    inputTokens: 1_000_000,
+    outputTokens: 1_000_000,
+    inputTokenDetails: { cacheReadTokens: 500_000 },
+  };
+  const pricing = { input: 0.15, cachedInput: 0.03, output: 0.5 };
+  expect(stepCost({ usage } as never, pricing)).toBeCloseTo(0.075 + 0.015 + 0.5);
+  expect(
+    stepCost({ usage, metadata: { openrouter: { usage: { cost: 0.2 } } } } as never, pricing),
+  ).toBe(0.2);
+  expect(stepCost({ usage } as never, undefined)).toBe(0);
+});
+
 it("maps every finish reason to one outcome", () => {
   const outcome = (finishReason: Parameters<typeof stepOutcome>[0]["finishReason"], extra = {}) =>
     stepOutcome({ finishReason, pendingTools: false, continuations: 0, ...extra });
