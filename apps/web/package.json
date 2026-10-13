@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "pnpm --filter @avenire/widget-kit build && vp test run --config ../../vite.config.ts --dir . --passWithNoTests",
     "ruth:prompt": "tsx --env-file-if-exists=../../.env.local scripts/ruth-prompt.ts",
-    "seed:demo": "tsx --env-file-if-exists=../../.env.local scripts/seed-demo-library.ts"
+    "seed:demo": "tsx --env-file-if-exists=../../.env.local scripts/seed-demo-library.ts",
+    "cloud:check": "tsx --env-file-if-exists=../../.env.local scripts/cloud-check.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "catalog:",
@@ -29,6 +30,7 @@
     "@avenire/widget-kit": "workspace:*",
     "@effect/platform-node": "catalog:",
     "@xyflow/react": "12.12.0",
+    "agent-browser": "0.33.1",
     "ai": "catalog:",
     "effect": "catalog:",
     "lucide-react": "1.51.0",

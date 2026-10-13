@@ -1,17 +1,21 @@
 import {
-  generateText,
   stepCountIs,
-  type ModelMessage,
-  type ToolSet,
+  streamText,
+  toUIMessageStream,
+  type FinishReason,
   type LanguageModel,
+  type ModelMessage,
   type ToolCallPart,
-  type ToolResultPart,
   type ToolExecutionOptions,
+  type ToolResultPart,
+  type ToolSet,
+  type UIMessageChunk,
 } from "ai";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { imageModelOutput, type ImageTransport } from "../tools/images.ts";
+import * as Stream from "effect/Stream";
+import { imageInResult, imageModelOutput, type ImageTransport } from "../tools/images.ts";
 import { RuthToolError } from "../tools/core.ts";
 import type { ModelCapabilities } from "../models/index.ts";
 
@@ -52,8 +56,67 @@ export const openRouterCost = (metadata: unknown): number => {
       return record[key];
   return Object.values(record).reduce<number>((sum, child) => sum + openRouterCost(child), 0);
 };
-/** One model step at a time: commit assistant intent before tool execution, then commit
- * each result. The same AI SDK schemas/adapter/policy as chat execute these tools. */
+
+/** How many times in a row a cut-off answer may be continued before the run fails. */
+export const MAX_LENGTH_CONTINUATIONS = 2;
+export const CONTINUE_PROMPT =
+  "Your last response was cut off at the output length limit. Continue exactly where you left off, and keep the rest shorter.";
+
+/** What the loop does after a step, by the model's finish reason. */
+export type StepOutcome =
+  | { readonly action: "run-tools" }
+  | { readonly action: "finish" }
+  | { readonly action: "continue" }
+  | { readonly action: "fail"; readonly reason: string; readonly retryable: boolean };
+export const stepOutcome = (input: {
+  finishReason: FinishReason;
+  rawFinishReason?: string | undefined;
+  pendingTools: boolean;
+  continuations: number;
+}): StepOutcome => {
+  switch (input.finishReason) {
+    case "tool-calls":
+      return { action: "run-tools" };
+    case "stop":
+      return input.pendingTools ? { action: "run-tools" } : { action: "finish" };
+    case "length":
+      if (input.pendingTools) return { action: "run-tools" };
+      return input.continuations < MAX_LENGTH_CONTINUATIONS
+        ? { action: "continue" }
+        : {
+            action: "fail",
+            reason: "The model's answer was cut off at the length limit repeatedly.",
+            retryable: false,
+          };
+    case "content-filter":
+      return {
+        action: "fail",
+        reason: "The provider's content filter stopped the model's response.",
+        retryable: false,
+      };
+    case "error":
+      // A mid-stream provider failure is transient: the same step may be resumed within the task's retry allowance.
+      return { action: "fail", reason: "The model stopped on a provider error.", retryable: true };
+    default:
+      return {
+        action: "fail",
+        reason: `The model stopped for an unrecognised reason (${input.rawFinishReason ?? input.finishReason}).`,
+        retryable: false,
+      };
+  }
+};
+
+/** Event-log copy of a tool result: screenshot bytes stay in the model transport, not in Postgres. */
+export const eventOutput = (output: unknown): unknown => {
+  const image = imageInResult(output);
+  return image && typeof output === "object" && output !== null
+    ? { ...output, screenshot: { ...image, data: "" } }
+    : output;
+};
+
+/** One model step at a time, streamed: commit assistant intent before tool execution, then commit
+ * each result. The same AI SDK schemas/adapter/policy as chat execute these tools; every step's
+ * UI message chunks (plus tool results the loop executes) go to `emit` in batches. */
 export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options: {
   model: LanguageModel;
   system: string;
@@ -66,16 +129,72 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
   maxActions: number;
   check: () => Effect.Effect<void, E, R>;
   save: (checkpoint: LoopCheckpoint) => Effect.Effect<void, E, R>;
+  emit: (chunks: ReadonlyArray<UIMessageChunk>) => Effect.Effect<void, E, R>;
 }) {
   let state: LoopCheckpoint = Object.assign({}, options.checkpoint, {
     messages: options.checkpoint.messages.slice(),
   });
+  let continuations = 0;
   const definitions: ToolSet = Object.fromEntries(
     Object.entries(options.tools).map(([name, tool]) => {
       const { execute: _execute, ...definition } = tool;
       return [name, definition];
     }),
   );
+  const modelFailure = (cause: unknown) =>
+    new CloudLoopError({ reason: "The server model request failed.", cause, retryable: true });
+  /** One streamed AI SDK step: tools carry no `execute`, so it stops at the tool calls. */
+  const modelStep = Effect.fn("RuthCloud.modelStep")(function* (messages: ModelMessage[]) {
+    return yield* Effect.acquireUseRelease(
+      Effect.sync(() => new AbortController()),
+      (controller) =>
+        Effect.gen(function* () {
+          let streamError: unknown;
+          const result = streamText({
+            model: options.model,
+            system: options.system,
+            tools: definitions,
+            messages,
+            abortSignal: controller.signal,
+            stopWhen: stepCountIs(1),
+            prepareStep: ({ messages: current }) => ({
+              messages: options.images.prepareMessages(current),
+            }),
+            // Errors surface as stream parts and rejected promises; the SDK default logs to the console.
+            onError: ({ error }) => {
+              streamError = error;
+            },
+          });
+          const chunks = toUIMessageStream({
+            stream: result.stream,
+            tools: definitions,
+            // The executor owns the run-level start/finish; each step is a start-step..finish-step pair.
+            sendStart: false,
+            sendFinish: false,
+            onError: () => "The model request failed.",
+          });
+          yield* Stream.fromReadableStream({ evaluate: () => chunks, onError: modelFailure }).pipe(
+            Stream.groupedWithin(64, "250 millis"),
+            Stream.runForEach((batch) => options.emit(batch)),
+          );
+          const [response, finishReason, rawFinishReason, usage, metadata, text] =
+            yield* Effect.tryPromise({
+              try: () =>
+                Promise.all([
+                  result.response,
+                  result.finishReason,
+                  result.rawFinishReason,
+                  result.totalUsage,
+                  result.providerMetadata,
+                  result.text,
+                ]),
+              catch: modelFailure,
+            });
+          return { response, finishReason, rawFinishReason, usage, metadata, text, streamError };
+        }),
+      (controller) => Effect.sync(() => controller.abort()),
+    );
+  });
   while (true) {
     yield* options.check();
     if ((yield* Clock.currentTimeMillis) >= options.deadline)
@@ -147,6 +266,19 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
         ],
       });
       yield* options.save(state);
+      yield* options.emit([
+        result._tag === "Success"
+          ? {
+              type: "tool-output-available",
+              toolCallId: call.toolCallId,
+              output: eventOutput(result.success),
+            }
+          : {
+              type: "tool-output-error",
+              toolCallId: call.toolCallId,
+              errorText: result.failure.reason,
+            },
+      ]);
     }
     if (completedReport !== undefined) return { checkpoint: state, text: completedReport };
     if (state.usage.cost >= options.maxCost || state.usage.actions >= options.maxActions)
@@ -155,32 +287,37 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
       });
     state = Object.assign({}, state, { messages: options.images.prepareMessages(state.messages) });
     yield* options.save(state);
-    const result = yield* Effect.tryPromise({
-      try: (signal) =>
-        generateText({
-          model: options.model,
-          system: options.system,
-          tools: definitions,
-          messages: state.messages,
-          abortSignal: signal,
-          stopWhen: stepCountIs(1),
-          prepareStep: ({ messages }) => ({ messages: options.images.prepareMessages(messages) }),
-          providerOptions: { openrouter: { parallel_tool_calls: false, usage: { include: true } } },
-        }),
-      catch: (cause) =>
-        new CloudLoopError({ reason: "The server model request failed.", cause, retryable: true }),
-    });
+    const step = yield* modelStep(state.messages);
     state = Object.assign({}, state, {
-      messages: [...state.messages, ...result.response.messages],
+      messages: [...state.messages, ...step.response.messages],
       stepIndex: state.stepIndex + 1,
       usage: {
         ...state.usage,
-        inputTokens: state.usage.inputTokens + (result.totalUsage.inputTokens ?? 0),
-        outputTokens: state.usage.outputTokens + (result.totalUsage.outputTokens ?? 0),
-        cost: state.usage.cost + openRouterCost(result.providerMetadata),
+        inputTokens: state.usage.inputTokens + (step.usage.inputTokens ?? 0),
+        outputTokens: state.usage.outputTokens + (step.usage.outputTokens ?? 0),
+        cost: state.usage.cost + openRouterCost(step.metadata),
       },
     });
     yield* options.save(state);
-    if (!pendingToolCalls(state.messages).length) return { checkpoint: state, text: result.text };
+    const outcome = stepOutcome({
+      finishReason: step.finishReason,
+      rawFinishReason: step.rawFinishReason,
+      pendingTools: pendingToolCalls(state.messages).length > 0,
+      continuations,
+    });
+    continuations = outcome.action === "continue" ? continuations + 1 : 0;
+    if (outcome.action === "finish") return { checkpoint: state, text: step.text };
+    if (outcome.action === "fail")
+      return yield* new CloudLoopError({
+        reason: outcome.reason,
+        retryable: outcome.retryable,
+        ...(step.streamError === undefined ? {} : { cause: step.streamError }),
+      });
+    if (outcome.action === "continue") {
+      state = Object.assign({}, state, {
+        messages: [...state.messages, { role: "user" as const, content: CONTINUE_PROMPT }],
+      });
+      yield* options.save(state);
+    }
   }
 });

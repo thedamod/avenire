@@ -94,7 +94,13 @@ pnpm db:generate          # drizzle-kit generate after schema changes
   the input cache cap is 4 GiB. Work/output stays in `workspace/runs/<runId>/out`.
 - Claim Cloud runs with fenced leases. Commit canonical assistant/tool-call messages
   before executing tools; journal each result by `(runId, toolCallId)`. Reclaim expired
-  leases and resume checkpoints. Preserve commands and recordings on worker shutdown.
+  leases and resume checkpoints. Preserve commands on worker shutdown.
+- The loop is manual (one streamed `streamText` step at a time, tools without `execute`);
+  handle every `finishReason`. Execution stays in the worker: it appends UI message chunks to
+  `cloud_run_event`; `/api/ruth/cloud` (start) and `/api/ruth/cloud/[runId]/stream` (replay and
+  tail) only enqueue and read. Never run the loop in a request.
+- The agent chooses when to record with `screen_record`; the executor never records on its own,
+  it only finalises a recording the agent left running.
 - `box_command_start` uses deterministic Daytona session ids; reconnect on resume.
   Publish/hydrate/asset ids are deterministic by tool call. Reconcile uncertain computer
   actions with a fresh screenshot; do not silently rerun an uncertain `box_exec`.

@@ -1,13 +1,19 @@
 import { expect, it } from "@effect/vitest";
-import { MockLanguageModelV4 } from "ai/test";
-import { jsonSchema, tool } from "ai";
+import { jsonSchema, tool, type UIMessageChunk } from "ai";
 import { CloudRunId } from "@avenire/contracts";
 import { Database, DatabaseError } from "@avenire/database/client";
 import { AnalyticsNoop } from "@avenire/shared/observability";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { runCloudLoop, pendingToolCalls, type LoopCheckpoint } from "./cloud-loop.ts";
+import {
+  CONTINUE_PROMPT,
+  pendingToolCalls,
+  runCloudLoop,
+  stepOutcome,
+  type LoopCheckpoint,
+} from "./cloud-loop.ts";
+import { scriptedModel } from "./conformance.ts";
 import { createImageTransport } from "../tools/images.ts";
 import { toAiSdkTools } from "../tools/ai-sdk.ts";
 import { registerTool } from "../tools/registration.ts";
@@ -16,62 +22,123 @@ import { recordingDatabase } from "../cloud-test-support.ts";
 import { ctx } from "../tools/test-support.ts";
 import type { RuthKitServices } from "../tools/library.ts";
 class SimulatedCrash extends Schema.TaggedError<SimulatedCrash>()("SimulatedCrash", {}) {}
-const usage = {
-  inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
-  outputTokens: { total: 5, text: 5, reasoning: 0 },
+const idle = {
+  check: () => Effect.void,
+  save: () => Effect.void,
+  emit: () => Effect.void,
 };
-it.effect("continues sandbox work past 500 checkpointed steps and finishes naturally", () => {
-  let next = 0;
-  let executed = 0;
-  const model = new MockLanguageModelV4({
-    doGenerate: async () => ({
-      content:
-        next++ < 3
-          ? [
-              {
-                type: "tool-call" as const,
-                toolName: "box_exec",
-                toolCallId: `work-${next}`,
-                input: "{}",
-              },
-            ]
-          : [{ type: "text" as const, text: "Finished sandbox work." }],
-      usage,
-      finishReason: {
-        unified: next <= 3 ? ("tool-calls" as const) : ("stop" as const),
-        raw: next <= 3 ? "tool_calls" : "stop",
-      },
-      warnings: [],
-    }),
+it.effect(
+  "streams each step's chunks and continues sandbox work past 500 checkpointed steps",
+  () => {
+    let executed = 0;
+    const model = scriptedModel([
+      ...[1, 2, 3].map((n) => ({
+        toolCalls: [{ id: `work-${n}`, name: "box_exec", input: "{}" }],
+      })),
+      { text: "Finished sandbox work." },
+    ]);
+    const capabilities = { vision: false, toolResultImages: false };
+    const chunks: UIMessageChunk[] = [];
+    return Effect.gen(function* () {
+      const result = yield* runCloudLoop({
+        model,
+        system: "Finish the work",
+        tools: {
+          box_exec: tool({
+            inputSchema: jsonSchema<Record<string, never>>({ type: "object", properties: {} }),
+            execute: async () => ({ executed: ++executed }),
+          }),
+        },
+        images: createImageTransport(capabilities),
+        capabilities,
+        checkpoint: {
+          messages: [{ role: "user", content: "Continue" }],
+          stepIndex: 501,
+          usage: { inputTokens: 0, outputTokens: 0, cost: 0, actions: 0 },
+        },
+        deadline: 100000,
+        maxCost: 1,
+        maxActions: 10,
+        ...idle,
+        emit: (batch) =>
+          Effect.sync(() => {
+            chunks.push(...batch);
+          }),
+      });
+      expect(result.text).toBe("Finished sandbox work.");
+      expect(result.checkpoint.stepIndex).toBe(505);
+      expect(executed).toBe(3);
+      expect(model.doStreamCalls).toHaveLength(4);
+      const types = chunks.map((chunk) => chunk.type);
+      // Steps stream as start-step..finish-step; the executor owns the run's start and finish.
+      expect(types).not.toContain("start");
+      expect(types).not.toContain("finish");
+      expect(types.filter((type) => type === "start-step")).toHaveLength(4);
+      expect(types.filter((type) => type === "finish-step")).toHaveLength(4);
+      expect(types).toContain("tool-input-available");
+      expect(chunks.filter((c) => c.type === "tool-output-available")).toMatchObject([
+        { toolCallId: "work-1", output: { executed: 1 } },
+        { toolCallId: "work-2" },
+        { toolCallId: "work-3" },
+      ]);
+      expect(chunks.filter((c) => c.type === "text-delta")).toMatchObject([
+        { delta: "Finished sandbox work." },
+      ]);
+    });
+  },
+);
+it("maps every finish reason to one outcome", () => {
+  const outcome = (finishReason: Parameters<typeof stepOutcome>[0]["finishReason"], extra = {}) =>
+    stepOutcome({ finishReason, pendingTools: false, continuations: 0, ...extra });
+  expect(outcome("tool-calls")).toEqual({ action: "run-tools" });
+  expect(outcome("stop")).toEqual({ action: "finish" });
+  expect(outcome("length")).toEqual({ action: "continue" });
+  expect(outcome("length", { continuations: 2 })).toMatchObject({
+    action: "fail",
+    retryable: false,
   });
+  expect(outcome("length", { pendingTools: true })).toEqual({ action: "run-tools" });
+  expect(outcome("content-filter")).toMatchObject({ action: "fail", retryable: false });
+  expect(outcome("error")).toMatchObject({ action: "fail", retryable: true });
+  expect(outcome("other", { rawFinishReason: "weird" })).toMatchObject({
+    action: "fail",
+    reason: expect.stringContaining("weird"),
+  });
+});
+it.effect("asks a cut-off answer to continue, and fails if it keeps being cut off", () => {
   const capabilities = { vision: false, toolResultImages: false };
-  return Effect.gen(function* () {
-    const result = yield* runCloudLoop({
+  const run = (model: ReturnType<typeof scriptedModel>) =>
+    runCloudLoop({
       model,
-      system: "Finish the work",
-      tools: {
-        box_exec: tool({
-          inputSchema: jsonSchema<Record<string, never>>({ type: "object", properties: {} }),
-          execute: async () => ({ executed: ++executed }),
-        }),
-      },
+      system: "Answer",
+      tools: {},
       images: createImageTransport(capabilities),
       capabilities,
       checkpoint: {
-        messages: [{ role: "user", content: "Continue" }],
-        stepIndex: 501,
+        messages: [{ role: "user", content: "Write it" }],
+        stepIndex: 0,
         usage: { inputTokens: 0, outputTokens: 0, cost: 0, actions: 0 },
       },
       deadline: 100000,
       maxCost: 1,
       maxActions: 10,
-      check: () => Effect.void,
-      save: () => Effect.void,
+      ...idle,
     });
-    expect(result.text).toBe("Finished sandbox work.");
-    expect(result.checkpoint.stepIndex).toBe(505);
-    expect(executed).toBe(3);
-    expect(model.doGenerateCalls).toHaveLength(4);
+  return Effect.gen(function* () {
+    const model = scriptedModel([
+      { text: "First half", finish: "length" },
+      { text: " and the rest." },
+    ]);
+    const done = yield* run(model);
+    expect(done.text).toBe(" and the rest.");
+    expect(model.doStreamCalls[1]!.prompt.at(-1)).toMatchObject({
+      role: "user",
+      content: [{ type: "text", text: CONTINUE_PROMPT }],
+    });
+    const cutOff = yield* Effect.flip(run(scriptedModel([{ text: "x", finish: "length" }])));
+    expect(cutOff).toMatchObject({ retryable: false, reason: expect.stringContaining("cut off") });
+    const filtered = yield* Effect.flip(run(scriptedModel([{ finish: "content-filter" }])));
+    expect(filtered.reason).toContain("content filter");
   });
 });
 it.effect(
@@ -107,25 +174,15 @@ it.effect(
           }),
       }),
     });
-    const model = new MockLanguageModelV4({
-      doGenerate: [
-        {
-          content: [
-            { type: "tool-call", toolName: "hydrate_files", toolCallId: "hydrate-1", input: "{}" },
-            { type: "tool-call", toolName: "publish_output", toolCallId: "publish-1", input: "{}" },
-          ],
-          usage,
-          finishReason: { unified: "tool-calls", raw: "tool_calls" },
-          warnings: [],
-        },
-        {
-          content: [{ type: "text", text: "Done" }],
-          usage,
-          finishReason: { unified: "stop", raw: "stop" },
-          warnings: [],
-        },
-      ],
-    });
+    const model = scriptedModel([
+      {
+        toolCalls: [
+          { id: "hydrate-1", name: "hydrate_files", input: "{}" },
+          { id: "publish-1", name: "publish_output", input: "{}" },
+        ],
+      },
+      { text: "Done" },
+    ]);
     let persisted: LoopCheckpoint = {
       messages: [{ role: "user", content: "Work" }],
       stepIndex: 0,
@@ -159,6 +216,7 @@ it.effect(
           maxCost: 1,
           deadline: 100000,
           check: () => Effect.void,
+          emit: () => Effect.void,
           save: (checkpoint) =>
             Effect.gen(function* () {
               if (
@@ -182,7 +240,7 @@ it.effect(
       expect(hydrated).toBe(1);
       expect(published).toBe(1);
       expect(db.rows("cloud_tool_call").filter((r) => r.status === "completed")).toHaveLength(2);
-      expect(model.doGenerateCalls).toHaveLength(2);
+      expect(model.doStreamCalls).toHaveLength(2);
       expect(persisted.usage).toMatchObject({ inputTokens: 20, outputTokens: 10 });
     }).pipe(Effect.provideService(Database, db.database), Effect.provide(AnalyticsNoop));
   },
@@ -215,14 +273,7 @@ it.effect("halts on a failed journal write while preserving the unresolved publi
         }),
     }),
   });
-  const model = new MockLanguageModelV4({
-    doGenerate: {
-      content: [{ type: "tool-call", toolName: "publish_output", toolCallId: "p", input: "{}" }],
-      usage,
-      finishReason: { unified: "tool-calls", raw: "tool_calls" },
-      warnings: [],
-    },
-  });
+  const model = scriptedModel([{ toolCalls: [{ id: "p", name: "publish_output", input: "{}" }] }]);
   let persisted: LoopCheckpoint = {
     messages: [{ role: "user", content: "Work" }],
     stepIndex: 0,
@@ -254,6 +305,7 @@ it.effect("halts on a failed journal write while preserving the unresolved publi
         maxCost: 1,
         deadline: 100000,
         check: () => Effect.void,
+        emit: () => Effect.void,
         save: (state) =>
           Effect.sync(() => {
             persisted = structuredClone(state);
@@ -263,6 +315,6 @@ it.effect("halts on a failed journal write while preserving the unresolved publi
     expect(result._tag).toBe("Failure");
     if (result._tag === "Failure") expect(result.failure.retryable).toBe(true);
     expect(pendingToolCalls(persisted.messages).map((c) => c.toolCallId)).toEqual(["p"]);
-    expect(model.doGenerateCalls).toHaveLength(1);
+    expect(model.doStreamCalls).toHaveLength(1);
   }).pipe(Effect.provideService(Database, database), Effect.provide(AnalyticsNoop));
 });

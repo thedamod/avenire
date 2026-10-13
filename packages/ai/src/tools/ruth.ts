@@ -15,6 +15,7 @@ import { VISUAL_BUDGETS, VISUAL_RUNTIME } from "./page.ts";
 import { loadSkillTool } from "./skills.ts";
 
 import { makeComputerRegistry, type ComputerServices } from "./computer.ts";
+import { recordingRegistry } from "./recording.ts";
 import type { ScreenProfile } from "@avenire/cloud/screen";
 import type { WidgetPreview } from "./preview.ts";
 export type RuthToolServices =
@@ -52,7 +53,11 @@ export const createRuthTools = (
     chatToolNames,
     ctx,
     services,
-    { ...sandboxToolRegistry, ...makeComputerRegistry(profile, 100).registry },
+    {
+      ...sandboxToolRegistry,
+      ...makeComputerRegistry(profile, 100).registry,
+      ...recordingRegistry,
+    },
     images,
   );
   const boundTools: ToolSet = {

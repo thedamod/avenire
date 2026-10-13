@@ -30,6 +30,12 @@ import { NIGHTLY_DIGEST_PROMPT } from "../prompts/cloud.ts";
 import { validateSchedule } from "./occurrence.ts";
 
 export type CloudTaskPatch = Partial<CloudTaskInput>;
+export interface AdHocRun {
+  readonly prompt: string;
+  readonly model?: CloudTaskInput["model"];
+  readonly network?: CloudTaskInput["network"];
+  readonly timeZone?: string | undefined;
+}
 export type CloudTasksError = DatabaseError | Conflict | NotFound | PlatformError.PlatformError;
 export class CloudTasks extends Context.Service<
   CloudTasks,
@@ -48,6 +54,11 @@ export class CloudTasks extends Context.Service<
     readonly runNow: (
       userId: UserId,
       taskId: CloudTaskId,
+    ) => Effect.Effect<ContractRun, CloudTasksError>;
+    /** Starts a hidden one-off task + run for a prompt; the worker picks it up within seconds. */
+    readonly runAdHoc: (
+      userId: UserId,
+      input: AdHocRun,
     ) => Effect.Effect<ContractRun, CloudTasksError>;
     readonly cancelRun: (
       userId: UserId,
@@ -171,7 +182,7 @@ export const CloudTasksLive = Layer.effect(
         yield* ensureDefaultTask(userId);
         return (yield* database.use((db) =>
           db.query.cloudTask.findMany({
-            where: eq(cloudTask.userId, userId),
+            where: and(eq(cloudTask.userId, userId), eq(cloudTask.oneOff, false)),
             orderBy: [asc(cloudTask.createdAt), asc(cloudTask.id)],
           }),
         )).map(taskToContract);
@@ -312,6 +323,39 @@ export const CloudTasksLive = Layer.effect(
             reason: "A run of this task is already scheduled or active.",
           });
         // The worker is the sole executor; requests only enqueue work.
+        return yield* getRun(userId, id);
+      }),
+      runAdHoc: Effect.fn("CloudTasks.runAdHoc")(function* (userId, input) {
+        const taskId = yield* newId(CloudTaskId).pipe(Effect.provideService(Crypto.Crypto, crypto));
+        const id = yield* newId(CloudRunId).pipe(Effect.provideService(Crypto.Crypto, crypto));
+        const now = DateTime.toDateUtc(yield* DateTime.now);
+        const prompt = input.prompt.trim();
+        yield* database.useTransaction(async (tx) => {
+          await tx.insert(cloudTask).values({
+            id: taskId,
+            userId,
+            title: prompt.replace(/\s+/g, " ").slice(0, 80),
+            prompt,
+            ...(input.model ? { model: input.model } : {}),
+            ...(input.network ? { network: input.network } : {}),
+            schedule: { _tag: "once", at: now.toISOString() },
+            timeZone: input.timeZone ?? "UTC",
+            delivery: { email: false },
+            enabled: false,
+            oneOff: true,
+            nextRunAt: null,
+          });
+          await tx.insert(cloudRun).values({
+            id,
+            userId,
+            taskId,
+            status: "scheduled",
+            scheduledFor: now,
+            attempt: 1,
+            notBefore: now,
+          });
+        });
+        // The worker is the sole executor; its queue poll picks the run up within seconds.
         return yield* getRun(userId, id);
       }),
       cancelRun: Effect.fn("CloudTasks.cancelRun")(function* (userId, runId) {

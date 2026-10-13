@@ -2,6 +2,8 @@
 
 import { useChat } from "@ai-sdk/react";
 import {
+  type ChatAddToolApproveResponseFunction,
+  type ChatAddToolOutputFunction,
   DefaultChatTransport,
   getToolName,
   isToolUIPart,
@@ -106,66 +108,20 @@ function AskUserCard({
   );
 }
 
-export function RuthPanel() {
-  const api = useApi();
-  const { resolvedTheme } = useTheme();
-  const colorScheme = resolvedTheme === "dark" ? "dark" : "light";
-  const [themeTokens, setThemeTokens] = useState<Record<string, string>>({});
-  useEffect(() => {
-    if (!resolvedTheme) return;
-    // Read after next-themes applies the document class and CSS variables.
-    const frame = requestAnimationFrame(() => setThemeTokens(readThemeTokens()));
-    return () => cancelAnimationFrame(frame);
-  }, [resolvedTheme]);
-  const [text, setText] = useState("");
-  const [error, setError] = useState<string>();
-  const threadId = useRef<ThreadId>(undefined);
-  const column = useRef<HTMLDivElement>(null);
-
-  const [transport] = useState(
-    () =>
-      new DefaultChatTransport<RuthUIMessage>({
-        api: RUTH_CHAT_PATH,
-        // The server owns the history; send only the latest message.
-        prepareSendMessagesRequest: ({ messages: current }) => ({
-          body: {
-            threadId: threadId.current,
-            message: current.at(-1),
-            page: measurePage(column.current),
-            fast: false,
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          },
-        }),
-      }),
-  );
-  const { messages, sendMessage, status, addToolApprovalResponse, addToolOutput } =
-    useChat<RuthUIMessage>({
-      transport,
-      sendAutomaticallyWhen: (options) =>
-        lastAssistantMessageIsCompleteWithApprovalResponses(options) ||
-        lastAssistantMessageIsCompleteWithToolCalls(options),
-      onError: (cause) => setError(errorMessage(cause)),
-    });
-  const working = status === "submitted" || status === "streaming";
-
-  async function send() {
-    const message = text.trim();
-    if (!message || working) return;
-    setError(undefined);
-    setText("");
-    try {
-      if (threadId.current === undefined) {
-        const thread = await call(api, (client) =>
-          client["ruth.createThread"]({ title: message.slice(0, 60) }),
-        );
-        threadId.current = thread.id;
-      }
-      await sendMessage({ text: message });
-    } catch (cause) {
-      setError(errorMessage(cause));
-    }
-  }
-
+/** Renders one message's parts. Chat and the Cloud run watcher share it. */
+export function RuthMessageParts({
+  message,
+  colorScheme,
+  themeTokens,
+  addToolApprovalResponse,
+  addToolOutput,
+}: {
+  readonly message: RuthUIMessage;
+  readonly colorScheme: "light" | "dark";
+  readonly themeTokens: Record<string, string>;
+  readonly addToolApprovalResponse?: ChatAddToolApproveResponseFunction;
+  readonly addToolOutput?: ChatAddToolOutputFunction<RuthUIMessage>;
+}) {
   function toolView(part: ToolPart, key: string) {
     if (part.state === "approval-requested") {
       return (
@@ -175,14 +131,14 @@ export function RuthPanel() {
           <div className="flex gap-2">
             <Button
               size="sm"
-              onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: true })}
+              onClick={() => addToolApprovalResponse?.({ id: part.approval.id, approved: true })}
             >
               Approve
             </Button>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: false })}
+              onClick={() => addToolApprovalResponse?.({ id: part.approval.id, approved: false })}
             >
               Decline
             </Button>
@@ -219,7 +175,7 @@ export function RuthPanel() {
           choices={part.input.choices ?? []}
           allowCustom={part.input.allowCustom}
           onAnswer={(answer) =>
-            addToolOutput({
+            addToolOutput?.({
               tool: "ask_user",
               toolCallId: part.toolCallId,
               output: { answers: [answer] },
@@ -301,6 +257,68 @@ export function RuthPanel() {
         return null;
     }
   }
+  return <>{message.parts.map((part, index) => partView(part, `${message.id}-${index}`))}</>;
+}
+
+export function RuthPanel() {
+  const api = useApi();
+  const { resolvedTheme } = useTheme();
+  const colorScheme = resolvedTheme === "dark" ? "dark" : "light";
+  const [themeTokens, setThemeTokens] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!resolvedTheme) return;
+    // Read after next-themes applies the document class and CSS variables.
+    const frame = requestAnimationFrame(() => setThemeTokens(readThemeTokens()));
+    return () => cancelAnimationFrame(frame);
+  }, [resolvedTheme]);
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string>();
+  const threadId = useRef<ThreadId>(undefined);
+  const column = useRef<HTMLDivElement>(null);
+
+  const [transport] = useState(
+    () =>
+      new DefaultChatTransport<RuthUIMessage>({
+        api: RUTH_CHAT_PATH,
+        // The server owns the history; send only the latest message.
+        prepareSendMessagesRequest: ({ messages: current }) => ({
+          body: {
+            threadId: threadId.current,
+            message: current.at(-1),
+            page: measurePage(column.current),
+            fast: false,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          },
+        }),
+      }),
+  );
+  const { messages, sendMessage, status, addToolApprovalResponse, addToolOutput } =
+    useChat<RuthUIMessage>({
+      transport,
+      sendAutomaticallyWhen: (options) =>
+        lastAssistantMessageIsCompleteWithApprovalResponses(options) ||
+        lastAssistantMessageIsCompleteWithToolCalls(options),
+      onError: (cause) => setError(errorMessage(cause)),
+    });
+  const working = status === "submitted" || status === "streaming";
+
+  async function send() {
+    const message = text.trim();
+    if (!message || working) return;
+    setError(undefined);
+    setText("");
+    try {
+      if (threadId.current === undefined) {
+        const thread = await call(api, (client) =>
+          client["ruth.createThread"]({ title: message.slice(0, 60) }),
+        );
+        threadId.current = thread.id;
+      }
+      await sendMessage({ text: message });
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  }
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -315,7 +333,13 @@ export function RuthPanel() {
             <p className="text-xs font-medium text-muted-foreground">
               {message.role === "user" ? "You" : "Ruth"}
             </p>
-            {message.parts.map((part, index) => partView(part, `${message.id}-${index}`))}
+            <RuthMessageParts
+              message={message}
+              colorScheme={colorScheme}
+              themeTokens={themeTokens}
+              addToolApprovalResponse={addToolApprovalResponse}
+              addToolOutput={addToolOutput}
+            />
           </article>
         ))}
         {error ? (

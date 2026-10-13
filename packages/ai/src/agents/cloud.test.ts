@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest";
-import { cloudUsageSegments, reconcileRecording } from "./cloud.ts";
+import { cloudUsageSegments } from "./cloud.ts";
 import { openRouterCost, pendingToolCalls } from "./cloud-loop.ts";
 
 it("splits usage across UTC midnight", () => {
@@ -9,15 +9,6 @@ it("splits usage across UTC midnight", () => {
     { day: "2026-10-11", seconds: 60 },
     { day: "2026-10-12", seconds: 60 },
   ]);
-});
-it("reattaches a recording by persisted id or deterministic run name", () => {
-  const recordings = [
-    { id: "foreign", name: "other" },
-    { id: "current", name: "ruth-run.mp4" },
-  ];
-  expect(reconcileRecording(recordings, "run", null)?.id).toBe("current");
-  expect(reconcileRecording(recordings, "run", "foreign")?.id).toBe("foreign");
-  expect(reconcileRecording(recordings, "missing", null)).toBeUndefined();
 });
 it("reconciles only unresolved calls and records actual OpenRouter cost", () => {
   expect(

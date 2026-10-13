@@ -17,7 +17,9 @@ flowchart LR
   Tools --> Persistent[Per-user persistent v4 Cloud box]
   Tools --> Library[User-scoped library / retrieval / storage]
   Cloud --> DB[(Canonical messages / tool journal / usage)]
-  Persistent --> Recording[Streamed session video asset]
+  Persistent --> Recording[screen_record: agent-chosen video asset]
+  Cloud --> Events[(cloud_run_event chunk log)]
+  Events --> Stream[POST /api/ruth/cloud + GET .../stream]
   Cloud --> Review[Report / new files / pending sync review]
 ```
 
@@ -25,7 +27,7 @@ flowchart LR
 
 `agents/factory.ts` chooses agent kind, system prompt, registry model, image transport,
 step limit and bound tools. Chat streams its UI response through AI SDK `streamText`;
-Cloud calls AI SDK `generateText` in individual checkpointed steps. Both use
+Cloud streams one checkpointed step per `streamText` call (see "Manual loop" below). Both use
 `tools/ai-sdk.ts`: `execute` runs Effect programs against server services and passes
 `toolCallId` into the agent context. Runtime execution is separate from client-safe specs.
 
@@ -41,23 +43,24 @@ Server OpenRouter and Daytona keys are read through Effect Config.
 
 ## Tools
 
-| Tool                                                        | Input                                                                                                   | Behavior                                                                                                                                                        |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `computer`                                                  | `action`, optional `x/y`, `toX/toY`, `direction`, `amount`, `text`, `keys`, `region:{x,y,width,height}` | One screenshot/click/double_click/right_click/move/drag/scroll/type/key/hotkey/wait action. Fresh PNG afterward; profile coordinates converted with `toScreen`. |
-| `screen_read`                                               | `mode:tree\|find`, optional `role`, `name`, `limit:1..200`                                              | Compact AT-SPI nodes, actions and converted bounds. Explicit empty/unavailable-tree notice and screenshot/DOM fallback.                                         |
-| `box_exec`                                                  | `command`, optional `timeoutSec:1..900`                                                                 | Workspace shell, 64 KiB UTF-8 output cap. Use durable sessions for long jobs.                                                                                   |
-| `box_command_start`                                         | `command`                                                                                               | Deterministic Daytona session and persisted command id; returns `jobId` and `commandId`.                                                                        |
-| `box_command_status`                                        | `jobId`                                                                                                 | Reattach; null exit code means running.                                                                                                                         |
-| `box_command_logs`                                          | `jobId`                                                                                                 | Last 64 KiB of logs.                                                                                                                                            |
-| `box_command_cancel`                                        | `jobId`                                                                                                 | Deletes the known job's isolated session.                                                                                                                       |
-| `box_read`                                                  | `path`                                                                                                  | UTF-8 regular file, at most 1 MiB; workspace or this user's input root.                                                                                         |
-| `box_write`                                                 | `path`, `content`                                                                                       | UTF-8 workspace file, at most 10 MiB. Input-root writes and symlink escapes rejected.                                                                           |
-| `box_list`                                                  | optional `path`                                                                                         | At most 200 entries in allowed roots.                                                                                                                           |
-| `search_materials`, `list_files`, `find_files`, `read_file` | Existing shared selectors/retrieval inputs                                                              | Always user-scoped.                                                                                                                                             |
-| `hydrate_files`                                             | `selector`, optional `maxFiles`, `maxBytes`                                                             | Hash-skip, capped inputs, LRU eviction and hydration audit.                                                                                                     |
-| `publish_output`                                            | `sandboxPath`, optional `title`, `replaces`                                                             | New file in the run folder; `replaces` makes a pending sync.                                                                                                    |
-| `publish_report`                                            | `markdown`, optional `status`, `assets`                                                                 | Persist summary and publish selected private assets; server commits report/delivery.                                                                            |
-| `publish_asset`                                             | `path`, optional `title`                                                                                | Permanent private media, tagged with thread or Cloud run.                                                                                                       |
+| Tool                                                        | Input                                                                                                   | Behavior                                                                                                                                                            |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `computer`                                                  | `action`, optional `x/y`, `toX/toY`, `direction`, `amount`, `text`, `keys`, `region:{x,y,width,height}` | One screenshot/click/double_click/right_click/move/drag/scroll/type/key/hotkey/wait action. Fresh PNG afterward; profile coordinates converted with `toScreen`.     |
+| `screen_read`                                               | `mode:tree\|find`, optional `role`, `name`, `limit:1..200`                                              | Compact AT-SPI nodes, actions and converted bounds. Explicit empty/unavailable-tree notice and screenshot/DOM fallback.                                             |
+| `box_exec`                                                  | `command`, optional `timeoutSec:1..900`                                                                 | Workspace shell, 64 KiB UTF-8 output cap. Use durable sessions for long jobs.                                                                                       |
+| `box_command_start`                                         | `command`                                                                                               | Deterministic Daytona session and persisted command id; returns `jobId` and `commandId`.                                                                            |
+| `box_command_status`                                        | `jobId`                                                                                                 | Reattach; null exit code means running.                                                                                                                             |
+| `box_command_logs`                                          | `jobId`                                                                                                 | Last 64 KiB of logs.                                                                                                                                                |
+| `box_command_cancel`                                        | `jobId`                                                                                                 | Deletes the known job's isolated session.                                                                                                                           |
+| `box_read`                                                  | `path`                                                                                                  | UTF-8 regular file, at most 1 MiB; workspace or this user's input root.                                                                                             |
+| `box_write`                                                 | `path`, `content`                                                                                       | UTF-8 workspace file, at most 10 MiB. Input-root writes and symlink escapes rejected.                                                                               |
+| `box_list`                                                  | optional `path`                                                                                         | At most 200 entries in allowed roots.                                                                                                                               |
+| `search_materials`, `list_files`, `find_files`, `read_file` | Existing shared selectors/retrieval inputs                                                              | Always user-scoped.                                                                                                                                                 |
+| `hydrate_files`                                             | `selector`, optional `maxFiles`, `maxBytes`                                                             | Hash-skip, capped inputs, LRU eviction and hydration audit.                                                                                                         |
+| `publish_output`                                            | `sandboxPath`, optional `title`, `replaces`                                                             | New file in the run folder; `replaces` makes a pending sync.                                                                                                        |
+| `publish_report`                                            | `markdown`, optional `status`, `assets`                                                                 | Persist summary and publish selected private assets; server commits report/delivery.                                                                                |
+| `publish_asset`                                             | `path`, optional `title`                                                                                | Permanent private media, tagged with thread or Cloud run.                                                                                                           |
+| `screen_record`                                             | `action:start\|stop`, optional `label`                                                                  | Chat and Cloud. `start` begins one MP4 of the desktop; `stop` streams it into a private `video` asset and returns `{assetId,url,durationSeconds}`. See "Recording". |
 
 Computer coordinates must be finite integers within the active profile. The keyboard
 allow list accepts letters, digits, named navigation/editing keys and F1–F12; hotkeys
@@ -128,7 +131,7 @@ allow-list policy. No provider or Avenire host is implicitly allowed for Cloud.
 ## Checkpoints, leases and recovery
 
 `cloud_run` persists canonical AI SDK model messages, step index, token/cost/action usage,
-model name, prompt version, sandbox id, recorder id, input slug, lease owner/expiry and
+model name, prompt version, sandbox id, the running recording's id, input slug, lease owner/expiry and
 heartbeat. `cloud_tool_call` has primary key `(run_id,tool_call_id)`, name, input,
 pending/started/completed status, result, and Daytona session/command ids.
 
@@ -137,7 +140,7 @@ Each claim has a distinct fence token and a five-minute lease; the executor hear
 30 seconds. Expired runs are prioritized over fresh work and resumed in place. The old
 "dead worker → failed run" sweep is gone. Writes and tool execution check the fence.
 
-A Cloud model call runs one AI SDK step with `stopWhen` and image-pruning `prepareStep`.
+A Cloud model call runs one streamed AI SDK step with `stopWhen` and image-pruning `prepareStep`.
 The executor commits the canonical assistant message and tool-call ids **before** executing
 any tool. It then executes calls serially and saves each result. Restart reloads messages,
 finds unresolved call ids, returns completed journal results or reconciles the world, and
@@ -151,18 +154,87 @@ command ids. Uncertain computer mutations are reconciled with a screenshot inste
 second click/type. Uncertain `box_exec` returns a conflict requiring world inspection rather
 than rerunning an arbitrary command.
 
-The executor lists recordings and reconnects by persisted id or deterministic run name.
-Worker shutdown preserves recorder, commands, box and checkpoint; it expires the lease.
-Final completion stops the recorder, streams it to a temp file, hashes it incrementally,
-streams it into a private `video` asset with run id and removes the temp file. Completed
-recorders can be collected again without a second stop. Report message, terminal state
-and email outbox enqueue commit in one transaction; a stored report id prevents duplicates.
+Worker shutdown preserves commands, box and checkpoint; it expires the lease. Report message,
+terminal state and email outbox enqueue commit in one transaction; a stored report id prevents
+duplicates. A recording the agent left running is finalised first (see "Recording"), and its link
+goes into the report.
 Final cleanup terminates known sessions, meters box time and stops the box. Metering and cleanup markers are saved in the usage checkpoint; expired terminal leases resume collection/cleanup without another model call or report. Failed recording or box-stop cleanup retains the lease for retry.
 
 Budgets: 500 model steps, 500 computer actions, four-hour wall clock including resumed time,
 and configurable `RUTH_CLOUD_MAX_COST_USD` (default $5) using actual OpenRouter usage metadata.
 The next step is stopped after the reported cost reaches the cap; an individual request can
 overshoot it. Missing provider cost metadata cannot prove a dollar limit.
+
+## Execution vs delivery
+
+Execution stays in the worker: the scheduler claims a run with a fenced lease and the executor
+runs the manual loop. Delivery is separate and best effort: the executor writes the run's AI SDK
+UI message chunks to Postgres, and the web process only replays and tails them. A dropped client,
+a slow viewer or a lost event batch never affects the run.
+
+- `cloud_run_event(run_id, seq, chunk jsonb, terminal, created_at)`, primary key `(run_id, seq)`.
+  `seq` is dense per run and one chunk is one row, so a client that counts chunks knows its
+  offset. A unique index allows one `terminal` row per run. Consecutive text, reasoning and
+  tool-input deltas of one part are coalesced before insert.
+- The executor owns the run-level frame: `start` (message id = run id) is written once, when
+  the run begins (a resumed executor continues the same sequence), and the terminal row is
+  `finish` (succeeded), `error` + `finish` (failed) or `abort` (cancelled), written after the
+  report commits. A stale writer that lost its lease collides on `(run_id, seq)` and fails with
+  `RunEventConflict`, which the executor treats as a lost lease. A run cancelled while still
+  queued never gets a terminal row; the reader synthesizes the closing chunks from the run status.
+- Event bytes are bounded: tool results carry screenshot metadata but not the PNG data (the
+  model-side image transport and the journal are unchanged).
+
+Routes (session auth; one user can only see their own runs):
+
+| Route                                           | Behavior                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/ruth/cloud`                          | Body `CloudRunRequest`: `{prompt, model?, network?, timeZone?}` for a one-off run (a hidden `cloud_task.one_off` task), or `{taskId}` to run an existing task now. Enqueues the run and returns its stream in `createUIMessageStreamResponse` format, with the run id in `x-ruth-run-id`. 409 if that task already has an active run. |
+| `GET /api/ruth/cloud/[runId]/stream?from=<seq>` | Replays from `from` (default 0), then tails until the terminal row. Resumable: `useChat({ id: runId, resume: true })` reconnects to exactly this path and replays the run from the start; a client that counts chunks can pass `from`. 404 for another user's run.                                                                    |
+
+Both routes enqueue or read only. The worker's scheduler polls for claimable queued runs every
+two seconds (alongside its one-minute tick, which stays the safety net for due tasks and expired
+leases), so a posted run starts without waiting for the tick. Stream tailing also polls
+(every 400 ms, one indexed query per active viewer) instead of LISTEN/NOTIFY: it needs no
+connection per viewer or listener lifecycle, nothing is lost when a notification is missed during
+a reconnect, and the log is the only state a resumed client needs. `apps/web/src/features/ruth/CloudRunView.tsx`
+holds the client helper (`useCloudRun` to start or resume, `CloudRunView` to render a run with the
+same message rendering as chat).
+
+## Manual loop (per-step streaming and finish reasons)
+
+The loop is the AI SDK "Manual Agent Loop" pattern: one model step per `streamText` call, with
+tools defined without `execute` (`stopWhen: stepCountIs(1)`) so the model only declares calls.
+The step's tokens stream through `toUIMessageStream` into the event log (batched every 250 ms or
+64 chunks, with `start`/`finish` omitted because the executor owns them); the loop then awaits the
+step's `response.messages`, `finishReason` and usage, commits the canonical assistant message and
+tool-call ids, runs the tools itself, commits each result, and emits `tool-output-available` or
+`tool-output-error` chunks for them. Provider call settings (parallel tool calls, usage accounting)
+live in `models/index.ts`, not in the loop.
+
+| `finishReason`            | Loop action                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `tool-calls`              | Run the pending tools and continue.                                                                                 |
+| `stop`                    | Final answer (pending calls, if any, still run first).                                                              |
+| `length`                  | Cut off: append a user message asking the model to continue, at most twice in a row, then fail with a clear reason. |
+| `content-filter`, `other` | Fail the run (not retryable).                                                                                       |
+| `error`                   | Fail the step as a retryable infrastructure failure: the task's retry allowance resumes the same run.               |
+
+## Recording
+
+The agent decides when to record; prompts say to record only when showing a process is the point.
+`screen_record` (`tools/recording.ts`) targets the same sandbox as `computer` (`targetFor`):
+the chat thread's sandbox or the user's Cloud box, via Daytona's recording API.
+
+- `start` labels the recording `ruth-<runId|threadId>-<toolCallId>`; a second start (or a resumed
+  one) reports the recording already running. Cloud journals the recording id in
+  `cloud_run.recording_id`; chat finds its recording by the thread label.
+- `stop` stops the recording, streams the MP4 to a temp file (hashing as it goes) and into the
+  private asset store (`video`, tagged with thread or run), clears the journal, deletes the box's
+  copy, and returns `{assetId, url, durationSeconds}`. The asset id is deterministic per Cloud
+  tool call, so a replayed `stop` returns the stored asset instead of uploading again.
+- At the end of a run the executor finalises only a recording the agent left running
+  (`recording_id` still set), as `recording` in the report. It never starts one.
 
 ## Review and private outputs
 
@@ -186,6 +258,7 @@ the box. **Do not run real-model conformance without owner spend approval.**
 `--mock` uses the AI SDK mock model with the same live executors and zero provider calls;
 `--profile <profile-id>` selects each convention. Reports go to `/tmp/ruth-computer-use/`.
 Fake tests cover coordinate conversion, action validation, image transport, lost checkpoint
-resume without duplicate hydration/publish, lease reclaim, recording reconciliation, network
-policy and Unicode/stable hydration roots. Full-workspace checks and a dev-only migration
+resume without duplicate hydration/publish, lease reclaim, the event log (append, replay, resume),
+finish-reason handling, `screen_record` against a fake box, network policy and Unicode/stable
+hydration roots. Full-workspace checks and a dev-only migration
 must pass separately; fake tests do not establish production or four-hour runtime behavior.

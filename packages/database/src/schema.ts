@@ -513,6 +513,8 @@ export const cloudTask = pgTable(
     delivery: jsonb("delivery").$type<CloudTaskDelivery>().notNull(),
     enabled: boolean("enabled").notNull().default(true),
     builtin: text("builtin").$type<"nightly-digest">(),
+    /** A hidden task backing one `POST /api/ruth/cloud` run; never listed, scheduled or editable. */
+    oneOff: boolean("one_off").notNull().default(false),
     maxAttempts: integer("max_attempts").notNull().default(2),
     nextRunAt: timestamptz("next_run_at"),
     lastRunAt: timestamptz("last_run_at"),
@@ -602,6 +604,29 @@ export const cloudToolCall = pgTable(
     completedAt: timestamptz("completed_at"),
   },
   (t) => [primaryKey({ columns: [t.runId, t.toolCallId] })],
+);
+
+/**
+ * Durable UI message chunk log for one Cloud run, written in batches by the executor and
+ * replayed/tailed by the stream routes. `seq` is dense per run; the terminal row ends the stream.
+ */
+export const cloudRunEvent = pgTable(
+  "cloud_run_event",
+  {
+    runId: text("run_id")
+      .notNull()
+      .references(() => cloudRun.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    chunk: jsonb("chunk").$type<import("ai").UIMessageChunk>().notNull(),
+    terminal: boolean("terminal").notNull().default(false),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.runId, t.seq] }),
+    uniqueIndex("cloud_run_event_terminal_unique")
+      .on(t.runId)
+      .where(sql`${t.terminal}`),
+  ],
 );
 
 /** Audit manifest for one workspace hydration call. */

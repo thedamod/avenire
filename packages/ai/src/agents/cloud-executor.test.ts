@@ -1,5 +1,4 @@
 import { expect, it } from "@effect/vitest";
-import { MockLanguageModelV4 } from "ai/test";
 import { CloudBoxes, type CloudBox } from "@avenire/cloud/cloud-box";
 import { CloudError } from "@avenire/cloud/daytona";
 import { CloudRunId, UserId } from "@avenire/contracts";
@@ -13,6 +12,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { writeFile } from "node:fs/promises";
 import { makeRuthCloud } from "./cloud.ts";
+import { scriptedModel } from "./conformance.ts";
 import { RuthModels } from "../models/index.ts";
 import { AssetStore } from "../outputs/assets.ts";
 import { AssetStoreTest } from "../outputs/asset-test-support.ts";
@@ -21,7 +21,7 @@ import type { CloudToolServices } from "../cloud/tools.ts";
 import type { RuthToolServices } from "../tools/ruth.ts";
 import type { ComputerServices } from "../tools/computer.ts";
 
-it.effect("runs the server model, publishes one report/video, and cleans/meters once", () => {
+const setup = (options: { leftRecording: boolean }) => {
   const db = recordingDatabase();
   db.rows("user").push({
     id: "owner",
@@ -29,7 +29,7 @@ it.effect("runs the server model, publishes one report/video, and cleans/meters 
     email: "owner@example.test",
     cloudInputsSlug: null,
   });
-  let recordingStarted = false;
+  let recordingsStarted = 0;
   let recordingStops = 0;
   let boxStops = 0;
   const box: CloudBox = {
@@ -46,15 +46,15 @@ it.effect("runs the server model, publishes one report/video, and cleans/meters 
     commandLogs: () => Effect.die("unused"),
     endSession: () => Effect.void,
     startDesktop: Effect.void,
-    recordings: Effect.sync(() =>
-      recordingStarted ? [{ id: "recording", name: "ruth-run.mp4", state: "stopped" }] : [],
+    recordings: Effect.succeed(
+      options.leftRecording ? [{ id: "recording", name: "ruth-run.mp4", state: "recording" }] : [],
     ),
     startRecording: () =>
       Effect.sync(() => {
-        recordingStarted = true;
-        return Option.some("recording");
+        recordingsStarted++;
+        return Option.none<string>();
       }),
-    stopRecording: (id, path) =>
+    stopRecording: (_id, path) =>
       Effect.tryPromise({
         try: async () => {
           recordingStops++;
@@ -71,33 +71,13 @@ it.effect("runs the server model, publishes one report/video, and cleans/meters 
         boxStops++;
       }),
   });
-  const usage = {
-    inputTokens: { total: 10, noCache: 10, cacheRead: 0, cacheWrite: 0 },
-    outputTokens: { total: 5, text: 5, reasoning: 0 },
-  };
-  const model = new MockLanguageModelV4({
-    doGenerate: [
-      {
-        content: [
-          {
-            type: "tool-call",
-            toolName: "publish_report",
-            toolCallId: "report-1",
-            input: '{"markdown":"Finished"}',
-          },
-        ],
-        usage,
-        finishReason: { unified: "tool-calls", raw: "tool_calls" },
-        warnings: [],
-      },
-      {
-        content: [{ type: "text", text: "Done" }],
-        usage,
-        finishReason: { unified: "stop", raw: "stop" },
-        warnings: [],
-      },
-    ],
-  });
+  const model = scriptedModel([
+    { toolCalls: [{ id: "report-1", name: "publish_report", input: '{"markdown":"Finished"}' }] },
+  ]);
+  return { db, box, boxes, model, counts: () => ({ recordingsStarted, recordingStops, boxStops }) };
+};
+const run = (options: { leftRecording: boolean }) => {
+  const { db, boxes, model, counts } = setup(options);
   return Effect.gen(function* () {
     yield* db.database.use((client) =>
       client.insert(cloudTask).values({
@@ -117,6 +97,8 @@ it.effect("runs the server model, publishes one report/video, and cleans/meters 
         scheduledFor: new Date(0),
         status: "provisioning",
         leasedBy: "worker",
+        // What screen_record journals while the agent is recording.
+        recordingId: options.leftRecording ? "recording" : null,
       }),
     );
     const services = (yield* Effect.context<AssetStore | Storage | Analytics>()).pipe(
@@ -145,13 +127,34 @@ it.effect("runs the server model, publishes one report/video, and cleans/meters 
     expect(db.rows("ruth_message")).toHaveLength(1);
     expect(db.rows("email_outbox")).toHaveLength(1);
     const assets = yield* AssetStore;
-    expect(
-      (yield* assets.list(UserId.make("owner"), { runId: CloudRunId.make("run") }))[0],
-    ).toMatchObject({ kind: "video", sizeBytes: 13 });
+    const stored = yield* assets.list(UserId.make("owner"), { runId: CloudRunId.make("run") });
     yield* executor.execute(CloudRunId.make("run"));
-    expect(recordingStops).toBe(1);
-    expect(boxStops).toBe(1);
-    expect(model.doGenerateCalls).toHaveLength(1);
+    // The executor never starts a recording; it only finalises one the agent left running.
+    expect(counts()).toMatchObject({ recordingsStarted: 0, boxStops: 1 });
+    if (options.leftRecording) {
+      expect(stored).toMatchObject([{ kind: "video", sizeBytes: 13 }]);
+      expect(counts().recordingStops).toBe(1);
+    } else {
+      expect(stored).toHaveLength(0);
+      expect(counts().recordingStops).toBe(0);
+    }
+    expect(model.doStreamCalls).toHaveLength(1);
     expect(db.rows("ruth_message")).toHaveLength(1);
+    // The durable event log: one start, the steps and tool result, and exactly one terminal row.
+    const log = db.rows("cloud_run_event").toSorted((a, b) => Number(a.seq) - Number(b.seq));
+    expect(log.map((row) => Number(row.seq))).toEqual(log.map((_, index) => index));
+    expect(log[0]).toMatchObject({ chunk: { type: "start", messageId: "run" } });
+    expect(
+      log.some((row) => (row.chunk as { type: string }).type === "tool-output-available"),
+    ).toBe(true);
+    expect(log.filter((row) => row.terminal)).toHaveLength(1);
+    expect(log.at(-1)).toMatchObject({
+      terminal: true,
+      chunk: { type: "finish", finishReason: "stop" },
+    });
   }).pipe(Effect.provide(AssetStoreTest), Effect.provide(AnalyticsNoop));
-});
+};
+it.effect("streams a run to the event log, publishes one report and cleans/meters once", () =>
+  run({ leftRecording: false }),
+);
+it.effect("finalises only a recording the agent left running", () => run({ leftRecording: true }));

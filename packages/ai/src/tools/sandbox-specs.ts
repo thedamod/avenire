@@ -3,6 +3,7 @@ import { AssetId, AssetKind, WidgetSource } from "@avenire/contracts";
 import { tool } from "ai";
 import * as Schema from "effect/Schema";
 import { standardSchema, standardObjectSchema } from "./schema.ts";
+import { PreviewResult } from "./preview/report.ts";
 
 const encoding = Schema.Literals(["utf8", "base64"]);
 export const sandboxExecSpec = {
@@ -91,7 +92,7 @@ export const sandboxCloseSpec = {
 export const previewWidgetSpec = {
   name: "preview_widget",
   description:
-    "Pass exactly one of html (512,000 bytes max) or path (built HTML in this thread sandbox, 8 MiB max). Preview standalone widget HTML in the chat sandbox. Inspect the full-page screenshot, height and console, revise, then render_widget. Kits at /kits/math.js and /kits/iso.js are available. Never requires approval.",
+    "Pass exactly one of html (512,000 bytes max) or path (built HTML in this thread sandbox, 8 MiB max). Run one isolated local headless agent-browser preview on the chat server (no external sandbox browser). Returns ok, width, appearance, contentHeight, overflowX, labeled screenshots (pixel regions of the attached contact sheet), console, errors with afterAction, interactions with changedText/error, accessibility and a plain-text summary. Exercises up to 25 actions in 20 seconds: buttons, input min/mid/max, select options, toggles, text and detectable figure drags. Check all screenshots and diagnostics, fix failures in this thread, and preview again before render_widget. Width is clamped to 240–1600; defaults to the chat column/theme. Bundled /kits/*.js are available; other network is blocked. path still reads HTML from the thread sandbox. Never requires approval.",
   inputSchema: standardObjectSchema(
     Schema.Union([
       Schema.Struct({
@@ -106,26 +107,7 @@ export const previewWidgetSpec = {
       }),
     ]),
   ),
-  outputSchema: standardSchema(
-    Schema.Struct({
-      width: Schema.Int,
-      contentHeight: Schema.Int,
-      consoleMessages: Schema.Array(
-        Schema.Struct({
-          level: Schema.Literals(["log", "info", "warning", "error", "uncaught"]),
-          text: Schema.String,
-        }),
-      ),
-      screenshot: Schema.Struct({
-        id: Schema.String,
-        data: Schema.String,
-        mediaType: Schema.Literal("image/png"),
-        sizeBytes: Schema.Int,
-        width: Schema.Int,
-        height: Schema.Int,
-      }),
-    }),
-  ),
+  outputSchema: standardSchema(PreviewResult),
 };
 export const SANDBOX_TOOL_SPECS = {
   preview_widget: previewWidgetSpec,

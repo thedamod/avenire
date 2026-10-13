@@ -29,6 +29,13 @@
       "when": 1791776900863,
       "tag": "0003_friendly_ezekiel",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791884798791,
+      "tag": "0004_thin_hannibal_king",
+      "breakpoints": true
     }
   ]
 }

@@ -46,11 +46,14 @@ export type CloudTaskSchedule = typeof CloudTaskSchedule.Type;
 export const CloudTaskDelivery = Schema.Struct({ email: Schema.Boolean });
 export type CloudTaskDelivery = typeof CloudTaskDelivery.Type;
 
+const CloudModelName = Schema.Literals(["ruth-sprint", "ruth-core", "ruth-apex"]);
+const CloudNetwork = Schema.Literals(["packages", "open"]);
+
 export const CloudTaskInput = Schema.Struct({
   title: Schema.NonEmptyString,
   prompt: Schema.NonEmptyString,
-  model: Schema.optionalKey(Schema.Literals(["ruth-sprint", "ruth-core", "ruth-apex"])),
-  network: Schema.optionalKey(Schema.Literals(["packages", "open"])),
+  model: Schema.optionalKey(CloudModelName),
+  network: Schema.optionalKey(CloudNetwork),
   schedule: CloudTaskSchedule,
   timeZone: Schema.String,
   preHydration: Schema.Array(HydrationRule),
@@ -69,6 +72,24 @@ export const CloudTask = Schema.Struct({
   updatedAt: Schema.String,
 });
 export type CloudTask = typeof CloudTask.Type;
+
+/** Path of the Cloud run start/stream endpoint; `<path>/<runId>/stream` replays and tails a run. */
+export const CLOUD_RUN_PATH = "/api/ruth/cloud";
+
+/**
+ * Body of a `CLOUD_RUN_PATH` request: a one-off prompt, or an existing task to run now.
+ * The response is the run's UI message stream, with the run id in `x-ruth-run-id`.
+ */
+export const CloudRunRequest = Schema.Union([
+  Schema.Struct({
+    prompt: Schema.NonEmptyString.check(Schema.isMaxLength(20_000)),
+    model: Schema.optionalKey(CloudModelName),
+    network: Schema.optionalKey(CloudNetwork),
+    timeZone: Schema.optionalKey(Schema.String),
+  }),
+  Schema.Struct({ taskId: CloudTaskId }),
+]);
+export type CloudRunRequest = typeof CloudRunRequest.Type;
 
 export const PendingApprovalStatus = Schema.Literals([
   "pending",

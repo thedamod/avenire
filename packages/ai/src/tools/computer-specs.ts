@@ -1,4 +1,5 @@
 /** Client-safe schemas; no Daytona or database runtime imports. */
+import { AssetId } from "@avenire/contracts";
 import * as Schema from "effect/Schema";
 import { tool } from "ai";
 import { standardSchema } from "./schema.ts";
@@ -106,6 +107,27 @@ export const COMPUTER_TOOL_SPECS = {
       note: Schema.String,
     }),
   ),
+  screen_record: spec(
+    "screen_record",
+    "Start or stop a screen recording of this desktop. Record only to show the user a process (a demo, a walkthrough, a bug reproduction), not by default. start begins one MP4 (one at a time); stop uploads it as a private video asset and returns its url and length. label names the recording on start and titles the asset on stop. A recording still running when you finish is stopped and attached for you.",
+    Schema.Struct({
+      action: Schema.Literals(["start", "stop"]),
+      label: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(120))),
+    }),
+    Schema.Union([
+      Schema.Struct({
+        action: Schema.Literal("start"),
+        recordingId: Schema.String,
+        alreadyRecording: Schema.Boolean,
+      }),
+      Schema.Struct({
+        action: Schema.Literal("stop"),
+        assetId: AssetId,
+        url: Schema.String,
+        durationSeconds: Schema.Number,
+      }),
+    ]),
+  ),
   box_exec: spec(
     "box_exec",
     "Run a bounded shell command in the isolated box workspace. timeoutSec is 1–900; output capped at 64 KiB. Hydrated inputs are source material; never edit them. Use box_command_start for long jobs.",
@@ -163,6 +185,7 @@ export const COMPUTER_TOOL_SPECS = {
 export const computerToolSpecs = {
   computer: tool(COMPUTER_TOOL_SPECS.computer),
   screen_read: tool(COMPUTER_TOOL_SPECS.screen_read),
+  screen_record: tool(COMPUTER_TOOL_SPECS.screen_record),
   box_exec: tool(COMPUTER_TOOL_SPECS.box_exec),
   box_command_start: tool(COMPUTER_TOOL_SPECS.box_command_start),
   box_command_status: tool(COMPUTER_TOOL_SPECS.box_command_status),

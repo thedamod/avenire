@@ -189,6 +189,7 @@ if (!mock && !RUTH_MODEL_NAMES.some((n) => n === modelName)) {
         maxCost: 1,
         deadline: (yield* Clock.currentTimeMillis) + 10 * 60_000,
         check: () => Effect.void,
+        emit: () => Effect.void,
         save: (state) =>
           Effect.sync(() => {
             checkpoint = state;

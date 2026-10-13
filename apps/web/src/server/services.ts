@@ -1,6 +1,7 @@
 import { AuthLive } from "@avenire/auth/server";
 import { ChatSandboxesLive } from "@avenire/cloud/chat-sandbox";
 import { CloudBoxesLive } from "@avenire/cloud/cloud-box";
+import { CloudRunEventsLive } from "@avenire/ai/cloud/events";
 import { CloudReviewLive } from "@avenire/ai/cloud/review";
 import { DaytonaClientLive } from "@avenire/cloud/daytona";
 import { DatabaseLive } from "@avenire/database/client";
@@ -51,6 +52,8 @@ const ToolsLive = Layer.mergeAll(
   CloudBoxesLive,
   ChatSandboxesLive.pipe(Layer.provideMerge(SandboxMeterLive)),
 ).pipe(Layer.provideMerge(InfrastructureLive));
-export const ServicesLive = Layer.mergeAll(CloudTasksLive, CloudReviewLive).pipe(
-  Layer.provideMerge(ToolsLive),
-);
+export const ServicesLive = Layer.mergeAll(
+  CloudTasksLive,
+  CloudReviewLive,
+  CloudRunEventsLive,
+).pipe(Layer.provideMerge(ToolsLive));

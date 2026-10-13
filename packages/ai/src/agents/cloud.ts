@@ -26,16 +26,13 @@ import {
   type CloudTaskRow,
 } from "@avenire/database/schema";
 import { hydrate, cloudToolRegistrations, type CloudToolServices } from "../cloud/tools.ts";
+import { makeRunEventWriter, type RunEventWriter } from "../cloud/events.ts";
 import { inputsRootFor, runPaths, RUN_WALL_CLOCK } from "../cloud/paths.ts";
 import { stableToolId, withToolJournal } from "../cloud/journal.ts";
 import { newId } from "@avenire/shared/id";
 import { AssetStore } from "../outputs/assets.ts";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
-import { createHash, randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { mkdtemp, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { Readable } from "node:stream";
+import { randomUUID } from "node:crypto";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -58,6 +55,7 @@ import type { ToolRegistration } from "../tools/registration.ts";
 import { toAiSdkTools } from "../tools/ai-sdk.ts";
 import { makeComputerRegistry, shellQuote, type ComputerServices } from "../tools/computer.ts";
 import { sandboxToolRegistry } from "../tools/sandbox-tools.ts";
+import { recordingRegistry, storeRecording } from "../tools/recording.ts";
 import type { RuthToolServices } from "../tools/ruth.ts";
 import {
   runCloudLoop,
@@ -87,13 +85,6 @@ export interface RuthCloudOptions {
   readonly maxCost?: number;
   readonly hydrate?: typeof hydrate;
 }
-export const reconcileRecording = (
-  recordings: readonly { id: string; name?: string }[],
-  runId: string,
-  storedId: string | null,
-) =>
-  recordings.find((r) => r.id === storedId) ??
-  recordings.find((r) => r.name?.includes(`ruth-${runId}`));
 export const cloudUsageSegments = (start: number, end: number) => {
   const segments: { day: string; seconds: number }[] = [];
   for (let cursor = start; cursor < end;) {
@@ -141,8 +132,10 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
     const fencedWhere = and(ownedWhere, eq(cloudRun.leasedBy, leaseOwner));
     let task: CloudTaskRow | undefined;
     let box: CloudBox | undefined;
-    let recordingId: string | undefined;
+    /** False when the box was replaced since the run started: a recording cannot outlive its box. */
+    let recordingReachable = true;
     let recording: { id: string; url: string } | null = null;
+    let writer: RunEventWriter | undefined;
     let boxStartedAt: number | undefined;
     const hydrations: HydrationResult[] = [];
     const hydrationFailures: string[] = [];
@@ -156,60 +149,63 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
       if (current.status === "cancelled") return yield* new RunCancelled({});
       return current;
     });
+    const events = Effect.fn("RuthCloud.events")(function* () {
+      writer ??= yield* makeRunEventWriter(runId);
+      return writer;
+    });
+    /** Delivery is best effort and a lost fence is the only failure that matters to the run. */
+    const deliver = (write: (log: RunEventWriter) => RunEventWriter["begin"]) =>
+      events().pipe(
+        Effect.flatMap(write),
+        Effect.catchTag("RunEventConflict", () => Effect.fail(new LeaseLost({}))),
+        Effect.catchTag("DatabaseError", (error) =>
+          Effect.logWarning("Cloud run events are unavailable", { runId, error }),
+        ),
+      );
+    const emit = (chunks: ReadonlyArray<import("ai").UIMessageChunk>) =>
+      deliver((log) => log.append(chunks));
+    /** The agent starts and stops recordings with screen_record; only one it left running is finalised here. */
     const stopRecording = Effect.fn("RuthCloud.stopRecording")(function* () {
-      if (!box || !recordingId) return;
-      const id = recordingId;
+      if (!box || !recordingReachable) return;
+      const current = yield* snapshot();
+      const id = current?.recordingId;
+      if (!id) return;
       const assetId = AssetId.make(stableToolId({ runId, toolCallId: "recording" }, "asset"));
       const prior = yield* assets.get(assetId);
       if (Option.isSome(prior)) {
         recording = { id: prior.value.id, url: prior.value.url };
-        recordingId = undefined;
         return;
       }
-      const directory = yield* Effect.tryPromise({
-        try: () => mkdtemp(`${tmpdir()}/ruth-recording-`),
-        catch: (cause) =>
-          new RuthCloudError({ runId, reason: "Could not create recording temp directory", cause }),
-      });
-      const localPath = `${directory}/recording.mp4`;
-      yield* Effect.gen(function* () {
-        yield* box!.stopRecording(id, localPath);
-        const source = yield* Effect.tryPromise({
-          try: async () => {
-            const hash = createHash("sha256");
-            for await (const chunk of createReadStream(localPath)) hash.update(chunk);
-            const info = await stat(localPath);
-            return {
-              stream: Readable.toWeb(createReadStream(localPath)) as ReadableStream<Uint8Array>,
-              sizeBytes: info.size,
-              contentHash: hash.digest("hex"),
-            };
-          },
-          catch: (cause) =>
-            new RuthCloudError({ runId, reason: "Could not stream the recording", cause }),
-        });
-        const stored = yield* assets
-          .put(userId, {
-            name: "recording.mp4",
-            title: "Ruth Cloud session recording",
-            bytes: source,
-            mediaType: "video/mp4",
-            runId,
-            idempotencyId: AssetId.make(stableToolId({ runId, toolCallId: "recording" }, "asset")),
-          })
-          .pipe(Effect.provideService(Crypto.Crypto, crypto));
-        recording = { id: stored.id, url: stored.url };
-        recordingId = undefined;
+      if (!(yield* box.recordings).some((r) => r.id === id)) return;
+      const stored = yield* storeRecording({
+        download: (localPath) => box!.stopRecording(id, localPath),
+        userId,
+        title: "Ruth Cloud session recording",
+        runId,
+        idempotencyId: assetId,
       }).pipe(
-        Effect.ensuring(
-          Effect.tryPromise({
-            try: () => rm(directory, { recursive: true, force: true }),
-            catch: (cause) =>
-              new RuthCloudError({ runId, reason: "Could not remove recording temp file", cause }),
-          }).pipe(Effect.ignore({ log: "Warn" })),
-        ),
+        Effect.provideService(AssetStore, assets),
+        Effect.provideService(Crypto.Crypto, crypto),
       );
+      recording = { id: stored.id, url: stored.url };
     });
+    /** The run's last event: the stream routes close on it. Safe to call more than once. */
+    const endEvents = (status: "succeeded" | "failed" | "cancelled", error?: string) =>
+      events().pipe(
+        Effect.flatMap((log) =>
+          log.end(
+            status === "cancelled"
+              ? [{ type: "abort", reason: "The run was cancelled." }]
+              : status === "failed"
+                ? [
+                    { type: "error", errorText: error ?? "The run failed." },
+                    { type: "finish", finishReason: "error" },
+                  ]
+                : [{ type: "finish", finishReason: "stop" }],
+          ),
+        ),
+        Effect.ignore({ log: "Warn", message: "Could not close the Cloud run event log" }),
+      );
     const finishReport = Effect.fn("RuthCloud.finishReport")(function* (
       status: "succeeded" | "failed" | "cancelled",
       summary: string,
@@ -222,6 +218,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
             .set({ status, error: error ?? null, finishedAt: sql`now()` })
             .where(ownedWhere),
         );
+        yield* endEvents(status, error);
         return;
       }
       const current = yield* snapshot();
@@ -366,6 +363,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
                   },
           });
       });
+      yield* endEvents(status, error);
       yield* logStep("report posted and delivery enqueued");
     });
 
@@ -442,10 +440,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         }),
       );
       box = yield* boxes.ensure(userId, task?.network ?? "packages");
-      if (box.id === run.sandboxId) {
-        const existing = reconcileRecording(yield* box.recordings, runId, run.recordingId);
-        recordingId = existing?.id;
-      }
+      recordingReachable = box.id === run.sandboxId;
       yield* finishCleanup();
       return;
     }
@@ -496,6 +491,8 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         if (!rows.length) return yield* new LeaseLost({});
       });
       const work = Effect.gen(function* () {
+        // Open the stream before provisioning so a watcher sees the run begin immediately.
+        yield* deliver((log) => log.begin);
         yield* logStep("ensure workspace");
         boxStartedAt = yield* Clock.currentTimeMillis;
         box = yield* boxes.ensure(userId, task!.network);
@@ -509,15 +506,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         const paths = runPaths(runId);
         yield* box.exec(`mkdir -p ${shellQuote(paths.outDir)}`);
         yield* box.startDesktop;
-        const recordings = yield* box.recordings;
-        const existing = reconcileRecording(recordings, runId, run.recordingId);
-        if (existing) recordingId = existing.id;
-        else {
-          const acquired = yield* box.startRecording(`ruth-${runId}`);
-          if (Option.isSome(acquired)) recordingId = acquired.value;
-        }
-        if (recordingId)
-          yield* database.use((db) => db.update(cloudRun).set({ recordingId }).where(fencedWhere));
+        recordingReachable = run.sandboxId === null || run.sandboxId === box.id;
         const ctx = {
           agent: "ruth-cloud" as const,
           userId,
@@ -601,6 +590,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
           ...base,
           ...cloudToolRegistrations,
           ...computer.registry,
+          ...recordingRegistry,
           publish_asset: sandboxToolRegistry.publish_asset,
         });
         const agent = createAgent({
@@ -634,6 +624,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
           maxActions: options.maxActions ?? 500,
           maxCost: options.maxCost ?? 5,
           check: () => cancelled().pipe(Effect.asVoid),
+          emit,
           save: (state) =>
             database
               .useTransaction(async (tx) => {

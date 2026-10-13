@@ -242,13 +242,35 @@ export const schedulerTick = Effect.fn("CloudScheduler.tick")(function* () {
   }
 });
 
+/** A queued run no other run of its user blocks; the web process enqueues these (ad-hoc runs). */
+const claimableQueued = sql`${cloudRun.status} = 'scheduled' and ${cloudRun.notBefore} <= now()
+  and not exists (
+    select 1 from cloud_run other
+    where other.user_id = ${cloudRun.userId} and other.id <> ${cloudRun.id}
+      and (other.status in ('provisioning', 'running')
+        or (other.leased_by is not null and coalesce(other.usage->>'cleanupComplete', 'false') <> 'true'))
+  )`;
+export const WAKE_INTERVAL = "2 seconds";
+
 export const CloudSchedulerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const services = yield* Effect.context<Database | CloudRuns | Crypto.Crypto>();
+    const database = yield* Database;
+    const serial = yield* Semaphore.make(1);
     const tick = schedulerTick().pipe(
       Effect.provideContext(services),
       Effect.catchCause((cause) => Effect.logError("Ruth Cloud scheduler tick failed", { cause })),
+      serial.withPermits(1),
     );
+    // The minute tick is the safety net (due tasks, expired leases); this cheap poll starts a
+    // run enqueued by the web process without waiting for it.
+    const wake = database
+      .use((db) => db.select({ id: cloudRun.id }).from(cloudRun).where(claimableQueued).limit(1))
+      .pipe(
+        Effect.flatMap((rows) => (rows.length ? tick : Effect.void)),
+        Effect.catchCause((cause) => Effect.logWarning("Ruth Cloud queue poll failed", { cause })),
+      );
     yield* Effect.repeat(tick, Schedule.spaced("1 minute")).pipe(Effect.forkScoped);
+    yield* Effect.repeat(wake, Schedule.spaced(WAKE_INTERVAL)).pipe(Effect.forkScoped);
   }),
 );
