@@ -117,7 +117,10 @@ const run = (options: { leftRecording: boolean }) => {
     const executor = yield* makeRuthCloud({ appUrl: "https://app.test" }).pipe(
       Effect.provideContext(services),
     );
-    yield* executor.execute(CloudRunId.make("run"));
+    // A claim whose lease was since reclaimed by another worker must not touch the run.
+    yield* executor.execute({ runId: CloudRunId.make("run"), lease: "stale" });
+    expect(db.rows("cloud_run")[0]).toMatchObject({ status: "provisioning", leasedBy: "worker" });
+    yield* executor.execute({ runId: CloudRunId.make("run"), lease: "worker" });
     expect(db.rows("cloud_run")[0]).toMatchObject({
       status: "succeeded",
       summary: "Finished",
@@ -128,7 +131,7 @@ const run = (options: { leftRecording: boolean }) => {
     expect(db.rows("email_outbox")).toHaveLength(1);
     const assets = yield* AssetStore;
     const stored = yield* assets.list(UserId.make("owner"), { runId: CloudRunId.make("run") });
-    yield* executor.execute(CloudRunId.make("run"));
+    yield* executor.execute({ runId: CloudRunId.make("run"), lease: "worker" });
     // The executor never starts a recording; it only finalises one the agent left running.
     expect(counts()).toMatchObject({ recordingsStarted: 0, boxStops: 1 });
     if (options.leftRecording) {

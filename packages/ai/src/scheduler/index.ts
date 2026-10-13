@@ -17,7 +17,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
-import { RuthCloud, RuthCloudError } from "../agents/cloud.ts";
+import { type CloudClaim, RuthCloud, RuthCloudError } from "../agents/cloud.ts";
 import { nextOccurrence } from "./occurrence.ts";
 
 export { nextOccurrence, validateSchedule } from "./occurrence.ts";
@@ -27,7 +27,7 @@ export type { CloudTaskPatch, CloudTasksError } from "./tasks.ts";
 export class CloudRuns extends Context.Service<
   CloudRuns,
   {
-    readonly start: (runId: CloudRunId) => Effect.Effect<void>;
+    readonly start: (claim: CloudClaim) => Effect.Effect<void>;
   }
 >()("avenire/ai/CloudRuns") {}
 
@@ -43,16 +43,16 @@ export const CloudRunsLive = Layer.effect(
     const permits = yield* Semaphore.make(concurrency);
     const running = yield* FiberSet.make();
     // Claim fencing and checkpoints remain valid after worker shutdown.
-    const execute = Effect.fn("CloudRuns.execute")(function* (runId: CloudRunId) {
+    const execute = Effect.fn("CloudRuns.execute")(function* (claim: CloudClaim) {
       const run = yield* database.use((db) =>
-        db.query.cloudRun.findFirst({ where: eq(cloudRun.id, runId) }),
+        db.query.cloudRun.findFirst({ where: eq(cloudRun.id, claim.runId) }),
       );
       if (!run || (run.status === "cancelled" && !run.leasedBy)) return;
-      yield* cloud.execute(runId).pipe(permits.withPermits(1));
+      yield* cloud.execute(claim).pipe(permits.withPermits(1));
     });
     return CloudRuns.of({
-      start: Effect.fn("CloudRuns.start")((runId) =>
-        execute(runId).pipe(
+      start: Effect.fn("CloudRuns.start")((claim) =>
+        execute(claim).pipe(
           Effect.onExit((exit) =>
             Exit.isFailure(exit)
               ? database
@@ -66,7 +66,7 @@ export const CloudRunsLive = Layer.effect(
                       )
                       .where(
                         and(
-                          eq(cloudRun.id, runId),
+                          eq(cloudRun.id, claim.runId),
                           eq(cloudRun.status, "provisioning"),
                           isNull(cloudRun.startedAt),
                         ),
@@ -84,7 +84,7 @@ export const CloudRunsLive = Layer.effect(
             const error = Cause.squash(cause);
             // SDK error causes can contain request credentials; only emit the sanitized domain reason.
             return Effect.logError("Ruth Cloud run failed", {
-              runId,
+              runId: claim.runId,
               reason: error instanceof RuthCloudError ? error.reason : "Cloud executor failed.",
             });
           }),
@@ -144,9 +144,12 @@ export const claimRun = Effect.fn("CloudScheduler.claimRun")(function* (
         leaseExpiresAt: DateTime.toDateUtc(DateTime.add(now, { milliseconds: RUN_LEASE_MS })),
       })
       .where(and(eq(cloudRun.id, runId), eq(cloudRun.userId, userId)))
-      .returning({ id: cloudRun.id });
+      .returning({ id: cloudRun.id, leasedBy: cloudRun.leasedBy });
   });
-  return rows[0] ? Option.some(CloudRunId.make(rows[0].id)) : Option.none<CloudRunId>();
+  const row = rows[0];
+  return row?.leasedBy
+    ? Option.some<CloudClaim>({ runId: CloudRunId.make(row.id), lease: row.leasedBy })
+    : Option.none<CloudClaim>();
 });
 
 export const schedulerTick = Effect.fn("CloudScheduler.tick")(function* () {

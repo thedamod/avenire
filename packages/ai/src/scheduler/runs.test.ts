@@ -31,16 +31,16 @@ describe("CloudRuns", () => {
       const calls: string[] = [];
       const f = fixture(
         RuthCloud.of({
-          execute: (id) =>
-            Effect.sync(() => calls.push(id)).pipe(
+          execute: ({ runId }) =>
+            Effect.sync(() => calls.push(runId)).pipe(
               Effect.andThen(Deferred.succeed(done, undefined)),
             ),
         }),
       );
       yield* Effect.gen(function* () {
         const runs = yield* CloudRuns;
-        yield* runs.start(CloudRunId.make("cancelled"));
-        yield* runs.start(CloudRunId.make("one"));
+        yield* runs.start({ runId: CloudRunId.make("cancelled"), lease: "l" });
+        yield* runs.start({ runId: CloudRunId.make("one"), lease: "l" });
         yield* Deferred.await(done);
       }).pipe(Effect.provide(f.layer));
       expect(calls).toEqual(["one"]);
@@ -62,7 +62,7 @@ describe("CloudRuns", () => {
       );
       const worker = yield* Effect.forkChild(
         Effect.gen(function* () {
-          yield* (yield* CloudRuns).start(CloudRunId.make("one"));
+          yield* (yield* CloudRuns).start({ runId: CloudRunId.make("one"), lease: "l" });
           yield* Effect.never;
         }).pipe(Effect.provide(f.layer)),
       );

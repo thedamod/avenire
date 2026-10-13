@@ -32,7 +32,6 @@ import { stableToolId, withToolJournal } from "../cloud/journal.ts";
 import { newId } from "@avenire/shared/id";
 import { AssetStore } from "../outputs/assets.ts";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -73,10 +72,15 @@ export class RuthCloudError extends Schema.TaggedError<RuthCloudError>()("RuthCl
 }) {}
 class RunCancelled extends Schema.TaggedError<RunCancelled>()("RunCancelled", {}) {}
 class LeaseLost extends Schema.TaggedError<LeaseLost>()("LeaseLost", {}) {}
+/** A claimed run: `lease` is the fencing token claimRun wrote, and the only one this executor may use. */
+export interface CloudClaim {
+  readonly runId: CloudRunId;
+  readonly lease: string;
+}
 export class RuthCloud extends Context.Service<
   RuthCloud,
   {
-    readonly execute: (runId: CloudRunId) => Effect.Effect<void, RuthCloudError>;
+    readonly execute: (claim: CloudClaim) => Effect.Effect<void, RuthCloudError>;
   }
 >()("avenire/ai/RuthCloud") {}
 export interface RuthCloudOptions {
@@ -139,16 +143,18 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
           : Effect.logWarning(`Ruth Cloud ${step} failed`).pipe(Effect.as(undefined)),
       ),
     );
-  const execute = Effect.fn("RuthCloud.execute")(function* (runId: CloudRunId) {
+  const execute = Effect.fn("RuthCloud.execute")(function* ({ runId, lease }: CloudClaim) {
     const loaded = yield* database.use((db) =>
       db.query.cloudRun.findFirst({ where: eq(cloudRun.id, runId) }),
     );
     if (!loaded) return yield* new RuthCloudError({ runId, reason: "Run not found" });
     const terminalRecovery = ["succeeded", "failed", "cancelled"].includes(loaded.status);
     if (terminalRecovery && (!loaded.leasedBy || loaded.usage.cleanupComplete)) return;
+    // The lease may have expired and been reclaimed while this claim waited for a permit.
+    if (loaded.leasedBy !== lease) return;
     const run = loaded;
     const userId = UserId.make(run.userId);
-    const leaseOwner = run.leasedBy ?? randomUUID();
+    const leaseOwner = lease;
     const ownedWhere = and(eq(cloudRun.id, runId), eq(cloudRun.userId, userId));
     const fencedWhere = and(ownedWhere, eq(cloudRun.leasedBy, leaseOwner));
     let task: CloudTaskRow | undefined;
@@ -760,13 +766,17 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
       yield* finishCleanup();
   });
   return RuthCloud.of({
-    execute: (runId) =>
-      execute(runId).pipe(
+    execute: (claim) =>
+      execute(claim).pipe(
         Effect.provideContext(services),
         Effect.mapError((cause) =>
           cause instanceof RuthCloudError
             ? cause
-            : new RuthCloudError({ runId, reason: "The Cloud executor failed.", cause }),
+            : new RuthCloudError({
+                runId: claim.runId,
+                reason: "The Cloud executor failed.",
+                cause,
+              }),
         ),
       ),
   });

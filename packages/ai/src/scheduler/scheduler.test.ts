@@ -43,9 +43,9 @@ const fixture = () => {
     Layer.succeed(
       CloudRuns,
       CloudRuns.of({
-        start: (id) =>
+        start: ({ runId }) =>
           Effect.sync(() => {
-            started.push(id);
+            started.push(runId);
           }),
       }),
     ),
