@@ -182,7 +182,8 @@ const fake = () => {
     layer: CloudBoxesLive.pipe(Layer.provide(Layer.succeed(DaytonaClient, client))),
   };
 };
-const config = {};
+// Tier 3+ ("open") accepts per-box egress settings; one test below covers tiers 1-2.
+const config = { DAYTONA_NETWORK_TIER: "open" };
 const provide = <A, E, R>(
   fixture: ReturnType<typeof fake>,
   effect: Effect.Effect<A, E, R | CloudBoxes>,
@@ -300,6 +301,18 @@ describe("CloudBoxes", () => {
         yield* boxes.ensure("user", "packages");
         expect(f.calls.at(-1)).toContain(PACKAGE_INDEX_DOMAINS);
       }),
+    );
+  });
+  it.effect("restricted tiers send no per-box egress settings, even for open tasks", () => {
+    const f = fake();
+    return provide(
+      f,
+      Effect.gen(function* () {
+        yield* (yield* CloudBoxes).ensure("user", "open");
+        for (const key of ["networkBlockAll", "networkAllowList", "domainAllowList"])
+          expect(f.created[0]).not.toHaveProperty(key);
+      }),
+      { DAYTONA_NETWORK_TIER: "restricted" },
     );
   });
   it.effect("checks size before download, creates parents, and exposes missing file info", () => {
