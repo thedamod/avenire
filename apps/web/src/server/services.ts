@@ -42,15 +42,15 @@ const RetrievalServicesLive = RetrievalLive.pipe(
   Layer.provideMerge(Layer.mergeAll(GraphSearchLive, SemanticCacheLive)),
   Layer.provideMerge(ProvidersLive),
 );
+// One ChatSandboxes for the sandbox tools and preview_widget: layers are shared by reference, and a
+// second instance would keep its own registry (stale after sandbox_close) and its own locks.
+const ChatSandboxesSharedLive = ChatSandboxesLive.pipe(Layer.provideMerge(SandboxMeterLive));
 const ToolsLive = Layer.mergeAll(
   RetrievalServicesLive,
   WidgetStoreLive.pipe(Layer.provideMerge(AssetStoreLive)),
-  WidgetPreviewLive.pipe(
-    Layer.provide(ChatSandboxesLive.pipe(Layer.provideMerge(SandboxMeterLive))),
-  ),
+  WidgetPreviewLive.pipe(Layer.provideMerge(ChatSandboxesSharedLive)),
   AuthLive,
   CloudBoxesLive,
-  ChatSandboxesLive.pipe(Layer.provideMerge(SandboxMeterLive)),
 ).pipe(Layer.provideMerge(InfrastructureLive));
 export const ServicesLive = Layer.mergeAll(
   CloudTasksLive,
