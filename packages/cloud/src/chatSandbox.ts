@@ -66,8 +66,8 @@ export const CHAT_SANDBOX_LIMITS = {
   maxReadBytes: 1024 * 1024,
   maxArtifactBytes: 50 * 1024 * 1024,
   maxWriteBytes: 10 * 1024 * 1024,
-  lifetimeMinutes: 120,
-  idleStopMinutes: 120,
+  lifetimeMinutes: 60,
+  idleStopMinutes: 15,
   maxPerUser: 3,
   resources: SANDBOX_RESOURCES,
 } as const;

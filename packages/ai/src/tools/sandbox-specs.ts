@@ -9,7 +9,7 @@ const encoding = Schema.Literals(["utf8", "base64"]);
 export const sandboxExecSpec = {
   name: "sandbox_exec",
   description:
-    "Run a command in the thread's ephemeral Linux box: Python 3.13, scientific stack, manimgx and document tools are preinstalled. Network is blocked; lifetime is capped at 120 minutes. Write a script with sandbox_write, then run it here. For manimgx, inspect then render to a file, then publish_asset.",
+    "Run a command in the thread's ephemeral Linux box: Python 3.13, scientific stack, manimgx and document tools are preinstalled. Network is blocked; lifetime is capped at 60 minutes. Write a script with sandbox_write, then run it here. For manimgx, inspect then render to a file, then publish_asset.",
   inputSchema: standardSchema(
     Schema.Struct({
       command: Schema.NonEmptyString,
