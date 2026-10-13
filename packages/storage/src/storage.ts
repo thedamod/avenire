@@ -96,9 +96,19 @@ const attempt = <A>(operation: string, key: string, run: () => Promise<A>) =>
     catch: (cause) => new StorageError({ operation, key, cause }),
   }).pipe(Effect.withSpan(`Storage.${operation}`, { attributes: { key } }));
 
+/** files-sdk reports a missing object as an error with `code: "NotFound"`. */
+const isNotFound = (error: StorageError) =>
+  (error.cause as { code?: unknown } | undefined)?.code === "NotFound";
+
 /** Reads, lists, signed URLs and deletes are idempotent: retry transient provider failures. */
 const idempotent = <A>(effect: Effect.Effect<A, StorageError>) =>
-  effect.pipe(Effect.retry({ times: 2, schedule: Schedule.exponential("300 millis") }));
+  effect.pipe(
+    Effect.retry({
+      times: 2,
+      schedule: Schedule.exponential("300 millis"),
+      while: (error) => !isNotFound(error),
+    }),
+  );
 
 const readAll = async (files: Files, prefix: StorageKey) => {
   const objects: Array<{ readonly key: StorageKey; readonly size: number }> = [];
@@ -108,33 +118,26 @@ const readAll = async (files: Files, prefix: StorageKey) => {
   return objects;
 };
 
-const makeStorage = (files: Files): Storage["Service"] => {
-  const ensureExists = (key: StorageKey) =>
-    attempt("exists", key, () => files.exists(key)).pipe(
-      Effect.filterOrFail(
-        (exists) => exists,
-        () => new ObjectNotFound({ key }),
-      ),
-    );
+const notFound =
+  (key: StorageKey) =>
+  <A>(effect: Effect.Effect<A, StorageError>): Effect.Effect<A, StorageError | ObjectNotFound> =>
+    effect.pipe(Effect.catchIf(isNotFound, () => Effect.fail(new ObjectNotFound({ key }))));
 
-  return Storage.of({
+const makeStorage = (files: Files): Storage["Service"] =>
+  Storage.of({
     files,
     put: (key, body, options) =>
       attempt("put", key, () => files.upload(key, body, options)).pipe(Effect.asVoid),
     get: (key) =>
-      ensureExists(key).pipe(
-        Effect.andThen(
-          idempotent(
-            attempt("get", key, async () => {
-              const file = await files.download(key);
-              return new Uint8Array(await file.arrayBuffer());
-            }),
-          ),
-        ),
-      ),
+      idempotent(
+        attempt("get", key, async () => {
+          const file = await files.download(key);
+          return new Uint8Array(await file.arrayBuffer());
+        }),
+      ).pipe(notFound(key)),
     head: (key) =>
-      ensureExists(key).pipe(
-        Effect.andThen(attempt("head", key, () => files.head(key))),
+      idempotent(attempt("head", key, () => files.head(key))).pipe(
+        notFound(key),
         Effect.map((file) => ({
           size: file.size,
           contentType: file.type,
@@ -156,7 +159,6 @@ const makeStorage = (files: Files): Storage["Service"] => {
         }),
       ),
   });
-};
 
 type StorageConfig = Config.Success<typeof StorageConfig>;
 
@@ -177,18 +179,26 @@ const r2Credentials = (config: StorageConfig) => ({
 
 /** UploadThing stores our key as the file's customId, which is capped at 128 characters. */
 export const UPLOADTHING_MAX_KEY = 128;
-/** Keep the directory (prefix listings and purges depend on it); hash an over-long file name. */
+const URL_SAFE = /^[\w.-]*$/;
+const shortHash = (text: string) => createHash("sha256").update(text).digest("hex");
+/** Keep the directory (prefix listings and purges depend on it) and make the file name a valid
+ * customId: the CDN 404s on names with spaces or punctuation, so those become a slug plus a
+ * hash of the original; an over-long name becomes a hash. Fitting a fitted key is a no-op. */
 export const fitKey = (key: string, max = UPLOADTHING_MAX_KEY): string => {
-  if (key.length <= max) return key;
   const slash = key.lastIndexOf("/");
   const dir = key.slice(0, slash + 1);
-  const name = key.slice(slash + 1);
+  let name = key.slice(slash + 1);
   const dot = name.lastIndexOf(".");
-  const ext = dot > 0 && name.length - dot <= 10 ? name.slice(dot) : "";
-  const hash = createHash("sha256").update(name).digest("hex");
+  const ext =
+    dot > 0 && name.length - dot <= 10 && URL_SAFE.test(name.slice(dot)) ? name.slice(dot) : "";
+  if (!URL_SAFE.test(name)) {
+    const stem = name.slice(0, name.length - ext.length).replace(/[^\w.-]+/g, "-");
+    name = `${stem}-${shortHash(name).slice(0, 8)}${ext}`;
+  }
+  if (dir.length + name.length <= max) return `${dir}${name}`;
   const room = max - dir.length - ext.length;
   if (room < 16) throw new RangeError(`Storage key directory is too long for UploadThing: ${dir}`);
-  return `${dir}${hash.slice(0, Math.min(room, 32))}${ext}`;
+  return `${dir}${shortHash(name).slice(0, Math.min(room, 32))}${ext}`;
 };
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

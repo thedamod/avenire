@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { StorageKey } from "@avenire/contracts";
 
-import { ObjectNotFound, Storage, StorageMemory } from "./storage.ts";
+import { fitKey, ObjectNotFound, Storage, StorageMemory } from "./storage.ts";
 
 const key = StorageKey.make("users/test/files/file/source.txt");
 const prefix = StorageKey.make("users/test/");
@@ -24,4 +24,19 @@ describe("StorageMemory", () => {
       expect(yield* storage.list(prefix)).toEqual([]);
     }).pipe(Effect.provide(StorageMemory)),
   );
+});
+
+describe("fitKey", () => {
+  it("keeps the directory, makes names URL-safe and short enough, and is stable", () => {
+    const dir = "users/u/files/f/source/";
+    const spaced = fitKey(`${dir}a1b2c3d4e5f6-round trip (2).txt`);
+    expect(spaced).toMatch(
+      /^users\/u\/files\/f\/source\/a1b2c3d4e5f6-round-trip-2-?-[0-9a-f]{8}\.txt$/,
+    );
+    expect(fitKey(`${dir}round trip (2).txt`)).not.toBe(fitKey(`${dir}round trip [2].txt`));
+    const long = fitKey(`${dir}${"x".repeat(200)}.pdf`);
+    expect(long.length).toBeLessThanOrEqual(128);
+    for (const fitted of [spaced, long]) expect(fitKey(fitted)).toBe(fitted);
+    expect(fitKey(`${dir}notes.md`)).toBe(`${dir}notes.md`);
+  });
 });
