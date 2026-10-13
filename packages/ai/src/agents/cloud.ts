@@ -394,10 +394,38 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
       yield* logStep("report posted and delivery enqueued");
     });
 
+    /** Bill this attempt's box time (from when it ensured the box). Gaps between attempts, such as
+     * worker downtime before a resume, are never billed; a crashed attempt's tail goes unbilled. */
+    const meterBox = Effect.fn("RuthCloud.meterBox")(function* () {
+      if (boxStartedAt === undefined) return;
+      const started = boxStartedAt;
+      const end = yield* Clock.currentTimeMillis;
+      yield* database.useTransaction(async (tx) => {
+        const [current] = await tx.select().from(cloudRun).where(fencedWhere).for("update");
+        if (!current) return;
+        const from = Math.max(started, current.usage.meteredUntil ?? 0);
+        if (end <= from) return;
+        for (const segment of cloudUsageSegments(from, end)) {
+          // eslint-disable-next-line no-await-in-loop -- These writes commit with the run's metering watermark in this transaction.
+          await tx
+            .insert(sandboxUsage)
+            .values({ userId, day: segment.day, cloudSeconds: segment.seconds })
+            .onConflictDoUpdate({
+              target: [sandboxUsage.userId, sandboxUsage.day],
+              set: { cloudSeconds: sql`${sandboxUsage.cloudSeconds} + ${segment.seconds}` },
+            });
+        }
+        await tx
+          .update(cloudRun)
+          .set({ usage: { ...current.usage, meteredUntil: end } })
+          .where(fencedWhere);
+      });
+    });
     const cleanup = Effect.fn("RuthCloud.cleanup")(function* () {
       const current = yield* snapshot();
       if (current?.leasedBy !== leaseOwner) return;
-      yield* stopRecording();
+      // A recording that cannot be collected must not keep the box running and the lease held.
+      yield* bestEffort("recording collection", stopRecording());
       const commands = yield* database.use((db) =>
         db.query.cloudToolCall.findMany({ where: eq(cloudToolCall.runId, runId) }),
       );
@@ -405,28 +433,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         for (const command of commands)
           if (command.sessionId)
             yield* bestEffort("command cleanup", box.endSession(command.sessionId));
-      if (boxStartedAt !== undefined || run.startedAt) {
-        const end = yield* Clock.currentTimeMillis;
-        const segments = cloudUsageSegments(run.startedAt?.getTime() ?? boxStartedAt!, end);
-        yield* database.useTransaction(async (tx) => {
-          const [current] = await tx.select().from(cloudRun).where(fencedWhere).for("update");
-          if (!current || current.usage.boxMetered) return;
-          for (const segment of segments) {
-            // eslint-disable-next-line no-await-in-loop -- These writes commit with the run's metering marker in this transaction.
-            await tx
-              .insert(sandboxUsage)
-              .values({ userId, day: segment.day, cloudSeconds: segment.seconds })
-              .onConflictDoUpdate({
-                target: [sandboxUsage.userId, sandboxUsage.day],
-                set: { cloudSeconds: sql`${sandboxUsage.cloudSeconds} + ${segment.seconds}` },
-              });
-          }
-          await tx
-            .update(cloudRun)
-            .set({ usage: { ...current.usage, boxMetered: true } })
-            .where(fencedWhere);
-        });
-      }
+      yield* meterBox();
       yield* boxes.stop(userId);
       const metered = yield* snapshot();
       yield* database.use((db) =>
@@ -461,13 +468,9 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         ),
       );
     if (terminalRecovery) {
-      task = yield* database.use((db) =>
-        db.query.cloudTask.findFirst({
-          where: and(eq(cloudTask.id, run.taskId), eq(cloudTask.userId, userId)),
-        }),
-      );
-      box = yield* boxes.ensure(userId, task?.network ?? "packages");
-      recordingReachable = box.id === run.sandboxId;
+      // Clean up whatever is still running; never start (or create) a box just to stop it.
+      box = Option.getOrUndefined(yield* boxes.running(userId));
+      recordingReachable = box?.id === run.sandboxId;
       yield* finishCleanup();
       return;
     }
@@ -714,6 +717,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
             (Option.isSome(error) && error.value instanceof LeaseLost)
           ) {
             // Worker shutdown is recoverable: keep recorder/commands/box and messages intact.
+            yield* bestEffort("metering", meterBox());
             yield* database.use((db) =>
               db
                 .update(cloudRun)
@@ -735,6 +739,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
               (error.value instanceof CloudLoopError && error.value.retryable));
           const failures = current.usage.resumeFailures ?? 0;
           if (!cancelledRun && task && retryableFailure && failures + 1 < task.maxAttempts) {
+            yield* bestEffort("metering", meterBox());
             yield* database.use((db) =>
               db
                 .update(cloudRun)

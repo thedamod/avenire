@@ -555,7 +555,8 @@ export const cloudRun = pgTable(
         outputTokens: number;
         cost: number;
         actions: number;
-        boxMetered?: boolean;
+        /** Box time is metered per attempt up to here (epoch ms), so re-metering never double-counts. */
+        meteredUntil?: number;
         cleanupComplete?: boolean;
         resumeFailures?: number;
       }>()

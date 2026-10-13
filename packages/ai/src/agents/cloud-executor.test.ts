@@ -125,7 +125,7 @@ const run = (options: { leftRecording: boolean }) => {
       status: "succeeded",
       summary: "Finished",
       leasedBy: null,
-      usage: { cleanupComplete: true, boxMetered: true, inputTokens: 10 },
+      usage: { cleanupComplete: true, inputTokens: 10 },
     });
     expect(db.rows("ruth_message")).toHaveLength(1);
     expect(db.rows("email_outbox")).toHaveLength(1);
@@ -157,7 +157,7 @@ const run = (options: { leftRecording: boolean }) => {
     });
   }).pipe(Effect.provide(AssetStoreTest), Effect.provide(AnalyticsNoop));
 };
-it.effect("streams a run to the event log, publishes one report and cleans/meters once", () =>
+it.effect("streams a run to the event log, publishes one report and cleans up once", () =>
   run({ leftRecording: false }),
 );
 it.effect("finalises only a recording the agent left running", () => run({ leftRecording: true }));

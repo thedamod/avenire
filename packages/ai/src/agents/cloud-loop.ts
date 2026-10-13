@@ -32,7 +32,6 @@ export interface LoopCheckpoint {
     outputTokens: number;
     cost: number;
     actions: number;
-    boxMetered?: boolean;
     cleanupComplete?: boolean;
     resumeFailures?: number;
   };
