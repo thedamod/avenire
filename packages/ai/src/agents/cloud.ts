@@ -1,7 +1,6 @@
 /** Server-owned AI SDK agent; Daytona is an isolated persistent tool target. */
 import { CloudBoxes, type CloudBox } from "@avenire/cloud/cloud-box";
 import {
-  AssetId,
   CloudRunId,
   MessageId,
   NotFound,
@@ -28,7 +27,7 @@ import {
 import { hydrate, cloudToolRegistrations, type CloudToolServices } from "../cloud/tools.ts";
 import { makeRunEventWriter, type RunEventWriter } from "../cloud/events.ts";
 import { inputsRootFor, runPaths, RUN_WALL_CLOCK } from "../cloud/paths.ts";
-import { stableToolId, withToolJournal } from "../cloud/journal.ts";
+import { withToolJournal } from "../cloud/journal.ts";
 import { newId } from "@avenire/shared/id";
 import { AssetStore } from "../outputs/assets.ts";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
@@ -54,7 +53,7 @@ import type { ToolRegistration } from "../tools/registration.ts";
 import { toAiSdkTools } from "../tools/ai-sdk.ts";
 import { makeComputerRegistry, shellQuote, type ComputerServices } from "../tools/computer.ts";
 import { sandboxToolRegistry } from "../tools/sandbox-tools.ts";
-import { recordingRegistry, storeRecording } from "../tools/recording.ts";
+import { recordingRegistry, finalizeRecording } from "../tools/recording.ts";
 import type { RuthToolServices } from "../tools/ruth.ts";
 import {
   runCloudLoop,
@@ -195,26 +194,17 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
     const stopRecording = Effect.fn("RuthCloud.stopRecording")(function* () {
       if (!box || !recordingReachable) return;
       const current = yield* snapshot();
-      const id = current?.recordingId;
+      if (current?.leasedBy !== leaseOwner) return yield* new LeaseLost({});
+      const id = current.recordingId;
       if (!id) return;
-      const assetId = AssetId.make(stableToolId({ runId, toolCallId: "recording" }, "asset"));
-      const prior = yield* assets.get(assetId);
-      if (Option.isSome(prior)) {
-        recording = { id: prior.value.id, url: prior.value.url };
-        return;
-      }
-      if (!(yield* box.recordings).some((r) => r.id === id)) return;
-      const stored = yield* storeRecording({
-        download: (localPath) => box!.stopRecording(id, localPath),
-        userId,
+      const finalized = yield* finalizeRecording({
+        sandbox: box.sandbox,
+        recordingId: id,
+        ctx: { userId, runId },
         title: "Ruth Cloud session recording",
-        runId,
-        idempotencyId: assetId,
-      }).pipe(
-        Effect.provideService(AssetStore, assets),
-        Effect.provideService(Crypto.Crypto, crypto),
-      );
-      recording = { id: stored.id, url: stored.url };
+      }).pipe(Effect.provideService(AssetStore, assets));
+      recording = { id: finalized.asset.id, url: finalized.asset.url };
+      // Keep the identity through report commit so a crash can recover the same asset/link.
     });
     /** The run's last event: the stream routes close on it. Safe to call more than once. */
     const endEvents = (status: "succeeded" | "failed" | "cancelled", error?: string) =>
@@ -250,7 +240,9 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
       }
       const current = yield* snapshot();
       if (!current) return yield* new NotFound({ entity: "CloudRun", id: runId });
-      yield* bestEffort("recording collection", stopRecording());
+      yield* stopRecording().pipe(
+        Effect.onError(() => bestEffort("stop after recording failure", boxes.stop(userId))),
+      );
       const manifests = yield* database.use((db) =>
         db.query.cloudHydration.findMany({
           where: and(eq(cloudHydration.runId, runId), eq(cloudHydration.userId, userId)),
@@ -424,8 +416,11 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
     const cleanup = Effect.fn("RuthCloud.cleanup")(function* () {
       const current = yield* snapshot();
       if (current?.leasedBy !== leaseOwner) return;
-      // A recording that cannot be collected must not keep the box running and the lease held.
-      yield* bestEffort("recording collection", stopRecording());
+      // A failed download/upload/delete remains a cleanup obligation. Stop compute on failure,
+      // retaining its fenced lease and recording id so the scheduler can retry the same asset.
+      yield* stopRecording().pipe(
+        Effect.onError(() => bestEffort("stop after recording failure", boxes.stop(userId))),
+      );
       const commands = yield* database.use((db) =>
         db.query.cloudToolCall.findMany({ where: eq(cloudToolCall.runId, runId) }),
       );
@@ -442,6 +437,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
           .set({
             leasedBy: null,
             leaseExpiresAt: null,
+            recordingId: null,
             usage: { ...metered!.usage, cleanupComplete: true },
           })
           .where(fencedWhere),
@@ -468,8 +464,13 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         ),
       );
     if (terminalRecovery) {
-      // Clean up whatever is still running; never start (or create) a box just to stop it.
-      box = Option.getOrUndefined(yield* boxes.running(userId));
+      // A stopped box may still hold a recording that was not collected before a worker crash.
+      // Reconnect only its recorded identity; never create another sandbox for cleanup.
+      box = Option.getOrUndefined(
+        run.recordingId && run.sandboxId
+          ? yield* boxes.reconnect(userId, run.sandboxId)
+          : yield* boxes.running(userId),
+      );
       recordingReachable = box?.id === run.sandboxId;
       yield* finishCleanup();
       return;
@@ -481,6 +482,16 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         }),
       );
       if (!task) return yield* new NotFound({ entity: "CloudTask", id: run.taskId });
+      if (run.usage.execution?.status === "completed") {
+        box = Option.getOrUndefined(
+          run.recordingId && run.sandboxId
+            ? yield* boxes.reconnect(userId, run.sandboxId)
+            : yield* boxes.running(userId),
+        );
+        recordingReachable = box?.id === run.sandboxId;
+        yield* finishReport("succeeded", run.usage.execution.text);
+        return;
+      }
       const modelName = run.modelName ?? task.model ?? "ruth-core";
       if (!RUTH_MODEL_NAMES.includes(modelName as (typeof RUTH_MODEL_NAMES)[number]))
         return yield* new RuthCloudError({ runId, reason: "The task model is not registered." });

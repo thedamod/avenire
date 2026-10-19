@@ -35,6 +35,9 @@ export interface LoopCheckpoint {
     actions: number;
     cleanupComplete?: boolean;
     resumeFailures?: number;
+    execution?: { status: "completed"; text: string };
+    reportText?: string;
+    lengthContinuations?: number;
   };
 }
 export const pendingToolCalls = (messages: readonly ModelMessage[]): ToolCallPart[] => {
@@ -151,7 +154,7 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
   let state: LoopCheckpoint = Object.assign({}, options.checkpoint, {
     messages: options.checkpoint.messages.slice(),
   });
-  let continuations = 0;
+  let continuations = state.usage.lengthContinuations ?? 0;
   const definitions: ToolSet = Object.fromEntries(
     Object.entries(options.tools).map(([name, tool]) => {
       const { execute: _execute, ...definition } = tool;
@@ -214,12 +217,15 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
   });
   while (true) {
     yield* options.check();
+    // Delivery resumes directly from the durable terminal checkpoint, even after the execution deadline.
+    if (state.usage.execution?.status === "completed")
+      return { checkpoint: state, text: state.usage.execution.text };
     if ((yield* Clock.currentTimeMillis) >= options.deadline)
       return yield* new CloudLoopError({
         reason: "The run exceeded its four-hour wall-clock limit.",
       });
     const pending = pendingToolCalls(state.messages);
-    let completedReport: string | undefined;
+    let completedReport = state.usage.reportText;
     for (const call of pending) {
       yield* options.check();
       if ((yield* Clock.currentTimeMillis) >= options.deadline)
@@ -264,6 +270,8 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
         typeof call.input.markdown === "string"
       )
         completedReport = call.input.markdown;
+      if (completedReport !== undefined)
+        state.usage = { ...state.usage, reportText: completedReport };
       if (call.toolName === "computer")
         state.usage = { ...state.usage, actions: state.usage.actions + 1 };
       state = Object.assign({}, state, {
@@ -282,6 +290,9 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
           },
         ],
       });
+      // Commit the final tool result and execution outcome together.
+      if (completedReport !== undefined && pendingToolCalls(state.messages).length === 0)
+        state.usage = { ...state.usage, execution: { status: "completed", text: completedReport } };
       yield* options.save(state);
       yield* options.emit([
         result._tag === "Success"
@@ -315,7 +326,6 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
         cost: state.usage.cost + stepCost(step, options.capabilities.pricing),
       },
     });
-    yield* options.save(state);
     const outcome = stepOutcome({
       finishReason: step.finishReason,
       rawFinishReason: step.rawFinishReason,
@@ -323,6 +333,19 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
       continuations,
     });
     continuations = outcome.action === "continue" ? continuations + 1 : 0;
+    state.usage = {
+      ...state.usage,
+      lengthContinuations: continuations,
+      ...(outcome.action === "finish"
+        ? { execution: { status: "completed" as const, text: step.text } }
+        : {}),
+    };
+    if (outcome.action === "continue")
+      state = {
+        ...state,
+        messages: [...state.messages, { role: "user" as const, content: CONTINUE_PROMPT }],
+      };
+    yield* options.save(state);
     if (outcome.action === "finish") return { checkpoint: state, text: step.text };
     if (outcome.action === "fail")
       return yield* new CloudLoopError({
@@ -330,11 +353,5 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
         retryable: outcome.retryable,
         ...(step.streamError === undefined ? {} : { cause: step.streamError }),
       });
-    if (outcome.action === "continue") {
-      state = Object.assign({}, state, {
-        messages: [...state.messages, { role: "user" as const, content: CONTINUE_PROMPT }],
-      });
-      yield* options.save(state);
-    }
   }
 });

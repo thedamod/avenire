@@ -1,0 +1,18 @@
+--- a/src/sprintf.js
++++ b/src/sprintf.js
+@@ -38,6 +38,15 @@
+             }
+             else if (typeof parse_tree[i] === 'object') {
+                 ph = parse_tree[i] // convenience purposes only
++                // GHSA-hp3w-g68c-fv3c: keep numeric precision inside the
++                // ECMAScript range before calling Number formatting methods.
++                if (ph.precision !== undefined && /[efg]/.test(ph.type)) {
++                    ph.precision = Math.min(100, Math.max(ph.type === 'g' ? 1 : 0, Number(ph.precision)))
++                }
++                // Bound padding allocations from caller-controlled formats.
++                if (ph.width !== undefined) {
++                    ph.width = Math.min(1048576, Number(ph.width))
++                }
+                 if (ph.keys) { // keyword argument
+                     arg = argv[cursor]
+                     for (k = 0; k < ph.keys.length; k++) {

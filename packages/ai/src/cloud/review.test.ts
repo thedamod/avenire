@@ -1,7 +1,10 @@
-import { PendingApprovalId, StorageKey, UserId } from "@avenire/contracts";
+import { CloudRunId, PendingApprovalId, StorageKey, UserId } from "@avenire/contracts";
+import { Database } from "@avenire/database/client";
 import { Storage, StorageMemory } from "@avenire/storage/storage";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Crypto from "effect/Crypto";
+import { testCrypto } from "../tools/test-support.ts";
 import { cloudCtx, cloudFixture, fileId } from "./cloud-test-support.ts";
 import { cloudTools } from "./tools.ts";
 import { CloudReview, CloudReviewLive } from "./review.ts";
@@ -53,7 +56,12 @@ it.effect(
           ),
         ).toBe(true);
         expect(f.rows("ingestion_job")[0]).toMatchObject({ fileId: fileId, status: "queued" });
-        expect(f.invalidated()).toBe(1);
+        expect(
+          f.writes.filter(
+            (write) => write.table === "user" && write.values.corpusRevision !== undefined,
+          ),
+        ).toHaveLength(1);
+        expect(f.invalidated()).toBe(0);
         expect((yield* Effect.flip(storage.get(key)))._tag).toBe("ObjectNotFound");
         expect((yield* Effect.flip(review.resolve(cloudCtx.userId, id, "accept"))).message).toBe(
           "Already resolved",
@@ -178,3 +186,38 @@ it.effect("missing/other-user approval returns NotFound and never touches storag
     }).pipe(Effect.provide(CloudReviewLive), Effect.provide(f.services(storage)));
   }).pipe(Effect.provide(StorageMemory));
 });
+
+it.effect(
+  "reviews a retired task through DB/storage alone and returns resolved wire approvals",
+  () => {
+    const f = cloudFixture();
+    f.rows("cloud_task")[0]!.retiredAt = new Date(0);
+    f.rows("pending_approval").push({
+      id: "retained",
+      userId: cloudCtx.userId,
+      runId: "run",
+      fileId,
+      kind: "sync",
+      status: "pending",
+      conflict: null,
+      summary: "Retained proposal",
+      proposedKey: "proposal",
+      proposedSize: 8,
+      createdAt: new Date(0),
+      resolvedAt: null,
+    });
+    return Effect.gen(function* () {
+      const service = yield* CloudReview;
+      const resolved = yield* service.resolveRun(cloudCtx.userId, CloudRunId.make("run"), "skip");
+      expect(resolved).toMatchObject([
+        { id: "retained", fileTitle: "Lecture", status: "skipped", resolvedAt: expect.any(String) },
+      ]);
+      expect(yield* service.list(cloudCtx.userId)).toEqual([]);
+    }).pipe(
+      Effect.provide(CloudReviewLive),
+      Effect.provideService(Database, f.database),
+      Effect.provideService(Crypto.Crypto, testCrypto),
+      Effect.provide(StorageMemory),
+    );
+  },
+);

@@ -18,7 +18,7 @@ import {
   type CloudTaskRow,
 } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
-import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -182,7 +182,11 @@ export const CloudTasksLive = Layer.effect(
         yield* ensureDefaultTask(userId);
         return (yield* database.use((db) =>
           db.query.cloudTask.findMany({
-            where: and(eq(cloudTask.userId, userId), eq(cloudTask.oneOff, false)),
+            where: and(
+              eq(cloudTask.userId, userId),
+              eq(cloudTask.oneOff, false),
+              isNull(cloudTask.retiredAt),
+            ),
             orderBy: [asc(cloudTask.createdAt), asc(cloudTask.id)],
           }),
         )).map(taskToContract);
@@ -214,7 +218,7 @@ export const CloudTasksLive = Layer.effect(
             .from(cloudTask)
             .where(and(eq(cloudTask.id, taskId), eq(cloudTask.userId, userId)))
             .for("update");
-          if (!row) return { kind: "missing" as const };
+          if (!row || row.retiredAt) return { kind: "missing" as const };
           const input = { ...row, ...patch };
           const validated = await Effect.runPromise(
             Effect.result(validateSchedule(input.schedule, input.timeZone, now)),
@@ -270,14 +274,17 @@ export const CloudTasksLive = Layer.effect(
               ),
             );
           if (active.length) return false;
+          // Retain runs, review proposals and cleanup journals. Physical deletion cascades those
+          // obligations even when the run itself has already reached a terminal status.
           await tx
-            .delete(cloudTask)
+            .update(cloudTask)
+            .set({ retiredAt: sql`now()`, enabled: false, nextRunAt: null, updatedAt: sql`now()` })
             .where(and(eq(cloudTask.id, taskId), eq(cloudTask.userId, userId)));
           return true;
         });
         if (!outcome)
           return yield* new Conflict({
-            reason: "Cancel this task's active runs before deleting it.",
+            reason: "Cancel this task's active runs before retiring it.",
           });
       }),
       runNow: Effect.fn("CloudTasks.runNow")(function* (userId, taskId) {
@@ -294,7 +301,7 @@ export const CloudTasksLive = Layer.effect(
             .from(cloudTask)
             .where(and(eq(cloudTask.id, taskId), eq(cloudTask.userId, userId)))
             .for("update");
-          if (!task) return "missing";
+          if (!task || task.retiredAt) return "missing";
           const active = await tx
             .select({ id: cloudRun.id })
             .from(cloudRun)

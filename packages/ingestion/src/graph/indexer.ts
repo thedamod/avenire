@@ -1,6 +1,7 @@
 /** Writes an file's entities, mentions and relations. */
 import type { ChunkId, FileId, UserId } from "@avenire/contracts";
 import { Database, type DatabaseTransaction } from "@avenire/database/client";
+import { advanceCorpusRevision, lockCorpus } from "@avenire/database/corpus";
 import { entity, entityMention, entityRelation } from "@avenire/database/schema";
 import { and, eq, exists, inArray, isNotNull, not, sql } from "drizzle-orm";
 import * as Arr from "effect/Array";
@@ -20,20 +21,26 @@ import {
   GraphExtractor,
 } from "./extract.ts";
 
+export interface GraphIndexInput {
+  readonly userId: UserId;
+  readonly fileId: FileId;
+  readonly title: string;
+  readonly chunks: ReadonlyArray<{ readonly id: ChunkId; readonly content: string }>;
+}
+
+/** Provider work is prepared before the corpus transaction. Publication performs no remote calls. */
+export interface PreparedGraph {
+  readonly stats: { readonly entities: number; readonly relations: number };
+  readonly publish: (tx: DatabaseTransaction) => Promise<void>;
+}
+
 export class GraphIndexer extends Context.Service<
   GraphIndexer,
   {
-    /**
-     * Extracts and stores the graph for `chunks` (new chunks only; mentions and
-     * relations of deleted chunks are removed by cascade), then drops the user's
-     * entities that no chunk mentions any more.
-     */
-    readonly indexChunks: (input: {
-      readonly userId: UserId;
-      readonly fileId: FileId;
-      readonly title: string;
-      readonly chunks: ReadonlyArray<{ readonly id: ChunkId; readonly content: string }>;
-    }) => Effect.Effect<{ readonly entities: number; readonly relations: number }, GraphError>;
+    readonly prepareChunks: (input: GraphIndexInput) => Effect.Effect<PreparedGraph, GraphError>;
+    readonly indexChunks: (
+      input: GraphIndexInput,
+    ) => Effect.Effect<PreparedGraph["stats"], GraphError>;
   }
 >()("avenire/ingestion/GraphIndexer") {}
 
@@ -190,8 +197,8 @@ export const GraphIndexerLive = Layer.effect(
       return new Map(missing.map((row, index) => [row.key, vectors[index] ?? []]));
     });
 
-    const indexChunks = Effect.fn("GraphIndexer.indexChunks")(
-      function* (input: Parameters<GraphIndexer["Service"]["indexChunks"]>[0]) {
+    const prepareChunks = Effect.fn("GraphIndexer.prepareChunks")(
+      function* (input: GraphIndexInput) {
         const extracted = yield* extract(input.title, input.chunks);
         const graph = aggregateGraph(
           extracted,
@@ -200,19 +207,20 @@ export const GraphIndexerLive = Layer.effect(
         const vectors = yield* embedNew(input.userId, graph.entities);
         const entityIds = yield* newIds(graph.entities.length);
         const relationIds = yield* newIds(graph.relations.length);
-        yield* database.useTransaction((tx) =>
-          writeGraph(tx, {
-            userId: input.userId,
-            fileId: input.fileId,
-            chunkIds: input.chunks.map((row) => row.id),
-            entities: Arr.zip(graph.entities, entityIds),
-            mentions: graph.mentions,
-            relations: Arr.zip(graph.relations, relationIds),
-            vectors,
-            model: embedder.model,
-          }),
-        );
-        return { entities: graph.entities.length, relations: graph.relations.length };
+        return {
+          stats: { entities: graph.entities.length, relations: graph.relations.length },
+          publish: (tx: DatabaseTransaction) =>
+            writeGraph(tx, {
+              userId: input.userId,
+              fileId: input.fileId,
+              chunkIds: input.chunks.map((row) => row.id),
+              entities: Arr.zip(graph.entities, entityIds),
+              mentions: graph.mentions,
+              relations: Arr.zip(graph.relations, relationIds),
+              vectors,
+              model: embedder.model,
+            }),
+        };
       },
       Effect.catchTags({
         DatabaseError: (cause) => Effect.fail(new GraphError({ operation: "index", cause })),
@@ -221,6 +229,17 @@ export const GraphIndexerLive = Layer.effect(
       }),
     );
 
-    return GraphIndexer.of({ indexChunks });
+    const indexChunks = Effect.fn("GraphIndexer.indexChunks")(function* (input: GraphIndexInput) {
+      const prepared = yield* prepareChunks(input);
+      yield* database
+        .useTransaction(async (tx) => {
+          await lockCorpus(tx, input.userId);
+          await prepared.publish(tx);
+          await advanceCorpusRevision(tx, input.userId);
+        })
+        .pipe(Effect.mapError((cause) => new GraphError({ operation: "index", cause })));
+      return prepared.stats;
+    });
+    return GraphIndexer.of({ indexChunks, prepareChunks });
   }),
 );

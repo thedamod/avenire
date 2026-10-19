@@ -18,7 +18,48 @@ import { gunzip, gzip } from "node:zlib";
 
 import { EXTRACTOR_VERSION, ExtractedDocument } from "./extract/types.ts";
 
-const DocumentJson = Schema.fromJsonString(ExtractedDocument);
+const StoredDocument = Schema.Struct({
+  ...ExtractedDocument.fields,
+  /** Automatic retries of transient incomplete extraction are bounded per source. */
+  retryCount: Schema.optionalKey(Schema.Number),
+});
+export type StoredDocument = typeof StoredDocument.Type;
+const DocumentJson = Schema.fromJsonString(StoredDocument);
+
+export const shouldRetryDocument = (document: StoredDocument): boolean =>
+  (document.retryCount ?? 0) < 3 &&
+  document.coverage.parts.some((part) => {
+    if (part.status === "full") return false;
+    const detail = part.detail ?? "";
+    if (/failed or capped pages:/iu.test(detail)) {
+      const failed = detail.split(";")[0]?.match(/\d+/gu) ?? [];
+      const capped = new Set(detail.split("; capped:")[1]?.match(/\d+/gu) ?? []);
+      return failed.some((page) => !capped.has(page));
+    }
+    return /fail|error|timeout|unavailable/iu.test(detail);
+  });
+
+/** Retry useful partial content automatically, with bounded exponential backoff. */
+export const extractionRetryMinutes = (document: StoredDocument): number | undefined =>
+  shouldRetryDocument(document) ? 2 ** ((document.retryCount ?? 0) + 1) : undefined;
+
+/** Keep recovered sections and previously successful parts if a retry has another transient loss. */
+export const mergeExtractionRetry = (
+  previous: StoredDocument,
+  fresh: ExtractedDocument,
+): ExtractedDocument => {
+  if (fresh.coverage.status === "full") return fresh;
+  const key = (section: ExtractedDocument["sections"][number]) =>
+    JSON.stringify([section.kind, section.location]);
+  const locations = new Set(fresh.sections.map(key));
+  return {
+    ...fresh,
+    sections: [
+      ...fresh.sections,
+      ...previous.sections.filter((section) => !locations.has(key(section))),
+    ],
+  };
+};
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 
@@ -61,7 +102,7 @@ export const loadDocument = Effect.fn("Document.load")(function* (key: StorageKe
 export const saveDocument = Effect.fn("Document.save")(function* (
   userId: UserId,
   fileId: FileId,
-  document: ExtractedDocument,
+  document: StoredDocument,
 ) {
   const storage = yield* Storage;
   const json = yield* Schema.encodeEffect(DocumentJson)(document).pipe(Effect.orDie);

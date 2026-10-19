@@ -19,12 +19,13 @@ type TabName = (typeof tabs)[number];
 
 function HomeTabs() {
   const [selectedTab, setSelectedTab] = useState<TabName>("Today");
+  const [visitedRuth, setVisitedRuth] = useState(false);
   const selectedScreen = {
     Today: <TodayScreen />,
     Inbox: <InboxScreen />,
     Folders: <FoldersScreen />,
     Search: <SearchScreen />,
-    Ruth: <RuthScreen />,
+    Ruth: null,
     Settings: <SettingsScreen />,
   }[selectedTab];
 
@@ -41,7 +42,10 @@ function HomeTabs() {
             key={tab}
             accessibilityRole="tab"
             accessibilityState={{ selected: selectedTab === tab }}
-            onPress={() => setSelectedTab(tab)}
+            onPress={() => {
+              if (tab === "Ruth") setVisitedRuth(true);
+              setSelectedTab(tab);
+            }}
             className="px-3 py-4"
           >
             <Text
@@ -55,6 +59,16 @@ function HomeTabs() {
         ))}
       </ScrollView>
       {selectedScreen}
+      {visitedRuth ? (
+        <View
+          className="flex-1"
+          style={{ display: selectedTab === "Ruth" ? "flex" : "none" }}
+          accessibilityElementsHidden={selectedTab !== "Ruth"}
+          importantForAccessibility={selectedTab === "Ruth" ? "auto" : "no-hide-descendants"}
+        >
+          <RuthScreen />
+        </View>
+      ) : null}
     </View>
   );
 }

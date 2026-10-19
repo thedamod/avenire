@@ -19,7 +19,7 @@ import {
   SandboxInputRejected,
   SandboxTimeout,
 } from "./daytona.ts";
-import { AVENIRE_SNAPSHOT, SANDBOX_RESOURCES } from "./snapshots.ts";
+import { AVENIRE_SNAPSHOT, SANDBOX_RESOURCES } from "./snapshot-policy.ts";
 
 export interface SandboxOwner {
   readonly userId: string;

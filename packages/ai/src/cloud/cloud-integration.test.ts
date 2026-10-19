@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { FileId, StorageKey } from "@avenire/contracts";
 import { CLOUD_WORKSPACE } from "@avenire/cloud/cloud-box";
 import { Storage, StorageMemory } from "@avenire/storage/storage";
@@ -9,6 +10,7 @@ import { cloudTools, hydrate } from "./tools.ts";
 it.effect("hydrates originals, touches skips, records the manifest and evicts old files", () => {
   const f = cloudFixture();
   f.addOld();
+  f.rows("file")[0]!.contentHash = createHash("sha256").update("input").digest("hex");
   return Effect.gen(function* () {
     const storage = yield* Storage;
     yield* storage.put(StorageKey.make("original"), new TextEncoder().encode("input"));
@@ -202,3 +204,24 @@ it.effect(
   },
 );
 
+it.effect("rehydrates a same-length input modified by a sandbox command", () => {
+  const f = cloudFixture();
+  f.rows("file")[0]!.contentHash = createHash("sha256").update("input").digest("hex");
+  return Effect.gen(function* () {
+    const storage = yield* Storage;
+    yield* storage.put(StorageKey.make("original"), "input");
+    yield* Effect.gen(function* () {
+      const initial = yield* hydrate(cloudCtx, { selector: {} }, "agent");
+      const path = initial.files[0]!.sandboxPath;
+      f.files.set(path, new TextEncoder().encode("wrong"));
+      const restored = yield* hydrate(
+        { ...cloudCtx, toolCallId: "new-call" },
+        { selector: {} },
+        "agent",
+      );
+      expect(restored.files[0]?.skipped).toBe(false);
+      expect(new TextDecoder().decode(f.files.get(path))).toBe("input");
+      expect(f.written).toHaveLength(2);
+    }).pipe(Effect.provide(f.services(storage)));
+  }).pipe(Effect.provide(StorageMemory));
+});

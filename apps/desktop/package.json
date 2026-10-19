@@ -3,6 +3,20 @@
   "private": true,
   "type": "module",
   "main": "dist/main.cjs",
+  "exports": {
+    "./bridge": {
+      "types": "./src/bridge.ts",
+      "import": "./src/bridge.ts"
+    },
+    "./capture-policy": {
+      "types": "./src/capture/policy.ts",
+      "import": "./src/capture/policy.ts"
+    },
+    "./source-acquisition": {
+      "types": "./src/capture/source-acquisition.ts",
+      "import": "./src/capture/source-acquisition.ts"
+    }
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "dev": "node scripts/build.mjs && electron .",
@@ -20,13 +34,7 @@
     "@types/node": "catalog:",
     "electron": "44.5.1",
     "electron-builder": "26.15.3",
-    "esbuild": "^0.27.0",
+    "esbuild": "0.28.2",
     "vite-plus": "catalog:"
-  },
-  "exports": {
-    "./bridge": {
-      "types": "./src/bridge.ts",
-      "import": "./src/bridge.ts"
-    }
   }
 }

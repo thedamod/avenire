@@ -67,6 +67,12 @@ describe("resolveFormat", () => {
   });
 
   it("routes URLs without stored bytes", () => {
+    expect(resolveFormat(source({ kind: "pdf", sourceUrl: "https://example.com/download" }))).toBe(
+      "web",
+    );
+    expect(
+      resolveFormat(source({ kind: "document", sourceUrl: "https://example.com/paper.pdf" })),
+    ).toBe("web");
     expect(resolveFormat(source({ kind: "video", sourceUrl: "https://youtu.be/abc" }))).toBe(
       "youtube",
     );
@@ -84,5 +90,17 @@ describe("resolveFormat", () => {
     expect(resolveFormat(source({ kind: "video", sourceUrl: "https://example.com/a.mp4" }))).toBe(
       "remote",
     );
+  });
+
+  it("does not resolve a provenance URL when the stored original is unavailable", () => {
+    expect(
+      resolveFormat(
+        source({
+          acquisitionMode: "stored",
+          kind: "web-page",
+          sourceUrl: "https://example.com/article",
+        }),
+      ),
+    ).toBeUndefined();
   });
 });

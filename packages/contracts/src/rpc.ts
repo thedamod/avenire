@@ -8,22 +8,28 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 
 import { CaptureSnapshot } from "./capture.ts";
-import { ApprovalDecision, CloudRun, CloudTask, CloudTaskInput, PendingApproval } from "./cloud.ts";
+import { CloudRun, CloudTask, CloudTaskInput, PendingApproval } from "./cloud.ts";
 import { ApiError } from "./errors.ts";
-import {
-  AssetId,
-  FolderId,
-  CloudRunId,
-  CloudTaskId,
-  PendingApprovalId,
-  FileId,
-  ThreadId,
-} from "./ids.ts";
+import { FolderId, FileId } from "./ids.ts";
 import { IngestionJob } from "./ingestion.ts";
 import { CanvasNode, Folder, LibraryFile, FilePlacement } from "./library.ts";
 import { SearchQuery, SearchResult } from "./retrieval.ts";
 import { RuthMessage, RuthThread } from "./ruth.ts";
 import { Authenticated } from "./session.ts";
+import {
+  CloudRunIdRequest,
+  CloudTaskIdRequest,
+  CreateThreadRequest,
+  GetAssetRequest,
+  ListAssetsRequest,
+  ListCloudApprovalsRequest,
+  ListCloudRunsRequest,
+  ResolveCloudApprovalRequest,
+  ResolveCloudRunRequest,
+  SetThreadAccessRequest,
+  ThreadMessagesRequest,
+  UpdateCloudTaskRequest,
+} from "./http.ts";
 
 export const SubmitCaptureResult = Schema.Struct({
   files: Schema.Array(LibraryFile),
@@ -86,17 +92,17 @@ export class SearchRpcs extends RpcGroup.make(
 export class RuthRpcs extends RpcGroup.make(
   Rpc.make("ruth.listThreads", { success: Schema.Array(RuthThread), error: ApiError }),
   Rpc.make("ruth.createThread", {
-    payload: { title: Schema.optional(Schema.String) },
+    payload: CreateThreadRequest,
     success: RuthThread,
     error: ApiError,
   }),
   Rpc.make("ruth.listMessages", {
-    payload: { threadId: ThreadId },
+    payload: ThreadMessagesRequest,
     success: Schema.Array(RuthMessage),
     error: ApiError,
   }),
   Rpc.make("ruth.setFullAccess", {
-    payload: { threadId: ThreadId, enabled: Schema.Boolean },
+    payload: SetThreadAccessRequest,
     success: RuthThread,
     error: ApiError,
   }),
@@ -106,60 +112,47 @@ export class CloudRpcs extends RpcGroup.make(
   Rpc.make("cloud.listTasks", { success: Schema.Array(CloudTask), error: ApiError }),
   Rpc.make("cloud.createTask", { payload: CloudTaskInput, success: CloudTask, error: ApiError }),
   Rpc.make("cloud.updateTask", {
-    payload: {
-      taskId: CloudTaskId,
-      patch: Schema.Struct({
-        title: Schema.optionalKey(CloudTaskInput.fields.title),
-        prompt: Schema.optionalKey(CloudTaskInput.fields.prompt),
-        model: CloudTaskInput.fields.model,
-        network: CloudTaskInput.fields.network,
-        schedule: Schema.optionalKey(CloudTaskInput.fields.schedule),
-        timeZone: Schema.optionalKey(CloudTaskInput.fields.timeZone),
-        preHydration: Schema.optionalKey(CloudTaskInput.fields.preHydration),
-        delivery: Schema.optionalKey(CloudTaskInput.fields.delivery),
-        enabled: Schema.optionalKey(CloudTaskInput.fields.enabled),
-      }),
-    },
+    payload: UpdateCloudTaskRequest,
     success: CloudTask,
     error: ApiError,
   }),
-  Rpc.make("cloud.deleteTask", { payload: { taskId: CloudTaskId }, error: ApiError }),
+  Rpc.make("cloud.deleteTask", { payload: CloudTaskIdRequest, error: ApiError }),
   Rpc.make("cloud.runTaskNow", {
-    payload: { taskId: CloudTaskId },
+    payload: CloudTaskIdRequest,
     success: CloudRun,
     error: ApiError,
   }),
   Rpc.make("cloud.listPendingApprovals", {
-    payload: { runId: Schema.optionalKey(CloudRunId) },
+    payload: ListCloudApprovalsRequest,
     success: Schema.Array(PendingApproval),
     error: ApiError,
   }),
   Rpc.make("cloud.resolveApproval", {
-    payload: { approvalId: PendingApprovalId, decision: ApprovalDecision },
+    payload: ResolveCloudApprovalRequest,
     success: PendingApproval,
     error: ApiError,
   }),
   Rpc.make("cloud.resolveRun", {
-    payload: { runId: CloudRunId, decision: ApprovalDecision },
+    payload: ResolveCloudRunRequest,
     success: Schema.Array(PendingApproval),
     error: ApiError,
   }),
   Rpc.make("cloud.listRuns", {
-    payload: { limit: Schema.optional(Schema.Int) },
+    payload: ListCloudRunsRequest,
     success: Schema.Array(CloudRun),
     error: ApiError,
   }),
   Rpc.make("cloud.cancelRun", {
-    payload: { runId: CloudRunId },
+    payload: CloudRunIdRequest,
     success: CloudRun,
     error: ApiError,
   }),
 ).middleware(Authenticated) {}
 
 export class AssetsRpcs extends RpcGroup.make(
-  Rpc.make("assets.get", { payload: { assetId: AssetId }, success: Asset, error: ApiError }),
+  Rpc.make("assets.get", { payload: GetAssetRequest, success: Asset, error: ApiError }),
   Rpc.make("assets.list", {
-    payload: { threadId: Schema.optionalKey(ThreadId), runId: Schema.optionalKey(CloudRunId) },
+    payload: ListAssetsRequest,
     success: Schema.Array(Asset),
     error: ApiError,
   }),

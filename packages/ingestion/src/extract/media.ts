@@ -57,7 +57,7 @@ export class MediaProcessor extends Context.Service<
         readonly maxSec: number;
       },
     ) => Effect.Effect<ReadonlyArray<AudioSegment>, MediaError>;
-    /** Frames at scene changes (slide transitions), near-duplicates dropped, at most `maxFrames`. */
+    /** Bounded scene samples across up to six hours; near-duplicates dropped, at most `maxFrames`. */
     readonly sceneFrames: (
       media: Uint8Array,
       options: { readonly maxFrames: number },
@@ -73,6 +73,8 @@ const Probe = Schema.fromJsonString(
         index: Schema.Number,
         codec_type: Schema.String,
         codec_name: Schema.optionalKey(Schema.String),
+        width: Schema.optionalKey(Schema.Number),
+        height: Schema.optionalKey(Schema.Number),
       }),
     ),
   }),
@@ -90,14 +92,85 @@ const SAME_SLIDE_BITS = 6;
 /** 8×8 grayscale frames, one byte per pixel, for the average hash. */
 const HASH_PIXELS = 64;
 
-/** Evenly spread `max` of `files`, keeping the first. */
-const spread = <A>(files: ReadonlyArray<A>, max: number): ReadonlyArray<A> =>
-  files.length <= max
-    ? files
-    : Array.from(
-        { length: max },
-        (_, index) => files[Math.round((index * (files.length - 1)) / Math.max(1, max - 1))],
-      ).filter((file): file is A => file !== undefined);
+/** Hard limits apply before decoding/output allocation, independently of caller limits. */
+export const MEDIA_LIMITS = {
+  sourceBytes: 500 * 1024 * 1024,
+  durationSec: 24 * 3600,
+  workSec: 6 * 3600,
+  pixels: 4096 * 4096,
+  dimension: 8192,
+  frames: 120,
+  frameBytes: 8 * 1024 * 1024,
+  outputBytes: 1024 * 1024,
+  captionBytes: 5 * 1024 * 1024,
+} as const;
+
+// Deny HTTP, concat, crypto, data and nested playlist protocols, even for local inputs.
+export const LOCAL_INPUT = [
+  "-protocol_whitelist",
+  "file,pipe",
+  "-threads",
+  "1",
+  "-max_pixels",
+  String(MEDIA_LIMITS.pixels),
+] as const;
+
+/** Space scene candidates across the bounded timeline before JPEG/hash production. */
+export const frameSelection = (durationSec: number, requested: number) => {
+  const maxFrames = Math.min(MEDIA_LIMITS.frames, Math.max(1, Math.floor(requested)));
+  const duration = Math.min(durationSec, MEDIA_LIMITS.workSec);
+  const gap = duration / Math.max(1, maxFrames - 1);
+  const fallback = Math.max(MAX_FRAME_GAP_SEC, gap * 1.5);
+  return {
+    maxFrames,
+    duration,
+    filter: `select='isnan(prev_selected_t)+gte(t-prev_selected_t,${gap})*(gt(scene,0.3)+gte(t-prev_selected_t,${fallback}))'`,
+  };
+};
+
+/** Shared command builder lets local synthetic-media tests exercise the production bounds. */
+export const sceneFrameArguments = (
+  path: string,
+  directory: string,
+  { filter: select, duration, maxFrames }: ReturnType<typeof frameSelection>,
+): ReadonlyArray<string> => [
+  "-nostdin",
+  "-hide_banner",
+  "-filter_complex_threads",
+  "1",
+  "-y",
+  ...LOCAL_INPUT,
+  "-t",
+  String(duration),
+  "-i",
+  path,
+  "-filter_complex",
+  `[0:v]${select},showinfo,split=2[full][tiny];` +
+    "[full]scale=1280:1280:force_original_aspect_ratio=decrease[jpg];" +
+    "[tiny]scale=8:8,format=gray[hash]",
+  "-map",
+  "[jpg]",
+  "-frames:v",
+  String(maxFrames),
+  "-fs",
+  String(MEDIA_LIMITS.frames * MEDIA_LIMITS.frameBytes),
+  "-fps_mode",
+  "vfr",
+  "-q:v",
+  "3",
+  `${directory}/frame-%06d.jpg`,
+  "-map",
+  "[hash]",
+  "-frames:v",
+  String(maxFrames),
+  "-fs",
+  String(maxFrames * HASH_PIXELS),
+  "-fps_mode",
+  "vfr",
+  "-f",
+  "rawvideo",
+  `${directory}/hashes.gray`,
+];
 
 const averageHash = (pixels: Uint8Array): bigint => {
   const mean = pixels.reduce((sum, value) => sum + value, 0) / pixels.length;
@@ -137,15 +210,38 @@ export const MediaProcessorLive = Layer.effect(
     ) =>
       Effect.scoped(
         Effect.gen(function* () {
-          const handle = yield* spawner.spawn(ChildProcess.make(executable, args));
+          let outputBytes = 0;
+          const handle = yield* spawner.spawn(
+            ChildProcess.make(executable, args, { forceKillAfter: "1 second" }),
+          );
           const [output, code] = yield* Effect.all(
             [
               Stream.mkString(
-                Stream.decodeText(executable === "ffmpeg" ? handle.all : handle.stdout),
+                Stream.decodeText(
+                  (executable === "ffmpeg" ? handle.all : handle.stdout).pipe(
+                    Stream.mapEffect((bytes) => {
+                      outputBytes += bytes.length;
+                      return outputBytes <= MEDIA_LIMITS.outputBytes
+                        ? Effect.succeed(bytes)
+                        : Effect.fail("Media subprocess output budget exceeded");
+                    }),
+                  ),
+                ),
               ),
               handle.exitCode,
+              executable === "ffprobe"
+                ? handle.stderr.pipe(
+                    Stream.mapEffect((bytes) => {
+                      outputBytes += bytes.length;
+                      return outputBytes <= MEDIA_LIMITS.outputBytes
+                        ? Effect.void
+                        : Effect.fail("Media subprocess output budget exceeded");
+                    }),
+                    Stream.runDrain,
+                  )
+                : Effect.void,
             ],
-            { concurrency: 2 },
+            { concurrency: 3 },
           );
           if (code !== 0) return yield* Effect.fail(`${executable} exited with code ${code}`);
           return output;
@@ -159,11 +255,25 @@ export const MediaProcessorLive = Layer.effect(
     ) =>
       Effect.scoped(
         Effect.gen(function* () {
+          if (media.length > MEDIA_LIMITS.sourceBytes)
+            return yield* Effect.fail("Media source byte budget exceeded");
           const directory = yield* fs.makeTempDirectoryScoped({ prefix: "avenire-media-" });
           yield* fs.writeFile(`${directory}/source`, media);
           return yield* use(`${directory}/source`, directory);
         }),
       );
+
+    // Check the producer's files before allocating buffers. The directory is private and
+    // subprocesses have exited, so no writer can race this check.
+    const readBounded = (path: string, maxBytes: number) =>
+      Effect.gen(function* () {
+        const info = yield* fs.stat(path);
+        if (Number(info.size) > maxBytes)
+          return yield* Effect.fail("Media output byte budget exceeded");
+        const bytes = yield* fs.readFile(path);
+        if (bytes.length > maxBytes) return yield* Effect.fail("Media output byte budget exceeded");
+        return bytes;
+      });
 
     const probeFile = (path: string) =>
       run(
@@ -171,8 +281,9 @@ export const MediaProcessorLive = Layer.effect(
         [
           "-v",
           "error",
+          ...LOCAL_INPUT,
           "-show_entries",
-          "format=duration:stream=index,codec_type,codec_name",
+          "format=duration:stream=index,codec_type,codec_name,width,height",
           "-of",
           "json",
           path,
@@ -182,7 +293,21 @@ export const MediaProcessorLive = Layer.effect(
         Effect.flatMap(Schema.decodeUnknownEffect(Probe)),
         Effect.flatMap(({ format, streams }) => {
           const durationSec = Number(format.duration);
-          return Number.isFinite(durationSec) && durationSec > 0
+          if (
+            streams.some(
+              (stream) =>
+                stream.codec_type === "video" &&
+                (!stream.width ||
+                  !stream.height ||
+                  stream.width > MEDIA_LIMITS.dimension ||
+                  stream.height > MEDIA_LIMITS.dimension ||
+                  stream.width * stream.height > MEDIA_LIMITS.pixels),
+            )
+          )
+            return Effect.fail("Media pixel budget exceeded");
+          return Number.isFinite(durationSec) &&
+            durationSec > 0 &&
+            durationSec <= MEDIA_LIMITS.durationSec
             ? Effect.succeed({
                 durationSec,
                 hasAudio: streams.some((stream) => stream.codec_type === "audio"),
@@ -213,6 +338,9 @@ export const MediaProcessorLive = Layer.effect(
       function* (media: Uint8Array, streamIndex: number) {
         return yield* withFile(media, (path, directory) =>
           Effect.gen(function* () {
+            yield* probeFile(path);
+            if (!Number.isSafeInteger(streamIndex) || streamIndex < 0)
+              return yield* Effect.fail("Invalid subtitle stream");
             const output = `${directory}/captions.vtt`;
             yield* run(
               "ffmpeg",
@@ -221,17 +349,25 @@ export const MediaProcessorLive = Layer.effect(
                 "-loglevel",
                 "error",
                 "-y",
+                ...LOCAL_INPUT,
                 "-i",
                 path,
                 "-map",
                 `0:${streamIndex}`,
+                "-t",
+                String(MEDIA_LIMITS.workSec),
+                "-fs",
+                String(MEDIA_LIMITS.captionBytes),
                 "-c:s",
                 "webvtt",
                 output,
               ],
               CAPTIONS_TIMEOUT,
             );
-            return new TextDecoder().decode(yield* fs.readFile(output));
+            const captionBytes = yield* readBounded(output, MEDIA_LIMITS.captionBytes);
+            if (captionBytes.length >= MEDIA_LIMITS.captionBytes)
+              return yield* Effect.fail("Caption byte budget exceeded");
+            return new TextDecoder().decode(captionBytes);
           }),
         );
       },
@@ -247,12 +383,23 @@ export const MediaProcessorLive = Layer.effect(
           Effect.gen(function* () {
             const info = yield* probeFile(path);
             if (!info.hasAudio) return [];
-            const duration = Math.min(info.durationSec, options.maxSec);
+            if (
+              ![options.segmentSec, options.overlapSec, options.maxSec].every(Number.isFinite) ||
+              options.segmentSec <= 0 ||
+              options.segmentSec > 600 ||
+              options.overlapSec < 0 ||
+              options.overlapSec >= options.segmentSec ||
+              options.maxSec <= 0
+            )
+              return yield* Effect.fail("Invalid audio segment budget");
+            const duration = Math.min(info.durationSec, options.maxSec, MEDIA_LIMITS.workSec);
             const step = Math.max(1, options.segmentSec - options.overlapSec);
             const starts = Array.from(
               { length: Math.ceil(duration / step) },
               (_, index) => index * step,
             );
+            if (starts.length > 128)
+              return yield* Effect.fail("Audio segment count budget exceeded");
             return yield* Effect.forEach(starts, (start, index) => {
               const clip = `${directory}/audio-${index}.mp3`;
               const length = String(Math.min(options.segmentSec, duration - start));
@@ -265,10 +412,13 @@ export const MediaProcessorLive = Layer.effect(
                   "-y",
                   "-ss",
                   String(start),
+                  ...LOCAL_INPUT,
                   "-i",
                   path,
                   "-t",
                   length,
+                  "-fs",
+                  String(8 * 1024 * 1024),
                   "-vn",
                   "-ac",
                   "1",
@@ -282,8 +432,18 @@ export const MediaProcessorLive = Layer.effect(
                 ],
                 SEGMENT_TIMEOUT,
               ).pipe(
-                Effect.andThen(fs.readFile(clip)),
-                Effect.map((bytes) => ({ offsetSec: start, bytes, mimeType: "audio/mpeg" })),
+                Effect.andThen(readBounded(clip, 8 * 1024 * 1024)),
+                Effect.flatMap((bytes) =>
+                  fs
+                    .remove(clip)
+                    .pipe(
+                      Effect.andThen(
+                        bytes.length >= 8 * 1024 * 1024
+                          ? Effect.fail("Audio clip byte budget exceeded")
+                          : Effect.succeed({ offsetSec: start, bytes, mimeType: "audio/mpeg" }),
+                      ),
+                    ),
+                ),
               );
             });
           }),
@@ -296,54 +456,51 @@ export const MediaProcessorLive = Layer.effect(
     // an 8×8 grayscale copy (appended to one raw file) for duplicate detection.
     const sceneFrames = Effect.fn("MediaProcessor.sceneFrames")(
       function* (media: Uint8Array, options: { readonly maxFrames: number }) {
+        if (!Number.isFinite(options.maxFrames))
+          return yield* Effect.fail(
+            new MediaError({ operation: "frames", cause: "Invalid frame budget" }),
+          );
         if (options.maxFrames <= 0) return [];
         return yield* withFile(media, (path, directory) =>
           Effect.gen(function* () {
-            const select = `select='isnan(prev_selected_t)+gt(scene\\,0.3)+gte(t-prev_selected_t\\,${MAX_FRAME_GAP_SEC})'`;
+            const info = yield* probeFile(path);
+            if (!info.hasVideo) return [];
+            const {
+              filter: select,
+              duration,
+              maxFrames,
+            } = frameSelection(info.durationSec, options.maxFrames);
             const log = yield* run(
               "ffmpeg",
-              [
-                "-nostdin",
-                "-hide_banner",
-                "-y",
-                "-i",
-                path,
-                "-filter_complex",
-                `[0:v]${select},showinfo,split=2[full][tiny];` +
-                  "[full]scale=1280:1280:force_original_aspect_ratio=decrease[jpg];" +
-                  "[tiny]scale=8:8,format=gray[hash]",
-                "-map",
-                "[jpg]",
-                "-fps_mode",
-                "vfr",
-                "-q:v",
-                "3",
-                `${directory}/frame-%06d.jpg`,
-                "-map",
-                "[hash]",
-                "-fps_mode",
-                "vfr",
-                "-f",
-                "rawvideo",
-                `${directory}/hashes.gray`,
-              ],
+              sceneFrameArguments(path, directory, { filter: select, duration, maxFrames }),
               FRAMES_TIMEOUT,
             );
             const times = [...log.matchAll(/showinfo.*?pts_time:\s*([\d.]+)/g)].map(([, time]) =>
               Number(time),
             );
-            const hashes = yield* fs.readFile(`${directory}/hashes.gray`);
+            if (times.length > maxFrames)
+              return yield* Effect.fail("Frame production budget exceeded");
+            const hashes = yield* readBounded(`${directory}/hashes.gray`, maxFrames * HASH_PIXELS);
+            if (hashes.length !== times.length * HASH_PIXELS)
+              return yield* Effect.fail("Frame hash count does not match produced frames");
             const frames = yield* Effect.forEach(times, (atSec, index) =>
-              fs.readFile(`${directory}/frame-${String(index + 1).padStart(6, "0")}.jpg`).pipe(
-                Effect.map((bytes) => ({
-                  frame: { atSec, bytes, mimeType: "image/jpeg" },
-                  hash: averageHash(
-                    hashes.subarray(index * HASH_PIXELS, (index + 1) * HASH_PIXELS),
-                  ),
-                })),
+              readBounded(
+                `${directory}/frame-${String(index + 1).padStart(6, "0")}.jpg`,
+                MEDIA_LIMITS.frameBytes,
+              ).pipe(
+                Effect.flatMap((bytes) =>
+                  bytes.length > MEDIA_LIMITS.frameBytes
+                    ? Effect.fail("JPEG byte budget exceeded")
+                    : Effect.succeed({
+                        frame: { atSec, bytes, mimeType: "image/jpeg" },
+                        hash: averageHash(
+                          hashes.subarray(index * HASH_PIXELS, (index + 1) * HASH_PIXELS),
+                        ),
+                      }),
+                ),
               ),
             );
-            return spread(distinctFrames(frames), options.maxFrames).map(({ frame }) => frame);
+            return distinctFrames(frames).map(({ frame }) => frame);
           }),
         );
       },

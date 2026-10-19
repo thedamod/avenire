@@ -16,7 +16,7 @@ import {
   SandboxTimeout,
 } from "./daytona.ts";
 import { cloudNetworkSettings, type DaytonaNetworkTier } from "./network.ts";
-import { AVENIRE_SNAPSHOT, SANDBOX_RESOURCES } from "./snapshots.ts";
+import { AVENIRE_SNAPSHOT, SANDBOX_RESOURCES } from "./snapshot-policy.ts";
 
 export const CLOUD_WORKSPACE = "/home/daytona/workspace";
 export const CLOUD_INPUTS = "/home/daytona/.avenire";
@@ -40,28 +40,8 @@ export interface CloudBox {
     path: string,
   ) => Effect.Effect<Option.Option<{ size: number; isDir: boolean }>, CloudError>;
   readonly removeFile: (path: string) => Effect.Effect<void, CloudError>;
-  readonly startCommand: (input: {
-    sessionId: string;
-    command: string;
-    cwd?: string;
-  }) => Effect.Effect<{ commandId: string }, CloudError>;
-  readonly commandStatus: (
-    sessionId: string,
-    commandId: string,
-  ) => Effect.Effect<{ exitCode: number | null }, CloudError>;
-  readonly commandLogs: (
-    sessionId: string,
-    commandId: string,
-    maxChars: number,
-  ) => Effect.Effect<string, CloudError>;
   readonly endSession: (sessionId: string) => Effect.Effect<void, CloudError>;
   readonly startDesktop: Effect.Effect<void, CloudError>;
-  readonly startRecording: (name: string) => Effect.Effect<Option.Option<string>, CloudError>;
-  readonly stopRecording: (id: string, localPath: string) => Effect.Effect<void, CloudError>;
-  readonly recordings: Effect.Effect<
-    ReadonlyArray<{ id: string; name?: string; state?: string }>,
-    CloudError
-  >;
 }
 export class CloudBoxes extends Context.Service<
   CloudBoxes,
@@ -70,6 +50,11 @@ export class CloudBoxes extends Context.Service<
       userId: string,
       network?: "packages" | "open",
     ) => Effect.Effect<CloudBox, CloudError | SandboxUnavailable>;
+    /** Reconnect an existing box by its recorded identity; never creates a replacement. */
+    readonly reconnect: (
+      userId: string,
+      sandboxId: string,
+    ) => Effect.Effect<Option.Option<CloudBox>, CloudError>;
     readonly running: (userId: string) => Effect.Effect<Option.Option<CloudBox>, CloudError>;
     readonly stop: (userId: string) => Effect.Effect<void, CloudError>;
   }
@@ -134,69 +119,12 @@ const makeBox = (sandbox: Sandbox, userId: string): CloudBox => {
     removeFile: Effect.fn("CloudBox.removeFile")((path) =>
       attempt("cloudRemoveFile", () => sandbox.fs.deleteFile(path)),
     ),
-    startCommand: Effect.fn("CloudBox.startCommand")(function* ({ sessionId, command, cwd }) {
-      yield* attempt("cloudCreateSession", () => sandbox.process.createSession(sessionId));
-      const response = yield* attempt("cloudStartCommand", () =>
-        sandbox.process.executeSessionCommand(sessionId, {
-          command: `cd ${shellQuote(cwd ?? CLOUD_WORKSPACE)} && ${command}`,
-          runAsync: true,
-        }),
-      );
-      if (!response.cmdId)
-        return yield* new CloudError({
-          operation: "cloudStartCommand",
-          detail: "No command id returned",
-        });
-      return { commandId: response.cmdId };
-    }),
-    commandStatus: Effect.fn("CloudBox.commandStatus")((sessionId, commandId) =>
-      attempt("cloudCommandStatus", () =>
-        sandbox.process.getSessionCommand(sessionId, commandId),
-      ).pipe(Effect.map((command) => ({ exitCode: command.exitCode ?? null }))),
-    ),
-    commandLogs: Effect.fn("CloudBox.commandLogs")((sessionId, commandId, maxChars) =>
-      attempt("cloudCommandLogs", () =>
-        sandbox.process.getSessionCommandLogs(sessionId, commandId),
-      ).pipe(
-        Effect.map((logs) => {
-          const text = logs.output ?? `${logs.stdout ?? ""}${logs.stderr ?? ""}`;
-          const max = Math.max(0, Math.floor(maxChars));
-          return max === 0 ? "" : text.slice(-max);
-        }),
-      ),
-    ),
     endSession: Effect.fn("CloudBox.endSession")((sessionId) =>
       attempt("cloudEndSession", () => sandbox.process.deleteSession(sessionId)),
     ),
     startDesktop: attempt("cloudStartDesktop", () => sandbox.computerUse.start()).pipe(
       Effect.asVoid,
     ),
-    startRecording: Effect.fn("CloudBox.startRecording")((name) =>
-      sandbox.computerUse?.recording === undefined
-        ? Effect.succeed(Option.none())
-        : attempt("cloudStartRecording", () => sandbox.computerUse.recording.start(name)).pipe(
-            Effect.map((recording) => Option.some(recording.id)),
-            Effect.catchTag("CloudError", (error) =>
-              missing(error) ? Effect.succeed(Option.none()) : Effect.fail(error),
-            ),
-          ),
-    ),
-    recordings: attempt("cloudListRecordings", () => sandbox.computerUse.recording.list()).pipe(
-      Effect.map((response) =>
-        response.recordings.map((r) => ({ id: r.id, name: r.fileName, state: r.status })),
-      ),
-    ),
-    stopRecording: Effect.fn("CloudBox.stopRecording")(function* (id, localPath) {
-      const recordings = yield* attempt("cloudRecordingState", () =>
-        sandbox.computerUse.recording.list(),
-      );
-      const recording = recordings.recordings.find((r) => r.id === id);
-      if (!recording || !["stopped", "completed", "finished"].includes(recording.status))
-        yield* attempt("cloudStopRecording", () => sandbox.computerUse.recording.stop(id));
-      yield* attempt("cloudDownloadRecording", () =>
-        sandbox.computerUse.recording.download(id, localPath),
-      );
-    }),
   };
 };
 
@@ -218,11 +146,15 @@ export const CloudBoxesLive: Layer.Layer<CloudBoxes, never, DaytonaClient> = Lay
         }
         return effect.pipe(lock.withPermits(1));
       });
-    const find = (userId: string) =>
+    const find = (userId: string, sandboxId?: string) =>
       attempt("findCloudBox", async () => {
         for await (const sandbox of daytona.list({ labels: { app: "ruth-cloud", userId } })) {
           // Legacy per-run desktop boxes use the same app label and must not become the persistent box.
-          if (!sandbox.labels.runId && !["destroyed", "destroying"].includes(sandbox.state ?? ""))
+          if (
+            (!sandboxId || sandbox.id === sandboxId) &&
+            !sandbox.labels.runId &&
+            !["destroyed", "destroying"].includes(sandbox.state ?? "")
+          )
             return Option.some(sandbox);
         }
         return Option.none<Sandbox>();
@@ -290,6 +222,18 @@ export const CloudBoxesLive: Layer.Layer<CloudBoxes, never, DaytonaClient> = Lay
             );
             return makeBox(sandbox, userId);
           }).pipe(Effect.uninterruptible),
+        ),
+      ),
+      reconnect: Effect.fn("CloudBoxes.reconnect")((userId, sandboxId) =>
+        locked(
+          userId,
+          Effect.gen(function* () {
+            const found = yield* find(userId, sandboxId);
+            if (Option.isNone(found) || found.value.id !== sandboxId) return Option.none();
+            if (found.value.state !== "started")
+              yield* attempt("reconnectCloudBox", () => found.value.start());
+            return Option.some(makeBox(found.value, userId));
+          }),
         ),
       ),
       running: Effect.fn("CloudBoxes.running")((userId) =>

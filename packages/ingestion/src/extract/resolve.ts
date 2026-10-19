@@ -96,7 +96,14 @@ export const resolveFormat = (source: SourceInput): SourceFormat | undefined => 
     }
     return undefined;
   }
-  if (source.sourceUrl === null) return undefined;
+  if (source.acquisitionMode === "stored" || source.sourceUrl === null) return undefined;
+  if (
+    source.kind === "pdf" ||
+    source.kind === "document" ||
+    mime === "application/pdf" ||
+    /\.pdf(?:[?#]|$)/i.test(source.sourceUrl)
+  )
+    return "web";
   if (isYouTubeUrl(source.sourceUrl)) return "youtube";
   if (source.kind === "video" || source.kind === "audio") return "remote";
   if (source.kind !== "web-page") return undefined;

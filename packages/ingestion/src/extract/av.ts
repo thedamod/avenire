@@ -6,10 +6,10 @@ import * as Option from "effect/Option";
 import { formatTimestamp } from "../chunk.ts";
 import { parseCaptions } from "./captions.ts";
 import { ImageDescriber } from "./describe.ts";
-import { type Frame, MediaProcessor } from "./media.ts";
+import { type Frame, MEDIA_LIMITS, MediaProcessor } from "./media.ts";
 import { type RemoteMetadata, RemoteMedia } from "./remote.ts";
 import { type Cue, groupCues, stitchCues } from "./transcript.ts";
-import { TranscriptCache } from "./transcript-cache.ts";
+import { TranscriptCache, type TranscriptScope } from "./transcript-cache.ts";
 import { Transcriber } from "./transcribe.ts";
 import {
   combineCoverage,
@@ -116,6 +116,7 @@ export const outlineSection = (
 export const transcribeAudio = Effect.fn("extractMedia.transcribe")(function* (
   bytes: Uint8Array,
   durationSec: number,
+  scope?: TranscriptScope,
 ) {
   const media = yield* MediaProcessor;
   const transcriber = yield* Transcriber;
@@ -133,13 +134,24 @@ export const transcribeAudio = Effect.fn("extractMedia.transcribe")(function* (
   const transcribed = yield* Effect.forEach(
     clips.value,
     (clip) =>
-      cache.lookup(transcriber.model, clip.bytes).pipe(
+      cache.lookup(transcriber.model, clip.bytes, scope).pipe(
+        Effect.catchTag("TranscriptCacheError", (error) =>
+          Effect.as(Effect.logWarning("Transcript cache lookup failed", { error }), undefined),
+        ),
         Effect.flatMap((stored) =>
           stored === undefined
             ? transcriber
                 .transcribe(clip.bytes, clip.mimeType)
                 .pipe(
-                  Effect.tap((segments) => cache.store(transcriber.model, clip.bytes, segments)),
+                  Effect.tap((segments) =>
+                    cache
+                      .store(transcriber.model, clip.bytes, segments, scope)
+                      .pipe(
+                        Effect.catchTag("TranscriptCacheError", (error) =>
+                          Effect.logWarning("Transcript cache store failed", error),
+                        ),
+                      ),
+                  ),
                 )
             : Effect.succeed(stored),
         ),
@@ -200,6 +212,12 @@ const describeSlides = Effect.fn("extractMedia.describeSlides")(function* (
   const slides = toSlides(described.flatMap(Option.toArray), durationSec);
   const failed = described.filter(Option.isNone).length;
   const issues = [
+    ...(slides.length > 0
+      ? ["Representative slide frames sampled within a bounded scene interval"]
+      : []),
+    ...(durationSec > MEDIA_LIMITS.workSec
+      ? [`Sampled the first ${MEDIA_LIMITS.workSec} seconds`]
+      : []),
     ...(failed > 0
       ? [`Frame description failed for ${failed} of ${frames.value.length} frames`]
       : []),
@@ -230,7 +248,7 @@ export const extractMedia = Effect.fn("extractMedia")(function* (
   const speech =
     captionCues.length > 0
       ? captionedSpeech(captionCues, "embedded captions", info.durationSec)
-      : yield* transcribeAudio(bytes, info.durationSec);
+      : yield* transcribeAudio(bytes, info.durationSec, source.transcriptScope);
   const transcript = groupCues(speech.cues);
   if (!info.hasVideo) {
     return {
@@ -298,7 +316,11 @@ export const extractRemoteMedia = Effect.fn("extractRemoteMedia")(function* (
         : yield* remote.audio(url, MAX_REMOTE_AUDIO_BYTES).pipe(
             Effect.flatMap((audio) =>
               Effect.flatMap(media.probe(audio), (info) =>
-                transcribeAudio(audio, metadata.durationSec ?? info.durationSec),
+                transcribeAudio(
+                  audio,
+                  metadata.durationSec ?? info.durationSec,
+                  source.transcriptScope,
+                ),
               ),
             ),
             orMissing("Remote audio"),

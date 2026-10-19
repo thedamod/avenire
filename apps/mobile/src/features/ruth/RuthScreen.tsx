@@ -1,5 +1,6 @@
-import { useChat } from "@ai-sdk/react";
+import { Chat, useChat } from "@ai-sdk/react";
 import {
+  validateUIMessages,
   DefaultChatTransport,
   getToolName,
   isStaticToolUIPart,
@@ -18,10 +19,15 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { call } from "@avenire/client-runtime/rpc";
+import {
+  call,
+  conversationSession,
+  loadConversation,
+  questionAnswer,
+} from "@avenire/client-runtime/rpc";
 import * as WebBrowser from "expo-web-browser";
 import type { RuthUIMessage } from "@avenire/ai/message-types";
-import { type PageContext, RUTH_CHAT_PATH, type ThreadId } from "@avenire/contracts";
+import { type PageContext, RUTH_CHAT_PATH } from "@avenire/contracts";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { EmptyState } from "../../components/EmptyState";
@@ -65,9 +71,11 @@ export function RuthScreen() {
   const api = useApi();
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme();
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(() => conversationSession<RuthUIMessage>(api).draft);
   const [error, setError] = useState<string>();
-  const threadId = useRef<ThreadId>(undefined);
+  const session = conversationSession<RuthUIMessage>(api);
+  const [historyReady, setHistoryReady] = useState(session.ready);
+  const [historyAttempt, setHistoryAttempt] = useState(0);
   const page = useRef<PageContext>(undefined);
   useEffect(() => {
     page.current = {
@@ -80,6 +88,8 @@ export function RuthScreen() {
     };
   }, [width, colorScheme]);
 
+  session.pageContext = () => page.current;
+
   const [transport] = useState(
     () =>
       new DefaultChatTransport<RuthUIMessage>({
@@ -90,23 +100,64 @@ export function RuthScreen() {
         prepareSendMessagesRequest: ({ messages: current, headers }) => ({
           ...(headers === undefined ? {} : { headers }),
           body: {
-            threadId: threadId.current,
+            threadId: session.threadId,
             message: current.at(-1),
-            page: page.current,
+            page: session.pageContext?.(),
             fast: false,
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           },
         }),
       }),
   );
-  const { messages, sendMessage, status, addToolApprovalResponse, addToolOutput } =
-    useChat<RuthUIMessage>({
-      transport,
-      sendAutomaticallyWhen: (options) =>
-        lastAssistantMessageIsCompleteWithApprovalResponses(options) ||
-        lastAssistantMessageIsCompleteWithToolCalls(options),
-      onError: (cause) => setError(errorMessage(cause)),
-    });
+  const chat = session.retain(
+    () =>
+      new Chat<RuthUIMessage>({
+        transport,
+        messages: session.messages,
+        sendAutomaticallyWhen: (options) =>
+          lastAssistantMessageIsCompleteWithApprovalResponses(options) ||
+          lastAssistantMessageIsCompleteWithToolCalls(options),
+      }),
+    (retained) => {
+      void retained.stop();
+    },
+  );
+  const {
+    messages,
+    sendMessage,
+    status,
+    error: chatError,
+    addToolApprovalResponse: approveTool,
+    addToolOutput: outputTool,
+  } = useChat({ chat });
+  useEffect(() => {
+    let active = true;
+    void loadConversation(api, session, (saved) =>
+      validateUIMessages<RuthUIMessage>({ messages: saved }),
+    )
+      .then(() => {
+        if (!active) return;
+        if (chat.messages.length === 0) chat.messages = session.messages;
+        setHistoryReady(true);
+      })
+      .catch((cause: unknown) => {
+        if (active) setError(errorMessage(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, session, chat, historyAttempt]);
+  useEffect(() => {
+    session.messages = messages;
+  }, [session, messages]);
+  const addToolApprovalResponse: typeof approveTool = (response) =>
+    session
+      .respondOnce(`approval:${response.id}`, () => approveTool(response))
+      .catch((cause: unknown) => setError(errorMessage(cause)));
+  const addToolOutput: typeof outputTool = (response) =>
+    session
+      .respondOnce(`tool:${response.toolCallId}`, () => outputTool(response))
+      .catch((cause: unknown) => setError(errorMessage(cause)));
   const working = status === "submitted" || status === "streaming";
 
   // Mobile has no WebView yet, so widgets and downloads open in the system browser.
@@ -121,17 +172,20 @@ export function RuthScreen() {
 
   const send = async () => {
     const text = input.trim();
-    if (!text || working) return;
+    if (!text || working || !historyReady) return;
     setInput("");
+    session.draft = "";
     setError(undefined);
     try {
-      if (threadId.current === undefined) {
-        const thread = await call(api, (client) =>
-          client["ruth.createThread"]({ title: text.slice(0, 60) }),
-        );
-        threadId.current = thread.id;
-      }
-      await sendMessage({ text });
+      await session.send(async () => {
+        await session.ensureThread(async () => {
+          const thread = await call(api, (client) =>
+            client["ruth.createThread"]({ title: text.slice(0, 60) }),
+          );
+          return thread.id;
+        });
+        await sendMessage({ text: text });
+      });
     } catch (cause) {
       setError(errorMessage(cause));
     }
@@ -172,24 +226,15 @@ export function RuthScreen() {
     }
     if (part.type === "tool-ask_user" && part.state === "input-available") {
       return (
-        <View key={key} className="gap-2 rounded-xl border border-border bg-muted p-3">
-          <Text className="font-semibold text-foreground">{part.input.question}</Text>
-          {(part.input.choices ?? []).map((choice) => (
-            <Button
-              key={choice}
-              variant="secondary"
-              onPress={() =>
-                addToolOutput({
-                  tool: "ask_user",
-                  toolCallId: part.toolCallId,
-                  output: { answers: [choice] },
-                })
-              }
-            >
-              {choice}
-            </Button>
-          ))}
-        </View>
+        <AskUserControl
+          key={key}
+          question={part.input.question}
+          choices={part.input.choices ?? []}
+          allowCustom={part.input.allowCustom ?? true}
+          onAnswer={(answer) => {
+            void addToolOutput(questionAnswer(part.toolCallId, answer));
+          }}
+        />
       );
     }
     if (part.type === "tool-render_widget" && part.state === "output-available") {
@@ -264,7 +309,19 @@ export function RuthScreen() {
       scroll={false}
     >
       <ScrollView className="flex-1" contentContainerClassName="gap-3 pb-3">
-        {error ? <ErrorState message={error} /> : null}
+        {error || chatError ? (
+          <ErrorState
+            message={error ?? errorMessage(chatError)}
+            {...(!historyReady
+              ? {
+                  onRetry: () => {
+                    setError(undefined);
+                    setHistoryAttempt((value) => value + 1);
+                  },
+                }
+              : {})}
+          />
+        ) : null}
         {messages.length === 0 ? (
           <EmptyState
             title="Start a conversation"
@@ -288,12 +345,19 @@ export function RuthScreen() {
           multiline
           editable={!working}
           value={input}
-          onChangeText={setInput}
+          onChangeText={(value) => {
+            setInput(value);
+            session.draft = value;
+          }}
           placeholder="Ask Ruth"
           className="max-h-28 min-h-12 flex-1 rounded-xl border border-border bg-card px-4 py-3 text-foreground"
         />
         <View className="w-20">
-          <Button onPress={() => void send()} disabled={!input.trim()} busy={working}>
+          <Button
+            onPress={() => void send()}
+            disabled={!historyReady || !input.trim()}
+            busy={working}
+          >
             Send
           </Button>
         </View>
@@ -322,4 +386,41 @@ function AssetImage({ url, title }: { url: string; title: string }) {
       resizeMode="contain"
     />
   ) : null;
+}
+
+function AskUserControl({
+  question,
+  choices,
+  allowCustom,
+  onAnswer,
+}: {
+  question: string;
+  choices: readonly string[];
+  allowCustom: boolean;
+  onAnswer: (answer: string) => void;
+}) {
+  const [custom, setCustom] = useState("");
+  return (
+    <View className="gap-2 rounded-xl border border-border bg-muted p-3">
+      <Text className="font-semibold text-foreground">{question}</Text>
+      {choices.map((choice) => (
+        <Button key={choice} variant="secondary" onPress={() => onAnswer(choice)}>
+          {choice}
+        </Button>
+      ))}
+      {allowCustom ? (
+        <>
+          <TextInput
+            accessibilityLabel="Your answer"
+            value={custom}
+            onChangeText={setCustom}
+            className="min-h-12 rounded-xl border border-border bg-card px-4 py-3 text-foreground"
+          />
+          <Button disabled={!custom.trim()} onPress={() => onAnswer(custom.trim())}>
+            Answer
+          </Button>
+        </>
+      ) : null}
+    </View>
+  );
 }

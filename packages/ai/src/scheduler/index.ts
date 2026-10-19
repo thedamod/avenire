@@ -67,6 +67,7 @@ export const CloudRunsLive = Layer.effect(
                       .where(
                         and(
                           eq(cloudRun.id, claim.runId),
+                          eq(cloudRun.leasedBy, claim.lease),
                           eq(cloudRun.status, "provisioning"),
                           isNull(cloudRun.startedAt),
                         ),
@@ -98,6 +99,7 @@ export const CloudRunsLive = Layer.effect(
 
 /** Persistent boxes serialize runs by user across worker processes. */
 export const MAX_ACTIVE_RUNS_PER_USER = 1;
+export const SCHEDULER_BATCH_SIZE = 100;
 export const RUN_LEASE_MS = 5 * 60_000;
 const WORKER_ID = randomUUID();
 export const leaseExpired = (expires: Date | null, now: Date) =>
@@ -124,15 +126,12 @@ export const claimRun = Effect.fn("CloudScheduler.claimRun")(function* (
     if (candidate.status === "scheduled" && candidate.notBefore > date) return [];
     if (candidate.status !== "scheduled" && !leaseExpired(candidate.leaseExpiresAt ?? null, date))
       return [];
-    const otherRuns = await tx
-      .select()
+    // Eligibility needs one existence decision, independent of the user's message history.
+    const active = await tx
+      .select({ id: cloudRun.id })
       .from(cloudRun)
-      .where(and(eq(cloudRun.userId, userId), ne(cloudRun.id, runId)));
-    const active = otherRuns.filter(
-      (row) =>
-        ["provisioning", "running"].includes(row.status) ||
-        (row.leasedBy && !row.usage.cleanupComplete),
-    );
+      .where(and(eq(cloudRun.userId, userId), ne(cloudRun.id, runId), blocksUser))
+      .limit(MAX_ACTIVE_RUNS_PER_USER);
     if (active.length >= MAX_ACTIVE_RUNS_PER_USER) return [];
     return tx
       .update(cloudRun)
@@ -159,8 +158,14 @@ export const schedulerTick = Effect.fn("CloudScheduler.tick")(function* () {
   const date = DateTime.toDateUtc(now);
   const due = yield* database.use((db) =>
     db.query.cloudTask.findMany({
-      where: and(eq(cloudTask.enabled, true), lte(cloudTask.nextRunAt, date)),
+      columns: { id: true },
+      where: and(
+        eq(cloudTask.enabled, true),
+        isNull(cloudTask.retiredAt),
+        lte(cloudTask.nextRunAt, date),
+      ),
       orderBy: [asc(cloudTask.nextRunAt), asc(cloudTask.id)],
+      limit: SCHEDULER_BATCH_SIZE,
     }),
   );
   for (const task of due) {
@@ -173,6 +178,7 @@ export const schedulerTick = Effect.fn("CloudScheduler.tick")(function* () {
           and(
             eq(cloudTask.id, task.id),
             eq(cloudTask.enabled, true),
+            isNull(cloudTask.retiredAt),
             lte(cloudTask.nextRunAt, date),
           ),
         )
@@ -204,38 +210,25 @@ export const schedulerTick = Effect.fn("CloudScheduler.tick")(function* () {
         .where(eq(cloudTask.id, current.id));
     });
   }
+  const expiredLease = sql`coalesce(${cloudRun.leaseExpiresAt}, '-infinity'::timestamptz) <= ${date}`;
+  const recovery = yield* database.use((db) =>
+    db
+      .select({ id: cloudRun.id, userId: cloudRun.userId })
+      .from(cloudRun)
+      .where(and(blocksUser, expiredLease))
+      .orderBy(asc(cloudRun.createdAt), asc(cloudRun.id))
+      .limit(SCHEDULER_BATCH_SIZE),
+  );
   const queued = yield* database.use((db) =>
-    db.query.cloudRun.findMany({
-      where: and(eq(cloudRun.status, "scheduled"), lte(cloudRun.notBefore, date)),
-      orderBy: [asc(cloudRun.notBefore), asc(cloudRun.id)],
-    }),
+    db
+      .select({ id: cloudRun.id, userId: cloudRun.userId })
+      .from(cloudRun)
+      .where(and(eq(cloudRun.status, "scheduled"), lte(cloudRun.notBefore, date), claimableQueued))
+      .orderBy(asc(cloudRun.notBefore), asc(cloudRun.id))
+      .limit(SCHEDULER_BATCH_SIZE),
   );
-  const active = yield* database.use((db) =>
-    db.query.cloudRun.findMany({
-      where: inArray(cloudRun.status, ["provisioning", "running"]),
-      orderBy: [asc(cloudRun.createdAt)],
-    }),
-  );
-  const finishing = yield* database.use((db) =>
-    db.query.cloudRun.findMany({
-      where: and(
-        inArray(cloudRun.status, ["succeeded", "failed", "cancelled"]),
-        sql`${cloudRun.leasedBy} is not null`,
-      ),
-      orderBy: [asc(cloudRun.createdAt)],
-    }),
-  );
-  const expired = [...active, ...finishing];
   // Recovery has priority over new work and preserves sandbox, recorder, messages and tool ids.
-  const runnable = [
-    ...expired.filter(
-      (run) =>
-        (["provisioning", "running"].includes(run.status) ||
-          (run.leasedBy && !run.usage.cleanupComplete)) &&
-        leaseExpired(run.leaseExpiresAt ?? null, date),
-    ),
-    ...queued,
-  ];
+  const runnable = [...recovery, ...queued];
   for (const run of runnable) {
     // Claim + scope-owned fork must finish together even during worker shutdown.
     yield* Effect.gen(function* () {
@@ -244,6 +237,10 @@ export const schedulerTick = Effect.fn("CloudScheduler.tick")(function* () {
     }).pipe(Effect.uninterruptible);
   }
 });
+
+/** A running executor or an unfinished terminal cleanup owns the user's persistent box. */
+const blocksUser = sql`(${cloudRun.status} in ('provisioning', 'running')
+  or (${cloudRun.leasedBy} is not null and coalesce(${cloudRun.usage}->>'cleanupComplete', 'false') <> 'true'))`;
 
 /** A queued run no other run of its user blocks; the web process enqueues these (ad-hoc runs). */
 const claimableQueued = sql`${cloudRun.status} = 'scheduled' and ${cloudRun.notBefore} <= now()

@@ -1,9 +1,10 @@
 "use client";
 
-import { useChat } from "@ai-sdk/react";
+import { Chat, useChat } from "@ai-sdk/react";
 import {
   type ChatAddToolApproveResponseFunction,
   type ChatAddToolOutputFunction,
+  validateUIMessages,
   DefaultChatTransport,
   getToolName,
   isToolUIPart,
@@ -17,8 +18,13 @@ import { WidgetFrame } from "@avenire/ui/widget-frame";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { RuthUIMessage } from "@avenire/ai/message-types";
-import { type PageContext, RUTH_CHAT_PATH, type ThreadId } from "@avenire/contracts";
-import { call } from "@avenire/client-runtime/rpc";
+import { type PageContext, RUTH_CHAT_PATH } from "@avenire/contracts";
+import {
+  call,
+  conversationSession,
+  loadConversation,
+  questionAnswer,
+} from "@avenire/client-runtime/rpc";
 import { Button } from "@avenire/ui/components/button";
 import { Textarea } from "@avenire/ui/components/textarea";
 import { useApi, errorMessage } from "~/lib/rpc";
@@ -174,13 +180,7 @@ export function RuthMessageParts({
           question={part.input.question}
           choices={part.input.choices ?? []}
           allowCustom={part.input.allowCustom}
-          onAnswer={(answer) =>
-            addToolOutput?.({
-              tool: "ask_user",
-              toolCallId: part.toolCallId,
-              output: { answers: [answer] },
-            })
-          }
+          onAnswer={(answer) => addToolOutput?.(questionAnswer(part.toolCallId, answer))}
         />
       );
     }
@@ -271,10 +271,14 @@ export function RuthPanel() {
     const frame = requestAnimationFrame(() => setThemeTokens(readThemeTokens()));
     return () => cancelAnimationFrame(frame);
   }, [resolvedTheme]);
-  const [text, setText] = useState("");
+  const [text, setText] = useState(() => conversationSession<RuthUIMessage>(api).draft);
   const [error, setError] = useState<string>();
-  const threadId = useRef<ThreadId>(undefined);
+  const session = conversationSession<RuthUIMessage>(api);
+  const [historyReady, setHistoryReady] = useState(session.ready);
+  const [historyAttempt, setHistoryAttempt] = useState(0);
   const column = useRef<HTMLDivElement>(null);
+
+  session.pageContext = () => measurePage(column.current);
 
   const [transport] = useState(
     () =>
@@ -283,38 +287,82 @@ export function RuthPanel() {
         // The server owns the history; send only the latest message.
         prepareSendMessagesRequest: ({ messages: current }) => ({
           body: {
-            threadId: threadId.current,
+            threadId: session.threadId,
             message: current.at(-1),
-            page: measurePage(column.current),
+            page: session.pageContext?.(),
             fast: false,
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           },
         }),
       }),
   );
-  const { messages, sendMessage, status, addToolApprovalResponse, addToolOutput } =
-    useChat<RuthUIMessage>({
-      transport,
-      sendAutomaticallyWhen: (options) =>
-        lastAssistantMessageIsCompleteWithApprovalResponses(options) ||
-        lastAssistantMessageIsCompleteWithToolCalls(options),
-      onError: (cause) => setError(errorMessage(cause)),
-    });
+  const chat = session.retain(
+    () =>
+      new Chat<RuthUIMessage>({
+        transport,
+        messages: session.messages,
+        sendAutomaticallyWhen: (options) =>
+          lastAssistantMessageIsCompleteWithApprovalResponses(options) ||
+          lastAssistantMessageIsCompleteWithToolCalls(options),
+      }),
+    (retained) => {
+      void retained.stop();
+    },
+  );
+  const {
+    messages,
+    sendMessage,
+    status,
+    error: chatError,
+    addToolApprovalResponse: approveTool,
+    addToolOutput: outputTool,
+  } = useChat({ chat });
+  useEffect(() => {
+    let active = true;
+    void loadConversation(api, session, (saved) =>
+      validateUIMessages<RuthUIMessage>({ messages: saved }),
+    )
+      .then(() => {
+        if (!active) return;
+        if (chat.messages.length === 0) chat.messages = session.messages;
+        setHistoryReady(true);
+      })
+      .catch((cause: unknown) => {
+        if (active) setError(errorMessage(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, session, chat, historyAttempt]);
+  useEffect(() => {
+    session.messages = messages;
+  }, [session, messages]);
+  const addToolApprovalResponse: typeof approveTool = (response) =>
+    session
+      .respondOnce(`approval:${response.id}`, () => approveTool(response))
+      .catch((cause: unknown) => setError(errorMessage(cause)));
+  const addToolOutput: typeof outputTool = (response) =>
+    session
+      .respondOnce(`tool:${response.toolCallId}`, () => outputTool(response))
+      .catch((cause: unknown) => setError(errorMessage(cause)));
   const working = status === "submitted" || status === "streaming";
 
   async function send() {
     const message = text.trim();
-    if (!message || working) return;
+    if (!message || working || !historyReady) return;
     setError(undefined);
     setText("");
+    session.draft = "";
     try {
-      if (threadId.current === undefined) {
-        const thread = await call(api, (client) =>
-          client["ruth.createThread"]({ title: message.slice(0, 60) }),
-        );
-        threadId.current = thread.id;
-      }
-      await sendMessage({ text: message });
+      await session.send(async () => {
+        await session.ensureThread(async () => {
+          const thread = await call(api, (client) =>
+            client["ruth.createThread"]({ title: message.slice(0, 60) }),
+          );
+          return thread.id;
+        });
+        await sendMessage({ text: message });
+      });
     } catch (cause) {
       setError(errorMessage(cause));
     }
@@ -342,9 +390,20 @@ export function RuthPanel() {
             />
           </article>
         ))}
-        {error ? (
+        {error || chatError ? (
           <p role="alert" className="text-sm text-destructive">
-            {error}
+            {error ?? errorMessage(chatError)}
+            {!historyReady ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setError(undefined);
+                  setHistoryAttempt((value) => value + 1);
+                }}
+              >
+                Retry history
+              </Button>
+            ) : null}
           </p>
         ) : null}
       </div>
@@ -357,11 +416,14 @@ export function RuthPanel() {
       >
         <Textarea
           value={text}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+            session.draft = event.target.value;
+          }}
           placeholder="Ask about your material"
           rows={3}
         />
-        <Button type="submit" disabled={working || !text.trim()}>
+        <Button type="submit" disabled={!historyReady || working || !text.trim()}>
           {working ? "Ruth is working…" : "Send"}
         </Button>
       </form>

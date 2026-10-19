@@ -17,13 +17,13 @@ export const SearchLane = Schema.Literals(["semantic", "lexical", "exact", "loca
 export type SearchLane = typeof SearchLane.Type;
 
 export const SearchQuery = Schema.Struct({
-  text: Schema.NonEmptyString,
-  limit: Schema.optional(Schema.Int),
-  folderIds: Schema.optional(Schema.Array(FolderId)),
+  text: Schema.NonEmptyString.check(Schema.isMaxLength(20_000)),
+  limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))),
+  folderIds: Schema.optional(Schema.Array(FolderId).check(Schema.isMaxLength(200))),
   kinds: Schema.optional(Schema.Array(FileKind)),
   depth: Schema.optional(SearchDepth),
   /** Restrict retrieval to these files; an empty list selects no files. */
-  fileIds: Schema.optional(Schema.Array(FileId)),
+  fileIds: Schema.optional(Schema.Array(FileId).check(Schema.isMaxLength(200))),
   /** ISO lower bound on the last content change: coalesce(contentModifiedAt, createdAt). */
   since: Schema.optional(Schema.String),
   /** ISO upper bound on the last content change: coalesce(contentModifiedAt, createdAt). */

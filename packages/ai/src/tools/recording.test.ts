@@ -108,7 +108,7 @@ it.effect("cloud: journals the recording id and replays a stop without a second 
     yield* screenRecord.execute({ action: "start" }, { ...cloud, toolCallId: "start-call" });
     expect(db.rows("cloud_run")[0]).toMatchObject({ recordingId: "rec-1" });
     const first = yield* screenRecord.execute({ action: "stop" }, cloud);
-    expect(db.rows("cloud_run")[0]).toMatchObject({ recordingId: null });
+    expect(db.rows("cloud_run")[0]).toMatchObject({ recordingId: "rec-1" });
     // The worker died after the upload but before the journal: the same call id finds the asset.
     const replay = yield* screenRecord.execute({ action: "stop" }, cloud);
     expect(replay).toMatchObject({
@@ -119,3 +119,129 @@ it.effect("cloud: journals the recording id and replays a stop without a second 
     expect(yield* (yield* AssetStore).list(cloud.userId, { runId: cloud.runId })).toHaveLength(1);
   }).pipe(Effect.provide(AssetStoreTest), Effect.provide(services(sandbox, db)));
 });
+
+it.effect("recovers the recording journal when start succeeded before the worker crashed", () => {
+  const db = recordingDatabase();
+  db.rows("cloud_run").push({ id: "run", userId: ctx.userId, recordingId: null });
+  const { sandbox, calls } = fakeSandbox();
+  const cloud = {
+    ...ctx,
+    agent: "ruth-cloud" as const,
+    runId: CloudRunId.make("run"),
+    toolCallId: "start-call",
+  };
+  return Effect.gen(function* () {
+    // Simulate Daytona committing start while its response/journal is lost.
+    yield* Effect.promise(() => sandbox.computerUse.recording.start("ruth-run-start-call"));
+    const resumed = yield* screenRecord.execute({ action: "start" }, cloud);
+    expect(resumed).toMatchObject({ recordingId: "rec-1", alreadyRecording: true });
+    expect(db.rows("cloud_run")[0]).toMatchObject({ recordingId: "rec-1" });
+    expect(calls.filter((call) => call === "start")).toHaveLength(1);
+    yield* screenRecord.execute({ action: "stop" }, cloud);
+    expect(yield* (yield* AssetStore).list(cloud.userId, { runId: cloud.runId })).toHaveLength(1);
+  }).pipe(Effect.provide(AssetStoreTest), Effect.provide(services(sandbox, db)));
+});
+
+it.effect(
+  "retains the recording journal across remote deletion failure and retries without reupload",
+  () => {
+    const db = recordingDatabase();
+    db.rows("cloud_run").push({ id: "run", userId: ctx.userId, recordingId: null });
+    const { sandbox, recordings, calls } = fakeSandbox();
+    const cloud = {
+      ...ctx,
+      agent: "ruth-cloud" as const,
+      runId: CloudRunId.make("run"),
+      toolCallId: "stop",
+    };
+    const remove = sandbox.computerUse.recording.delete;
+    let failDelete = true;
+    Object.assign(sandbox.computerUse.recording, {
+      delete: async (id: string) => {
+        if (failDelete) {
+          failDelete = false;
+          throw new Error("delete failed");
+        }
+        await remove(id);
+      },
+    });
+    return Effect.gen(function* () {
+      yield* screenRecord.execute({ action: "start" }, cloud);
+      const failure = yield* Effect.result(screenRecord.execute({ action: "stop" }, cloud));
+      expect(failure).toMatchObject({ _tag: "Failure", failure: { checkpointFatal: true } });
+      expect(db.rows("cloud_run")[0]).toMatchObject({ recordingId: "rec-1" });
+      expect(recordings).toHaveLength(1);
+      yield* screenRecord.execute({ action: "stop" }, cloud);
+      expect(recordings).toHaveLength(0);
+      expect(calls.filter((call) => call === "download")).toHaveLength(1);
+      expect(calls.filter((call) => call === "stop")).toHaveLength(1);
+      expect(yield* (yield* AssetStore).list(cloud.userId, { runId: cloud.runId })).toHaveLength(1);
+    }).pipe(Effect.provide(AssetStoreTest), Effect.provide(services(sandbox, db)));
+  },
+);
+
+for (const boundary of ["stop", "upload", "delete"] as const) {
+  it.effect(
+    `reconciles a lost ${boundary} response with one asset and no premature remote deletion`,
+    () => {
+      const db = recordingDatabase();
+      db.rows("cloud_run").push({ id: "run", userId: ctx.userId, recordingId: null });
+      const { sandbox, recordings, calls } = fakeSandbox();
+      const cloud = {
+        ...ctx,
+        agent: "ruth-cloud" as const,
+        runId: CloudRunId.make("run"),
+        toolCallId: "stop",
+      };
+      return Effect.gen(function* () {
+        const assets = yield* AssetStore;
+        let fail = true;
+        const after = async <A>(action: () => Promise<A>) => {
+          const result = await action();
+          if (fail) {
+            fail = false;
+            throw new Error("response lost after side effect");
+          }
+          return result;
+        };
+        const recorder = sandbox.computerUse.recording;
+        if (boundary === "stop") {
+          const stop = recorder.stop;
+          Object.assign(recorder, { stop: (id: string) => after(() => stop(id)) });
+        }
+        if (boundary === "delete") {
+          const remove = recorder.delete;
+          Object.assign(recorder, { delete: (id: string) => after(() => remove(id)) });
+        }
+        const uncertainAssets = AssetStore.of({
+          ...assets,
+          put: (userId, input) =>
+            assets.put(userId, input).pipe(
+              Effect.flatMap((asset) =>
+                boundary === "upload" && fail
+                  ? Effect.sync(() => {
+                      fail = false;
+                    }).pipe(Effect.andThen(Effect.fail(new Error("upload response lost"))))
+                  : Effect.succeed(asset),
+              ),
+            ),
+        } as AssetStore["Service"]);
+        const stop = () =>
+          screenRecord
+            .execute({ action: "stop" }, cloud)
+            .pipe(Effect.provideService(AssetStore, uncertainAssets));
+        yield* screenRecord.execute({ action: "start" }, cloud);
+        expect((yield* Effect.result(stop()))._tag).toBe("Failure");
+        if (boundary !== "delete") expect(recordings).toHaveLength(1);
+        if (boundary === "stop") expect(calls).not.toContain("delete");
+        const resumed = yield* stop();
+        expect(resumed).toMatchObject({ action: "stop" });
+        expect(recordings).toHaveLength(0);
+        expect(yield* assets.list(cloud.userId, { runId: cloud.runId })).toHaveLength(1);
+        expect(calls.filter((call) => call === "stop")).toHaveLength(1);
+        expect(calls.filter((call) => call === "download")).toHaveLength(1);
+        expect(db.rows("cloud_run")[0]).toMatchObject({ recordingId: "rec-1" });
+      }).pipe(Effect.provide(AssetStoreTest), Effect.provide(services(sandbox, db)));
+    },
+  );
+}

@@ -1,20 +1,37 @@
-import { createContext, useContext, useMemo, type PropsWithChildren } from "react";
-import { makeClientRuntime, type ClientRuntime } from "@avenire/client-runtime/rpc";
-import { apiUrl, getCookieHeader } from "./auth";
+import { createContext, useContext, useEffect, useMemo, type PropsWithChildren } from "react";
+import {
+  disposeClientRuntime,
+  makeClientRuntime,
+  type ClientRuntime,
+} from "@avenire/client-runtime/rpc";
+import { apiUrl, authClient, getCookieHeader } from "./auth";
 
 const ApiContext = createContext<ClientRuntime | null>(null);
 
 export function ApiProvider({ children }: PropsWithChildren) {
+  const { data: session } = authClient.useSession();
+  const owner = session?.user.id;
   const runtime = useMemo(
     () =>
       makeClientRuntime({
         baseUrl: apiUrl,
         getAuthHeaders: getCookieHeader,
       }),
-    [],
+    [owner],
   );
 
-  return <ApiContext.Provider value={runtime}>{children}</ApiContext.Provider>;
+  useEffect(
+    () => () => {
+      void disposeClientRuntime(runtime);
+    },
+    [runtime],
+  );
+
+  return (
+    <ApiContext.Provider key={owner ?? "signed-out"} value={runtime}>
+      {children}
+    </ApiContext.Provider>
+  );
 }
 
 export function useApi(): ClientRuntime {

@@ -36,6 +36,20 @@
       "when": 1791884798791,
       "tag": "0004_thin_hannibal_king",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792251299586,
+      "tag": "0005_backend_completion_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792303569464,
+      "tag": "0006_device_sources_remove_canvas",
+      "breakpoints": true
     }
   ]
 }

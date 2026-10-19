@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest";
-import { CloudBoxes, type CloudBox } from "@avenire/cloud/cloud-box";
 import { CloudError } from "@avenire/cloud/daytona";
+import { CloudBoxes, type CloudBox } from "@avenire/cloud/cloud-box";
 import { CloudRunId, UserId } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { cloudRun, cloudTask } from "@avenire/database/schema";
@@ -21,7 +21,11 @@ import type { CloudToolServices } from "../cloud/tools.ts";
 import type { RuthToolServices } from "../tools/ruth.ts";
 import type { ComputerServices } from "../tools/computer.ts";
 
-const setup = (options: { leftRecording: boolean }) => {
+const setup = (options: {
+  leftRecording: boolean;
+  lostDeleteResponse?: boolean;
+  cleanupStopFailure?: boolean;
+}) => {
   const db = recordingDatabase();
   db.rows("user").push({
     id: "owner",
@@ -31,44 +35,60 @@ const setup = (options: { leftRecording: boolean }) => {
   });
   let recordingsStarted = 0;
   let recordingStops = 0;
+  let deleteFailed = false;
   let boxStops = 0;
+  const recordings = options.leftRecording
+    ? [{ id: "recording", fileName: "ruth-run.mp4", status: "recording" }]
+    : [];
   const box: CloudBox = {
     id: "sandbox",
     userId: "owner",
-    sandbox: {} as CloudBox["sandbox"],
+    sandbox: {
+      computerUse: {
+        start: async () => {},
+        recording: {
+          start: async () => {
+            recordingsStarted++;
+            return { id: "recording", fileName: "ruth-run.mp4", status: "recording" };
+          },
+          list: async () => ({ recordings: recordings.slice() }),
+          get: async () => recordings[0],
+          stop: async () => {
+            recordingStops++;
+            recordings[0]!.status = "stopped";
+            return recordings[0];
+          },
+          download: async (_id: string, path: string) => {
+            await writeFile(path, "video fixture");
+          },
+          delete: async () => {
+            recordings.splice(0);
+            if (options.lostDeleteResponse && !deleteFailed) {
+              deleteFailed = true;
+              throw new Error("Remote deletion succeeded but its response was lost");
+            }
+          },
+        },
+      },
+    } as unknown as CloudBox["sandbox"],
     exec: () => Effect.succeed({ exitCode: 0, output: "" }),
     writeFile: () => Effect.void,
     readFile: () => Effect.succeed(new Uint8Array()),
     fileInfo: () => Effect.succeed(Option.none()),
     removeFile: () => Effect.void,
-    startCommand: () => Effect.die("unused"),
-    commandStatus: () => Effect.die("unused"),
-    commandLogs: () => Effect.die("unused"),
     endSession: () => Effect.void,
     startDesktop: Effect.void,
-    recordings: Effect.succeed(
-      options.leftRecording ? [{ id: "recording", name: "ruth-run.mp4", state: "recording" }] : [],
-    ),
-    startRecording: () =>
-      Effect.sync(() => {
-        recordingsStarted++;
-        return Option.none<string>();
-      }),
-    stopRecording: (_id, path) =>
-      Effect.tryPromise({
-        try: async () => {
-          recordingStops++;
-          await writeFile(path, "video fixture");
-        },
-        catch: (cause) => new CloudError({ operation: "fakeRecording", cause }),
-      }),
   };
   const boxes = CloudBoxes.of({
     ensure: () => Effect.succeed(box),
+    reconnect: () => Effect.succeed(Option.some(box)),
     running: () => Effect.succeed(Option.some(box)),
     stop: () =>
-      Effect.sync(() => {
+      Effect.suspend(() => {
         boxStops++;
+        return options.cleanupStopFailure && boxStops === 1
+          ? Effect.fail(new CloudError({ operation: "stop", detail: "response lost" }))
+          : Effect.void;
       }),
   });
   const model = scriptedModel([
@@ -76,8 +96,32 @@ const setup = (options: { leftRecording: boolean }) => {
   ]);
   return { db, box, boxes, model, counts: () => ({ recordingsStarted, recordingStops, boxStops }) };
 };
-const run = (options: { leftRecording: boolean }) => {
+const run = (options: {
+  leftRecording: boolean;
+  crashAfterExecution?: boolean;
+  lostDeleteResponse?: boolean;
+  cleanupStopFailure?: boolean;
+}) => {
   const { db, boxes, model, counts } = setup(options);
+  let crash = options.crashAfterExecution;
+  const database = Database.of({
+    ...db.database,
+    useTransaction: (fn) =>
+      db.database.useTransaction(fn).pipe(
+        Effect.flatMap((value) => {
+          const current = db.rows("cloud_run")[0];
+          if (
+            crash &&
+            (current?.usage as { execution?: unknown } | undefined)?.execution &&
+            !current?.reportMessageId
+          ) {
+            crash = false;
+            return Effect.interrupt;
+          }
+          return Effect.succeed(value);
+        }),
+      ),
+  });
   return Effect.gen(function* () {
     yield* db.database.use((client) =>
       client.insert(cloudTask).values({
@@ -102,7 +146,7 @@ const run = (options: { leftRecording: boolean }) => {
       }),
     );
     const services = (yield* Effect.context<AssetStore | Storage | Analytics>()).pipe(
-      Context.add(Database, db.database),
+      Context.add(Database, database),
       Context.add(CloudBoxes, boxes),
       Context.add(Crypto.Crypto, fakeCrypto),
       Context.add(
@@ -120,7 +164,23 @@ const run = (options: { leftRecording: boolean }) => {
     // A claim whose lease was since reclaimed by another worker must not touch the run.
     yield* executor.execute({ runId: CloudRunId.make("run"), lease: "stale" });
     expect(db.rows("cloud_run")[0]).toMatchObject({ status: "provisioning", leasedBy: "worker" });
-    yield* executor.execute({ runId: CloudRunId.make("run"), lease: "worker" });
+    if (options.cleanupStopFailure) {
+      const failed = yield* Effect.result(
+        executor.execute({ runId: CloudRunId.make("run"), lease: "worker" }),
+      );
+      expect(failed._tag).toBe("Failure");
+      expect(db.rows("cloud_run")[0]).toMatchObject({ status: "succeeded", leasedBy: "worker" });
+      expect(db.rows("ruth_message")).toHaveLength(1);
+      yield* executor.execute({ runId: CloudRunId.make("run"), lease: "worker" });
+    } else yield* executor.execute({ runId: CloudRunId.make("run"), lease: "worker" });
+    if (options.crashAfterExecution || options.lostDeleteResponse) {
+      expect(db.rows("cloud_run")[0]).toMatchObject({
+        status: "running",
+        usage: { execution: { status: "completed", text: "Finished" } },
+      });
+      expect(db.rows("ruth_message")).toHaveLength(0);
+      yield* executor.execute({ runId: CloudRunId.make("run"), lease: "worker" });
+    }
     expect(db.rows("cloud_run")[0]).toMatchObject({
       status: "succeeded",
       summary: "Finished",
@@ -129,11 +189,15 @@ const run = (options: { leftRecording: boolean }) => {
     });
     expect(db.rows("ruth_message")).toHaveLength(1);
     expect(db.rows("email_outbox")).toHaveLength(1);
+    expect(db.rows("cloud_run")[0]?.recordingId).toBeNull();
     const assets = yield* AssetStore;
     const stored = yield* assets.list(UserId.make("owner"), { runId: CloudRunId.make("run") });
     yield* executor.execute({ runId: CloudRunId.make("run"), lease: "worker" });
     // The executor never starts a recording; it only finalises one the agent left running.
-    expect(counts()).toMatchObject({ recordingsStarted: 0, boxStops: 1 });
+    expect(counts()).toMatchObject({
+      recordingsStarted: 0,
+      boxStops: options.lostDeleteResponse || options.cleanupStopFailure ? 2 : 1,
+    });
     if (options.leftRecording) {
       expect(stored).toMatchObject([{ kind: "video", sizeBytes: 13 }]);
       expect(counts().recordingStops).toBe(1);
@@ -147,9 +211,10 @@ const run = (options: { leftRecording: boolean }) => {
     const log = db.rows("cloud_run_event").toSorted((a, b) => Number(a.seq) - Number(b.seq));
     expect(log.map((row) => Number(row.seq))).toEqual(log.map((_, index) => index));
     expect(log[0]).toMatchObject({ chunk: { type: "start", messageId: "run" } });
-    expect(
-      log.some((row) => (row.chunk as { type: string }).type === "tool-output-available"),
-    ).toBe(true);
+    if (!options.crashAfterExecution)
+      expect(
+        log.some((row) => (row.chunk as { type: string }).type === "tool-output-available"),
+      ).toBe(true);
     expect(log.filter((row) => row.terminal)).toHaveLength(1);
     expect(log.at(-1)).toMatchObject({
       terminal: true,
@@ -161,3 +226,18 @@ it.effect("streams a run to the event log, publishes one report and cleans up on
   run({ leftRecording: false }),
 );
 it.effect("finalises only a recording the agent left running", () => run({ leftRecording: true }));
+
+it.effect(
+  "resumes a committed completed checkpoint with no additional model calls or reports",
+  () => run({ leftRecording: false, crashAfterExecution: true }),
+);
+
+it.effect(
+  "recovers remote recording deletion before report commit without another model, upload or email",
+  () => run({ leftRecording: true, lostDeleteResponse: true }),
+);
+
+it.effect(
+  "replays terminal cleanup after box stop failure without duplicating report, email or recording",
+  () => run({ leftRecording: true, cleanupStopFailure: true }),
+);

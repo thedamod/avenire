@@ -304,32 +304,36 @@ describe("CloudBoxes", () => {
       }),
     );
   });
-  it.effect("exec/session polling and desktop recording use SDK APIs", () => {
+  it.effect("exec, session cleanup and desktop startup use SDK APIs", () => {
     const f = fake();
     return provide(
       f,
       Effect.gen(function* () {
         const box = yield* (yield* CloudBoxes).ensure("user");
         expect(yield* box.exec("false")).toEqual({ exitCode: 2, output: "output" });
-        expect(
-          yield* box.startCommand({ sessionId: "run", command: "python render.py", cwd: "/a'b" }),
-        ).toEqual({ commandId: "cmd" });
-        expect(f.boxes[0]?.commands[1]).toEqual([
-          "run",
-          { command: "cd '/a'\\''b' && python render.py", runAsync: true },
-        ]);
-        expect(yield* box.commandStatus("run", "cmd")).toEqual({ exitCode: null });
-        expect(yield* box.commandLogs("run", "cmd", 3)).toBe("END");
-        expect(yield* box.commandLogs("run", "cmd", 0)).toBe("");
         yield* box.endSession("run");
         yield* box.startDesktop;
-        expect(yield* box.startRecording("name")).toEqual(Option.some("recording"));
-        yield* box.stopRecording("recording", "/tmp/recording.mp4");
-        expect(f.calls).toContain("download-record:recording:/tmp/recording.mp4");
-        expect(yield* box.recordings).toEqual([
-          { id: "recording", name: "ruth-run", state: "recording" },
-        ]);
       }),
     );
   });
+});
+
+it.effect("reconnects only the recorded owned sandbox without provisioning replacements", () => {
+  const f = fake();
+  const first = f.box("user", "stopped");
+  const recorded = f.box("user", "stopped");
+  const foreign = f.box("other", "stopped");
+  return provide(
+    f,
+    Effect.gen(function* () {
+      const service = yield* CloudBoxes;
+      const found = yield* service.reconnect("user", recorded.id);
+      expect(Option.isSome(found) && found.value.id).toBe(recorded.id);
+      expect(recorded.started).toBe(1);
+      expect(first.started).toBe(0);
+      expect(Option.isNone(yield* service.reconnect("user", foreign.id))).toBe(true);
+      expect(Option.isNone(yield* service.reconnect("user", "deleted"))).toBe(true);
+      expect(f.created).toHaveLength(0);
+    }),
+  );
 });

@@ -12,16 +12,11 @@ import {
   type PageContext,
   type RuthMessage,
   type RuthThread,
-  ThreadId,
+  type ThreadId,
   type UserId,
 } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import {
-  type RuthMessageRow,
-  ruthMessage,
-  type RuthThreadRow,
-  ruthThread,
-} from "@avenire/database/schema";
+import { ruthMessage, ruthThread } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
 import {
   convertToModelMessages,
@@ -31,7 +26,7 @@ import {
   type FlexibleSchema,
   type InferUIMessageChunk,
 } from "ai";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -55,8 +50,9 @@ import { createAgent } from "./factory.ts";
 import { ruthToolSpecs } from "../tools/index.ts";
 import { findVisuals } from "../tools/page.ts";
 import { createRuthTools, type RuthToolServices, type RuthTurn } from "../tools/ruth.ts";
+import { ThreadStore, ThreadStoreLive } from "./threads.ts";
+export { ThreadStore, ThreadStoreLive, ThreadStoreError } from "./threads.ts";
 
-const DEFAULT_THREAD_TITLE = "New thread";
 const STREAM_ERROR = "Ruth ran into a problem. Please try again.";
 
 export class RuthError extends Schema.TaggedError<RuthError>()("RuthError", {
@@ -141,23 +137,6 @@ export const appendIncoming = (
   ];
 };
 
-const toThread = (row: RuthThreadRow): RuthThread => ({
-  id: ThreadId.make(row.id),
-  kind: row.kind,
-  title: row.title,
-  fullAccess: row.fullAccess,
-  createdAt: row.createdAt.toISOString(),
-  updatedAt: row.updatedAt.toISOString(),
-});
-
-const toStoredMessage = (row: RuthMessageRow): RuthMessage => ({
-  id: MessageId.make(row.id),
-  role: row.role,
-  parts: row.parts,
-  metadata: row.metadata,
-  createdAt: row.createdAt.toISOString(),
-});
-
 /**
  * The Ruth agent for one turn: model, system prompt, tools and approval policy.
  * Spread it into `streamText` with the conversation's messages. Full access still
@@ -194,6 +173,7 @@ const textOf = (messages: ReadonlyArray<RuthUIMessage>): Array<string> =>
 
 const makeRuth = Effect.gen(function* () {
   const database = yield* Database;
+  const threads = yield* ThreadStore;
   const models = yield* RuthModels;
   const approvalSecret = yield* Config.Redacted("RUTH_APPROVAL_SECRET");
   // Tools and stream callbacks run outside Effect; they run their programs with these.
@@ -369,54 +349,30 @@ const makeRuth = Effect.gen(function* () {
   return Ruth.of({
     chat,
 
-    listThreads: Effect.fn("Ruth.listThreads")(function* (userId) {
-      const rows = yield* database
-        .use((db) =>
-          db.query.ruthThread.findMany({
-            where: eq(ruthThread.userId, userId),
-            orderBy: [desc(ruthThread.updatedAt)],
-          }),
-        )
-        .pipe(Effect.mapError(fail("list threads")));
-      return rows.map(toThread);
-    }),
-
-    createThread: Effect.fn("Ruth.createThread")(function* (userId, title) {
-      const id = yield* makeId(ThreadId);
-      const [row] = yield* database
-        .use((db) =>
-          db
-            .insert(ruthThread)
-            .values({ id, userId, title: title?.trim() || DEFAULT_THREAD_TITLE })
-            .returning(),
-        )
-        .pipe(Effect.mapError(fail("create the thread")));
-      if (row === undefined) {
-        return yield* new RuthError({ operation: "create the thread", cause: "no row returned" });
-      }
-      return toThread(row);
-    }),
-
-    listMessages: Effect.fn("Ruth.listMessages")(function* (userId, threadId) {
-      yield* findThread(userId, threadId);
-      const rows = yield* loadRows(userId, threadId);
-      return rows.map(toStoredMessage);
-    }),
-
-    setFullAccess: Effect.fn("Ruth.setFullAccess")(function* (userId, threadId, enabled) {
-      const [row] = yield* database
-        .use((db) =>
-          db
-            .update(ruthThread)
-            .set({ fullAccess: enabled, updatedAt: sql`now()` })
-            .where(and(eq(ruthThread.id, threadId), eq(ruthThread.userId, userId)))
-            .returning(),
-        )
-        .pipe(Effect.mapError(fail("update the thread")));
-      if (row === undefined) return yield* new NotFound({ entity: "Thread", id: threadId });
-      return toThread(row);
-    }),
+    listThreads: (userId) =>
+      threads.listThreads(userId).pipe(Effect.mapError(fail("list threads"))),
+    createThread: (userId, title) =>
+      threads.createThread(userId, title).pipe(Effect.mapError(fail("create the thread"))),
+    listMessages: (userId, threadId) =>
+      threads
+        .listMessages(userId, threadId)
+        .pipe(
+          Effect.mapError((error) =>
+            error instanceof NotFound ? error : fail("load the messages")(error),
+          ),
+        ),
+    setFullAccess: (userId, threadId, enabled) =>
+      threads
+        .setFullAccess(userId, threadId, enabled)
+        .pipe(
+          Effect.mapError((error) =>
+            error instanceof NotFound ? error : fail("update the thread")(error),
+          ),
+        ),
   });
 });
 
-export const RuthLive = Layer.effect(Ruth, makeRuth).pipe(Layer.provide(RuthModelsLive));
+export const RuthLive = Layer.effect(Ruth, makeRuth).pipe(
+  Layer.provide(RuthModelsLive),
+  Layer.provide(ThreadStoreLive),
+);

@@ -4,17 +4,15 @@
  */
 import {
   type ExtractionCoverage,
-  type IngestionJobId,
   type IngestionStatus,
   type FileId,
   NotFound,
   StorageKey,
-  type UserId,
 } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { ingestionJob, file, type FileRow } from "@avenire/database/schema";
 import { Storage } from "@avenire/storage/storage";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -22,12 +20,20 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { markContentChanged } from "./events.ts";
-import { assignFolders } from "./folder.ts";
-import { loadDocument, removeDocument, reusableDocumentKey, saveDocument } from "./document.ts";
+import {
+  loadDocument,
+  mergeExtractionRetry,
+  removeDocument,
+  reusableDocumentKey,
+  saveDocument,
+  shouldRetryDocument,
+  extractionRetryMinutes,
+  type StoredDocument,
+} from "./document.ts";
 import { extract, type ExtractionServices } from "./extract/index.ts";
-import { EXTRACTOR_VERSION } from "./extract/types.ts";
+import { EXTRACTOR_VERSION, UnsupportedSource } from "./extract/types.ts";
 import { FileIndexer } from "./indexer.ts";
+import { claimPredicate, type IngestionClaim, IngestionLeaseLost } from "./claim.ts";
 import { sha256Hex } from "./text.ts";
 
 export class IngestionError extends Schema.TaggedError<IngestionError>()("IngestionError", {
@@ -35,17 +41,14 @@ export class IngestionError extends Schema.TaggedError<IngestionError>()("Ingest
   cause: Schema.Defect(),
 }) {
   override get message(): string {
-    return `Ingestion failed while ${this.stage}`;
+    const instruction = this.cause instanceof UnsupportedSource ? `: ${this.cause.reason}` : "";
+    return `Ingestion failed while ${this.stage}${instruction}`;
   }
 }
 
 /** The job a pipeline run works on, as claimed from the queue. */
-export interface IngestionTask {
-  readonly id: IngestionJobId;
-  readonly userId: UserId;
-  readonly fileId: FileId;
-  /** The job's generation when claimed; writes are ignored once it is superseded. */
-  readonly generation: number;
+export interface IngestionTask extends IngestionClaim {
+  readonly attempts: number;
 }
 
 export class IngestionPipeline extends Context.Service<
@@ -70,29 +73,36 @@ export const IngestionPipelineLive = Layer.effect(
       Database | Storage | Crypto.Crypto | ExtractionServices
     >();
 
-    const setStatus = (job: IngestionTask, status: IngestionStatus) =>
-      database.use((db) =>
-        db
-          .update(ingestionJob)
-          .set({
-            status,
-            updatedAt: sql`now()`,
-            ...(status === "indexed" ? { error: null, lockedUntil: null } : {}),
-          })
-          .where(
-            and(
-              eq(ingestionJob.id, job.id),
-              eq(ingestionJob.userId, job.userId),
-              eq(ingestionJob.generation, job.generation),
-            ),
+    const updateJob = (job: IngestionTask, changes: Partial<typeof ingestionJob.$inferInsert>) =>
+      database
+        .use((db) =>
+          db
+            .update(ingestionJob)
+            .set({ ...changes, updatedAt: sql`now()` })
+            .where(claimPredicate(job))
+            .returning({ id: ingestionJob.id }),
+        )
+        .pipe(
+          Effect.flatMap((rows) =>
+            rows.length ? Effect.void : Effect.fail(new IngestionLeaseLost({ fileId: job.fileId })),
           ),
-      );
-
+        );
+    const setStatus = (job: IngestionTask, status: IngestionStatus) =>
+      updateJob(job, {
+        status,
+        ...(status === "indexed" ? { error: null, lockedUntil: null, claimToken: null } : {}),
+      });
     const loadFile = (job: IngestionTask) =>
       database
         .use((db) =>
           db.query.file.findFirst({
-            where: and(eq(file.id, job.fileId), eq(file.userId, job.userId)),
+            where: and(
+              eq(file.id, job.fileId),
+              eq(file.userId, job.userId),
+              isNull(file.archivedAt),
+              ne(file.placement, "archived"),
+              isNull(file.purgeStartedAt),
+            ),
           }),
         )
         .pipe(
@@ -101,20 +111,8 @@ export const IngestionPipelineLive = Layer.effect(
             () => new NotFound({ entity: "File", id: job.fileId }),
           ),
         );
-
     const recordCoverage = (job: IngestionTask, coverage: ExtractionCoverage) =>
-      database.use((db) =>
-        db
-          .update(ingestionJob)
-          .set({ coverage, updatedAt: sql`now()` })
-          .where(
-            and(
-              eq(ingestionJob.id, job.id),
-              eq(ingestionJob.userId, job.userId),
-              eq(ingestionJob.generation, job.generation),
-            ),
-          ),
-      );
+      updateJob(job, { coverage });
 
     const readSource = (found: FileRow) =>
       found.storageKey === null
@@ -132,26 +130,36 @@ export const IngestionPipelineLive = Layer.effect(
     ) {
       const contentHash = bytes === null ? null : sha256Hex(bytes);
       const storedKey = reusableDocumentKey(found, contentHash);
-      if (storedKey !== null) {
-        const stored = yield* loadDocument(storedKey);
-        if (Option.isSome(stored)) return stored.value;
+      const stored =
+        storedKey === null ? Option.none<StoredDocument>() : yield* loadDocument(storedKey);
+      if (Option.isSome(stored) && !shouldRetryDocument(stored.value)) {
+        return { document: stored.value, publication: undefined };
       }
-      const document = yield* extract({ ...found, bytes });
-      // Only bytes we can hash are worth keeping: URL sources are re-fetched anyway.
-      if (contentHash !== null && document.sections.length > 0) {
-        const key = yield* saveDocument(job.userId, job.fileId, document);
-        if (found.contentHash !== null && found.contentHash !== contentHash) {
-          yield* markContentChanged(job.userId, job.fileId, contentHash);
-        }
-        yield* database.use((db) =>
-          db
-            .update(file)
-            .set({ contentHash, documentKey: key, extractorVersion: EXTRACTOR_VERSION })
-            .where(and(eq(file.id, found.id), eq(file.userId, found.userId))),
-        );
-        if (found.documentKey !== null) yield* removeDocument(StorageKey.make(found.documentKey));
-      }
-      return document;
+      const fresh = yield* extract({
+        ...found,
+        acquisitionMode: found.storageKey === null ? "public-url" : "stored",
+        bytes,
+        transcriptScope: { userId: job.userId, fileId: job.fileId },
+      });
+      const document: StoredDocument = Option.isSome(stored)
+        ? {
+            ...mergeExtractionRetry(stored.value, fresh),
+            retryCount: (stored.value.retryCount ?? 0) + 1,
+          }
+        : { ...fresh, retryCount: 0 };
+      // Extraction is staged in immutable object storage. The pointer is published with chunks/graph.
+      if (contentHash === null || document.sections.length === 0)
+        return { document, publication: undefined };
+      const key = yield* saveDocument(job.userId, job.fileId, document);
+      return {
+        document,
+        publication: {
+          key,
+          contentHash,
+          extractorVersion: EXTRACTOR_VERSION,
+          contentChanged: found.contentHash !== null && found.contentHash !== contentHash,
+        },
+      };
     });
 
     const run = Effect.fn("IngestionPipeline.run")(function* (job: IngestionTask) {
@@ -159,8 +167,10 @@ export const IngestionPipelineLive = Layer.effect(
       const bytes = yield* readSource(found).pipe(stage("reading the source"));
 
       yield* setStatus(job, "extracting").pipe(stage("extracting"));
-      const document = yield* documentFor(job, found, bytes).pipe(stage("extracting"));
-      yield* recordCoverage(job, document.coverage).pipe(stage("extracting"));
+      const { document, publication } = yield* documentFor(job, found, bytes).pipe(
+        stage("extracting"),
+      );
+
       if (document.sections.length === 0) {
         return yield* new IngestionError({
           stage: "extracting",
@@ -168,23 +178,52 @@ export const IngestionPipelineLive = Layer.effect(
         });
       }
 
-      yield* setStatus(job, "chunking").pipe(stage("chunking"));
-      const title = document.title ?? found.title;
-      yield* fileIndexer
-        .index(
-          {
-            userId: job.userId,
-            fileId: job.fileId,
-            title,
-            sections: document.sections,
-          },
-          (status) => setStatus(job, status),
-        )
-        .pipe(stage("indexing"));
-
-      yield* setStatus(job, "foldering").pipe(stage("foldering"));
-      yield* assignFolders(job.userId, job.fileId, title).pipe(stage("foldering"));
-      yield* setStatus(job, "indexed").pipe(stage("finishing"));
+      const index = Effect.gen(function* () {
+        yield* recordCoverage(job, document.coverage).pipe(stage("extracting"));
+        yield* setStatus(job, "chunking").pipe(stage("chunking"));
+        // Library metadata is authoritative even when the source extraction is reused.
+        const title = found.title;
+        yield* fileIndexer
+          .index(
+            {
+              userId: job.userId,
+              fileId: job.fileId,
+              title,
+              sections: document.sections,
+              claim: job,
+              source: found,
+              retryAfterMinutes: extractionRetryMinutes({
+                ...document,
+                retryCount: Math.max(document.retryCount ?? 0, job.attempts - 1),
+              }),
+              ...(publication === undefined ? {} : { document: publication }),
+            },
+            (status) => setStatus(job, status),
+          )
+          .pipe(stage("indexing"));
+      });
+      // A superseded or purged run cannot leave a newly staged private object behind.
+      // Query the canonical pointer first: ambiguous commit errors must not delete a published object.
+      yield* index.pipe(
+        Effect.ensuring(
+          Effect.gen(function* () {
+            if (publication === undefined) return;
+            const current = yield* database.use((db) =>
+              db.query.file.findFirst({
+                columns: { documentKey: true },
+                where: and(eq(file.id, job.fileId), eq(file.userId, job.userId)),
+              }),
+            );
+            if (current?.documentKey !== publication.key) yield* removeDocument(publication.key);
+            else if (found.documentKey !== null && found.documentKey !== publication.key)
+              yield* removeDocument(StorageKey.make(found.documentKey));
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Could not clean staged document", cause),
+            ),
+          ),
+        ),
+      );
     });
 
     return IngestionPipeline.of({

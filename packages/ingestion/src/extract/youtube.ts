@@ -1,6 +1,8 @@
 import * as Effect from "effect/Effect";
 import { fetchTranscript } from "youtube-transcript";
 
+import { publicFetch, publicUrl } from "./acquisition.ts";
+
 import { cleanCaptionText, groupCues } from "./transcript.ts";
 import { type ExtractedDocument, ExtractionError, fullCoverage } from "./types.ts";
 
@@ -19,7 +21,18 @@ export const toTimedCues = (
 
 export const fetchYouTubeCues = (url: string) =>
   Effect.tryPromise({
-    try: () => fetchTranscript(url),
+    try: (signal) => {
+      publicUrl(url);
+      const deadline = AbortSignal.any([signal, AbortSignal.timeout(45_000)]);
+      return fetchTranscript(url, {
+        fetch: (input, init) =>
+          publicFetch(input, init, {
+            signal: deadline,
+            maxBytes: 8 * 1024 * 1024,
+            timeoutMs: 15_000,
+          }),
+      });
+    },
     catch: (cause) => new ExtractionError({ source: "youtube", cause }),
   }).pipe(Effect.map(toTimedCues));
 

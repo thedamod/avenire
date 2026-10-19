@@ -3,7 +3,7 @@ import { CloudRunId } from "@avenire/contracts";
 import { createUIMessageStreamResponse } from "ai";
 import * as Effect from "effect/Effect";
 import { HttpRequestError } from "~/server/http";
-import { runRoute } from "~/server/runtime";
+import { runCloudRoute as runRoute } from "~/server/applicationRuntime";
 import { requireUser } from "~/server/session";
 
 export const runtime = "nodejs";

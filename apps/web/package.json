@@ -34,6 +34,7 @@
     "@xyflow/react": "12.12.0",
     "agent-browser": "0.33.1",
     "ai": "catalog:",
+    "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "lucide-react": "1.51.0",
     "next": "catalog:",

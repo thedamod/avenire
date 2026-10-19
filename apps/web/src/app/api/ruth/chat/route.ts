@@ -5,12 +5,13 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { HttpRequestError, readJsonBody } from "~/server/http";
 import { runRoute } from "~/server/runtime";
-import { requireUser } from "~/server/session";
+import { assertMutationOrigin, requireUser } from "~/server/session";
 
 export const runtime = "nodejs";
 export const POST = (request: Request) =>
   runRoute(
     Effect.gen(function* () {
+      yield* assertMutationOrigin(request);
       const userId = yield* requireUser(request);
       const body = yield* readJsonBody(request);
       const input = yield* Schema.decodeUnknownEffect(RuthChatRequest)(body).pipe(
@@ -26,7 +27,9 @@ export const POST = (request: Request) =>
         NotFound: () =>
           Effect.succeed(Response.json({ error: "Thread not found." }, { status: 404 })),
         RuthError: (error) =>
-          Effect.succeed(Response.json({ error: error.message }, { status: 400 })),
+          Effect.succeed(
+            Response.json({ error: "The chat request could not be completed." }, { status: 400 }),
+          ),
       }),
     ),
   );

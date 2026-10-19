@@ -50,13 +50,13 @@ const CloudModelName = Schema.Literals(["ruth-sprint", "ruth-core", "ruth-apex"]
 const CloudNetwork = Schema.Literals(["packages", "open"]);
 
 export const CloudTaskInput = Schema.Struct({
-  title: Schema.NonEmptyString,
-  prompt: Schema.NonEmptyString,
+  title: Schema.NonEmptyString.check(Schema.isMaxLength(200)),
+  prompt: Schema.NonEmptyString.check(Schema.isMaxLength(20_000)),
   model: Schema.optionalKey(CloudModelName),
   network: Schema.optionalKey(CloudNetwork),
   schedule: CloudTaskSchedule,
-  timeZone: Schema.String,
-  preHydration: Schema.Array(HydrationRule),
+  timeZone: Schema.String.check(Schema.isMaxLength(100)),
+  preHydration: Schema.Array(HydrationRule).check(Schema.isMaxLength(20)),
   delivery: CloudTaskDelivery,
   enabled: Schema.Boolean,
 });

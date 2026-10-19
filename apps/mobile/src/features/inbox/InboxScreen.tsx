@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator } from "react-native";
-import type { IngestionJob } from "@avenire/contracts";
+import type { FileId, IngestionJob } from "@avenire/contracts";
+import { invalidateLibrary, pruneJobs, updateLatestJob } from "@avenire/client-runtime/rpc";
+import { useApi } from "../../state/api";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState, errorMessage } from "../../components/ErrorState";
 import { ListRow } from "../../components/ListRow";
@@ -8,29 +10,32 @@ import { Screen } from "../../components/Screen";
 import { useQuery, useStream } from "../../lib/useRpc";
 
 export function InboxScreen() {
+  const api = useApi();
   const {
     data: files,
     error,
     loading,
     refetch,
   } = useQuery((client) => client["library.listFiles"]({ placement: "inbox" }), "inbox-files");
-  const [jobsById, setJobsById] = useState<ReadonlyMap<IngestionJob["id"], IngestionJob>>(
-    () => new Map(),
+  const [jobsByFile, setJobsByFile] = useState<ReadonlyMap<FileId, IngestionJob>>(() => new Map());
+  const visibleFiles = useMemo(
+    () => (files ? new Set(files.map((file) => file.id)) : undefined),
+    [files],
   );
+  useEffect(() => {
+    if (visibleFiles) setJobsByFile((previous) => pruneJobs(previous, visibleFiles));
+  }, [visibleFiles]);
   const [streamError, setStreamError] = useState<string>();
 
   useStream(
     (client) => client["library.watchIngestion"](),
     (job) => {
-      setJobsById((previous) => new Map(previous).set(job.id, job));
+      setJobsByFile((previous) => updateLatestJob(previous, job, visibleFiles));
+      if (job.status === "indexed") invalidateLibrary(api);
       setStreamError(undefined);
     },
     "inbox-ingestion-watch",
     (cause) => setStreamError(errorMessage(cause)),
-  );
-
-  const statusByFile = new Map(
-    [...jobsById.values()].map((job) => [job.fileId, job.status] as const),
   );
 
   return (
@@ -45,7 +50,7 @@ export function InboxScreen() {
         <ListRow
           key={file.id}
           title={file.title}
-          detail={statusByFile.get(file.id) ?? "Waiting for ingestion"}
+          detail={jobsByFile.get(file.id)?.status ?? "Waiting for ingestion"}
         />
       ))}
     </Screen>

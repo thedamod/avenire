@@ -1,8 +1,9 @@
+import { FileId, UserId } from "@avenire/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { extractMedia, outlineSection } from "./av.ts";
+import { extractMedia, outlineSection, transcribeAudio } from "./av.ts";
 import { DescribeError, ImageDescriber, ImageDescriberTest } from "./describe.ts";
 import { MediaProcessor } from "./media.ts";
 import { TranscriptCacheTest } from "./transcript-cache.ts";
@@ -34,6 +35,32 @@ const media = Layer.succeed(
 );
 
 describe("extractMedia", () => {
+  it.effect("reuses successful clips only within the owning source", () => {
+    let calls = 0;
+    const transcriber = Layer.succeed(
+      Transcriber,
+      Transcriber.of({
+        model: "owned-cache-test",
+        transcribe: () =>
+          Effect.sync(() => {
+            calls++;
+            return [{ text: "42 x", startSec: 0, endSec: 1 }];
+          }),
+      }),
+    );
+    return Effect.gen(function* () {
+      const scope = { userId: UserId.make("owner"), fileId: FileId.make("source") };
+      yield* transcribeAudio(bytes, 50, scope);
+      yield* transcribeAudio(bytes, 50, scope);
+      expect(calls).toBe(1);
+      yield* transcribeAudio(bytes, 50, { ...scope, fileId: FileId.make("other-source") });
+      expect(calls).toBe(2);
+      yield* transcribeAudio(bytes, 50);
+      yield* transcribeAudio(bytes, 50);
+      expect(calls).toBe(4);
+    }).pipe(Effect.provide(Layer.mergeAll(media, transcriber, TranscriptCacheTest)));
+  });
+
   it("formats a bounded outline from platform chapters", () => {
     const outline = outlineSection(
       "Lecture",
@@ -68,7 +95,10 @@ describe("extractMedia", () => {
           location: { startSec: 30, endSec: 50 },
         },
       ]);
-      expect(document.coverage.status).toBe("full");
+      expect(document.coverage.status).toBe("partial");
+      expect(document.coverage.parts.find((part) => part.part === "slides")?.detail).toContain(
+        "Representative slide frames",
+      );
     }).pipe(
       Effect.provide(
         Layer.mergeAll(media, TranscriberTest, ImageDescriberTest, TranscriptCacheTest),

@@ -5,8 +5,8 @@ import { createUIMessageStreamResponse } from "ai";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { HttpRequestError, readJsonBody } from "~/server/http";
-import { runRoute } from "~/server/runtime";
-import { requireUser } from "~/server/session";
+import { runCloudRoute as runRoute } from "~/server/applicationRuntime";
+import { assertMutationOrigin, requireUser } from "~/server/session";
 
 export const runtime = "nodejs";
 
@@ -14,6 +14,7 @@ export const runtime = "nodejs";
 export const POST = (request: Request) =>
   runRoute(
     Effect.gen(function* () {
+      yield* assertMutationOrigin(request);
       const userId = yield* requireUser(request);
       const body = yield* readJsonBody(request);
       const input = yield* Schema.decodeUnknownEffect(CloudRunRequest)(body).pipe(
