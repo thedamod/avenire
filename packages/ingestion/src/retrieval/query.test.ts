@@ -1,4 +1,4 @@
-import type { SearchQuery } from "@avenire/contracts";
+import { ItemId, type SearchQuery } from "@avenire/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import { analyzeQuery, optionsKey } from "./query.ts";
@@ -76,4 +76,26 @@ describe("optionsKey", () => {
     expect(optionsKey(query, analysis)).not.toBe(optionsKey({ ...query, depth: "deep" }, analysis));
     expect(optionsKey(query, analysis)).not.toBe(optionsKey(query, analyzeQuery("cells p. 12")));
   });
+});
+
+it("separates item and time filters in the semantic cache key", () => {
+  const query: SearchQuery = { text: "cells" };
+  const analysis = analyzeQuery(query.text);
+  const key = optionsKey(query, analysis);
+  const first = ItemId.make("first");
+  const second = ItemId.make("second");
+  for (const filters of [
+    { itemIds: [] },
+    { itemIds: [first] },
+    { since: "2026-10-01T00:00:00Z" },
+    { until: "2026-10-09T00:00:00Z" },
+  ]) {
+    expect(optionsKey({ ...query, ...filters }, analysis)).not.toBe(key);
+  }
+  expect(optionsKey({ ...query, itemIds: [first] }, analysis)).not.toBe(
+    optionsKey({ ...query, itemIds: [second] }, analysis),
+  );
+  expect(optionsKey({ ...query, itemIds: [first, second] }, analysis)).toBe(
+    optionsKey({ ...query, itemIds: [second, first] }, analysis),
+  );
 });

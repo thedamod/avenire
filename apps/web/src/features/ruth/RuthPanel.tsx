@@ -4,37 +4,32 @@ import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
   getToolName,
-  isStaticToolUIPart,
+  isToolUIPart,
   lastAssistantMessageIsCompleteWithApprovalResponses,
   lastAssistantMessageIsCompleteWithToolCalls,
 } from "ai";
 import { useEffect, useRef, useState } from "react";
+import { useTheme } from "next-themes";
+import { THEME_TOKEN_NAMES } from "@avenire/ui/tokens";
+import { WidgetFrame } from "@avenire/viz/widget-frame";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { RuthUIMessage } from "@avenire/ai/message-types";
-import {
-  type ArtifactId,
-  type FileAction,
-  type PageContext,
-  RUTH_CHAT_PATH,
-  type ThreadId,
-} from "@avenire/contracts";
+import { type PageContext, RUTH_CHAT_PATH, type ThreadId } from "@avenire/contracts";
 import { call } from "@avenire/client-runtime/rpc";
 import { Button } from "@avenire/ui/components/button";
 import { Textarea } from "@avenire/ui/components/textarea";
 import { useApi, errorMessage } from "~/lib/rpc";
 
 type Part = RuthUIMessage["parts"][number];
-type ToolPart = Extract<Part, { type: `tool-${string}` }>;
+type ToolPart = Extract<Part, { type: `tool-${string}` | "dynamic-tool" }>;
 
-const THEME_TOKENS = [
-  "--background",
-  "--foreground",
-  "--primary",
-  "--muted",
-  "--border",
-  "--accent",
-];
+function readThemeTokens(): Record<string, string> {
+  const root = getComputedStyle(document.documentElement);
+  return Object.fromEntries(
+    THEME_TOKEN_NAMES.map((name) => [name, root.getPropertyValue(name).trim()]),
+  );
+}
 
 /** The page facts `get_page_context` hands to Ruth, measured from the chat column. */
 function measurePage(column: HTMLElement | null): PageContext {
@@ -44,9 +39,7 @@ function measurePage(column: HTMLElement | null): PageContext {
     platform: window.avenire ? "desktop" : "web",
     contentWidthPx: Math.round(column?.clientWidth ?? 480),
     colorScheme: document.documentElement.classList.contains("dark") ? "dark" : "light",
-    themeTokens: Object.fromEntries(
-      THEME_TOKENS.map((token) => [token, root.getPropertyValue(token).trim()]),
-    ),
+    themeTokens: readThemeTokens(),
     fonts: {
       body: getComputedStyle(document.body).fontFamily,
       mono: root.getPropertyValue("--font-mono").trim() || "monospace",
@@ -54,52 +47,22 @@ function measurePage(column: HTMLElement | null): PageContext {
   };
 }
 
-function ArtifactView({
-  artifactId,
-  label,
-}: {
-  readonly artifactId: ArtifactId;
-  readonly label: string;
-}) {
-  const api = useApi();
-  const [url, setUrl] = useState<string>();
-  const [error, setError] = useState<string>();
-  useEffect(() => {
-    let active = true;
-    void call(api, (client) => client["cloud.artifactUrl"]({ artifactId }))
-      .then((result) => {
-        if (active) setUrl(result.url);
-      })
-      .catch((cause: unknown) => {
-        if (active) setError(errorMessage(cause));
-      });
-    return () => {
-      active = false;
-    };
-  }, [api, artifactId]);
-  return (
-    <div className="grid gap-2 border border-border p-3">
-      {error ? (
-        <p className="text-sm text-destructive">{error}</p>
-      ) : url ? (
-        <img src={url} alt={label} className="max-h-64 max-w-full object-contain" />
-      ) : (
-        <p className="text-sm text-muted-foreground">Loading {label}…</p>
-      )}
-    </div>
-  );
-}
-
-function describeAction(action: FileAction): string {
-  switch (action._tag) {
-    case "move":
-      return "Move a library item into another cluster.";
-    case "rename":
-      return `Rename an item to “${action.title}”.`;
-    case "delete":
-      return "Archive a library item.";
-    case "create-note":
-      return `Create the note “${action.title}”.`;
+export function describeToolApproval(part: ToolPart): string {
+  const input: unknown = part.input;
+  const fields = typeof input === "object" && input !== null ? input : {};
+  const title = "title" in fields && typeof fields.title === "string" ? fields.title : undefined;
+  const fileId = "fileId" in fields && typeof fields.fileId === "string" ? fields.fileId : "file";
+  switch (part.type) {
+    case "tool-write_file":
+      return `Create “${title ?? "note"}”?`;
+    case "tool-move_file":
+      return `Move “${title ?? fileId}” to another folder?`;
+    case "tool-rename_file":
+      return `Rename “${fileId}” to “${title ?? "new title"}”?`;
+    case "tool-archive_file":
+      return `Archive “${title ?? fileId}”?`;
+    default:
+      return `Allow ${getToolName(part).replaceAll("_", " ")}?`;
   }
 }
 
@@ -145,6 +108,15 @@ function AskUserCard({
 
 export function RuthPanel() {
   const api = useApi();
+  const { resolvedTheme } = useTheme();
+  const colorScheme = resolvedTheme === "dark" ? "dark" : "light";
+  const [themeTokens, setThemeTokens] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!resolvedTheme) return;
+    // Read after next-themes applies the document class and CSS variables.
+    const frame = requestAnimationFrame(() => setThemeTokens(readThemeTokens()));
+    return () => cancelAnimationFrame(frame);
+  }, [resolvedTheme]);
   const [text, setText] = useState("");
   const [error, setError] = useState<string>();
   const threadId = useRef<ThreadId>(undefined);
@@ -161,6 +133,7 @@ export function RuthPanel() {
             message: current.at(-1),
             page: measurePage(column.current),
             fast: false,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           },
         }),
       }),
@@ -194,44 +167,49 @@ export function RuthPanel() {
   }
 
   function toolView(part: ToolPart, key: string) {
-    if (part.type === "tool-propose_file_action") {
-      if (part.state === "approval-requested") {
-        return (
-          <div key={key} className="grid gap-3 border border-border bg-muted p-3">
-            <p className="font-medium">Approval required</p>
-            <p className="text-sm text-muted-foreground">{describeAction(part.input.action)}</p>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: true })}
-              >
-                Approve
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: false })}
-              >
-                Decline
-              </Button>
-            </div>
+    if (part.state === "approval-requested") {
+      return (
+        <div key={key} className="grid gap-3 border border-border bg-muted p-3">
+          <p className="font-medium">Approval required</p>
+          <p className="text-sm text-muted-foreground">{describeToolApproval(part)}</p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: true })}
+            >
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: false })}
+            >
+              Decline
+            </Button>
           </div>
-        );
-      }
-      if (part.state === "output-available") {
-        return (
-          <p key={key} className="text-sm text-muted-foreground">
-            {part.output.summary}
-          </p>
-        );
-      }
-      if (part.state === "output-denied") {
-        return (
-          <p key={key} className="text-sm text-muted-foreground">
-            File action declined.
-          </p>
-        );
-      }
+        </div>
+      );
+    }
+    if (part.state === "output-denied") {
+      return (
+        <p key={key} className="text-sm text-muted-foreground">
+          Action declined.
+        </p>
+      );
+    }
+    if (
+      (part.type === "tool-write_file" ||
+        part.type === "tool-move_file" ||
+        part.type === "tool-rename_file" ||
+        part.type === "tool-archive_file") &&
+      part.state === "output-available" &&
+      "summary" in part.output
+    ) {
+      return (
+        <p key={key} className="text-sm text-muted-foreground">
+          {part.output.summary}
+        </p>
+      );
     }
     if (part.type === "tool-ask_user" && part.state === "input-available") {
       return (
@@ -250,21 +228,40 @@ export function RuthPanel() {
         />
       );
     }
-    if (part.type === "tool-run_python" && part.state === "output-available") {
+    if (part.type === "tool-render_widget" && part.state === "output-available") {
+      return (
+        <WidgetFrame
+          key={key}
+          url={part.output.url}
+          title={part.output.title}
+          colorScheme={colorScheme}
+          tokens={themeTokens}
+        />
+      );
+    }
+    if (part.type === "tool-sandbox_download_artifact" && part.state === "output-available") {
+      const artifact = part.output;
       return (
         <div key={key} className="grid gap-2">
-          {part.output.stdout ? (
-            <pre className="overflow-auto border border-border bg-muted p-3 text-xs">
-              <code>{part.output.stdout}</code>
-            </pre>
-          ) : null}
-          {part.output.figures.map((figure) => (
-            <ArtifactView
-              key={figure.artifactId}
-              artifactId={figure.artifactId}
-              label={figure.title}
+          {artifact.mediaType.startsWith("image/") ? (
+            <img
+              src={artifact.url}
+              alt={artifact.name}
+              className="max-h-96 max-w-full object-contain"
             />
-          ))}
+          ) : null}
+          {artifact.mediaType.startsWith("video/") ? (
+            <video
+              controls
+              src={artifact.url}
+              aria-label={artifact.name}
+              className="max-h-96 max-w-full"
+            />
+          ) : null}
+          <a href={artifact.url} download={artifact.name} className="text-sm underline">
+            {artifact.name} (
+            {(artifact.size / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} KB)
+          </a>
         </div>
       );
     }
@@ -284,7 +281,7 @@ export function RuthPanel() {
   }
 
   function partView(part: Part, key: string) {
-    if (isStaticToolUIPart(part)) return toolView(part, key);
+    if (isToolUIPart(part)) return toolView(part, key);
     switch (part.type) {
       case "text":
         return (

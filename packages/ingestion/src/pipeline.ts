@@ -22,6 +22,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { markContentChanged } from "./events.ts";
 import { assignClusters } from "./cluster.ts";
 import { loadDocument, saveDocument } from "./document.ts";
 import { extract, type ExtractionServices } from "./extract/index.ts";
@@ -143,6 +144,9 @@ export const IngestionPipelineLive = Layer.effect(
       // Only bytes we can hash are worth keeping: URL sources are re-fetched anyway.
       if (contentHash !== null && document.sections.length > 0) {
         const key = yield* saveDocument(job.userId, job.itemId, document);
+        if (found.contentHash !== null && found.contentHash !== contentHash) {
+          yield* markContentChanged(job.userId, job.itemId, contentHash);
+        }
         yield* database.use((db) =>
           db
             .update(item)

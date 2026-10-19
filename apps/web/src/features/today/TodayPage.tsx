@@ -41,13 +41,16 @@ export function TodayPage() {
     setRunning(true);
     setActionError(undefined);
     try {
-      await call(api, (client) => client["cloud.runNow"]());
+      const tasks = await call(api, (client) => client["cloud.listTasks"]());
+      const task = tasks.find((entry) => entry.builtin === "nightly-digest");
+      if (!task) throw new Error("The nightly digest task was not found.");
+      await call(api, (client) => client["cloud.runTaskNow"]({ taskId: task.id }));
       await refetch();
     } catch (cause) {
       const message = errorMessage(cause);
       setActionError(
         /conflict|already ran|already exists/i.test(message)
-          ? "Ruth Cloud already ran today."
+          ? "This task already has a scheduled or active run."
           : message,
       );
     } finally {
@@ -85,10 +88,11 @@ export function TodayPage() {
       {run ? (
         <>
           <section className="border-b border-border py-5">
-            <h2 className="font-medium">Latest run · {run.status}</h2>
+            <h2 className="font-medium">
+              {run.taskTitle} · {run.status}
+            </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {new Date(run.windowStart).toLocaleString()} –{" "}
-              {new Date(run.windowEnd).toLocaleString()}
+              {new Date(run.startedAt ?? run.scheduledFor).toLocaleString()}
             </p>
             {run.error ? <p className="mt-2 text-sm text-destructive">{run.error}</p> : null}
           </section>

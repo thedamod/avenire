@@ -3,26 +3,33 @@ import type { TemplateProps } from "./index.ts";
 import { Layout, copyStyle, linkStyle, titleStyle } from "./Layout.tsx";
 
 type Props = TemplateProps<"morning-digest">;
-export const MorningDigest = ({ name, date, itemsStudied, artifacts }: Props) => (
+export const MorningDigest = ({
+  name,
+  date,
+  taskTitle,
+  summary,
+  itemsRead,
+  produced,
+  pendingApprovals,
+  reportUrl,
+}: Props) => (
   <Layout preview="Your Avenire study digest is ready">
     <Text style={titleStyle}>Good morning, {name}.</Text>
-    <Text style={copyStyle}>
-      Ruth worked through yesterday&apos;s material; here&apos;s what&apos;s ready.
-    </Text>
+    <Text style={copyStyle}>{taskTitle}</Text>
     <Text style={{ ...copyStyle, color: "#55527f" }}>
-      {date} · {itemsStudied} {itemsStudied === 1 ? "item" : "items"} studied
+      {date} · {itemsRead} {itemsRead === 1 ? "item" : "items"} read
     </Text>
-    {artifacts.map((artifact) => (
-      <Text key={`${artifact.kind}-${artifact.title}`} style={copyStyle}>
+    <Text style={copyStyle}>{summary}</Text>
+    {produced.map((artifact) => (
+      <Text key={artifact.url} style={copyStyle}>
         <a href={artifact.url} style={linkStyle}>
           {artifact.title}
         </a>
-        <br />
-        {artifact.kind}
       </Text>
     ))}
+    <Text style={copyStyle}>{pendingApprovals} changes wait for your review.</Text>
     <Button
-      href={artifacts[0]?.url ?? "https://avenire.space"}
+      href={reportUrl}
       style={{
         ...linkStyle,
         display: "inline-block",
@@ -33,14 +40,18 @@ export const MorningDigest = ({ name, date, itemsStudied, artifacts }: Props) =>
         textDecoration: "none",
       }}
     >
-      Open your study space
+      Read the full report
     </Button>
   </Layout>
 );
 MorningDigest.PreviewProps = {
   name: "Ruth",
   date: "Tuesday, October 6",
-  itemsStudied: 3,
-  artifacts: [{ kind: "summary", title: "A concise review", url: "https://avenire.space" }],
+  taskTitle: "Nightly study digest",
+  summary: "Your notes, quiz and flashcards are ready.",
+  itemsRead: 3,
+  produced: [{ title: "A concise review", url: "https://avenire.space/library?item=review" }],
+  pendingApprovals: 1,
+  reportUrl: "https://avenire.space/ruth/cloud",
 } satisfies Props;
 export default MorningDigest;

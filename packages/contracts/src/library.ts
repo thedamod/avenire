@@ -6,7 +6,7 @@
  */
 import * as Schema from "effect/Schema";
 
-import { CanvasNodeId, CaptureId, ClusterId, ItemId, StorageKey } from "./ids.ts";
+import { CanvasNodeId, CaptureId, ClusterId, ItemId, ItemEventId, StorageKey } from "./ids.ts";
 
 export const ItemKind = Schema.Literals([
   "pdf",
@@ -24,11 +24,33 @@ export type ItemKind = typeof ItemKind.Type;
 export const ItemPlacement = Schema.Literals(["inbox", "filed", "archived"]);
 export type ItemPlacement = typeof ItemPlacement.Type;
 
+/** Where the item entered the library. */
+export const ItemSource = Schema.Literals(["upload", "capture", "ruth", "ruth-cloud"]);
+export type ItemSource = typeof ItemSource.Type;
+
+export const ItemEventKind = Schema.Literals(["opened", "edited", "captured", "uploaded"]);
+export type ItemEventKind = typeof ItemEventKind.Type;
+
+export const ItemEvent = Schema.Struct({
+  id: ItemEventId,
+  itemId: ItemId,
+  kind: ItemEventKind,
+  /** Event time (ISO). */
+  at: Schema.String,
+});
+export type ItemEvent = typeof ItemEvent.Type;
+
 export const Item = Schema.Struct({
   id: ItemId,
   kind: ItemKind,
   title: Schema.String,
   placement: ItemPlacement,
+  source: ItemSource,
+  tags: Schema.Array(Schema.String),
+  /** Last content change (ISO); null until the original content has changed. */
+  contentModifiedAt: Schema.NullOr(Schema.String),
+  /** Archive time (ISO); null while active. */
+  archivedAt: Schema.NullOr(Schema.String),
   sourceUrl: Schema.NullOr(Schema.String),
   storageKey: Schema.NullOr(StorageKey),
   mimeType: Schema.NullOr(Schema.String),

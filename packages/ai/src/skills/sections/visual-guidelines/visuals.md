@@ -1,44 +1,31 @@
 ---
 name: visuals
-description: Choose how to show a concept - text, chart, simulation or video - and how to write inline visuals. Load before writing any <avenire-chart> or <avenire-sim>.
+description: Choose text, chart or interactive simulation to teach a concept. Load before render_widget.
 ---
 
 # Visuals
 
-A visual is a teaching decision. Pick the modality from what the learner needs to do
-with the idea: compare, follow, compute or manipulate. Prose always wraps the visual: a
-one-line objective before it, and the takeaway after it.
+Choose what lets the learner compare, follow, compute or manipulate the idea.
+Give a short objective before the visual and explain its takeaway in prose afterwards.
 
-## Pick the modality
+| Need                                             | Use                                                    |
+| ------------------------------------------------ | ------------------------------------------------------ |
+| A formula, definition or small comparison        | Markdown and math                                      |
+| Values, categories, time series or distributions | Chart; load `chart`                                    |
+| Brute force, Monte Carlo, sweeps or statistics   | Sandbox tools; load `python`, then show the results    |
+| Interacting parameters or a draggable state      | Interactive HTML simulation; load `simulation`         |
+| A rendered animation file                        | Sandbox Manim/ffmpeg, then `sandbox_download_artifact` |
 
-| The concept is…                                                                                                                                      | Use                                                                                      |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| A single formula, definition, small table or comparison                                                                                              | **Text**: markdown + `$...$` math                                                        |
-| A lot of raw information: values, categories, time series, distributions                                                                             | **Chart**: `<avenire-chart>`, load `chart`                                               |
-| Heavily mathematical, needs brute force (Monte Carlo, sweeps, numerics, statistics)                                                                  | Compute with `run_python` (load `python`), then show the result as a chart or simulation |
-| Many moving parts that together decide the outcome (linkages, IK, fields, feedback loops, population or market models, algorithms on changing input) | **Simulation**: `<avenire-sim>`, load `simulation`                                       |
-| A long ordered story: a process, a derivation, "how X leads to Y"                                                                                    | **Video**: not available in chat yet; explain in steps instead                           |
+Prefer the simplest visual that teaches the point. Never invent data: use the user's
+material or computed sandbox results. A slider must not re-run Python; precompute a
+small grid and interpolate locally when needed.
 
-Tie-breakers:
+Call `get_page_context` first. Fit the content to its width, platform, colour scheme,
+theme variables and budgets. Then call `render_widget({ title, html })` with a standalone
+HTML document containing only inline CSS/JS and embedded data. Use `var(--...)` for
+colours, fonts, spacing and sizes. No network, external scripts, fonts or images.
+Give controls accessible labels and include a text alternative. Explain every visual
+in chat prose; do not end on a tool result.
 
-- Prefer the cheapest modality that teaches the point: text < chart < simulation.
-- "Compare / trend" → chart. "Show me how it moves" → simulation. "How likely / what if we
-  tried all" → `run_python`, then a chart.
-- A slider must never re-run Python. If a parameter matters, make it a simulation control
-  and re-implement the cheap part in the simulation, or have `run_python` precompute a
-  grid the simulation interpolates.
-- Never invent numbers. Chart values come from the user's material or from `run_python`.
-
-## Before writing a visual
-
-1. Call `get_page_context`. Fit the visual to the surface, platform, width, colour scheme,
-   theme tokens, kits and budgets it reports. On `mobile`, keep simulations simple.
-2. Give the visual a short unique `id` (`id="vis-orbit"`) and a `title`.
-3. To change a visual listed in `existingVisuals`, write a new one with
-   `revises="<its id>"`. Don't repeat the old one.
-
-## Writing it
-
-- Write the tag inline where it belongs in the explanation, never inside a code fence.
-- Keep explanations outside the visual; inside, only labels, values, legends and readouts.
-- One strong visual beats several small ones.
+Inline `<avenire-chart>` and `<avenire-sim>` tags and runtime kits are coming later.
+Do not write those tags now: all HTML visuals go through `render_widget`.

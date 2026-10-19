@@ -94,6 +94,9 @@ export const optionsKey = (query: SearchQuery, analysis: QueryAnalysis): string 
     JSON.stringify({
       kinds: [...(query.kinds ?? [])].sort(),
       clusterIds: [...(query.clusterIds ?? [])].sort(),
+      itemIds: query.itemIds === undefined ? null : [...query.itemIds].sort(),
+      since: query.since ?? null,
+      until: query.until ?? null,
       limit: resultLimit(query),
       depth: query.depth ?? "standard",
       pages: [...analysis.location.pages].sort((a, b) => a - b),

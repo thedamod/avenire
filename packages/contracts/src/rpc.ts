@@ -7,9 +7,24 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 
 import { CaptureSnapshot } from "./capture.ts";
-import { Artifact, CloudRun, CloudSchedule } from "./cloud.ts";
+import {
+  ApprovalDecision,
+  Artifact,
+  CloudRun,
+  CloudTask,
+  CloudTaskInput,
+  PendingApproval,
+} from "./cloud.ts";
 import { ApiError } from "./errors.ts";
-import { ArtifactId, ClusterId, CloudRunId, ItemId, ThreadId } from "./ids.ts";
+import {
+  ArtifactId,
+  ClusterId,
+  CloudRunId,
+  CloudTaskId,
+  PendingApprovalId,
+  ItemId,
+  ThreadId,
+} from "./ids.ts";
 import { IngestionJob } from "./ingestion.ts";
 import { CanvasNode, Cluster, Item, ItemPlacement } from "./library.ts";
 import { SearchQuery, SearchResult } from "./retrieval.ts";
@@ -24,6 +39,10 @@ export const SubmitCaptureResult = Schema.Struct({
 export type SubmitCaptureResult = typeof SubmitCaptureResult.Type;
 
 export class LibraryRpcs extends RpcGroup.make(
+  Rpc.make("library.recordItemEvent", {
+    payload: { itemId: ItemId, kind: Schema.Literal("opened") },
+    error: ApiError,
+  }),
   Rpc.make("library.submitCapture", {
     payload: { snapshot: CaptureSnapshot },
     success: SubmitCaptureResult,
@@ -90,18 +109,50 @@ export class RuthRpcs extends RpcGroup.make(
 ).middleware(Authenticated) {}
 
 export class CloudRpcs extends RpcGroup.make(
+  Rpc.make("cloud.listTasks", { success: Schema.Array(CloudTask), error: ApiError }),
+  Rpc.make("cloud.createTask", { payload: CloudTaskInput, success: CloudTask, error: ApiError }),
+  Rpc.make("cloud.updateTask", {
+    payload: {
+      taskId: CloudTaskId,
+      patch: Schema.Struct({
+        title: Schema.optionalKey(CloudTaskInput.fields.title),
+        prompt: Schema.optionalKey(CloudTaskInput.fields.prompt),
+        schedule: Schema.optionalKey(CloudTaskInput.fields.schedule),
+        timeZone: Schema.optionalKey(CloudTaskInput.fields.timeZone),
+        preHydration: Schema.optionalKey(CloudTaskInput.fields.preHydration),
+        delivery: Schema.optionalKey(CloudTaskInput.fields.delivery),
+        enabled: Schema.optionalKey(CloudTaskInput.fields.enabled),
+      }),
+    },
+    success: CloudTask,
+    error: ApiError,
+  }),
+  Rpc.make("cloud.deleteTask", { payload: { taskId: CloudTaskId }, error: ApiError }),
+  Rpc.make("cloud.runTaskNow", {
+    payload: { taskId: CloudTaskId },
+    success: CloudRun,
+    error: ApiError,
+  }),
+  Rpc.make("cloud.listPendingApprovals", {
+    payload: { runId: Schema.optionalKey(CloudRunId) },
+    success: Schema.Array(PendingApproval),
+    error: ApiError,
+  }),
+  Rpc.make("cloud.resolveApproval", {
+    payload: { approvalId: PendingApprovalId, decision: ApprovalDecision },
+    success: PendingApproval,
+    error: ApiError,
+  }),
+  Rpc.make("cloud.resolveRun", {
+    payload: { runId: CloudRunId, decision: ApprovalDecision },
+    success: Schema.Array(PendingApproval),
+    error: ApiError,
+  }),
   Rpc.make("cloud.listRuns", {
     payload: { limit: Schema.optional(Schema.Int) },
     success: Schema.Array(CloudRun),
     error: ApiError,
   }),
-  Rpc.make("cloud.getSchedule", { success: CloudSchedule, error: ApiError }),
-  Rpc.make("cloud.setSchedule", {
-    payload: CloudSchedule,
-    success: CloudSchedule,
-    error: ApiError,
-  }),
-  Rpc.make("cloud.runNow", { success: CloudRun, error: ApiError }),
   Rpc.make("cloud.cancelRun", {
     payload: { runId: CloudRunId },
     success: CloudRun,

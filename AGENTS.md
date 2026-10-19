@@ -24,7 +24,9 @@ packages/
   cloud/             Daytona sandboxes (ephemeral compute + persistent Ruth Cloud boxes)
   ingestion/         Extract -> chunk -> embed -> graph -> cluster, the job queue worker, and retrieval
                      (multi-lane RRF, rerank, graph RAG, semantic cache)
-  ai/                Ruth (interactive agent) and Ruth Cloud (nightly run), built on the Vercel AI SDK
+  ai/                Ruth (AI SDK chat) and Ruth Cloud (Pi orchestrator + task scheduler)
+  ruth-kit/          Shared tools, hydration, publishing, run tokens and approval review
+  viz/               Widget protocol and WidgetFrame (sandboxed iframe for Ruth's visuals)
   emailer/           react-email templates + the `Mailer` service (Resend)
   retrieval-benchmark/  Dataset + runner for retrieval quality (recall@k, MRR, nDCG)
   ui/                shadcn/ui primitives for web and desktop
@@ -38,8 +40,9 @@ folder entry points of `@avenire/ai`).
 at a call site), `prompts/`, `tools/` (`index.ts` holds client-safe specs, the other files
 add `execute`), `skills/` (markdown in `sections/`, compiled into `skills.ts` by
 `pnpm --filter @avenire/ai skills:generate`; never edit `skills.ts` by hand), `agents/`
-(`createRuthAgent` / `createRuthCloudAgent` plus the services that drive them),
-`scheduler/`, and `message-types.ts`.
+(`createRuthAgent` and the Ruth Cloud Pi orchestrator),
+`scheduler/`, and `message-types.ts`. Shared tools come from `@avenire/ruth-kit`;
+widgets and visual rendering come from `@avenire/viz`.
 
 ## Rules
 
@@ -58,7 +61,8 @@ add `execute`), `skills/` (markdown in `sections/`, compiled into `skills.ts` by
 - Model calls, tools and chat streaming use the AI SDK (`ai`, `@ai-sdk/*`), never
   `effect/ai`. Effect stays for services, errors, config and jobs; tool `execute` functions
   run Effect programs against the request's services.
-- Ruth Cloud never edits or deletes existing material; it only writes new artifacts.
+- Ruth Cloud never writes to originals without a user-approved sync: it works on copies,
+  publishes new items, and proposes changes as pending approvals the user accepts or skips.
 - `context/` holds reference repos (t3code, legacy v1, research). Read-only, never imported,
   never committed.
 

@@ -86,6 +86,14 @@
     "./extract/transcript-cache": {
       "types": "./src/extract/transcript-cache.ts",
       "import": "./src/extract/transcript-cache.ts"
+    },
+    "./events": {
+      "types": "./src/events.ts",
+      "import": "./src/events.ts"
+    },
+    "./archive": {
+      "types": "./src/archive.ts",
+      "import": "./src/archive.ts"
     }
   },
   "scripts": {

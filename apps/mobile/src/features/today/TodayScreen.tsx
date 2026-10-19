@@ -21,6 +21,22 @@ export function TodayScreen() {
   } = useQuery((client) => client["cloud.listRuns"]({ limit: 1 }), "today-latest-run");
   const [openError, setOpenError] = useState<string>();
   const run = runs?.[0];
+  const [running, setRunning] = useState(false);
+  const runNow = async () => {
+    setRunning(true);
+    setOpenError(undefined);
+    try {
+      const tasks = await call(api, (client) => client["cloud.listTasks"]());
+      const task = tasks.find((entry) => entry.builtin === "nightly-digest");
+      if (!task) throw new Error("The nightly digest task was not found.");
+      await call(api, (client) => client["cloud.runTaskNow"]({ taskId: task.id }));
+      await refetch();
+    } catch (cause) {
+      setOpenError(errorMessage(cause));
+    } finally {
+      setRunning(false);
+    }
+  };
 
   const openArtifact = async (artifactId: ArtifactId) => {
     setOpenError(undefined);
@@ -50,8 +66,8 @@ export function TodayScreen() {
       {run ? (
         <>
           <ListRow
-            title={`Latest run · ${run.status}`}
-            detail={`${new Date(run.windowStart).toLocaleDateString()} – ${new Date(run.windowEnd).toLocaleDateString()}`}
+            title={`${run.taskTitle} · ${run.status}`}
+            detail={new Date(run.startedAt ?? run.scheduledFor).toLocaleString()}
           />
           {Object.entries(groupedArtifacts ?? {}).map(([kind, artifacts]) => (
             <View key={kind} className="gap-3">
@@ -66,9 +82,12 @@ export function TodayScreen() {
               ))}
             </View>
           ))}
-          {openError ? <ErrorState message={openError} /> : null}
         </>
       ) : null}
+      {openError ? <ErrorState message={openError} /> : null}
+      <Button onPress={() => void runNow()} busy={running}>
+        Run now
+      </Button>
       <Button onPress={() => void refetch()} variant="secondary">
         Refresh
       </Button>

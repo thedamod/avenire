@@ -47,8 +47,11 @@
     "@avenire/contracts": "workspace:*",
     "@avenire/database": "workspace:*",
     "@avenire/ingestion": "workspace:*",
+    "@avenire/ruth-kit": "workspace:*",
     "@avenire/shared": "workspace:*",
     "@avenire/storage": "workspace:*",
+    "@avenire/ui": "workspace:*",
+    "@avenire/viz": "workspace:*",
     "ai": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"

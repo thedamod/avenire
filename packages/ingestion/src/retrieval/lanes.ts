@@ -46,7 +46,7 @@ const list = (values: ReadonlyArray<string | number>) =>
     sql`, `,
   );
 
-/** The user's searchable chunks: not archived, within the query's kinds and clusters. */
+/** The user's searchable chunks, restricted by every item and content-time filter. */
 export const candidateFilter = (userId: UserId, query: SearchQuery): SQL => {
   const kinds = query.kinds?.length ? sql` AND i.kind IN (${list(query.kinds)})` : sql``;
   const clusters = query.clusterIds?.length
@@ -54,7 +54,21 @@ export const candidateFilter = (userId: UserId, query: SearchQuery): SQL => {
         WHERE ic.item_id = i.id AND ic.user_id = ${userId}
           AND ic.cluster_id IN (${list(query.clusterIds)}))`
     : sql``;
-  return sql`c.user_id = ${userId} AND i.placement <> 'archived'${kinds}${clusters}`;
+  const items =
+    query.itemIds === undefined
+      ? sql``
+      : query.itemIds.length === 0
+        ? sql` AND false`
+        : sql` AND i.id IN (${list(query.itemIds)})`;
+  const since =
+    query.since === undefined
+      ? sql``
+      : sql` AND coalesce(i.content_modified_at, i.created_at) >= ${query.since}::timestamptz`;
+  const until =
+    query.until === undefined
+      ? sql``
+      : sql` AND coalesce(i.content_modified_at, i.created_at) < ${query.until}::timestamptz`;
+  return sql`c.user_id = ${userId} AND i.user_id = ${userId} AND i.placement <> 'archived'${kinds}${clusters}${items}${since}${until}`;
 };
 
 const candidates = (statement: SQL) =>
@@ -170,7 +184,7 @@ const decodeNeighbours = Schema.decodeUnknownEffect(Schema.Array(NeighbourRow));
 
 /** The content of the given (item, ordinal) chunks, in one query. */
 export const neighbours = (
-  userId: UserId,
+  where: SQL,
   wanted: ReadonlyArray<{ readonly itemId: string; readonly ordinal: number }>,
 ) =>
   wanted.length === 0
@@ -178,7 +192,8 @@ export const neighbours = (
     : Effect.flatMap(Effect.service(Database), (database) =>
         database.use((db) =>
           db.execute(sql`SELECT c.item_id AS "itemId", c.ordinal, c.content FROM chunk c
-            WHERE c.user_id = ${userId} AND (c.item_id, c.ordinal) IN (${sql.join(
+            JOIN item i ON i.id = c.item_id AND i.user_id = c.user_id
+            WHERE ${where} AND (c.item_id, c.ordinal) IN (${sql.join(
               wanted.map(({ itemId, ordinal }) => sql`(${itemId}, ${ordinal})`),
               sql`, `,
             )})`),

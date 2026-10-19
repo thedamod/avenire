@@ -57,7 +57,8 @@ import { ruthToolSpecs } from "../tools/index.ts";
 import { findVisuals } from "../tools/page.ts";
 import { createRuthTools, type RuthToolServices, type RuthTurn } from "../tools/ruth.ts";
 
-const MAX_STEPS = 8;
+/** Sandbox work alone (write, run, fix, run, download, close) takes several steps. */
+const MAX_STEPS = 20;
 const DEFAULT_THREAD_TITLE = "New thread";
 const STREAM_ERROR = "Ruth ran into a problem. Please try again.";
 
@@ -78,6 +79,7 @@ export interface ChatInput {
   readonly message: unknown;
   readonly page: PageContext;
   readonly fast?: boolean | undefined;
+  readonly timeZone?: string | undefined;
 }
 
 export type RuthChatStream = ReadableStream<InferUIMessageChunk<RuthUIMessage>>;
@@ -144,6 +146,7 @@ export const appendIncoming = (
 
 const toThread = (row: RuthThreadRow): RuthThread => ({
   id: ThreadId.make(row.id),
+  kind: row.kind,
   title: row.title,
   fullAccess: row.fullAccess,
   createdAt: row.createdAt.toISOString(),
@@ -169,15 +172,21 @@ export const createRuthAgent = (options: {
   readonly turn: RuthTurn;
   readonly fullAccess: boolean;
   readonly fast?: boolean | undefined;
-}) => ({
-  model: options.models.languageModel(options.fast === true ? RUTH_FAST_MODEL : RUTH_DEFAULT_MODEL),
-  system: RUTH_PROMPT({ fullAccess: options.fullAccess }),
-  tools: createRuthTools(options.services, options.turn),
-  toolApproval: {
-    propose_file_action: options.fullAccess ? ("approved" as const) : ("user-approval" as const),
-  },
-  stopWhen: stepCountIs(MAX_STEPS),
-});
+}) => {
+  const { tools, toolApproval } = createRuthTools(options.services, {
+    ...options.turn,
+    fullAccess: options.fullAccess,
+  });
+  return {
+    model: options.models.languageModel(
+      options.fast === true ? RUTH_FAST_MODEL : RUTH_DEFAULT_MODEL,
+    ),
+    system: RUTH_PROMPT({ fullAccess: options.fullAccess }),
+    tools,
+    toolApproval,
+    stopWhen: stepCountIs(MAX_STEPS),
+  };
+};
 
 const textOf = (messages: ReadonlyArray<RuthUIMessage>): Array<string> =>
   messages
@@ -313,6 +322,8 @@ const makeRuth = Effect.gen(function* () {
         userId: input.userId,
         threadId: input.threadId,
         page: input.page,
+        fullAccess: thread.fullAccess,
+        timeZone: input.timeZone ?? "UTC",
         existingVisuals: findVisuals(textOf(conversation)),
       },
     });

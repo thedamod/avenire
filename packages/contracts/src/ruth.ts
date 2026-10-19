@@ -8,13 +8,17 @@
  */
 import * as Schema from "effect/Schema";
 
-import { ItemId, MessageId, ThreadId } from "./ids.ts";
+import { MessageId, ThreadId } from "./ids.ts";
 
 /** Path the chat stream endpoint is mounted on, relative to the web server origin. */
 export const RUTH_CHAT_PATH = "/api/ruth/chat";
 
+export const RuthThreadKind = Schema.Literals(["chat", "ruth-cloud"]);
+export type RuthThreadKind = typeof RuthThreadKind.Type;
+
 export const RuthThread = Schema.Struct({
   id: ThreadId,
+  kind: RuthThreadKind,
   title: Schema.String,
   /** When on, Ruth applies file actions without asking (still logged and undoable). */
   fullAccess: Schema.Boolean,
@@ -32,14 +36,6 @@ export const RuthMessage = Schema.Struct({
   createdAt: Schema.String,
 });
 export type RuthMessage = typeof RuthMessage.Type;
-
-export const FileAction = Schema.Union([
-  Schema.TaggedStruct("move", { itemId: ItemId, toClusterId: Schema.String }),
-  Schema.TaggedStruct("rename", { itemId: ItemId, title: Schema.String }),
-  Schema.TaggedStruct("delete", { itemId: ItemId }),
-  Schema.TaggedStruct("create-note", { title: Schema.String, markdown: Schema.String }),
-]);
-export type FileAction = typeof FileAction.Type;
 
 /** What the client knows about the page a visual will render into. */
 export const PageContext = Schema.Struct({
@@ -62,5 +58,6 @@ export const RuthChatRequest = Schema.Struct({
   message: Schema.Unknown,
   page: PageContext,
   fast: Schema.optional(Schema.Boolean),
+  timeZone: Schema.optional(Schema.String),
 });
 export type RuthChatRequest = typeof RuthChatRequest.Type;

@@ -3,9 +3,9 @@ import type { TemplateProps } from "./index.ts";
 import { Layout, copyStyle, linkStyle, titleStyle } from "./Layout.tsx";
 
 type Props = TemplateProps<"cloud-run-failed">;
-export const CloudRunFailed = ({ name, reason, retryUrl }: Props) => (
+export const CloudRunFailed = ({ name, taskTitle, reason, retryUrl }: Props) => (
   <Layout preview="Your Avenire study run needs another try">
-    <Text style={titleStyle}>Your overnight run stopped early</Text>
+    <Text style={titleStyle}>{taskTitle} stopped early</Text>
     <Text style={copyStyle}>
       Hello {name}, Ruth could not finish preparing your study materials.
     </Text>
@@ -27,6 +27,7 @@ export const CloudRunFailed = ({ name, reason, retryUrl }: Props) => (
 );
 CloudRunFailed.PreviewProps = {
   name: "Ruth",
+  taskTitle: "Nightly study digest",
   reason: "The study workspace was temporarily unavailable.",
   retryUrl: "https://avenire.space/cloud",
 } satisfies Props;

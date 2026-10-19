@@ -11,9 +11,17 @@
       "types": "./src/sandbox.ts",
       "import": "./src/sandbox.ts"
     },
-    "./desktop-box": {
-      "types": "./src/desktopBox.ts",
-      "import": "./src/desktopBox.ts"
+    "./chat-sandbox": {
+      "types": "./src/chatSandbox.ts",
+      "import": "./src/chatSandbox.ts"
+    },
+    "./snapshots": {
+      "types": "./src/snapshots.ts",
+      "import": "./src/snapshots.ts"
+    },
+    "./cloud-box": {
+      "types": "./src/cloudBox.ts",
+      "import": "./src/cloudBox.ts"
     }
   },
   "scripts": {

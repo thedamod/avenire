@@ -1,6 +1,5 @@
 import * as Schema from "effect/Schema";
 import type { ComponentType } from "react";
-import { ArtifactKind } from "@avenire/contracts";
 
 import CloudRunFailed from "./CloudRunFailed.tsx";
 import MorningDigest from "./MorningDigest.tsx";
@@ -13,13 +12,16 @@ export const TemplatePropsSchema = {
   "morning-digest": Schema.Struct({
     name: Schema.String,
     date: Schema.String,
-    itemsStudied: Schema.Number,
-    artifacts: Schema.Array(
-      Schema.Struct({ kind: ArtifactKind, title: Schema.String, url: Schema.String }),
-    ),
+    taskTitle: Schema.String,
+    summary: Schema.String.check(Schema.isMaxLength(600)),
+    itemsRead: Schema.Int,
+    produced: Schema.Array(Schema.Struct({ title: Schema.String, url: Schema.String })),
+    pendingApprovals: Schema.Int,
+    reportUrl: Schema.String,
   }),
   "cloud-run-failed": Schema.Struct({
     name: Schema.String,
+    taskTitle: Schema.String,
     reason: Schema.String,
     retryUrl: Schema.String,
   }),

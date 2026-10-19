@@ -6,6 +6,9 @@ const safeFilename = (filename: string): string =>
 export const userPrefix = (userId: UserId): StorageKey =>
   StorageKey.make(`users/${encodeURIComponent(userId)}/`);
 
+export const itemPrefix = (userId: UserId, itemId: ItemId): StorageKey =>
+  StorageKey.make(`${userPrefix(userId)}items/${encodeURIComponent(itemId)}/`);
+
 export const itemSourceKey = (userId: UserId, itemId: ItemId, filename: string): StorageKey =>
   StorageKey.make(
     `${userPrefix(userId)}items/${encodeURIComponent(itemId)}/source/${safeFilename(filename)}`,

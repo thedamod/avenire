@@ -1053,199 +1053,138 @@ Use consistent formatting:
   "python": {
     id: "python",
     title: "Python",
-    description: "Use run_python for real computation - brute force, statistics, symbolic math, data processing over the user's material. Load before the first run_python call.",
+    description: "Use sandbox tools for real computation - brute force, statistics, symbolic math and data processing over the user's material. Load before the first sandbox call.",
     section: "tool-guidelines",
     path: "sections/tool-guidelines/python.md",
     content: `---
 name: python
-description: Use run_python for real computation - brute force, statistics, symbolic math, data processing over the user's material. Load before the first run_python call.
+description: Use sandbox tools for real computation - brute force, statistics, symbolic math and data processing over the user's material. Load before the first sandbox call.
 ---
 
 # Python
 
-\`run_python\` runs your code once in a fresh sandbox and throws it away. Nothing persists
-between calls: re-send any data the next call needs.
+One ephemeral Linux sandbox persists per thread, with Python 3.12, numpy, scipy,
+pandas, sympy, matplotlib, Manim, ffmpeg and LaTeX preinstalled. Network is blocked;
+write scripts and data locally. The hard lifetime cap is 60 minutes; each command
+has a 120-second default timeout and a maximum of 900 seconds.
 
-## When
+Use it for enumeration, Monte Carlo, parameter sweeps, numerical solutions,
+statistics and checked symbolic math. Prefer prose for answers you can give exactly.
 
-- Brute force: enumeration, Monte Carlo, parameter sweeps, numerical solutions.
-- Statistics or data processing over numbers from the user's material.
-- Symbolic math you want checked (sympy).
+1. \`sandbox_write({ path: "analysis.py", content: "..." })\` writes the script.
+2. \`sandbox_exec({ command: "python analysis.py" })\` runs it. Seed randomness,
+   print labelled results and keep output concise (64 KB maximum).
+3. Save figures or data to files explicitly, then call
+   \`sandbox_download_artifact({ path: "figure.png" })\`. Downloads expire after seven days.
+   For Manim, render with \`manim -ql scene.py SceneName\` and download the resulting MP4.
+4. Use \`sandbox_read\` for text or \`encoding: "base64"\` for binary files (up to 1 MB).
+5. Call \`sandbox_close\` when the task is done unless waiting for the user's input.
+   After that follow-up, close it.
 
-Not for: drawing interactive visuals (write an \`<avenire-sim>\`), or answers you can give
-exactly in prose.
-
-## How
-
-- numpy, scipy, pandas, sympy, matplotlib are preinstalled; ask for others with \`packages\`.
-- Seed every random generator so results are reproducible.
-- Print the numbers you will quote; keep stdout short and labelled.
-- Matplotlib figures are saved and returned as figures. Use them for static results only;
-  if the learner should explore the result, print the data and show it as an
-  \`<avenire-chart>\` or feed it to a simulation.
-- If a result has a parameter worth exploring, compute a small grid over it once, rather
-  than planning to re-run Python per value.
-- When it fails, read the error, fix the code and try once more; then explain.
+If a command fails, read the output and fix the cause before retrying. Explain any
+remaining limitation. Never invent results. For interactive exploration, pass computed
+data into a standalone HTML document via \`render_widget\`; do not re-run Python per slider.
 `,
   },
   "chart": {
     id: "chart",
     title: "Chart",
-    description: "Write an <avenire-chart> - a declarative, Vega-Lite-shaped chart spec rendered natively with tooltips, legend toggles, brushing and filters. Use for large amounts of raw information.",
+    description: "Render a chart as a standalone HTML document through render_widget. Use for values, categories, trends and distributions.",
     section: "visual-guidelines",
     path: "sections/visual-guidelines/chart.md",
     content: `---
 name: chart
-description: Write an <avenire-chart> - a declarative, Vega-Lite-shaped chart spec rendered natively with tooltips, legend toggles, brushing and filters. Use for large amounts of raw information.
+description: Render a chart as a standalone HTML document through render_widget. Use for values, categories, trends and distributions.
 ---
 
 # Chart
 
-A chart is a JSON spec inside \`<avenire-chart>\`. The renderer adds the interactions
-itself (crosshair tooltip, legend toggle, brush-to-zoom, filter chips, data table, copy
-data), so the spec only describes the data and the encoding. No code.
+Call \`get_page_context\` first, then \`render_widget({ title, html })\` with a complete
+HTML document. Draw with inline SVG or Canvas and inline JavaScript; no external
+libraries or network requests. Embed rows directly from the user's material or
+sandbox results. Never invent values.
 
-\`\`\`html
-<avenire-chart id="vis-co2" title="CO₂ and temperature, 1900–2020">
-  { "mark": "line", "data": { "values": [{ "year": 1900, "co2": 296, "temp": -0.08 }] }, "encoding":
-  { "x": { "field": "year", "type": "temporal" }, "y": { "field": "co2", "type": "quantitative",
-  "title": "CO₂ (ppm)" } }, "interactions": { "brush": "x" } }
-</avenire-chart>
-\`\`\`
+Pick the simplest mark: bars for comparison, lines for trends, points for relationships,
+histograms or box plots for distributions. At most five series. Label axes with units;
+provide a legend and accessible text or a data table. Pair colour with labels or patterns.
+Use the theme's \`--chart-1\` through \`--chart-6\`, \`--foreground\`, \`--muted-foreground\`,
+\`--border\`, font, spacing and type variables. For Canvas, listen for
+\`avenire:themechange\` and re-read computed variables before redrawing.
 
-## Spec
-
-- \`mark\`: \`bar\` | \`line\` | \`area\` | \`point\` | \`rule\` | \`arc\` | \`boxplot\` | \`heatmap\` |
-  \`histogram\` | \`candlestick\`.
-- \`encoding\`: \`x\`, \`y\`, \`color\`, \`size\`, \`facet\`, each \`{ field, type, aggregate?, title? }\`
-  where \`type\` is \`quantitative\` | \`temporal\` | \`ordinal\` | \`nominal\`.
-- \`transform\` (optional): \`filter\`, \`aggregate\`, \`bin\`, \`window\`.
-- \`data\`: \`{ "values": [...] }\` inline rows, or \`{ "dataRef": "<run_python data name>" }\`.
-- \`layer\` (optional): an array of \`{ mark, encoding }\` for overlays, e.g. a second axis.
-- \`interactions\` (optional hints): \`{ "brush": "x" | "xy", "filter": "<field>" }\`.
-
-## Rules
-
-- Values must come from the user's material or a \`run_python\` result. Never invent data.
-- Pick the simplest mark that shows the shape: bar for comparison, line for trend,
-  point for relationship, histogram/boxplot for distribution.
-- At most 5 series, and only use colour when it encodes something.
-- Title axes with units. Put the takeaway in your prose, not in the chart.
+Add tooltips or filters only when they support the question. Keep layout responsive
+to the measured width. Put the takeaway in chat prose after the widget.
+Inline \`<avenire-chart>\` tags are coming later; do not write them now.
 `,
   },
   "simulation": {
     id: "simulation",
     title: "Simulation",
-    description: "Write an <avenire-sim> - an interactive simulation whose model runs in a worker on top of the Avenire viz kits. Use when many moving parts together determine the outcome.",
+    description: "Render an interactive simulation as standalone HTML through render_widget when interacting parameters determine the outcome.",
     section: "visual-guidelines",
     path: "sections/visual-guidelines/simulation.md",
     content: `---
 name: simulation
-description: Write an <avenire-sim> - an interactive simulation whose model runs in a worker on top of the Avenire viz kits. Use when many moving parts together determine the outcome.
+description: Render an interactive simulation as standalone HTML through render_widget when interacting parameters determine the outcome.
 ---
 
 # Simulation
 
-A simulation is an HTML widget inside your markdown. Its model and drawing run in a Web
-Worker on an \`OffscreenCanvas\`; the HTML around it is only layout, labels and readouts.
+Call \`get_page_context\` first, then send a complete HTML document to \`render_widget\`.
+Use inline CSS/JavaScript, SVG or Canvas, accessible labelled controls and readable
+numeric readouts. At least two interacting parameters or a draggable state should
+justify the interaction; otherwise use a chart.
 
-\`\`\`html
-<avenire-sim id="vis-arm" kit="kinematics" title="Reaching a target">
-  <script type="avenire/params">
-    { "segments": { "min": 2, "max": 6, "step": 1, "default": 3, "label": "Segments" },
-      "jointLimitDeg": { "min": 10, "max": 180, "default": 120, "label": "Joint limit" } }
-  </script>
-  <script type="avenire/worker">
-    export function setup(ctx) {
-      const { fabrik2 } = ctx.kits.kinematics;
-      let chain = fabrik2.chain(ctx.params.segments, 80);
-      const target = ctx.handles.point({ x: 200, y: 0 });
-      ctx.loop(() => {
-        const result = chain.solve(target, { jointLimitDeg: ctx.params.jointLimitDeg });
-        ctx.plot.clear();
-        ctx.plot.chain(chain);
-        ctx.emit("reachable", result.reachable ? "yes" : "no");
-      });
-    }
-  </script>
-  <p>Reachable: <strong data-readout="reachable"></strong></p>
-</avenire-sim>
-\`\`\`
+Implement the model locally in JavaScript. No external kits, scripts, fonts, images or
+network requests are available. For expensive computation, use sandbox tools once
+and embed a small precomputed grid for interpolation. Seed randomness for reproducibility.
+Never re-run Python for every control change.
 
-## The worker API (\`setup(ctx)\`)
+Use the provided theme variables for colours, fonts, spacing and sizes. Canvas should
+listen for \`avenire:themechange\` and re-read tokens from \`getComputedStyle\` before drawing.
+Use \`requestAnimationFrame\`, stay within the frame budget, pause when hidden and
+respect \`prefers-reduced-motion\`. Keep mobile interactions simple and supply a text
+alternative. Always explain what the learner should notice in chat prose.
 
-- \`ctx.canvas\`: the \`OffscreenCanvas\` (2D or WebGL).
-- \`ctx.params\`: live parameter values, declared in \`avenire/params\` (number ranges,
-  booleans, selects). The host renders the controls.
-- \`ctx.loop(fn)\`: the frame loop; paused offscreen and under reduced motion.
-- \`ctx.pointer\`, \`ctx.handles.point(...)\`: input forwarded from the page, draggable points.
-- \`ctx.theme\`: theme tokens from \`get_page_context\`.
-- \`ctx.data(name)\`: a \`run_python\` data output or precomputed grid.
-- \`ctx.emit(name, value)\`: updates elements with \`data-readout="name"\`.
-- \`ctx.kits\`: only the kits \`get_page_context\` lists, e.g. \`kinematics\` (FABRIK chains,
-  joint limits), \`mechanics\` (springs, XPBD, RK4), \`fields\`, \`geometry\`, \`stochastic\`
-  (seeded RNG, samplers), \`systems\` (SIR, stock/flow), \`plot\`, \`signals\`.
-
-## Rules
-
-- At least two parameters that interact, or a draggable state. Otherwise use a chart.
-- No network, no DOM access from worker code, no \`fetch\`, no external scripts.
-- Stay within the frame budget from \`get_page_context\`; precompute what doesn't change.
-- Seed randomness so a re-run shows the same thing.
-- Simulations aren't only physics: epidemics, markets, Bayesian updating and algorithms
-  are simulations too.
+Inline \`<avenire-sim>\` tags and runtime kits are coming later; do not write them now.
 `,
   },
   "visuals": {
     id: "visuals",
     title: "Visuals",
-    description: "Choose how to show a concept - text, chart, simulation or video - and how to write inline visuals. Load before writing any <avenire-chart> or <avenire-sim>.",
+    description: "Choose text, chart or interactive simulation to teach a concept. Load before render_widget.",
     section: "visual-guidelines",
     path: "sections/visual-guidelines/visuals.md",
     content: `---
 name: visuals
-description: Choose how to show a concept - text, chart, simulation or video - and how to write inline visuals. Load before writing any <avenire-chart> or <avenire-sim>.
+description: Choose text, chart or interactive simulation to teach a concept. Load before render_widget.
 ---
 
 # Visuals
 
-A visual is a teaching decision. Pick the modality from what the learner needs to do
-with the idea: compare, follow, compute or manipulate. Prose always wraps the visual: a
-one-line objective before it, and the takeaway after it.
+Choose what lets the learner compare, follow, compute or manipulate the idea.
+Give a short objective before the visual and explain its takeaway in prose afterwards.
 
-## Pick the modality
+| Need                                             | Use                                                    |
+| ------------------------------------------------ | ------------------------------------------------------ |
+| A formula, definition or small comparison        | Markdown and math                                      |
+| Values, categories, time series or distributions | Chart; load \`chart\`                                    |
+| Brute force, Monte Carlo, sweeps or statistics   | Sandbox tools; load \`python\`, then show the results    |
+| Interacting parameters or a draggable state      | Interactive HTML simulation; load \`simulation\`         |
+| A rendered animation file                        | Sandbox Manim/ffmpeg, then \`sandbox_download_artifact\` |
 
-| The concept is…                                                                                                                                      | Use                                                                                      |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| A single formula, definition, small table or comparison                                                                                              | **Text**: markdown + \`$...$\` math                                                        |
-| A lot of raw information: values, categories, time series, distributions                                                                             | **Chart**: \`<avenire-chart>\`, load \`chart\`                                               |
-| Heavily mathematical, needs brute force (Monte Carlo, sweeps, numerics, statistics)                                                                  | Compute with \`run_python\` (load \`python\`), then show the result as a chart or simulation |
-| Many moving parts that together decide the outcome (linkages, IK, fields, feedback loops, population or market models, algorithms on changing input) | **Simulation**: \`<avenire-sim>\`, load \`simulation\`                                       |
-| A long ordered story: a process, a derivation, "how X leads to Y"                                                                                    | **Video**: not available in chat yet; explain in steps instead                           |
+Prefer the simplest visual that teaches the point. Never invent data: use the user's
+material or computed sandbox results. A slider must not re-run Python; precompute a
+small grid and interpolate locally when needed.
 
-Tie-breakers:
+Call \`get_page_context\` first. Fit the content to its width, platform, colour scheme,
+theme variables and budgets. Then call \`render_widget({ title, html })\` with a standalone
+HTML document containing only inline CSS/JS and embedded data. Use \`var(--...)\` for
+colours, fonts, spacing and sizes. No network, external scripts, fonts or images.
+Give controls accessible labels and include a text alternative. Explain every visual
+in chat prose; do not end on a tool result.
 
-- Prefer the cheapest modality that teaches the point: text < chart < simulation.
-- "Compare / trend" → chart. "Show me how it moves" → simulation. "How likely / what if we
-  tried all" → \`run_python\`, then a chart.
-- A slider must never re-run Python. If a parameter matters, make it a simulation control
-  and re-implement the cheap part in the simulation, or have \`run_python\` precompute a
-  grid the simulation interpolates.
-- Never invent numbers. Chart values come from the user's material or from \`run_python\`.
-
-## Before writing a visual
-
-1. Call \`get_page_context\`. Fit the visual to the surface, platform, width, colour scheme,
-   theme tokens, kits and budgets it reports. On \`mobile\`, keep simulations simple.
-2. Give the visual a short unique \`id\` (\`id="vis-orbit"\`) and a \`title\`.
-3. To change a visual listed in \`existingVisuals\`, write a new one with
-   \`revises="<its id>"\`. Don't repeat the old one.
-
-## Writing it
-
-- Write the tag inline where it belongs in the explanation, never inside a code fence.
-- Keep explanations outside the visual; inside, only labels, values, legends and readouts.
-- One strong visual beats several small ones.
+Inline \`<avenire-chart>\` and \`<avenire-sim>\` tags and runtime kits are coming later.
+Do not write those tags now: all HTML visuals go through \`render_widget\`.
 `,
   },
 } as const satisfies Record<string, SkillDefinition>;

@@ -22,6 +22,12 @@ export const SearchQuery = Schema.Struct({
   clusterIds: Schema.optional(Schema.Array(ClusterId)),
   kinds: Schema.optional(Schema.Array(ItemKind)),
   depth: Schema.optional(SearchDepth),
+  /** Restrict retrieval to these items; an empty list selects no items. */
+  itemIds: Schema.optional(Schema.Array(ItemId)),
+  /** ISO lower bound on the last content change: coalesce(contentModifiedAt, createdAt). */
+  since: Schema.optional(Schema.String),
+  /** ISO upper bound on the last content change: coalesce(contentModifiedAt, createdAt). */
+  until: Schema.optional(Schema.String),
 });
 export type SearchQuery = typeof SearchQuery.Type;
 

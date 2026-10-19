@@ -20,13 +20,7 @@ import {
 import { call } from "@avenire/client-runtime/rpc";
 import * as WebBrowser from "expo-web-browser";
 import type { RuthUIMessage } from "@avenire/ai/message-types";
-import {
-  type ArtifactId,
-  type FileAction,
-  type PageContext,
-  RUTH_CHAT_PATH,
-  type ThreadId,
-} from "@avenire/contracts";
+import { type PageContext, RUTH_CHAT_PATH, type ThreadId } from "@avenire/contracts";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { EmptyState } from "../../components/EmptyState";
@@ -47,16 +41,22 @@ const streamingFetch: typeof globalThis.fetch = (input, init) =>
     ...(init?.signal === undefined ? {} : { signal: init.signal }),
   });
 
-function describeAction(action: FileAction): string {
-  switch (action._tag) {
-    case "move":
-      return "Move a library item into another cluster.";
-    case "rename":
-      return `Rename an item to “${action.title}”.`;
-    case "delete":
-      return "Archive a library item.";
-    case "create-note":
-      return `Create the note “${action.title}”.`;
+/** One line per gated tool; inputs carry ids and titles, never the user's file names for moves. */
+function describeApproval(part: ToolPart): string {
+  const input: unknown = part.input;
+  const fields = typeof input === "object" && input !== null ? input : {};
+  const title = "title" in fields && typeof fields.title === "string" ? fields.title : undefined;
+  switch (part.type) {
+    case "tool-write_file":
+      return `Create the note “${title ?? "untitled"}”.`;
+    case "tool-move_file":
+      return "Move a file into another folder.";
+    case "tool-rename_file":
+      return `Rename a file to “${title ?? "a new title"}”.`;
+    case "tool-archive_file":
+      return "Archive a file. You can restore it for 30 days.";
+    default:
+      return `Allow ${getToolName(part).replaceAll("_", " ")}.`;
   }
 }
 
@@ -93,6 +93,7 @@ export function RuthScreen() {
             message: current.at(-1),
             page: page.current,
             fast: false,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           },
         }),
       }),
@@ -107,10 +108,10 @@ export function RuthScreen() {
     });
   const working = status === "submitted" || status === "streaming";
 
-  const openArtifact = async (artifactId: ArtifactId) => {
+  // Mobile has no WebView yet, so widgets and downloads open in the system browser.
+  const openUrl = async (url: string) => {
     setError(undefined);
     try {
-      const { url } = await call(api, (client) => client["cloud.artifactUrl"]({ artifactId }));
       await WebBrowser.openBrowserAsync(url);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -136,48 +137,37 @@ export function RuthScreen() {
   };
 
   const toolView = (part: ToolPart, key: string) => {
-    if (part.type === "tool-propose_file_action") {
-      if (part.state === "approval-requested") {
-        return (
-          <View key={key} className="gap-2 rounded-xl border border-border bg-muted p-3">
-            <Text className="font-semibold text-foreground">Approval required</Text>
-            <Text className="text-sm text-muted-foreground">
-              {describeAction(part.input.action)}
-            </Text>
-            <View className="flex-row gap-2">
-              <View className="flex-1">
-                <Button
-                  onPress={() => addToolApprovalResponse({ id: part.approval.id, approved: true })}
-                >
-                  Approve
-                </Button>
-              </View>
-              <View className="flex-1">
-                <Button
-                  variant="destructive"
-                  onPress={() => addToolApprovalResponse({ id: part.approval.id, approved: false })}
-                >
-                  Decline
-                </Button>
-              </View>
+    if (part.state === "approval-requested") {
+      return (
+        <View key={key} className="gap-2 rounded-xl border border-border bg-muted p-3">
+          <Text className="font-semibold text-foreground">Approval required</Text>
+          <Text className="text-sm text-muted-foreground">{describeApproval(part)}</Text>
+          <View className="flex-row gap-2">
+            <View className="flex-1">
+              <Button
+                onPress={() => addToolApprovalResponse({ id: part.approval.id, approved: true })}
+              >
+                Approve
+              </Button>
+            </View>
+            <View className="flex-1">
+              <Button
+                variant="destructive"
+                onPress={() => addToolApprovalResponse({ id: part.approval.id, approved: false })}
+              >
+                Decline
+              </Button>
             </View>
           </View>
-        );
-      }
-      if (part.state === "output-available") {
-        return (
-          <Text key={key} className="text-sm text-muted-foreground">
-            {part.output.summary}
-          </Text>
-        );
-      }
-      if (part.state === "output-denied") {
-        return (
-          <Text key={key} className="text-sm text-muted-foreground">
-            File action declined.
-          </Text>
-        );
-      }
+        </View>
+      );
+    }
+    if (part.state === "output-denied") {
+      return (
+        <Text key={key} className="text-sm text-muted-foreground">
+          Declined.
+        </Text>
+      );
     }
     if (part.type === "tool-ask_user" && part.state === "input-available") {
       return (
@@ -201,24 +191,18 @@ export function RuthScreen() {
         </View>
       );
     }
-    if (part.type === "tool-run_python" && part.state === "output-available") {
+    if (part.type === "tool-render_widget" && part.state === "output-available") {
       return (
-        <View key={key} className="gap-2 rounded-xl bg-muted p-3">
-          {part.output.stdout ? (
-            <Text selectable className="font-mono text-sm text-foreground">
-              {part.output.stdout}
-            </Text>
-          ) : null}
-          {part.output.figures.map((figure) => (
-            <Button
-              key={figure.artifactId}
-              variant="secondary"
-              onPress={() => void openArtifact(figure.artifactId)}
-            >
-              {`Open ${figure.title}`}
-            </Button>
-          ))}
-        </View>
+        <Button key={key} variant="secondary" onPress={() => void openUrl(part.output.url)}>
+          {`Open ${part.output.title}`}
+        </Button>
+      );
+    }
+    if (part.type === "tool-sandbox_download_artifact" && part.state === "output-available") {
+      return (
+        <Button key={key} variant="secondary" onPress={() => void openUrl(part.output.url)}>
+          {`Download ${part.output.name}`}
+        </Button>
       );
     }
     if (part.state === "output-error") {
