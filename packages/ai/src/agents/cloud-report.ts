@@ -11,11 +11,11 @@ export interface ReportInput {
   readonly hydrations: ReadonlyArray<{ readonly files: readonly HydratedFile[] }>;
   readonly produced: ReadonlyArray<{ readonly id: string; readonly title: string }>;
   readonly approvals: ReadonlyArray<{
-    readonly itemTitle: string;
+    readonly fileTitle: string;
     readonly summary: string;
     readonly conflict: string | null;
   }>;
-  readonly recording: { readonly id: string } | null;
+  readonly recording: { readonly id: string; readonly url: string } | null;
   readonly summary: string;
   readonly appUrl: string;
   readonly error?: string;
@@ -26,7 +26,7 @@ export const readFiles = (hydrations: ReportInput["hydrations"]): readonly Hydra
   ...new Map(hydrations.flatMap(({ files }) => files).map((file) => [file.fileId, file])).values(),
 ];
 
-/** The report is derived from audited inputs and published items, never guessed from sandbox files. */
+/** The report is derived from audited inputs and published files, never guessed from sandbox files. */
 export const buildReport = (input: ReportInput): string => {
   const base = input.appUrl.replace(/\/$/, "");
   const reads = readFiles(input.hydrations);
@@ -41,27 +41,22 @@ export const buildReport = (input: ReportInput): string => {
     ...(reads.length
       ? reads.map(
           (file) =>
-            `- [${label(file.drivePath)}](${base}/library?item=${encodeURIComponent(file.fileId)}) — ${label(file.reason)}`,
+            `- [${label(file.drivePath)}](${base}/library?file=${encodeURIComponent(file.fileId)}) — ${label(file.reason)}`,
         )
       : ["No files were hydrated."]),
     `## Files produced (${input.produced.length})`,
     ...(input.produced.length
       ? input.produced.map(
-          (file) => `- [${label(file.title)}](${base}/library?item=${encodeURIComponent(file.id)})`,
+          (file) => `- [${label(file.title)}](${base}/library?file=${encodeURIComponent(file.id)})`,
         )
-      : ["No items were published."]),
+      : ["No files were published."]),
     "## Pending approvals",
     `${input.approvals.length} changes wait for your review. [Review changes](${base}/cloud/review?run=${encodeURIComponent(input.run.id)})`,
     ...input.approvals.map(
       (approval) =>
-        `- ${label(approval.itemTitle)}: ${label(approval.summary)}${approval.conflict ? ` — Conflict: ${label(approval.conflict)}` : ""}`,
+        `- ${label(approval.fileTitle)}: ${label(approval.summary)}${approval.conflict ? ` — Conflict: ${label(approval.conflict)}` : ""}`,
     ),
-    ...(input.recording
-      ? [
-          "## Recording",
-          `[Watch the session](${base}/artifacts/${encodeURIComponent(input.recording.id)})`,
-        ]
-      : []),
+    ...(input.recording ? ["## Recording", `[Watch the session](${input.recording.url})`] : []),
     ...(input.error || input.hydrationFailures?.length
       ? [
           "## Failures",

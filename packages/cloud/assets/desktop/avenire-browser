@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+exec /usr/bin/chromium --no-sandbox --disable-dev-shm-usage \
+  --user-data-dir="$HOME/.config/avenire-chromium" \
+  --no-first-run --no-default-browser-check --disable-background-networking \
+  --disable-session-crashed-bubble --disable-features=Translate,MediaRouter \
+  --password-store=basic --force-device-scale-factor=1 --start-maximized \
+  --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 "$@"

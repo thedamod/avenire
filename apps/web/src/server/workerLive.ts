@@ -1,7 +1,7 @@
 import { RuthCloudLive } from "@avenire/ai/ruth-cloud";
 import { CloudRunsLive, CloudSchedulerLive } from "@avenire/ai/scheduler";
 import { ChatSandboxSweeperLive } from "@avenire/cloud/chat-sandbox";
-import { ArchivePurgeLive } from "@avenire/ingestion/archive";
+import { ArchivePurgeLive } from "@avenire/storage/archive";
 import { ImageDescriberLive } from "@avenire/ingestion/extract/describe";
 import { MediaProcessorLive } from "@avenire/ingestion/extract/media";
 import { OcrLive } from "@avenire/ingestion/extract/ocr";
@@ -10,11 +10,10 @@ import { TranscriberLive } from "@avenire/ingestion/extract/transcribe";
 import { TranscriptCacheLive } from "@avenire/ingestion/extract/transcript-cache";
 import { GraphExtractorLive } from "@avenire/ingestion/graph/extract";
 import { GraphIndexerLive } from "@avenire/ingestion/graph/indexer";
-import { ItemIndexerLive } from "@avenire/ingestion/indexer";
+import { FileIndexerLive } from "@avenire/ingestion/indexer";
 import { IngestionModelsLive } from "@avenire/ingestion/models";
 import { IngestionPipelineLive } from "@avenire/ingestion/pipeline";
 import { IngestionWorkerLive } from "@avenire/ingestion/worker";
-import { ArtifactSweeperLive } from "@avenire/ruth-kit/artifacts";
 import * as Layer from "effect/Layer";
 import { ServicesLive } from "./services.ts";
 
@@ -26,7 +25,7 @@ const ExtractionLive = Layer.mergeAll(
   MediaProcessorLive,
   RemoteMediaLive,
 ).pipe(Layer.provideMerge(IngestionModelsLive));
-const IndexingLive = ItemIndexerLive.pipe(
+const IndexingLive = FileIndexerLive.pipe(
   Layer.provideMerge(GraphIndexerLive.pipe(Layer.provideMerge(GraphExtractorLive))),
   Layer.provideMerge(IngestionModelsLive),
 );
@@ -41,5 +40,4 @@ export const WorkerLive = Layer.mergeAll(
   ArchivePurgeLive,
   CloudSchedulerLive.pipe(Layer.provideMerge(ExecutorLive)),
   ChatSandboxSweeperLive,
-  ArtifactSweeperLive,
 ).pipe(Layer.provideMerge(ServicesLive));

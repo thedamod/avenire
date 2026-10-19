@@ -13,6 +13,7 @@ export {
   type SkillSection,
   STUDY_SKILLS,
   TOOL_SKILLS,
+  VISUAL_EXAMPLE_SKILLS,
   VISUAL_SKILLS,
 } from "./skills.ts";
 

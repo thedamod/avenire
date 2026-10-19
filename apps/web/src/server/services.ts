@@ -1,7 +1,8 @@
 import { AuthLive } from "@avenire/auth/server";
 import { ChatSandboxesLive } from "@avenire/cloud/chat-sandbox";
 import { CloudBoxesLive } from "@avenire/cloud/cloud-box";
-import { CloudReviewLive } from "@avenire/ruth-kit/review";
+import { CloudRunEventsLive } from "@avenire/ai/cloud/events";
+import { CloudReviewLive } from "@avenire/ai/cloud/review";
 import { DaytonaClientLive } from "@avenire/cloud/daytona";
 import { DatabaseLive } from "@avenire/database/client";
 import { EmbedderLive } from "@avenire/ingestion/embed";
@@ -11,10 +12,10 @@ import { RetrievalLive } from "@avenire/ingestion/retrieval";
 import { SemanticCacheLive } from "@avenire/ingestion/retrieval/cache";
 import { QueryPlannerLive } from "@avenire/ingestion/retrieval/planner";
 import { RerankerLive } from "@avenire/ingestion/retrieval/rerank";
-import { ArtifactStoreLive } from "@avenire/ruth-kit/artifacts";
-import { RunTokensLive } from "@avenire/ruth-kit/run-tokens";
-import { SandboxMeterLive } from "@avenire/ruth-kit/sandbox-meter";
-import { WidgetStoreLive } from "@avenire/ruth-kit/widgets";
+import { AssetStoreLive } from "@avenire/ai/outputs/assets";
+import { SandboxMeterLive } from "@avenire/ai/tools/sandbox-meter";
+import { WidgetPreviewLive } from "@avenire/ai/tools/preview";
+import { WidgetStoreLive } from "@avenire/ai/outputs/widgets";
 import { AnalyticsLive } from "@avenire/shared/observability";
 import { StorageLive } from "@avenire/storage/storage";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -41,15 +42,18 @@ const RetrievalServicesLive = RetrievalLive.pipe(
   Layer.provideMerge(Layer.mergeAll(GraphSearchLive, SemanticCacheLive)),
   Layer.provideMerge(ProvidersLive),
 );
+// One ChatSandboxes for the sandbox tools and preview_widget: layers are shared by reference, and a
+// second instance would keep its own registry (stale after sandbox_close) and its own locks.
+const ChatSandboxesSharedLive = ChatSandboxesLive.pipe(Layer.provideMerge(SandboxMeterLive));
 const ToolsLive = Layer.mergeAll(
   RetrievalServicesLive,
-  WidgetStoreLive,
-  ArtifactStoreLive,
-  RunTokensLive,
+  WidgetStoreLive.pipe(Layer.provideMerge(AssetStoreLive)),
+  WidgetPreviewLive.pipe(Layer.provideMerge(ChatSandboxesSharedLive)),
   AuthLive,
   CloudBoxesLive,
-  ChatSandboxesLive.pipe(Layer.provideMerge(SandboxMeterLive)),
 ).pipe(Layer.provideMerge(InfrastructureLive));
-export const ServicesLive = Layer.mergeAll(CloudTasksLive, CloudReviewLive).pipe(
-  Layer.provideMerge(ToolsLive),
-);
+export const ServicesLive = Layer.mergeAll(
+  CloudTasksLive,
+  CloudReviewLive,
+  CloudRunEventsLive,
+).pipe(Layer.provideMerge(ToolsLive));

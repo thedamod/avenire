@@ -3,7 +3,8 @@ import { CloudRunId } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { cloudRun, cloudTask, user } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
-import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, sql, ne } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as Config from "effect/Config";
@@ -16,7 +17,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
-import { RUN_WALL_CLOCK, RuthCloud, RuthCloudError } from "../agents/cloud.ts";
+import { type CloudClaim, RuthCloud, RuthCloudError } from "../agents/cloud.ts";
 import { nextOccurrence } from "./occurrence.ts";
 
 export { nextOccurrence, validateSchedule } from "./occurrence.ts";
@@ -26,7 +27,7 @@ export type { CloudTaskPatch, CloudTasksError } from "./tasks.ts";
 export class CloudRuns extends Context.Service<
   CloudRuns,
   {
-    readonly start: (runId: CloudRunId) => Effect.Effect<void>;
+    readonly start: (claim: CloudClaim) => Effect.Effect<void>;
   }
 >()("avenire/ai/CloudRuns") {}
 
@@ -41,18 +42,17 @@ export const CloudRunsLive = Layer.effect(
     );
     const permits = yield* Semaphore.make(concurrency);
     const running = yield* FiberSet.make();
-    // At most one run per user is ever claimed (see claimRun), so the user's single box,
-    // token secret and run.json are never shared; this only bounds total concurrency.
-    const execute = Effect.fn("CloudRuns.execute")(function* (runId: CloudRunId) {
+    // Claim fencing and checkpoints remain valid after worker shutdown.
+    const execute = Effect.fn("CloudRuns.execute")(function* (claim: CloudClaim) {
       const run = yield* database.use((db) =>
-        db.query.cloudRun.findFirst({ where: eq(cloudRun.id, runId) }),
+        db.query.cloudRun.findFirst({ where: eq(cloudRun.id, claim.runId) }),
       );
-      if (!run || run.status === "cancelled") return;
-      yield* cloud.execute(runId).pipe(permits.withPermits(1));
+      if (!run || (run.status === "cancelled" && !run.leasedBy)) return;
+      yield* cloud.execute(claim).pipe(permits.withPermits(1));
     });
     return CloudRuns.of({
-      start: Effect.fn("CloudRuns.start")((runId) =>
-        execute(runId).pipe(
+      start: Effect.fn("CloudRuns.start")((claim) =>
+        execute(claim).pipe(
           Effect.onExit((exit) =>
             Exit.isFailure(exit)
               ? database
@@ -61,14 +61,14 @@ export const CloudRunsLive = Layer.effect(
                       .update(cloudRun)
                       .set(
                         Cause.hasInterrupts(exit.cause)
-                          ? { status: "cancelled", finishedAt: sql`now()` }
+                          ? { status: "scheduled", leaseExpiresAt: sql`now()`, leasedBy: null }
                           : { status: "scheduled" },
                       )
                       .where(
                         and(
-                          eq(cloudRun.id, runId),
+                          eq(cloudRun.id, claim.runId),
                           eq(cloudRun.status, "provisioning"),
-                          sql`${cloudRun.startedAt} is null`,
+                          isNull(cloudRun.startedAt),
                         ),
                       ),
                   )
@@ -84,7 +84,7 @@ export const CloudRunsLive = Layer.effect(
             const error = Cause.squash(cause);
             // SDK error causes can contain request credentials; only emit the sanitized domain reason.
             return Effect.logError("Ruth Cloud run failed", {
-              runId,
+              runId: claim.runId,
               reason: error instanceof RuthCloudError ? error.reason : "Cloud executor failed.",
             });
           }),
@@ -96,14 +96,12 @@ export const CloudRunsLive = Layer.effect(
   }),
 );
 
-/**
- * One active run per user: the user's box has one token secret and one run.json, so
- * runs of different tasks queue. Locking the user row serialises count + claim across
- * worker processes.
- */
+/** Persistent boxes serialize runs by user across worker processes. */
 export const MAX_ACTIVE_RUNS_PER_USER = 1;
-/** A run still active this long after its claim belongs to a worker that died. */
-const STALE_AFTER_MS = RUN_WALL_CLOCK + 30 * 60_000;
+export const RUN_LEASE_MS = 5 * 60_000;
+const WORKER_ID = randomUUID();
+export const leaseExpired = (expires: Date | null, now: Date) =>
+  expires === null || expires.getTime() <= now.getTime();
 
 /** The user row serializes count + claim so distinct workers cannot exceed the cap. */
 export const claimRun = Effect.fn("CloudScheduler.claimRun")(function* (
@@ -114,27 +112,44 @@ export const claimRun = Effect.fn("CloudScheduler.claimRun")(function* (
   const database = yield* Database;
   const rows = yield* database.useTransaction(async (tx) => {
     await tx.select({ id: user.id }).from(user).where(eq(user.id, userId)).for("no key update");
-    const active = await tx
-      .select({ id: cloudRun.id })
+    const [candidate] = await tx
+      .select()
       .from(cloudRun)
-      .where(
-        and(eq(cloudRun.userId, userId), inArray(cloudRun.status, ["provisioning", "running"])),
-      );
+      .where(and(eq(cloudRun.id, runId), eq(cloudRun.userId, userId)))
+      .for("update");
+    if (!candidate) return [];
+    const cleanupOnly = ["succeeded", "failed", "cancelled"].includes(candidate.status);
+    if (cleanupOnly && (!candidate.leasedBy || candidate.usage.cleanupComplete)) return [];
+    const date = DateTime.toDateUtc(now);
+    if (candidate.status === "scheduled" && candidate.notBefore > date) return [];
+    if (candidate.status !== "scheduled" && !leaseExpired(candidate.leaseExpiresAt ?? null, date))
+      return [];
+    const otherRuns = await tx
+      .select()
+      .from(cloudRun)
+      .where(and(eq(cloudRun.userId, userId), ne(cloudRun.id, runId)));
+    const active = otherRuns.filter(
+      (row) =>
+        ["provisioning", "running"].includes(row.status) ||
+        (row.leasedBy && !row.usage.cleanupComplete),
+    );
     if (active.length >= MAX_ACTIVE_RUNS_PER_USER) return [];
     return tx
       .update(cloudRun)
-      .set({ status: "provisioning", claimedAt: DateTime.toDateUtc(now) })
-      .where(
-        and(
-          eq(cloudRun.id, runId),
-          eq(cloudRun.userId, userId),
-          eq(cloudRun.status, "scheduled"),
-          lte(cloudRun.notBefore, DateTime.toDateUtc(now)),
-        ),
-      )
-      .returning({ id: cloudRun.id });
+      .set({
+        status: cleanupOnly ? candidate.status : "provisioning",
+        claimedAt: date,
+        leasedBy: `${WORKER_ID}:${randomUUID()}`,
+        heartbeatAt: date,
+        leaseExpiresAt: DateTime.toDateUtc(DateTime.add(now, { milliseconds: RUN_LEASE_MS })),
+      })
+      .where(and(eq(cloudRun.id, runId), eq(cloudRun.userId, userId)))
+      .returning({ id: cloudRun.id, leasedBy: cloudRun.leasedBy });
   });
-  return rows[0] ? Option.some(CloudRunId.make(rows[0].id)) : Option.none<CloudRunId>();
+  const row = rows[0];
+  return row?.leasedBy
+    ? Option.some<CloudClaim>({ runId: CloudRunId.make(row.id), lease: row.leasedBy })
+    : Option.none<CloudClaim>();
 });
 
 export const schedulerTick = Effect.fn("CloudScheduler.tick")(function* () {
@@ -142,22 +157,6 @@ export const schedulerTick = Effect.fn("CloudScheduler.tick")(function* () {
   const runs = yield* CloudRuns;
   const now = yield* DateTime.now;
   const date = DateTime.toDateUtc(now);
-  // Otherwise a crashed worker's run would hold the user's only slot forever.
-  yield* database.use((db) =>
-    db
-      .update(cloudRun)
-      .set({
-        status: "failed",
-        error: "The worker stopped during this run.",
-        finishedAt: date,
-      })
-      .where(
-        and(
-          inArray(cloudRun.status, ["provisioning", "running"]),
-          lte(cloudRun.claimedAt, new Date(date.getTime() - STALE_AFTER_MS)),
-        ),
-      ),
-  );
   const due = yield* database.use((db) =>
     db.query.cloudTask.findMany({
       where: and(eq(cloudTask.enabled, true), lte(cloudTask.nextRunAt, date)),
@@ -205,12 +204,38 @@ export const schedulerTick = Effect.fn("CloudScheduler.tick")(function* () {
         .where(eq(cloudTask.id, current.id));
     });
   }
-  const runnable = yield* database.use((db) =>
+  const queued = yield* database.use((db) =>
     db.query.cloudRun.findMany({
       where: and(eq(cloudRun.status, "scheduled"), lte(cloudRun.notBefore, date)),
       orderBy: [asc(cloudRun.notBefore), asc(cloudRun.id)],
     }),
   );
+  const active = yield* database.use((db) =>
+    db.query.cloudRun.findMany({
+      where: inArray(cloudRun.status, ["provisioning", "running"]),
+      orderBy: [asc(cloudRun.createdAt)],
+    }),
+  );
+  const finishing = yield* database.use((db) =>
+    db.query.cloudRun.findMany({
+      where: and(
+        inArray(cloudRun.status, ["succeeded", "failed", "cancelled"]),
+        sql`${cloudRun.leasedBy} is not null`,
+      ),
+      orderBy: [asc(cloudRun.createdAt)],
+    }),
+  );
+  const expired = [...active, ...finishing];
+  // Recovery has priority over new work and preserves sandbox, recorder, messages and tool ids.
+  const runnable = [
+    ...expired.filter(
+      (run) =>
+        (["provisioning", "running"].includes(run.status) ||
+          (run.leasedBy && !run.usage.cleanupComplete)) &&
+        leaseExpired(run.leaseExpiresAt ?? null, date),
+    ),
+    ...queued,
+  ];
   for (const run of runnable) {
     // Claim + scope-owned fork must finish together even during worker shutdown.
     yield* Effect.gen(function* () {
@@ -220,13 +245,35 @@ export const schedulerTick = Effect.fn("CloudScheduler.tick")(function* () {
   }
 });
 
+/** A queued run no other run of its user blocks; the web process enqueues these (ad-hoc runs). */
+const claimableQueued = sql`${cloudRun.status} = 'scheduled' and ${cloudRun.notBefore} <= now()
+  and not exists (
+    select 1 from cloud_run other
+    where other.user_id = ${cloudRun.userId} and other.id <> ${cloudRun.id}
+      and (other.status in ('provisioning', 'running')
+        or (other.leased_by is not null and coalesce(other.usage->>'cleanupComplete', 'false') <> 'true'))
+  )`;
+export const WAKE_INTERVAL = "2 seconds";
+
 export const CloudSchedulerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const services = yield* Effect.context<Database | CloudRuns | Crypto.Crypto>();
+    const database = yield* Database;
+    const serial = yield* Semaphore.make(1);
     const tick = schedulerTick().pipe(
       Effect.provideContext(services),
       Effect.catchCause((cause) => Effect.logError("Ruth Cloud scheduler tick failed", { cause })),
+      serial.withPermits(1),
     );
+    // The minute tick is the safety net (due tasks, expired leases); this cheap poll starts a
+    // run enqueued by the web process without waiting for it.
+    const wake = database
+      .use((db) => db.select({ id: cloudRun.id }).from(cloudRun).where(claimableQueued).limit(1))
+      .pipe(
+        Effect.flatMap((rows) => (rows.length ? tick : Effect.void)),
+        Effect.catchCause((cause) => Effect.logWarning("Ruth Cloud queue poll failed", { cause })),
+      );
     yield* Effect.repeat(tick, Schedule.spaced("1 minute")).pipe(Effect.forkScoped);
+    yield* Effect.repeat(wake, Schedule.spaced(WAKE_INTERVAL)).pipe(Effect.forkScoped);
   }),
 );

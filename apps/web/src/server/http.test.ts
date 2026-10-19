@@ -45,11 +45,10 @@ it("keeps widget documents off the app host and all other routes off the widget 
   for (const path of [
     "/",
     "/api/ruth/chat",
-    "/api/ruth/artifacts/token",
+    "/a/token",
     "/_next/static/asset.js",
     "/sign-in",
     "/w",
-    "/kits/x.js",
   ])
     expect(widgetHostDecision("widgets.localhost:3000", path, "widgets.localhost:3000")).toBe(
       "reject",

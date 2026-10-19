@@ -34,24 +34,109 @@
     "./scheduler": {
       "types": "./src/scheduler/index.ts",
       "import": "./src/scheduler/index.ts"
+    },
+    "./tools/schema": {
+      "types": "./src/tools/schema.ts",
+      "import": "./src/tools/schema.ts"
+    },
+    "./tools/specs": {
+      "types": "./src/tools/specs.ts",
+      "import": "./src/tools/specs.ts"
+    },
+    "./tools/core": {
+      "types": "./src/tools/core.ts",
+      "import": "./src/tools/core.ts"
+    },
+    "./tools/library": {
+      "types": "./src/tools/library.ts",
+      "import": "./src/tools/library.ts"
+    },
+    "./tools/selectors": {
+      "types": "./src/tools/selectors.ts",
+      "import": "./src/tools/selectors.ts"
+    },
+    "./tools/ai-sdk": {
+      "types": "./src/tools/ai-sdk.ts",
+      "import": "./src/tools/ai-sdk.ts"
+    },
+    "./outputs/widgets": {
+      "types": "./src/outputs/widgets.ts",
+      "import": "./src/outputs/widgets.ts"
+    },
+    "./tools/sandbox-meter": {
+      "types": "./src/tools/sandbox-meter.ts",
+      "import": "./src/tools/sandbox-meter.ts"
+    },
+    "./tools/sandbox-tools": {
+      "types": "./src/tools/sandbox-tools.ts",
+      "import": "./src/tools/sandbox-tools.ts"
+    },
+    "./tools/sandbox-specs": {
+      "types": "./src/tools/sandbox-specs.ts",
+      "import": "./src/tools/sandbox-specs.ts"
+    },
+    "./tools/cloud-specs": {
+      "types": "./src/tools/cloud-specs.ts",
+      "import": "./src/tools/cloud-specs.ts"
+    },
+    "./cloud/tools": {
+      "types": "./src/cloud/tools.ts",
+      "import": "./src/cloud/tools.ts"
+    },
+    "./cloud/events": {
+      "types": "./src/cloud/events.ts",
+      "import": "./src/cloud/events.ts"
+    },
+    "./cloud/review": {
+      "types": "./src/cloud/review.ts",
+      "import": "./src/cloud/review.ts"
+    },
+    "./outputs/assets": {
+      "types": "./src/outputs/assets.ts",
+      "import": "./src/outputs/assets.ts"
+    },
+    "./tools/images": {
+      "types": "./src/tools/images.ts",
+      "import": "./src/tools/images.ts"
+    },
+    "./tools/preview": {
+      "types": "./src/tools/preview.ts",
+      "import": "./src/tools/preview.ts"
+    },
+    "./tools/computer-specs": {
+      "types": "./src/tools/computer-specs.ts",
+      "import": "./src/tools/computer-specs.ts"
+    },
+    "./tools/computer": {
+      "types": "./src/tools/computer.ts",
+      "import": "./src/tools/computer.ts"
+    },
+    "./tools/registration": {
+      "types": "./src/tools/registration.ts",
+      "import": "./src/tools/registration.ts"
     }
   },
   "scripts": {
     "skills:generate": "node src/skills/scripts/generator.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
+    "test": "pnpm --filter @avenire/widget-kit build && vp test run --config ../../vite.config.ts --dir . --passWithNoTests",
+    "conformance": "node --env-file-if-exists=../../.env.local --experimental-strip-types scripts/computer-use-conformance.ts",
+    "model:smoke": "tsx --env-file-if-exists=../../.env.local scripts/model-smoke.ts",
+    "preview:setup": "agent-browser install",
+    "preview:check": "node --experimental-strip-types src/tools/preview/check.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "catalog:",
     "@avenire/cloud": "workspace:*",
     "@avenire/contracts": "workspace:*",
     "@avenire/database": "workspace:*",
     "@avenire/ingestion": "workspace:*",
-    "@avenire/ruth-kit": "workspace:*",
     "@avenire/shared": "workspace:*",
     "@avenire/storage": "workspace:*",
     "@avenire/ui": "workspace:*",
-    "@avenire/viz": "workspace:*",
+    "@avenire/widget-kit": "workspace:*",
+    "@ai-sdk/fireworks": "catalog:",
+    "@openrouter/ai-sdk-provider": "3.1.0",
+    "agent-browser": "0.33.1",
     "ai": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"

@@ -1,4 +1,9 @@
+import { existsSync } from "node:fs";
 import { defineConfig } from "drizzle-kit";
+
+// The repo-root .env.local is the monorepo's single env file.
+const rootEnv = new URL("../../.env.local", import.meta.url);
+if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 
 export default defineConfig({
   schema: "./src/schema.ts",

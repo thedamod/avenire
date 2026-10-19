@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><title>Ruth input verification</title
+  ><link rel="icon" href="data:," /><style>
+    :root {
+      color-scheme: dark;
+      --bg: #181818;
+      --fg: #e4e4e4;
+      --line: #444;
+      --accent: #a5a2e9;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 16px/1.5 system-ui;
+    }
+    main {
+      padding: 32px;
+      min-height: 2400px;
+    }
+    h1 {
+      font-size: 24px;
+    }
+    label {
+      display: block;
+    }
+    textarea {
+      display: block;
+      width: 600px;
+      height: 100px;
+      background: var(--bg);
+      color: var(--fg);
+      border: 1px solid var(--line);
+      padding: 12px;
+      font: 16px monospace;
+    }
+    .target {
+      height: 240px;
+      margin-top: 24px;
+      border: 1px solid var(--line);
+      padding: 16px;
+      user-select: none;
+    }
+    .point {
+      position: fixed;
+      pointer-events: none;
+      width: 12px;
+      height: 12px;
+      border: 1px solid var(--accent);
+      border-radius: 50%;
+      z-index: 3;
+    }
+    pre {
+      white-space: pre-wrap;
+      font: 13px monospace;
+    }
+  </style>
+  <main>
+    <h1>Ruth input verification</h1>
+    <label for="text">Keyboard input</label><textarea id="text" spellcheck="false"></textarea>
+    <div class="target">Mouse target: move, click, double-click, drag and scroll.</div>
+    <pre id="status">Waiting for computer-use events.</pre>
+  </main>
+  <div class="point" id="point"></div>
+  <script>
+    window.events = [];
+    for (const type of [
+      "pointermove",
+      "pointerdown",
+      "pointerup",
+      "click",
+      "dblclick",
+      "wheel",
+      "keydown",
+      "keyup",
+      "input",
+    ])
+      document.addEventListener(
+        type,
+        (e) => {
+          const value = {
+            type,
+            time: performance.now(),
+            screenX: e.screenX,
+            screenY: e.screenY,
+            clientX: e.clientX,
+            clientY: e.clientY,
+            detail: e.detail,
+            buttons: e.buttons,
+            key: e.key,
+            ctrlKey: e.ctrlKey,
+            deltaY: e.deltaY,
+            text: document.querySelector("#text").value,
+          };
+          events.push(value);
+          document.querySelector("#status").textContent = JSON.stringify(value, null, 2);
+          if (e.clientX !== undefined) {
+            point.style.left = e.clientX - 6 + "px";
+            point.style.top = e.clientY - 6 + "px";
+          }
+        },
+        { passive: true },
+      );
+  </script>
+</html>

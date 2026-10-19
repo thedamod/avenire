@@ -5,17 +5,17 @@
  */
 import {
   type ExtractionCoverage,
-  ItemId,
-  type ItemKind,
+  FileId,
+  type FileKind,
   type SearchDepth,
   type SearchResult,
   UserId,
 } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import { chunk, item, user } from "@avenire/database/schema";
+import { chunk, file, user } from "@avenire/database/schema";
 import type { ChunkSection } from "@avenire/ingestion/chunk";
 import { extract } from "@avenire/ingestion/extract";
-import { ItemIndexer } from "@avenire/ingestion/indexer";
+import { FileIndexer } from "@avenire/ingestion/indexer";
 import { Retrieval } from "@avenire/ingestion/retrieval";
 import { SemanticCache } from "@avenire/ingestion/retrieval/cache";
 import { and, eq, sql } from "drizzle-orm";
@@ -33,8 +33,8 @@ import { materializeEvidence, type MaterializationCandidate } from "./materializ
 import { aggregateEvaluations, type RankingEvaluation } from "./metrics.ts";
 
 export const BENCH_USER_ID = UserId.make("bench-v1");
-const ITEM_PREFIX = "bench-v1:";
-const itemIdOf = (artifact: BenchmarkArtifact) => ItemId.make(`${ITEM_PREFIX}${artifact.id}`);
+const FILE_PREFIX = "bench-v1:";
+const fileIdOf = (artifact: BenchmarkArtifact) => FileId.make(`${FILE_PREFIX}${artifact.id}`);
 
 /** Keep embedding-heavy PDF ingestion below the provider's per-minute burst limit. */
 const INGEST_CONCURRENCY = 2;
@@ -107,10 +107,10 @@ const isRateLimited = (failure: unknown) =>
   !isQuotaExhausted(failure) &&
   /rate limit|too many requests|429|high demand/i.test(describeFailure(failure));
 
-const kindOf = (sourceType: BenchmarkArtifact["sourceType"]): ItemKind =>
+const kindOf = (sourceType: BenchmarkArtifact["sourceType"]): FileKind =>
   sourceType === "markdown" ? "note" : sourceType === "link" ? "web-page" : sourceType;
 
-const chunkStats = (id: ItemId) =>
+const chunkStats = (id: FileId) =>
   Effect.flatMap(Effect.service(Database), (database) =>
     database.use((db) =>
       db
@@ -119,7 +119,7 @@ const chunkStats = (id: ItemId) =>
           graphPending: sql<number>`count(*) filter (where not ${chunk.graphIndexed})::int`,
         })
         .from(chunk)
-        .where(and(eq(chunk.userId, BENCH_USER_ID), eq(chunk.itemId, id))),
+        .where(and(eq(chunk.userId, BENCH_USER_ID), eq(chunk.fileId, id))),
     ),
   ).pipe(
     Effect.map(([row]) => ({ chunks: row?.chunks ?? 0, graphPending: row?.graphPending ?? 0 })),
@@ -142,12 +142,12 @@ const ensureUser = Effect.flatMap(Effect.service(Database), (database) =>
 );
 
 const indexSections = Effect.fn("V1Benchmark.indexSections")(function* (
-  id: ItemId,
+  id: FileId,
   title: string,
   sections: ReadonlyArray<ChunkSection>,
 ) {
-  const indexer = yield* ItemIndexer;
-  return yield* indexer.index({ userId: BENCH_USER_ID, itemId: id, title, sections }).pipe(
+  const indexer = yield* FileIndexer;
+  return yield* indexer.index({ userId: BENCH_USER_ID, fileId: id, title, sections }).pipe(
     Effect.retry({
       ...RATE_LIMIT_RETRY,
       while: (error) => error.stage === "embedding" && isRateLimited(error),
@@ -167,12 +167,12 @@ const ingestOne = Effect.fn("V1Benchmark.ingestOne")(function* (
   reingest: boolean,
 ) {
   const database = yield* Database;
-  const id = itemIdOf(artifact);
+  const id = fileIdOf(artifact);
   const [stored] = yield* database.use((db) =>
     db
-      .select({ contentHash: item.contentHash })
-      .from(item)
-      .where(and(eq(item.userId, BENCH_USER_ID), eq(item.id, id))),
+      .select({ contentHash: file.contentHash })
+      .from(file)
+      .where(and(eq(file.userId, BENCH_USER_ID), eq(file.id, id))),
   );
   const before = yield* chunkStats(id);
   if (!reingest && stored?.contentHash === artifact.sha256 && before.chunks > 0) {
@@ -202,7 +202,7 @@ const ingestOne = Effect.fn("V1Benchmark.ingestOne")(function* (
   const document = yield* extract(source);
   yield* database.use((db) =>
     db
-      .insert(item)
+      .insert(file)
       .values({
         id,
         userId: BENCH_USER_ID,
@@ -215,7 +215,7 @@ const ingestOne = Effect.fn("V1Benchmark.ingestOne")(function* (
         dedupeKey: `v1-benchmark:${artifact.id}`,
       })
       .onConflictDoUpdate({
-        target: item.id,
+        target: file.id,
         set: { title: artifact.title, updatedAt: sql`now()` },
       }),
   );
@@ -224,9 +224,9 @@ const ingestOne = Effect.fn("V1Benchmark.ingestOne")(function* (
   const graphFailed = yield* indexSections(id, artifact.title, document.sections);
   yield* database.use((db) =>
     db
-      .update(item)
+      .update(file)
       .set({ contentHash: artifact.sha256 })
-      .where(and(eq(item.userId, BENCH_USER_ID), eq(item.id, id))),
+      .where(and(eq(file.userId, BENCH_USER_ID), eq(file.id, id))),
   );
   const after = yield* chunkStats(id);
   return {
@@ -284,7 +284,7 @@ const loadCandidates = Effect.fn("V1Benchmark.loadCandidates")(function* () {
   const rows = yield* database.use((db) =>
     db
       .select({
-        itemId: chunk.itemId,
+        fileId: chunk.fileId,
         chunkId: chunk.id,
         content: chunk.content,
         location: chunk.location,
@@ -293,11 +293,11 @@ const loadCandidates = Effect.fn("V1Benchmark.loadCandidates")(function* () {
       .where(eq(chunk.userId, BENCH_USER_ID)),
   );
   return rows.flatMap(
-    ({ itemId, chunkId, content, location }): ReadonlyArray<MaterializationCandidate> =>
-      itemId.startsWith(ITEM_PREFIX)
+    ({ fileId, chunkId, content, location }): ReadonlyArray<MaterializationCandidate> =>
+      fileId.startsWith(FILE_PREFIX)
         ? [
             {
-              artifactId: itemId.slice(ITEM_PREFIX.length),
+              artifactId: fileId.slice(FILE_PREFIX.length),
               chunkId,
               content,
               ...(location.page === undefined ? {} : { page: location.page }),

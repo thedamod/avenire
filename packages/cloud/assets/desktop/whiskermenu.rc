@@ -1,0 +1,11 @@
+button-title=
+button-icon=start-here-symbolic
+show-button-title=false
+show-button-icon=true
+launcher-show-name=true
+launcher-show-description=false
+position-categories-alternate=true
+position-search-alternate=true
+menu-width=440
+menu-height=480
+favorites=avenire-browser.desktop,avenire-files.desktop,avenire-terminal.desktop,avenire-editor.desktop

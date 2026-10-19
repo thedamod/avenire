@@ -31,9 +31,9 @@
       "types": "./src/worker.ts",
       "import": "./src/worker.ts"
     },
-    "./cluster": {
-      "types": "./src/cluster.ts",
-      "import": "./src/cluster.ts"
+    "./folder": {
+      "types": "./src/folder.ts",
+      "import": "./src/folder.ts"
     },
     "./graph/extract": {
       "types": "./src/graph/extract.ts",
@@ -90,10 +90,6 @@
     "./events": {
       "types": "./src/events.ts",
       "import": "./src/events.ts"
-    },
-    "./archive": {
-      "types": "./src/archive.ts",
-      "import": "./src/archive.ts"
     }
   },
   "scripts": {

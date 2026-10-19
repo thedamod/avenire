@@ -1,31 +1,26 @@
 ---
 name: visuals
-description: Choose text, chart or interactive simulation to teach a concept. Load before render_widget.
+description: Choose a direct model, mechanism, analogy, data chart or published media for the clearest explanation.
 ---
 
 # Visuals
 
-Choose what lets the learner compare, follow, compute or manipulate the idea.
-Give a short objective before the visual and explain its takeaway in prose afterwards.
+Start with the learning question and choose the simplest faithful representation. Load `explainer` for interactive concept figures and physical models, `style` for the common frame/tokens, and `kit-api` only when exact signatures are needed. The code can be concise SVG/Canvas, kit components or an optional Node build.
 
-| Need                                             | Use                                                    |
-| ------------------------------------------------ | ------------------------------------------------------ |
-| A formula, definition or small comparison        | Markdown and math                                      |
-| Values, categories, time series or distributions | Chart; load `chart`                                    |
-| Brute force, Monte Carlo, sweeps or statistics   | Sandbox tools; load `python`, then show the results    |
-| Interacting parameters or a draggable state      | Interactive HTML simulation; load `simulation`         |
-| A rendered animation file                        | Sandbox Manim/ffmpeg, then `sandbox_download_artifact` |
+| Request | Representation |
+| --- | --- |
+| “Show a simple pendulum”; “play with a double pendulum” | Direct physical model: pivot, rods and bobs; real numerical state |
+| “Explain how an engine works” | The actual mechanism/cutaway: piston, crank, valves and four strokes |
+| “Explain how gradient descent finds a minimum, with the help of an interactive visualization” | A follower on a loss profile with slope-controlled feed, or direct mathematical geometry if clearer |
+| “Why does a cache avoid repeated work?” | A faithful analogy/mechanism showing the matching state and avoided work |
+| “Compare v1 and v2 numbers”; “plot this spreadsheet”; “show the trend” | `chart` with actual data, units and shared scales |
+| Large static data or print/export | `sandbox` computation and published PNG/SVG/PDF |
+| A timed sequence that does not benefit from input | `sandbox` video, published with `publish_asset` |
 
-Prefer the simplest visual that teaches the point. Never invent data: use the user's
-material or computed sandbox results. A slider must not re-run Python; precompute a
-small grid and interpolate locally when needed.
+Do not invent an elaborate analogy for a physical system that already explains itself. Prefer a real mechanism for a real machine. Use analogy for abstract/complex concepts when its correspondences make the cause and effect easier to see. Never invent observations, numeric results or citations. Use prose or a small table if a visual adds no value.
 
-Call `get_page_context` first. Fit the content to its width, platform, colour scheme,
-theme variables and budgets. Then call `render_widget({ title, html })` with a standalone
-HTML document containing only inline CSS/JS and embedded data. Use `var(--...)` for
-colours, fonts, spacing and sizes. No network, external scripts, fonts or images.
-Give controls accessible labels and include a text alternative. Explain every visual
-in chat prose; do not end on a tool result.
+Keep the widget quiet: one figure, a short title/hint, minimal labelled controls and 2–4 live values. A small legend and at most two short caption sentences can sit below the card. Explanations, derivations, examples and detailed assumptions belong in chat, not text panels inside the widget.
 
-Inline `<avenire-chart>` and `<avenire-sim>` tags and runtime kits are coming later.
-Do not write those tags now: all HTML visuals go through `render_widget`.
+Batch skill/context lookup, build concisely, call `preview_widget` once, and repair actual errors with a fresh preview before `render_widget`. There is no step-count cap: continue until the error is fixed and the page is delivered, or explain an actual blocking failure. Avoid unnecessary redesign. Close the sandbox when finished.
+
+Pass exactly one of `html` (512,000 bytes maximum) or `path` (8 MiB maximum). Built pages travel directly from the thread sandbox to preview/storage. Never read a multi-MB page into context. CSP permits inline scripts/styles and bundled `/kits` modules; images/media are `data:` or `blob:` only. No external libraries, fonts, network requests or sandbox file links. Use `--figure-*` tokens, accessible native controls, reduced-motion/manual stepping and a responsive stage.

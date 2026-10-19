@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowJs": true,
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false,
+    "erasableSyntaxOnly": false,
+    "checkJs": false,
+    "types": ["node"]
+  },
+  "include": ["src", "vite.config.ts"]
+}

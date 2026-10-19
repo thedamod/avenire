@@ -1,6 +1,6 @@
 import type { BenchmarkDataset } from "./domain.ts";
 import type { MaterializedEvidence } from "./materialize-qrels.ts";
-import { evaluateRanking, type RankedItem, type RankingEvaluation } from "./metrics.ts";
+import { evaluateRanking, type RankedFile, type RankingEvaluation } from "./metrics.ts";
 
 export interface TraceCandidate {
   readonly chunkId: string;
@@ -85,7 +85,7 @@ function evidenceCoverage(
   };
 }
 
-function rankedItems(candidates: readonly TraceCandidate[]): RankedItem[] {
+function rankedFiles(candidates: readonly TraceCandidate[]): RankedFile[] {
   return candidates.map((candidate) => ({
     id: candidate.chunkId,
     score: candidate.score,
@@ -110,7 +110,7 @@ export function evaluateQueryTrace(input: {
   return input.snapshots.map((snapshot) => ({
     evaluation: evaluateRanking({
       judgments,
-      ranking: rankedItems(snapshot.candidates),
+      ranking: rankedFiles(snapshot.candidates),
       requiredEvidenceGroups,
       unanswerable: query.family === "unanswerable",
     }),

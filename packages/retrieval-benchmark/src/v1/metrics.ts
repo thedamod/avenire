@@ -1,4 +1,4 @@
-export interface RankedItem {
+export interface RankedFile {
   readonly id: string;
   readonly score?: number;
 }
@@ -6,7 +6,7 @@ export interface RankedItem {
 export interface RankingEvaluationInput {
   readonly judgments: Readonly<Record<string, number>>;
   readonly kValues?: readonly number[];
-  readonly ranking: readonly RankedItem[];
+  readonly ranking: readonly RankedFile[];
   readonly relevantThreshold?: number;
   readonly requiredEvidenceGroups?: readonly (readonly string[])[];
   readonly unanswerable?: boolean;
@@ -42,15 +42,15 @@ const DEFAULT_K_VALUES = [1, 3, 5, 10, 20, 50] as const;
 const finiteGrade = (value: number | undefined) =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 
-function dedupeRanking(ranking: readonly RankedItem[]): RankedItem[] {
+function dedupeRanking(ranking: readonly RankedFile[]): RankedFile[] {
   const seen = new Set<string>();
-  const unique: RankedItem[] = [];
-  for (const item of ranking) {
-    if (item.id.length === 0 || seen.has(item.id)) {
+  const unique: RankedFile[] = [];
+  for (const file of ranking) {
+    if (file.id.length === 0 || seen.has(file.id)) {
       continue;
     }
-    seen.add(item.id);
-    unique.push(item);
+    seen.add(file.id);
+    unique.push(file);
   }
   return unique;
 }
@@ -103,12 +103,12 @@ export function evaluateRanking(input: RankingEvaluationInput): RankingEvaluatio
       .map(([id]) => id),
   );
   const judgedRelevantCount = relevantIds.size;
-  const rankedGrades = ranking.map((item) => finiteGrade(input.judgments[item.id]));
+  const rankedGrades = ranking.map((file) => finiteGrade(input.judgments[file.id]));
   const idealGrades = Object.values(input.judgments)
     .map(finiteGrade)
     .sort((left, right) => right - left);
   const relevantRanks = ranking
-    .map((item, index) => (relevantIds.has(item.id) ? index + 1 : null))
+    .map((file, index) => (relevantIds.has(file.id) ? index + 1 : null))
     .filter((rank): rank is number => rank !== null);
   const precisionAtK: Record<string, number | null> = {};
   const recallAtK: Record<string, number | null> = {};
@@ -116,7 +116,7 @@ export function evaluateRanking(input: RankingEvaluationInput): RankingEvaluatio
   const requiredEvidenceSuccessAtK: Record<string, number | null> = {};
 
   for (const k of kValues) {
-    const topIds = new Set(ranking.slice(0, k).map((item) => item.id));
+    const topIds = new Set(ranking.slice(0, k).map((file) => file.id));
     const hitCount = Array.from(topIds).filter((id) => relevantIds.has(id)).length;
     precisionAtK[`p@${k}`] = judgedRelevantCount > 0 ? hitCount / k : null;
     recallAtK[`recall@${k}`] = judgedRelevantCount > 0 ? hitCount / judgedRelevantCount : null;
@@ -132,8 +132,8 @@ export function evaluateRanking(input: RankingEvaluationInput): RankingEvaluatio
 
   let cumulativePrecision = 0;
   let hits = 0;
-  ranking.forEach((item, index) => {
-    if (!relevantIds.has(item.id)) {
+  ranking.forEach((file, index) => {
+    if (!relevantIds.has(file.id)) {
       return;
     }
     hits += 1;

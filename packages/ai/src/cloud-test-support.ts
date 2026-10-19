@@ -70,23 +70,35 @@ export const recordingDatabase = (events: string[] = []) => {
   const chain = <A>(run: () => A) => {
     let promise: Promise<A> | undefined;
     const resolve = () => (promise ??= Promise.resolve().then(run));
-    return {
+    const builder = {
       // eslint-disable-next-line unicorn/no-thenable -- Drizzle builders are deliberately lazy PromiseLike values.
       then: <B>(yes: (value: A) => B, no?: (error: unknown) => B) => resolve().then(yes, no),
       returning: () => resolve(),
-      onConflictDoNothing: () => resolve(),
-      onConflictDoUpdate: () => resolve(),
+      onConflictDoNothing: () => builder,
+      onConflictDoUpdate: () => builder,
     };
+    return builder;
   };
   const defaults = (name: string, values: Row): Row => ({
     createdAt: new Date(clock),
     updatedAt: new Date(clock),
     ...(name === "cloud_task"
-      ? { builtin: null, maxAttempts: 2, lastRunAt: null, nextRunAt: null }
+      ? {
+          timeZone: "UTC",
+          preHydration: [],
+          enabled: true,
+          model: "ruth-core",
+          network: "packages",
+          builtin: null,
+          oneOff: false,
+          maxAttempts: 2,
+          lastRunAt: null,
+          nextRunAt: null,
+        }
       : {}),
     ...(name === "cloud_run"
       ? {
-          clusterId: null,
+          folderId: null,
           summary: null,
           reportMessageId: null,
           logTail: null,
@@ -95,6 +107,16 @@ export const recordingDatabase = (events: string[] = []) => {
           error: null,
           sandboxId: null,
           claimedAt: null,
+          leasedBy: null,
+          leaseExpiresAt: null,
+          heartbeatAt: null,
+          recordingId: null,
+          modelName: null,
+          promptVersion: null,
+          inputsSlug: null,
+          messages: [],
+          stepIndex: 0,
+          usage: { inputTokens: 0, outputTokens: 0, cost: 0, actions: 0 },
           attempt: 1,
           notBefore: new Date(clock),
         }
@@ -118,7 +140,16 @@ export const recordingDatabase = (events: string[] = []) => {
     );
   const mock = {
     query: Object.fromEntries(
-      ["cloudTask", "cloudRun", "artifact", "cloudHydration", "ruthThread", "user"].map((key) => {
+      [
+        "cloudTask",
+        "cloudRun",
+        "cloudRunEvent",
+        "cloudToolCall",
+        "asset",
+        "cloudHydration",
+        "ruthThread",
+        "user",
+      ].map((key) => {
         const name = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
         const find = (where?: SQL) =>
           rows(name)
@@ -143,7 +174,10 @@ export const recordingDatabase = (events: string[] = []) => {
           rows(name)
             .filter((row) => matches(name, row, condition))
             .slice(0, limit)
-            .map((row) => {
+            .map((row, _index, all) => {
+              // The only aggregate the fake knows: max(seq) over the matched rows.
+              if (selection && "max" in selection && name === "cloud_run_event")
+                return { max: Math.max(-1, ...all.map((r) => Number(r.seq))) };
               if (joined && name === "cloud_run")
                 return {
                   run: { ...row },
@@ -151,11 +185,11 @@ export const recordingDatabase = (events: string[] = []) => {
                 };
               if (joined && name === "pending_approval")
                 return {
-                  itemTitle: rows("item").find((item) => item.id === row.itemId)?.title,
+                  fileTitle: rows("file").find((file) => file.id === row.fileId)?.title,
                   summary: row.summary,
                   conflict: row.conflict,
                 };
-              if (!selection || (joined && name === "item")) return { ...row };
+              if (!selection || (joined && name === "file")) return { ...row };
               return Object.fromEntries(
                 Object.entries(selection).map(([key, column]) => [
                   key,
@@ -188,41 +222,53 @@ export const recordingDatabase = (events: string[] = []) => {
       },
     }),
     insert: (table: Parameters<typeof getTableName>[0]) => ({
-      values: (input: Row) => {
+      values: (input: Row | Row[]) => {
         const name = getTableName(table);
-        return chain(() => {
-          const values = evaluate(input);
-          let existing: Row | undefined;
-          if (name === "cloud_run")
-            existing = rows(name).find(
-              (row) =>
-                row.taskId === values.taskId &&
-                Number(row.scheduledFor) === Number(values.scheduledFor) &&
-                row.attempt === values.attempt,
-            );
-          if (name === "cloud_task" && values.builtin)
-            existing = rows(name).find(
-              (row) => row.userId === values.userId && row.builtin === values.builtin,
-            );
-          if (name === "ruth_thread")
-            existing = rows(name).find(
-              (row) => row.userId === values.userId && row.kind === "ruth-cloud",
-            );
-          if (name === "sandbox_usage") {
-            existing = rows(name).find(
-              (row) => row.userId === values.userId && row.day === values.day,
-            );
-            if (existing)
-              existing.cloudSeconds = Number(existing.cloudSeconds) + Number(values.cloudSeconds);
-          }
-          if (existing) return [];
-          const saved = defaults(name, values);
-          writes.push({ table: name, values: { ...values } });
-          rows(name).push(saved);
-          if (name === "ruth_message") events.push("report-posted");
-          if (name === "email_outbox") events.push("email-enqueued");
-          return [{ ...saved }];
-        });
+        return chain(() =>
+          (Array.isArray(input) ? input : [input]).flatMap((one) => {
+            const values = evaluate(one);
+            let existing: Row | undefined;
+            if (name === "cloud_run_event")
+              existing = rows(name).find(
+                (row) =>
+                  row.runId === values.runId &&
+                  (row.seq === values.seq || (values.terminal === true && row.terminal === true)),
+              );
+            if (name === "cloud_tool_call")
+              existing = rows(name).find(
+                (row) => row.runId === values.runId && row.toolCallId === values.toolCallId,
+              );
+            if (name === "cloud_run")
+              existing = rows(name).find(
+                (row) =>
+                  row.taskId === values.taskId &&
+                  Number(row.scheduledFor) === Number(values.scheduledFor) &&
+                  row.attempt === values.attempt,
+              );
+            if (name === "cloud_task" && values.builtin)
+              existing = rows(name).find(
+                (row) => row.userId === values.userId && row.builtin === values.builtin,
+              );
+            if (name === "ruth_thread")
+              existing = rows(name).find(
+                (row) => row.userId === values.userId && row.kind === "ruth-cloud",
+              );
+            if (name === "sandbox_usage") {
+              existing = rows(name).find(
+                (row) => row.userId === values.userId && row.day === values.day,
+              );
+              if (existing)
+                existing.cloudSeconds = Number(existing.cloudSeconds) + Number(values.cloudSeconds);
+            }
+            if (existing) return [];
+            const saved = defaults(name, values);
+            writes.push({ table: name, values: { ...values } });
+            rows(name).push(saved);
+            if (name === "ruth_message") events.push("report-posted");
+            if (name === "email_outbox") events.push("email-enqueued");
+            return [{ ...saved }];
+          }),
+        );
       },
     }),
     update: (table: Parameters<typeof getTableName>[0]) => ({

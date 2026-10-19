@@ -2,7 +2,7 @@
 import { SearchResult, type UserId } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { searchCache } from "@avenire/database/schema";
-import { eq, type SQL, sql } from "drizzle-orm";
+import { and, cosineDistance, desc, eq, gt, inArray, lte, or, type SQL, sql } from "drizzle-orm";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -12,7 +12,6 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { Embedder } from "../embed.ts";
-import { toVectorLiteral } from "../text.ts";
 
 export class SearchCacheError extends Schema.TaggedError<SearchCacheError>()("SearchCacheError", {
   operation: Schema.Literals(["lookup", "store", "invalidate"]),
@@ -56,7 +55,6 @@ export class SemanticCache extends Context.Service<
 >()("avenire/ingestion/SemanticCache") {}
 
 /** Entries live this long; the newest this many are kept per user. */
-const TTL = sql`interval '24 hours'`;
 const MAX_ENTRIES_PER_USER = 500;
 
 const CachedRow = Schema.Struct({
@@ -81,14 +79,28 @@ export const SemanticCacheLive = Layer.effect(
      * The best unexpired entry for `key` matching `condition`, ordered by `distance`.
      * An entry whose result no longer decodes is a miss.
      */
-    const lookup = (key: CacheKey, condition: SQL, distance: SQL, maxDistance: number) =>
+    const lookup = (
+      key: CacheKey,
+      condition: SQL | undefined,
+      distance: SQL,
+      maxDistance: number,
+    ) =>
       database
         .use((db) =>
-          db.execute(sql`
-            SELECT id, result, ${distance} AS distance FROM search_cache
-            WHERE user_id = ${key.userId} AND options_key = ${key.optionsKey}
-              AND embedding_model = ${embedder.model} AND expires_at > now() AND ${condition}
-            ORDER BY distance, created_at DESC LIMIT 1`),
+          db
+            .select({ id: searchCache.id, result: searchCache.result, distance })
+            .from(searchCache)
+            .where(
+              and(
+                eq(searchCache.userId, key.userId),
+                eq(searchCache.optionsKey, key.optionsKey),
+                eq(searchCache.embeddingModel, embedder.model),
+                gt(searchCache.expiresAt, sql`now()`),
+                condition,
+              ),
+            )
+            .orderBy(distance, desc(searchCache.createdAt))
+            .limit(1),
         )
         .pipe(
           Effect.flatMap(decodeRows),
@@ -98,7 +110,10 @@ export const SemanticCacheLive = Layer.effect(
               : decodeResult(row.result).pipe(
                   Effect.tap(() =>
                     database.use((db) =>
-                      db.execute(sql`UPDATE search_cache SET hits = hits + 1 WHERE id = ${row.id}`),
+                      db
+                        .update(searchCache)
+                        .set({ hits: sql`${searchCache.hits} + 1` })
+                        .where(eq(searchCache.id, row.id)),
                     ),
                   ),
                   Effect.map(Option.some),
@@ -109,15 +124,10 @@ export const SemanticCacheLive = Layer.effect(
         );
 
     const lookupExact = (key: CacheKey, queryText: string) =>
-      lookup(key, sql`query_text = ${queryText}`, sql`0::float8`, 0);
+      lookup(key, eq(searchCache.queryText, queryText), sql<number>`0::float8`, 0);
 
     const lookupSimilar = (key: CacheKey, vector: ReadonlyArray<number>) =>
-      lookup(
-        key,
-        sql`true`,
-        sql`(embedding <=> ${toVectorLiteral(vector)}::vector)::float8`,
-        1 - threshold,
-      );
+      lookup(key, undefined, cosineDistance(searchCache.embedding, [...vector]), 1 - threshold);
 
     const store = Effect.fn("SemanticCache.store")(
       function* (key: CacheKey, entry: Parameters<SemanticCache["Service"]["store"]>[1]) {
@@ -131,12 +141,22 @@ export const SemanticCacheLive = Layer.effect(
             embedding: [...entry.vector],
             embeddingModel: embedder.model,
             result: entry.result,
-            expiresAt: sql`now() + ${TTL}`,
+            expiresAt: sql`now() + interval '24 hours'`,
           });
-          await tx.execute(sql`
-            DELETE FROM search_cache WHERE user_id = ${key.userId} AND (expires_at <= now() OR id IN (
-              SELECT id FROM search_cache WHERE user_id = ${key.userId}
-              ORDER BY created_at DESC OFFSET ${MAX_ENTRIES_PER_USER}))`);
+          const overflow = tx
+            .select({ id: searchCache.id })
+            .from(searchCache)
+            .where(eq(searchCache.userId, key.userId))
+            .orderBy(desc(searchCache.createdAt))
+            .offset(MAX_ENTRIES_PER_USER);
+          await tx
+            .delete(searchCache)
+            .where(
+              and(
+                eq(searchCache.userId, key.userId),
+                or(lte(searchCache.expiresAt, sql`now()`), inArray(searchCache.id, overflow)),
+              ),
+            );
         });
       },
       Effect.mapError((cause) => new SearchCacheError({ operation: "store", cause })),

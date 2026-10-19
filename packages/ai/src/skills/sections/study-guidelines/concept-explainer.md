@@ -5,7 +5,7 @@ description: ELI5-style explanations with analogies and multiple examples. Expla
 
 # Concept Explainer
 
-Clear explanations with analogies and examples at multiple difficulty levels.
+Clear explanations at the appropriate difficulty level. Choose a direct physical model, a real mechanism, or an analogy according to what makes the causal relationship clearest. Do not force an analogy onto a pendulum or other self-explanatory physical system. For interactive figures load `explainer`; keep this verbal explanation in chat, not inside the widget.
 
 ## Explanation Levels
 
@@ -159,7 +159,7 @@ Think of [concept] like [familiar thing]. Just as [familiar thing does X], [conc
 ## Quality Checklist
 
 - [ ] Opens with simple one-liner
-- [ ] Includes relatable analogy
+- [ ] Uses a relatable analogy when it is clearer than the direct explanation
 - [ ] Provides 2-3 examples at different scales
 - [ ] Addresses common misconceptions
 - [ ] Builds from simple to complex

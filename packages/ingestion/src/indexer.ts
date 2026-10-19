@@ -1,9 +1,9 @@
 /**
- * Turns an item's extracted sections into its searchable index: chunks with
+ * Turns an file's extracted sections into its searchable index: chunks with
  * contextual embeddings, weighted lexical vectors and normalized text, plus the
- * item's knowledge graph. Unchanged chunks keep their rows, vectors and graph.
+ * file's knowledge graph. Unchanged chunks keep their rows, vectors and graph.
  */
-import { ChunkId, type ItemId, type UserId } from "@avenire/contracts";
+import { ChunkId, type FileId, type UserId } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { chunk, embeddingCache } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
@@ -24,17 +24,17 @@ import { normalizeForMatch, sha256Hex } from "./text.ts";
 
 export class IndexError extends Schema.TaggedError<IndexError>()("IndexError", {
   stage: Schema.Literals(["embedding", "writing", "graphing"]),
-  itemId: Schema.String,
+  fileId: Schema.String,
   cause: Schema.Defect(),
 }) {
   override get message(): string {
-    return `Indexing item ${this.itemId} failed while ${this.stage}`;
+    return `Indexing file ${this.fileId} failed while ${this.stage}`;
   }
 }
 
 export interface IndexInput {
   readonly userId: UserId;
-  readonly itemId: ItemId;
+  readonly fileId: FileId;
   /** Title used in contextual embedding text and the lexical vector (weight A). */
   readonly title: string;
   readonly sections: ReadonlyArray<ChunkSection>;
@@ -48,11 +48,11 @@ export interface IndexStats {
   readonly relations: number;
 }
 
-export class ItemIndexer extends Context.Service<
-  ItemIndexer,
+export class FileIndexer extends Context.Service<
+  FileIndexer,
   {
     /**
-     * Replaces the item's index with `input`'s. Provider calls happen before the
+     * Replaces the file's index with `input`'s. Provider calls happen before the
      * write, and the swap is one transaction, so a failure leaves the previous
      * index searchable. `onStage` reports progress to the caller (the job row).
      */
@@ -61,7 +61,7 @@ export class ItemIndexer extends Context.Service<
       onStage?: (stage: "embedding" | "graphing") => Effect.Effect<void, E>,
     ) => Effect.Effect<IndexStats, IndexError | E>;
   }
->()("avenire/ingestion/ItemIndexer") {}
+>()("avenire/ingestion/FileIndexer") {}
 
 type IncomingChunk = Chunk & {
   /** The contextual text that is embedded; `contentHash` is its SHA-256. */
@@ -134,8 +134,8 @@ const searchVector = (title: string, value: Chunk) =>
     || setweight(to_tsvector('english', ${value.location.heading ?? ""}), 'B')
     || setweight(to_tsvector('english', ${value.content}), 'D')`;
 
-export const ItemIndexerLive = Layer.effect(
-  ItemIndexer,
+export const FileIndexerLive = Layer.effect(
+  FileIndexer,
   Effect.gen(function* () {
     const database = yield* Database;
     const embedder = yield* Embedder;
@@ -157,7 +157,7 @@ export const ItemIndexerLive = Layer.effect(
             graphIndexed: chunk.graphIndexed,
           })
           .from(chunk)
-          .where(and(eq(chunk.userId, input.userId), eq(chunk.itemId, input.itemId))),
+          .where(and(eq(chunk.userId, input.userId), eq(chunk.fileId, input.fileId))),
       );
 
     /**
@@ -165,7 +165,7 @@ export const ItemIndexerLive = Layer.effect(
      * provider in one call. Fresh vectors are cached immediately, so a failed
      * write never pays for them twice.
      */
-    const vectorsFor = Effect.fn("ItemIndexer.vectorsFor")(function* (
+    const vectorsFor = Effect.fn("FileIndexer.vectorsFor")(function* (
       chunks: ReadonlyArray<IncomingChunk>,
     ) {
       const hashes = [...new Set(chunks.map((value) => value.contentHash))];
@@ -218,7 +218,7 @@ export const ItemIndexerLive = Layer.effect(
       rows: ReadonlyArray<PgInsertValue<typeof chunk>>,
     ) =>
       database.useTransaction(async (tx) => {
-        const owned = and(eq(chunk.userId, input.userId), eq(chunk.itemId, input.itemId));
+        const owned = and(eq(chunk.userId, input.userId), eq(chunk.fileId, input.fileId));
         // Statements on one transaction run one after another anyway.
         /* eslint-disable no-await-in-loop */
         for (const ids of Arr.chunksOf(
@@ -240,13 +240,13 @@ export const ItemIndexerLive = Layer.effect(
       });
 
     /** Extracts the graph for chunks that don't have one yet, then marks them done. */
-    const indexGraph = Effect.fn("ItemIndexer.indexGraph")(function* (
+    const indexGraph = Effect.fn("FileIndexer.indexGraph")(function* (
       input: IndexInput,
       chunks: ReadonlyArray<{ readonly id: string; readonly content: string }>,
     ) {
       const graph = yield* graphIndexer.indexChunks({
         userId: input.userId,
-        itemId: input.itemId,
+        fileId: input.fileId,
         title: input.title,
         chunks: chunks.map(({ id, content }) => ({ id: ChunkId.make(id), content })),
       });
@@ -263,12 +263,12 @@ export const ItemIndexerLive = Layer.effect(
       return graph;
     });
 
-    const index = Effect.fn("ItemIndexer.index")(function* <E>(
+    const index = Effect.fn("FileIndexer.index")(function* <E>(
       input: IndexInput,
       onStage?: (stage: "embedding" | "graphing") => Effect.Effect<void, E>,
     ) {
       const failedWhile = (stage: IndexError["stage"]) =>
-        Effect.mapError((cause: unknown) => new IndexError({ stage, itemId: input.itemId, cause }));
+        Effect.mapError((cause: unknown) => new IndexError({ stage, fileId: input.fileId, cause }));
 
       const incoming = prepare(input);
       const existing = yield* loadExisting(input).pipe(failedWhile("writing"));
@@ -284,7 +284,7 @@ export const ItemIndexerLive = Layer.effect(
         Effect.map(chunkId, (id) => ({
           id,
           userId: input.userId,
-          itemId: input.itemId,
+          fileId: input.fileId,
           ordinal: value.ordinal,
           kind: value.kind,
           content: value.content,
@@ -311,6 +311,6 @@ export const ItemIndexerLive = Layer.effect(
       return { ...stats, embedded, ...graph };
     });
 
-    return ItemIndexer.of({ index });
+    return FileIndexer.of({ index });
   }),
 );

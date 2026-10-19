@@ -5,8 +5,8 @@ import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-nati
 import { SignInScreen } from "./features/auth/SignInScreen";
 import { TodayScreen } from "./features/today/TodayScreen";
 import { InboxScreen } from "./features/inbox/InboxScreen";
-import { ClustersScreen } from "./features/clusters/ClustersScreen";
-import { ClusterScreen } from "./features/clusters/ClusterScreen";
+import { FoldersScreen } from "./features/folders/FoldersScreen";
+import { FolderScreen } from "./features/folders/FolderScreen";
 import { SearchScreen } from "./features/search/SearchScreen";
 import { RuthScreen } from "./features/ruth/RuthScreen";
 import { SettingsScreen } from "./features/settings/SettingsScreen";
@@ -14,7 +14,7 @@ import { authClient } from "./state/auth";
 
 import type { RootStackParamList } from "./navigation";
 
-const tabs = ["Today", "Inbox", "Clusters", "Search", "Ruth", "Settings"] as const;
+const tabs = ["Today", "Inbox", "Folders", "Search", "Ruth", "Settings"] as const;
 type TabName = (typeof tabs)[number];
 
 function HomeTabs() {
@@ -22,7 +22,7 @@ function HomeTabs() {
   const selectedScreen = {
     Today: <TodayScreen />,
     Inbox: <InboxScreen />,
-    Clusters: <ClustersScreen />,
+    Folders: <FoldersScreen />,
     Search: <SearchScreen />,
     Ruth: <RuthScreen />,
     Settings: <SettingsScreen />,
@@ -49,7 +49,7 @@ function HomeTabs() {
                 selectedTab === tab ? "font-semibold text-primary" : "text-muted-foreground"
               }
             >
-              {tab}
+              {tab === "Folders" ? "Clusters" : tab}
             </Text>
           </Pressable>
         ))}
@@ -63,7 +63,7 @@ const Navigator = createStaticNavigation(
   createNativeStackNavigator<RootStackParamList>({
     screens: {
       Home: { screen: HomeTabs, options: { headerShown: false } },
-      Cluster: { screen: ClusterScreen, options: { title: "Cluster" } },
+      Folder: { screen: FolderScreen, options: { title: "Cluster" } },
     },
   }),
 );

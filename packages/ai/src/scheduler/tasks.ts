@@ -1,11 +1,9 @@
+import { AssetStore } from "../outputs/assets.ts";
 import {
-  ArtifactId,
   CloudRunId,
   CloudTaskId,
   Conflict,
-  ItemId,
   NotFound,
-  StorageKey,
   type CloudRun as ContractRun,
   type CloudTask as ContractTask,
   type CloudTaskInput,
@@ -13,16 +11,14 @@ import {
 } from "@avenire/contracts";
 import { Database, type DatabaseError } from "@avenire/database/client";
 import {
-  artifact,
   cloudRun,
   cloudTask,
   user,
-  type ArtifactRow,
   type CloudRunRow,
   type CloudTaskRow,
 } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -34,6 +30,12 @@ import { NIGHTLY_DIGEST_PROMPT } from "../prompts/cloud.ts";
 import { validateSchedule } from "./occurrence.ts";
 
 export type CloudTaskPatch = Partial<CloudTaskInput>;
+export interface AdHocRun {
+  readonly prompt: string;
+  readonly model?: CloudTaskInput["model"];
+  readonly network?: CloudTaskInput["network"];
+  readonly timeZone?: string | undefined;
+}
 export type CloudTasksError = DatabaseError | Conflict | NotFound | PlatformError.PlatformError;
 export class CloudTasks extends Context.Service<
   CloudTasks,
@@ -52,6 +54,11 @@ export class CloudTasks extends Context.Service<
     readonly runNow: (
       userId: UserId,
       taskId: CloudTaskId,
+    ) => Effect.Effect<ContractRun, CloudTasksError>;
+    /** Starts a hidden one-off task + run for a prompt; the worker picks it up within seconds. */
+    readonly runAdHoc: (
+      userId: UserId,
+      input: AdHocRun,
     ) => Effect.Effect<ContractRun, CloudTasksError>;
     readonly cancelRun: (
       userId: UserId,
@@ -73,6 +80,8 @@ export const taskToContract = (row: CloudTaskRow): ContractTask => ({
   id: CloudTaskId.make(row.id),
   title: row.title,
   prompt: row.prompt,
+  model: row.model,
+  network: row.network,
   schedule: row.schedule,
   timeZone: row.timeZone,
   preHydration: row.preHydration,
@@ -87,7 +96,7 @@ export const taskToContract = (row: CloudTaskRow): ContractTask => ({
 export const runToContract = (
   row: CloudRunRow,
   taskTitle: string,
-  artifacts: readonly ArtifactRow[],
+  assets: ContractRun["assets"],
 ): ContractRun => ({
   id: CloudRunId.make(row.id),
   taskId: CloudTaskId.make(row.taskId),
@@ -99,15 +108,7 @@ export const runToContract = (
   startedAt: iso(row.startedAt),
   finishedAt: iso(row.finishedAt),
   error: row.error,
-  artifacts: artifacts.map((entry) => ({
-    id: ArtifactId.make(entry.id),
-    kind: entry.kind,
-    title: entry.title,
-    storageKey: StorageKey.make(entry.storageKey),
-    mimeType: entry.mimeType,
-    sourceItemIds: entry.sourceItemIds.map((id) => ItemId.make(id)),
-    createdAt: entry.createdAt.toISOString(),
-  })),
+  assets,
 });
 const nextDate = (next: Option.Option<DateTime.Utc>) =>
   Option.match(next, {
@@ -120,6 +121,7 @@ export const CloudTasksLive = Layer.effect(
   Effect.gen(function* () {
     const database = yield* Database;
     const crypto = yield* Crypto.Crypto;
+    const assets = yield* AssetStore;
     const ownedTask = (userId: UserId, taskId: CloudTaskId) =>
       database
         .use((db) =>
@@ -142,13 +144,7 @@ export const CloudTasksLive = Layer.effect(
       );
       if (!row) return yield* new NotFound({ entity: "CloudRun", id: runId });
       const task = yield* ownedTask(userId, CloudTaskId.make(row.taskId));
-      const artifacts = yield* database.use((db) =>
-        db.query.artifact.findMany({
-          where: and(eq(artifact.cloudRunId, runId), eq(artifact.userId, userId)),
-          orderBy: [asc(artifact.createdAt)],
-        }),
-      );
-      return runToContract(row, task.title, artifacts);
+      return runToContract(row, task.title, yield* assets.list(userId, { runId }));
     });
     const ensureDefaultTask = Effect.fn("CloudTasks.ensureDefaultTask")(function* (
       userId: UserId,
@@ -176,7 +172,7 @@ export const CloudTasksLive = Layer.effect(
           })
           .onConflictDoNothing({
             target: [cloudTask.userId, cloudTask.builtin],
-            where: sql`${cloudTask.builtin} is not null`,
+            where: isNotNull(cloudTask.builtin),
           }),
       );
     });
@@ -186,7 +182,7 @@ export const CloudTasksLive = Layer.effect(
         yield* ensureDefaultTask(userId);
         return (yield* database.use((db) =>
           db.query.cloudTask.findMany({
-            where: eq(cloudTask.userId, userId),
+            where: and(eq(cloudTask.userId, userId), eq(cloudTask.oneOff, false)),
             orderBy: [asc(cloudTask.createdAt), asc(cloudTask.id)],
           }),
         )).map(taskToContract);
@@ -329,6 +325,45 @@ export const CloudTasksLive = Layer.effect(
         // The worker is the sole executor; requests only enqueue work.
         return yield* getRun(userId, id);
       }),
+      runAdHoc: Effect.fn("CloudTasks.runAdHoc")(function* (userId, input) {
+        const taskId = yield* newId(CloudTaskId).pipe(Effect.provideService(Crypto.Crypto, crypto));
+        const id = yield* newId(CloudRunId).pipe(Effect.provideService(Crypto.Crypto, crypto));
+        const now = DateTime.toDateUtc(yield* DateTime.now);
+        const prompt = input.prompt.trim();
+        yield* database.useTransaction(async (tx) => {
+          await tx.insert(cloudTask).values({
+            id: taskId,
+            userId,
+            // The first sentence names the run (it also names the run's output folder).
+            title: (
+              prompt
+                .replace(/\s+/g, " ")
+                .trim()
+                .split(/(?<=[.!?])\s/)[0] ?? prompt
+            ).slice(0, 60),
+            prompt,
+            ...(input.model ? { model: input.model } : {}),
+            ...(input.network ? { network: input.network } : {}),
+            schedule: { _tag: "once", at: now.toISOString() },
+            timeZone: input.timeZone ?? "UTC",
+            delivery: { email: false },
+            enabled: false,
+            oneOff: true,
+            nextRunAt: null,
+          });
+          await tx.insert(cloudRun).values({
+            id,
+            userId,
+            taskId,
+            status: "scheduled",
+            scheduledFor: now,
+            attempt: 1,
+            notBefore: now,
+          });
+        });
+        // The worker is the sole executor; its queue poll picks the run up within seconds.
+        return yield* getRun(userId, id);
+      }),
       cancelRun: Effect.fn("CloudTasks.cancelRun")(function* (userId, runId) {
         const run = yield* getRun(userId, runId);
         if (["succeeded", "failed", "cancelled"].includes(run.status)) return run;
@@ -360,14 +395,9 @@ export const CloudTasksLive = Layer.effect(
             .limit(Math.max(1, Math.min(100, Math.floor(limit)))),
         );
         return yield* Effect.forEach(rows, ({ run, taskTitle }) =>
-          database
-            .use((db) =>
-              db.query.artifact.findMany({
-                where: and(eq(artifact.cloudRunId, run.id), eq(artifact.userId, userId)),
-                orderBy: [asc(artifact.createdAt)],
-              }),
-            )
-            .pipe(Effect.map((artifacts) => runToContract(run, taskTitle, artifacts))),
+          assets
+            .list(userId, { runId: CloudRunId.make(run.id) })
+            .pipe(Effect.map((entries) => runToContract(run, taskTitle, entries))),
         );
       }),
     });

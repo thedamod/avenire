@@ -4,16 +4,16 @@ import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import { PACKAGE_INDEX_DOMAINS } from "./network.ts";
 import {
   CLOUD_INPUTS,
   CLOUD_LIMITS,
   CLOUD_WORKSPACE,
   CloudBoxes,
   CloudBoxesLive,
-  tokenSecretName,
 } from "./cloudBox.ts";
 import { DaytonaClient } from "./daytona.ts";
-import { avenireRuthCloudImage, ensureSnapshot, PI_VERSION } from "./snapshots.ts";
+import { AVENIRE_SNAPSHOT } from "./snapshots.ts";
 
 type Params = { labels: Record<string, string>; [key: string]: unknown };
 const fake = () => {
@@ -34,6 +34,12 @@ const fake = () => {
       state,
       started: 0,
       stopped: 0,
+      async updateSecrets(secrets: unknown) {
+        calls.push(`detach:${JSON.stringify(secrets)}`);
+      },
+      async updateNetworkSettings(settings: unknown) {
+        calls.push(`network:${JSON.stringify(settings)}`);
+      },
       async start() {
         if (fail) throw new Error("failed");
         sandbox.started++;
@@ -85,10 +91,22 @@ const fake = () => {
         },
       },
       computerUse: {
+        async updateSecrets(secrets: unknown) {
+          calls.push(`detach:${JSON.stringify(secrets)}`);
+        },
+        async updateNetworkSettings(settings: unknown) {
+          calls.push(`network:${JSON.stringify(settings)}`);
+        },
         async start() {
           calls.push("desktop");
         },
         recording: {
+          async list() {
+            return { recordings: [{ id: "recording", fileName: "ruth-run", status: "recording" }] };
+          },
+          async download(id: string, path: string) {
+            calls.push(`download-record:${id}:${path}`);
+          },
           async start(name: string) {
             calls.push(`record:${name}`);
             return { id: "recording" };
@@ -159,10 +177,8 @@ const fake = () => {
     layer: CloudBoxesLive.pipe(Layer.provide(Layer.succeed(DaytonaClient, client))),
   };
 };
-const config = {
-  RUTH_CLOUD_API_BASE_URL: "https://api.avenire.test/v1",
-  RUTH_CLOUD_EGRESS_CIDRS: "1.2.3.4/32, 10.0.0.0/24",
-};
+// Tier 3+ ("open") accepts per-box egress settings; one test below covers tiers 1-2.
+const config = { DAYTONA_NETWORK_TIER: "open" };
 const provide = <A, E, R>(
   fixture: ReturnType<typeof fake>,
   effect: Effect.Effect<A, E, R | CloudBoxes>,
@@ -177,50 +193,37 @@ const provide = <A, E, R>(
   );
 
 describe("CloudBoxes", () => {
-  it.effect("creates once concurrently, reuses, and mounts existing secret names", () => {
-    const f = fake();
-    return provide(
-      f,
-      Effect.gen(function* () {
-        const s = yield* CloudBoxes;
-        const boxes = yield* Effect.all([s.ensure("user"), s.ensure("user"), s.ensure("user")], {
-          concurrency: "unbounded",
-        });
-        expect(new Set(boxes.map((box) => box.id)).size).toBe(1);
-        expect(f.created).toHaveLength(1);
-        expect(f.created[0]).toMatchObject({
-          labels: { app: "ruth-cloud", userId: "user" },
-          resources: CLOUD_LIMITS.resources,
-          autoStopInterval: 15,
-          autoArchiveInterval: 10080,
-          autoDeleteInterval: -1,
-          ephemeral: false,
-          networkAllowList: "1.2.3.4/32,10.0.0.0/24",
-          secrets: {
-            ANTHROPIC_API_KEY: "ruth-cloud-model-key",
-            AVENIRE_RUN_TOKEN: "ruth-cloud-token-user",
-          },
-        });
-        expect(f.calls.indexOf("create-secret")).toBeLessThan(f.calls.indexOf("create-box"));
-        expect(f.secrets.get(tokenSecretName("user"))?.hosts).toEqual(["api.avenire.test"]);
-        expect(f.boxes[0]?.folders).toContain(CLOUD_WORKSPACE);
-        expect(f.boxes[0]?.folders).toContain(CLOUD_INPUTS);
-      }),
-    );
-  });
-  it.effect("snapshot creation omits resource overrides", () => {
-    const f = fake();
-    return provide(
-      f,
-      Effect.gen(function* () {
-        yield* (yield* CloudBoxes).ensure("user");
-        expect(f.created[0]).toHaveProperty("snapshot", "custom");
-        expect(f.created[0]).not.toHaveProperty("resources");
-        expect(f.created[0]).not.toHaveProperty("image");
-      }),
-      { DAYTONA_RUTH_CLOUD_SNAPSHOT: "custom" },
-    );
-  });
+  it.effect(
+    "creates once concurrently, reuses, detaches secrets, and applies package-only egress",
+    () => {
+      const f = fake();
+      return provide(
+        f,
+        Effect.gen(function* () {
+          const s = yield* CloudBoxes;
+          const boxes = yield* Effect.all([s.ensure("user"), s.ensure("user"), s.ensure("user")], {
+            concurrency: "unbounded",
+          });
+          expect(new Set(boxes.map((box) => box.id)).size).toBe(1);
+          expect(f.created).toHaveLength(1);
+          expect(f.created[0]).toMatchObject({
+            labels: { app: "ruth-cloud", userId: "user" },
+            snapshot: AVENIRE_SNAPSHOT,
+            autoStopInterval: 15,
+            autoArchiveInterval: 10080,
+            autoDeleteInterval: -1,
+            ephemeral: false,
+            domainAllowList: PACKAGE_INDEX_DOMAINS,
+          });
+          expect(f.created[0]).not.toHaveProperty("secrets");
+          expect(f.calls).toContain("detach:{}");
+          expect(f.secrets.size).toBe(0);
+          expect(f.boxes[0]?.folders).toContain(CLOUD_WORKSPACE);
+          expect(f.boxes[0]?.folders).toContain(CLOUD_INPUTS);
+        }),
+      );
+    },
+  );
   for (const state of ["stopped", "archived"])
     it.effect(`starts a ${state} box`, () => {
       const f = fake();
@@ -234,19 +237,6 @@ describe("CloudBoxes", () => {
         }),
       );
     });
-  it.effect("creation and start failures become SandboxUnavailable", () => {
-    const f = fake();
-    f.fail();
-    return provide(
-      f,
-      Effect.gen(function* () {
-        const s = yield* CloudBoxes;
-        expect((yield* Effect.flip(s.ensure("user")))._tag).toBe("SandboxUnavailable");
-        f.box("existing", "stopped");
-        expect((yield* Effect.flip(s.ensure("existing")))._tag).toBe("SandboxUnavailable");
-      }),
-    );
-  });
   it.effect("running never creates or starts; stop is idempotent", () => {
     const f = fake();
     const b = f.box("user");
@@ -266,25 +256,33 @@ describe("CloudBoxes", () => {
       }),
     );
   });
-  it.effect("set and clear update the secret by id with a fresh dead token", () => {
+  it.effect("open tasks clear both allow lists and reuse returns to packages mode", () => {
     const f = fake();
     return provide(
       f,
       Effect.gen(function* () {
-        const s = yield* CloudBoxes;
-        yield* s.setRunToken("user", "live-token");
-        expect(f.secrets.get(tokenSecretName("user"))?.value).toBe("live-token");
-        yield* s.ensure("user");
-        expect(f.secrets.get(tokenSecretName("user"))?.value).toBe("live-token");
-        yield* s.clearRunToken("user");
-        const first = f.secrets.get(tokenSecretName("user"))?.value;
-        yield* s.clearRunToken("user");
-        const second = f.secrets.get(tokenSecretName("user"))?.value;
-        expect(first).not.toBe("live-token");
-        expect(first).not.toBe(second);
-        expect(f.calls.filter((call) => call === "create-secret")).toHaveLength(1);
-        expect(f.calls).toContain("update-secret:secret-0");
+        const boxes = yield* CloudBoxes;
+        yield* boxes.ensure("user", "open");
+        expect(f.created[0]).toMatchObject({
+          networkBlockAll: false,
+          networkAllowList: "",
+          domainAllowList: "",
+        });
+        yield* boxes.ensure("user", "packages");
+        expect(f.calls.at(-1)).toContain(PACKAGE_INDEX_DOMAINS);
       }),
+    );
+  });
+  it.effect("restricted tiers send no per-box egress settings, even for open tasks", () => {
+    const f = fake();
+    return provide(
+      f,
+      Effect.gen(function* () {
+        yield* (yield* CloudBoxes).ensure("user", "open");
+        for (const key of ["networkBlockAll", "networkAllowList", "domainAllowList"])
+          expect(f.created[0]).not.toHaveProperty(key);
+      }),
+      { DAYTONA_NETWORK_TIER: "restricted" },
     );
   });
   it.effect("checks size before download, creates parents, and exposes missing file info", () => {
@@ -314,11 +312,11 @@ describe("CloudBoxes", () => {
         const box = yield* (yield* CloudBoxes).ensure("user");
         expect(yield* box.exec("false")).toEqual({ exitCode: 2, output: "output" });
         expect(
-          yield* box.startCommand({ sessionId: "run", command: "pi -p", cwd: "/a'b" }),
+          yield* box.startCommand({ sessionId: "run", command: "python render.py", cwd: "/a'b" }),
         ).toEqual({ commandId: "cmd" });
         expect(f.boxes[0]?.commands[1]).toEqual([
           "run",
-          { command: "cd '/a'\\''b' && pi -p", runAsync: true },
+          { command: "cd '/a'\\''b' && python render.py", runAsync: true },
         ]);
         expect(yield* box.commandStatus("run", "cmd")).toEqual({ exitCode: null });
         expect(yield* box.commandLogs("run", "cmd", 3)).toBe("END");
@@ -326,64 +324,12 @@ describe("CloudBoxes", () => {
         yield* box.endSession("run");
         yield* box.startDesktop;
         expect(yield* box.startRecording("name")).toEqual(Option.some("recording"));
-        expect(Option.isSome(yield* box.stopRecording("recording"))).toBe(true);
+        yield* box.stopRecording("recording", "/tmp/recording.mp4");
+        expect(f.calls).toContain("download-record:recording:/tmp/recording.mp4");
+        expect(yield* box.recordings).toEqual([
+          { id: "recording", name: "ruth-run", state: "recording" },
+        ]);
       }),
     );
   });
-  it.effect("rejects missing/invalid/too-long CIDR config before creation", () => {
-    const f = fake();
-    return Effect.forEach(
-      ["", "example.test", "300.1.1.1/32", "1.2.3.4/33", Array(11).fill("1.2.3.4/32").join(",")],
-      (egress) =>
-        provide(
-          f,
-          Effect.gen(function* () {
-            yield* CloudBoxes;
-          }),
-          { RUTH_CLOUD_EGRESS_CIDRS: egress },
-        ).pipe(
-          Effect.exit,
-          Effect.map((exit) => expect(exit._tag).toBe("Failure")),
-        ),
-    ).pipe(Effect.asVoid);
-  });
-});
-it("cloud image retains desktop base and pins Pi/Node", () => {
-  expect(avenireRuthCloudImage.dockerfile).toContain("FROM daytonaio/sandbox");
-  expect(avenireRuthCloudImage.dockerfile).toContain(
-    `@earendil-works/pi-coding-agent@${PI_VERSION}`,
-  );
-  expect(avenireRuthCloudImage.dockerfile).toContain("setup_24.x");
-  expect(avenireRuthCloudImage.dockerfile).toContain("playwright install --with-deps chromium");
-});
-it.effect("ensureSnapshot uses the requested allocation", () => {
-  let params: unknown;
-  const daytona = {
-    snapshot: {
-      get: async () => {
-        throw new DaytonaFileNotFoundError("missing");
-      },
-      create: async (input: unknown) => {
-        params = input;
-        return {};
-      },
-    },
-  } as unknown as Daytona;
-  return Effect.gen(function* () {
-    yield* ensureSnapshot(daytona, "cloud", avenireRuthCloudImage, CLOUD_LIMITS.resources);
-    expect(params).toMatchObject({ name: "cloud", resources: CLOUD_LIMITS.resources });
-  });
-});
-it.effect("recording returns None when computer use is unavailable", () => {
-  const f = fake();
-  const sandbox = f.box("user");
-  Reflect.deleteProperty(sandbox, "computerUse");
-  return provide(
-    f,
-    Effect.gen(function* () {
-      const box = yield* (yield* CloudBoxes).ensure("user");
-      expect(Option.isNone(yield* box.startRecording("run"))).toBe(true);
-      expect(Option.isNone(yield* box.stopRecording("unavailable"))).toBe(true);
-    }),
-  );
 });

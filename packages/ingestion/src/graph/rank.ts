@@ -15,7 +15,7 @@ export interface GraphEdge {
   readonly predicate: string;
   readonly weight: number;
   readonly chunkId: string;
-  readonly itemId: string;
+  readonly fileId: string;
 }
 
 export interface GraphMention {

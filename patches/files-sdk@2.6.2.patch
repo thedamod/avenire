@@ -1,0 +1,13 @@
+diff --git a/dist/uploadthing/index.js b/dist/uploadthing/index.js
+index 9d5aaa85b9963968b400b430f03be124d07e167d..1af9bf56887c5294cc02ea2510b2c8f9ca7b41f8 100644
+--- a/dist/uploadthing/index.js
++++ b/dist/uploadthing/index.js
+@@ -169,7 +169,7 @@ var uploadthing = (config = {}) => {
+     defaultKeyType: "customId",
+     token
+   });
+-  const publicUrl = (key) => `https://${appId}.ufs.sh/f/${encodeURIComponent(key)}`;
++  const publicUrl = (key) => `https://${appId}.ufs.sh/f/${key.split("/").map(encodeURIComponent).join("/")}`; // avenire: UFS serves customIds with raw slashes
+   const resolveFetchUrl = async (key) => {
+     if (acl === ACL_PUBLIC_READ) {
+       return publicUrl(key);

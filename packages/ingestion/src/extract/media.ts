@@ -90,14 +90,14 @@ const SAME_SLIDE_BITS = 6;
 /** 8×8 grayscale frames, one byte per pixel, for the average hash. */
 const HASH_PIXELS = 64;
 
-/** Evenly spread `max` of `items`, keeping the first. */
-const spread = <A>(items: ReadonlyArray<A>, max: number): ReadonlyArray<A> =>
-  items.length <= max
-    ? items
+/** Evenly spread `max` of `files`, keeping the first. */
+const spread = <A>(files: ReadonlyArray<A>, max: number): ReadonlyArray<A> =>
+  files.length <= max
+    ? files
     : Array.from(
         { length: max },
-        (_, index) => items[Math.round((index * (items.length - 1)) / Math.max(1, max - 1))],
-      ).filter((item): item is A => item !== undefined);
+        (_, index) => files[Math.round((index * (files.length - 1)) / Math.max(1, max - 1))],
+      ).filter((file): file is A => file !== undefined);
 
 const averageHash = (pixels: Uint8Array): bigint => {
   const mean = pixels.reduce((sum, value) => sum + value, 0) / pixels.length;

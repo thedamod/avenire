@@ -2,7 +2,7 @@ import { useState } from "react";
 import { View } from "react-native";
 import { call } from "@avenire/client-runtime/rpc";
 import * as WebBrowser from "expo-web-browser";
-import type { Artifact, ArtifactId } from "@avenire/contracts";
+import type { Asset, AssetId } from "@avenire/contracts";
 import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState, errorMessage } from "../../components/ErrorState";
@@ -38,18 +38,18 @@ export function TodayScreen() {
     }
   };
 
-  const openArtifact = async (artifactId: ArtifactId) => {
+  const openAsset = async (assetId: AssetId) => {
     setOpenError(undefined);
     try {
-      const result = await call(api, (client) => client["cloud.artifactUrl"]({ artifactId }));
+      const result = await call(api, (client) => client["assets.get"]({ assetId }));
       await WebBrowser.openBrowserAsync(result.url);
     } catch (cause) {
       setOpenError(errorMessage(cause));
     }
   };
 
-  const groupedArtifacts = run?.artifacts.reduce<Record<string, Artifact[]>>((groups, artifact) => {
-    (groups[artifact.kind] ??= []).push(artifact);
+  const groupedAssets = run?.assets.reduce<Record<string, Asset[]>>((groups, asset) => {
+    (groups[asset.kind] ??= []).push(asset);
     return groups;
   }, {});
 
@@ -69,15 +69,15 @@ export function TodayScreen() {
             title={`${run.taskTitle} · ${run.status}`}
             detail={new Date(run.startedAt ?? run.scheduledFor).toLocaleString()}
           />
-          {Object.entries(groupedArtifacts ?? {}).map(([kind, artifacts]) => (
+          {Object.entries(groupedAssets ?? {}).map(([kind, assets]) => (
             <View key={kind} className="gap-3">
               <ListRow title={kind} />
-              {artifacts.map((artifact) => (
+              {assets.map((asset) => (
                 <ListRow
-                  key={artifact.id}
-                  title={artifact.title}
-                  detail="Open artifact"
-                  onPress={() => void openArtifact(artifact.id)}
+                  key={asset.id}
+                  title={asset.title}
+                  detail="Open asset"
+                  onPress={() => void openAsset(asset.id)}
                 />
               ))}
             </View>

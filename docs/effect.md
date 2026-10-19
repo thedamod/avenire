@@ -59,13 +59,13 @@ constructors. Config is read inside layers, never at module top level.
 
 ## Ids and time
 
-- Ids: `newId(ItemId)` from `@avenire/shared/id` (UUIDv7 via the `Crypto` service).
+- Ids: `newId(FileId)` from `@avenire/shared/id` (UUIDv7 via the `Crypto` service).
 - Time: `DateTime.now` / `Clock`, not `new Date()` inside Effect code.
 
 ## RPC
 
 Contracts declare groups in `@avenire/contracts` (`LibraryRpcs`, `SearchRpcs`, `RuthRpcs`,
-`CloudRpcs`). The server implements them with `Group.toLayer({ "library.listItems": (payload) => ... })`
+`CloudRpcs`). The server implements them with `Group.toLayer({ "library.listFiles": (payload) => ... })`
 and reads the user with `yield* CurrentUser`.
 
 ## Tests

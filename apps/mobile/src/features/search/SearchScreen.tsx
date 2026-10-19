@@ -90,7 +90,7 @@ export function SearchScreen() {
       {hits.map((hit) => (
         <ListRow
           key={hit.chunkId}
-          title={hit.itemTitle}
+          title={hit.fileTitle}
           detail={`${formatSnippet(hit.content)}\n\n${formatLocation(hit)}`}
         />
       ))}

@@ -10,7 +10,7 @@ comes first, and these components consume whatever it produces.
 
 1. **Layered data flow.** `UIMessage[]` → display rows → virtualized renderers. Each layer
    is pure and testable; React only sees display rows.
-2. **The AI SDK message is the data model.** There's no separate item model. Text,
+2. **The AI SDK message is the data model.** There's no separate file model. Text,
    reasoning, tool calls (with approval), files and custom data are `UIMessage` parts, as in
    v1 (`ai` 7, `@ai-sdk/react`).
 3. **Visuals are inline HTML in markdown.** Ruth writes `<avenire-chart>` /
@@ -27,16 +27,16 @@ comes first, and these components consume whatever it produces.
 
 ## 1. Message model (AI SDK)
 
-| Need | `UIMessage` part |
-| --- | --- |
-| Prose, including `<avenire-*>` visual tags | `text` |
-| Ruth's reasoning summary | `reasoning` (collapsed by default) |
-| `search_materials`, `read_item`, `run_python`, `get_page_context` | `tool-<name>` with `input-streaming` → `input-available` → `output-available` / `output-error` |
-| File action | `tool-propose_file_action` with `needsApproval: !thread.fullAccess`; state `approval-requested` → `approval-responded`, answered with `addToolApprovalResponse` |
-| A question for the user | `tool-ask_user`, a client-side tool with no `execute`, answered with `addToolOutput` (choices / free text) |
-| A subagent (the video agent) | `data-subagent` part `{ subagentId, kind, status, stage, progress }`, updated in place by id |
-| A Ruth Cloud run | `data-cloud-run` part `{ runId }`, rendered from live run state |
-| User attachments | `file` parts with an `attachmentId` (upload state lives outside the message; see §6.4) |
+| Need                                                              | `UIMessage` part                                                                                                                                                |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prose, including `<avenire-*>` visual tags                        | `text`                                                                                                                                                          |
+| Ruth's reasoning summary                                          | `reasoning` (collapsed by default)                                                                                                                              |
+| `search_materials`, `read_file`, `run_python`, `get_page_context` | `tool-<name>` with `input-streaming` → `input-available` → `output-available` / `output-error`                                                                  |
+| File action                                                       | `tool-propose_file_action` with `needsApproval: !thread.fullAccess`; state `approval-requested` → `approval-responded`, answered with `addToolApprovalResponse` |
+| A question for the user                                           | `tool-ask_user`, a client-side tool with no `execute`, answered with `addToolOutput` (choices / free text)                                                      |
+| A subagent (the video agent)                                      | `data-subagent` part `{ subagentId, kind, status, stage, progress }`, updated in place by id                                                                    |
+| A Ruth Cloud run                                                  | `data-cloud-run` part `{ runId }`, rendered from live run state                                                                                                 |
+| User attachments                                                  | `file` parts with an `attachmentId` (upload state lives outside the message; see §6.4)                                                                          |
 
 **Page facts travel with the request.** `DefaultChatTransport` sends
 `{ threadId, fast, page }` in the body, where `page` is `{ surface, platform,
@@ -90,22 +90,22 @@ declared children (`script[type="avenire/params"]`,
 
 ### Rows
 
-| Row | Renderer |
-| --- | --- |
-| user message | plain text with inline item/cluster tokens (§6.2) and attachment chips (with upload state) |
-| assistant prose | worker-parsed markdown; citation chips open the source item at the cited page or timestamp |
-| tool group | compact work row; expanding shows sources read in a bounded nested list |
-| visual | `<avenire-chart>` / `<avenire-sim>` / `<avenire-vis>` / `run_python` figure card / video, with a reserved height from the artifact's declared aspect ratio, a poster while offscreen, and an "open full" action |
-| request | inline card; when pending, also docked above the composer (§6.3) |
-| subagent | grouped card (§7) |
-| cloud run | live card subscribed to the run: status, progress, artifacts when done |
+| Row             | Renderer                                                                                                                                                                                                        |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| user message    | plain text with inline file/folder tokens (§6.2) and attachment chips (with upload state)                                                                                                                       |
+| assistant prose | worker-parsed markdown; citation chips open the source file at the cited page or timestamp                                                                                                                      |
+| tool group      | compact work row; expanding shows sources read in a bounded nested list                                                                                                                                         |
+| visual          | `<avenire-chart>` / `<avenire-sim>` / `<avenire-vis>` / `run_python` figure card / video, with a reserved height from the artifact's declared aspect ratio, a poster while offscreen, and an "open full" action |
+| request         | inline card; when pending, also docked above the composer (§6.3)                                                                                                                                                |
+| subagent        | grouped card (§7)                                                                                                                                                                                               |
+| cloud run       | live card subscribed to the run: status, progress, artifacts when done                                                                                                                                          |
 
 ## 4. Virtualization
 
 Use `@legendapp/list` on web (`@legendapp/list/react`) and mobile
 (`KeyboardAwareLegendList`), as t3code does:
 
-- `keyExtractor = row.id`, `getItemType = row.kind`, `estimatedItemSize` ≈ 90 (web) /
+- `keyExtractor = row.id`, `getFileType = row.kind`, `estimatedFileSize` ≈ 90 (web) /
   180 (mobile), measured variable heights, `maintainVisibleContentPosition`.
 - **Follow latch:**
   - `maintainScrollAtEnd` applies only while following.
@@ -145,7 +145,7 @@ v1's composer has two layouts:
 v1 switches with `isMultiLine = textarea.scrollHeight > 40`, measured on every input change.
 That has two problems, and t3code's scroll-position-driven version is jankier still:
 
-- **No hysteresis.** The measurement uses the textarea's *current* width. After stacking,
+- **No hysteresis.** The measurement uses the textarea's _current_ width. After stacking,
   the textarea is wider, so deleting a few characters collapses it. In the inline layout
   it's narrower again and may wrap, and since the layout flip itself doesn't re-measure,
   the composer sits in the wrong state until the next keystroke and then flips back.
@@ -171,12 +171,12 @@ v2:
 
 Use TipTap (as t3code does) so references are real inline tokens, not text:
 
-- `@` opens a picker for items, clusters and canvas nodes; picking one inserts a mention
+- `@` opens a picker for files, folders and canvas nodes; picking one inserts a mention
   node that renders as a chip.
 - `/` opens commands that set intent (`/quiz`, `/explain`, `/flashcards`, `/summarize`).
 - Pasting a URL offers to turn it into a capture token.
 - **Serialization:** the editor produces `{ text, references[] }`. The text carries stable
-  placeholders (`@[item:itm_…]`) and the references are sent as a typed message metadata
+  placeholders (`@[file:itm_…]`) and the references are sent as a typed message metadata
   field, so Ruth gets both the user's wording and exact ids.
 - Draft persistence per thread stores the TipTap JSON (Zustand `persist` on web, device
   storage on mobile).
@@ -204,7 +204,7 @@ Matching ChatGPT (and replacing v1, which held the submission until every upload
 3. **The server waits, not the user.** Before building the model prompt, the turn awaits
    each referenced attachment's `uploaded` signal (bounded, around 60 s). Text-only work
    (search over existing material) can start meanwhile.
-4. **Failure is per attachment.** A failed upload marks its chip on the *sent* message
+4. **Failure is per attachment.** A failed upload marks its chip on the _sent_ message
    with Retry. The turn continues without it, and Ruth is told the attachment didn't
    arrive. Retrying adds it to a follow-up turn.
 5. Uploads continue if the user switches threads, and they're tracked in a small upload
@@ -216,7 +216,7 @@ As in t3code's `ComposerPendingApprovalPanel` / `ComposerPendingUserInputPanel`,
 docked **above** the composer, never replacing it, so the draft is preserved.
 
 - **File action** (an `approval-requested` tool part): shows what will change (move,
-  rename, archive, create note) with a preview (target cluster, new title, note excerpt),
+  rename, archive, create note) with a preview (target folder, new title, note excerpt),
   plus Approve / Decline. The turn continues once it's answered. Hidden in Full access
   mode.
 - **Question** (an `ask_user` tool part, from Ruth or a subagent): one question at a time,
@@ -229,7 +229,7 @@ docked **above** the composer, never replacing it, so the draft is preserved.
 ## 7. Subagents and background work
 
 Ruth does delegate. The **video agent** is the first subagent (see the widget-renderer
-vision §4.5), and nightly Cloud runs may fan out per cluster later.
+vision §4.5), and nightly Cloud runs may fan out per folder later.
 
 - **In the timeline**, a `data-subagent` part renders as t3code's grouped card: avatar or
   icon stack, count, status summary and elapsed time. It expands into per-agent rows
@@ -261,7 +261,7 @@ vision §4.5), and nightly Cloud runs may fan out per cluster later.
   `ComposerPendingApprovalPanel.tsx`, `ComposerPendingUserInputPanel.tsx`.
 - **t3code timeline:** `apps/web/src/session-logic.ts`,
   `components/chat/MessagesTimeline.tsx`, `MessagesTimeline.logic.ts`,
-  `timelineMinimapItems.ts`, `timelineScrollAnchoring.ts`, `components/ChatMarkdown.tsx`.
+  `timelineMinimapFiles.ts`, `timelineScrollAnchoring.ts`, `components/ChatMarkdown.tsx`.
 - **t3code mobile:** `apps/mobile/src/features/threads/ThreadFeed.tsx`,
   `thread-subagent-group.tsx`, `ThreadAgentsSheet.tsx`, `PendingApprovalCard.tsx`.
 - **v1 composer and chat:** `context/avenire/apps/web/src/components/chat/multimodal-input.tsx`

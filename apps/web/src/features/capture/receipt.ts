@@ -3,7 +3,7 @@ import type { CapturePayload } from "@avenire/desktop/bridge";
 
 export interface CaptureReceipt {
   readonly capturedAt: string;
-  readonly items: SubmitCaptureResult["items"];
+  readonly files: SubmitCaptureResult["files"];
   readonly skipped: SubmitCaptureResult["skipped"];
   readonly blocked: CapturePayload["blocked"];
 }

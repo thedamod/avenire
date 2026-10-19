@@ -1,0 +1,4 @@
+{
+  "browser": { "custom_chrome_frame": false },
+  "extensions": { "theme": { "system_theme": 1 } }
+}

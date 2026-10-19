@@ -1,3 +1,4 @@
+import { Asset } from "./assets.ts";
 /**
  * The typed API every client (web, desktop, mobile) uses to talk to the Avenire server.
  * Handlers live in `apps/web/src/server`; clients in `@avenire/client-runtime`.
@@ -7,40 +8,33 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 
 import { CaptureSnapshot } from "./capture.ts";
-import {
-  ApprovalDecision,
-  Artifact,
-  CloudRun,
-  CloudTask,
-  CloudTaskInput,
-  PendingApproval,
-} from "./cloud.ts";
+import { ApprovalDecision, CloudRun, CloudTask, CloudTaskInput, PendingApproval } from "./cloud.ts";
 import { ApiError } from "./errors.ts";
 import {
-  ArtifactId,
-  ClusterId,
+  AssetId,
+  FolderId,
   CloudRunId,
   CloudTaskId,
   PendingApprovalId,
-  ItemId,
+  FileId,
   ThreadId,
 } from "./ids.ts";
 import { IngestionJob } from "./ingestion.ts";
-import { CanvasNode, Cluster, Item, ItemPlacement } from "./library.ts";
+import { CanvasNode, Folder, LibraryFile, FilePlacement } from "./library.ts";
 import { SearchQuery, SearchResult } from "./retrieval.ts";
 import { RuthMessage, RuthThread } from "./ruth.ts";
 import { Authenticated } from "./session.ts";
 
 export const SubmitCaptureResult = Schema.Struct({
-  items: Schema.Array(Item),
+  files: Schema.Array(LibraryFile),
   /** Candidates dropped by policy, with the reason shown in the capture receipt. */
   skipped: Schema.Array(Schema.Struct({ title: Schema.String, reason: Schema.String })),
 });
 export type SubmitCaptureResult = typeof SubmitCaptureResult.Type;
 
 export class LibraryRpcs extends RpcGroup.make(
-  Rpc.make("library.recordItemEvent", {
-    payload: { itemId: ItemId, kind: Schema.Literal("opened") },
+  Rpc.make("library.recordFileEvent", {
+    payload: { fileId: FileId, kind: Schema.Literal("opened") },
     error: ApiError,
   }),
   Rpc.make("library.submitCapture", {
@@ -48,20 +42,20 @@ export class LibraryRpcs extends RpcGroup.make(
     success: SubmitCaptureResult,
     error: ApiError,
   }),
-  Rpc.make("library.listItems", {
-    payload: { placement: Schema.optional(ItemPlacement), clusterId: Schema.optional(ClusterId) },
-    success: Schema.Array(Item),
+  Rpc.make("library.listFiles", {
+    payload: { placement: Schema.optional(FilePlacement), folderId: Schema.optional(FolderId) },
+    success: Schema.Array(LibraryFile),
     error: ApiError,
   }),
-  Rpc.make("library.fileItem", {
-    payload: { itemId: ItemId, clusterIds: Schema.Array(ClusterId) },
-    success: Item,
+  Rpc.make("library.placeFile", {
+    payload: { fileId: FileId, folderIds: Schema.Array(FolderId) },
+    success: LibraryFile,
     error: ApiError,
   }),
-  Rpc.make("library.listClusters", { success: Schema.Array(Cluster), error: ApiError }),
-  Rpc.make("library.renameCluster", {
-    payload: { clusterId: ClusterId, name: Schema.NonEmptyString },
-    success: Cluster,
+  Rpc.make("library.listFolders", { success: Schema.Array(Folder), error: ApiError }),
+  Rpc.make("library.renameFolder", {
+    payload: { folderId: FolderId, name: Schema.NonEmptyString },
+    success: Folder,
     error: ApiError,
   }),
   Rpc.make("library.getCanvas", { success: Schema.Array(CanvasNode), error: ApiError }),
@@ -75,7 +69,7 @@ export class LibraryRpcs extends RpcGroup.make(
     stream: true,
   }),
   Rpc.make("library.setIngestionPaused", {
-    payload: { itemId: ItemId, paused: Schema.Boolean },
+    payload: { fileId: FileId, paused: Schema.Boolean },
     success: IngestionJob,
     error: ApiError,
   }),
@@ -117,6 +111,8 @@ export class CloudRpcs extends RpcGroup.make(
       patch: Schema.Struct({
         title: Schema.optionalKey(CloudTaskInput.fields.title),
         prompt: Schema.optionalKey(CloudTaskInput.fields.prompt),
+        model: CloudTaskInput.fields.model,
+        network: CloudTaskInput.fields.network,
         schedule: Schema.optionalKey(CloudTaskInput.fields.schedule),
         timeZone: Schema.optionalKey(CloudTaskInput.fields.timeZone),
         preHydration: Schema.optionalKey(CloudTaskInput.fields.preHydration),
@@ -158,14 +154,18 @@ export class CloudRpcs extends RpcGroup.make(
     success: CloudRun,
     error: ApiError,
   }),
-  Rpc.make("cloud.artifactUrl", {
-    payload: { artifactId: ArtifactId },
-    success: Schema.Struct({ artifact: Artifact, url: Schema.String }),
+).middleware(Authenticated) {}
+
+export class AssetsRpcs extends RpcGroup.make(
+  Rpc.make("assets.get", { payload: { assetId: AssetId }, success: Asset, error: ApiError }),
+  Rpc.make("assets.list", {
+    payload: { threadId: Schema.optionalKey(ThreadId), runId: Schema.optionalKey(CloudRunId) },
+    success: Schema.Array(Asset),
     error: ApiError,
   }),
 ).middleware(Authenticated) {}
 
-export const AvenireRpcs = LibraryRpcs.merge(SearchRpcs, RuthRpcs, CloudRpcs);
+export const AvenireRpcs = LibraryRpcs.merge(SearchRpcs, RuthRpcs, CloudRpcs, AssetsRpcs);
 export type AvenireRpcs = typeof AvenireRpcs;
 
 /** Path the RPC endpoint is mounted on, relative to the web server origin. */

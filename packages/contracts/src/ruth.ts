@@ -4,7 +4,7 @@
  * Chat messages are AI SDK `UIMessage`s (typed as `RuthUIMessage` in
  * `@avenire/ai/message-types`); here they travel as opaque JSON. Streaming goes
  * over a plain HTTP endpoint (`RUTH_CHAT_PATH`), thread management over RPC.
- * File actions pause on an approval tool part unless the thread has Full access.
+ * LibraryFile actions pause on an approval tool part unless the thread has Full access.
  */
 import * as Schema from "effect/Schema";
 

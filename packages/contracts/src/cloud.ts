@@ -1,19 +1,13 @@
 /**
- * Ruth Cloud - scheduled sandboxed work that produces study artifacts and proposed syncs.
+ * Ruth Cloud - scheduled sandboxed work that produces study assets and proposed syncs.
  *
  * Changes to existing material are represented as pending approvals.
  */
 import * as Schema from "effect/Schema";
 
-import {
-  ArtifactId,
-  CloudRunId,
-  CloudTaskId,
-  ItemId,
-  PendingApprovalId,
-  StorageKey,
-} from "./ids.ts";
+import { CloudRunId, CloudTaskId, FileId, PendingApprovalId } from "./ids.ts";
 
+import { Asset } from "./assets.ts";
 import { HydrationRule } from "./hydration.ts";
 
 export const CloudRunStatus = Schema.Literals([
@@ -25,29 +19,6 @@ export const CloudRunStatus = Schema.Literals([
   "cancelled",
 ]);
 export type CloudRunStatus = typeof CloudRunStatus.Type;
-
-export const ArtifactKind = Schema.Literals([
-  "notes",
-  "quiz",
-  "flashcards",
-  "research",
-  "summary",
-  "recording",
-  "plot",
-  "video",
-]);
-export type ArtifactKind = typeof ArtifactKind.Type;
-
-export const Artifact = Schema.Struct({
-  id: ArtifactId,
-  kind: ArtifactKind,
-  title: Schema.String,
-  storageKey: StorageKey,
-  mimeType: Schema.String,
-  sourceItemIds: Schema.Array(ItemId),
-  createdAt: Schema.String,
-});
-export type Artifact = typeof Artifact.Type;
 
 export const CloudRun = Schema.Struct({
   id: CloudRunId,
@@ -61,7 +32,7 @@ export const CloudRun = Schema.Struct({
   startedAt: Schema.NullOr(Schema.String),
   finishedAt: Schema.NullOr(Schema.String),
   error: Schema.NullOr(Schema.String),
-  artifacts: Schema.Array(Artifact),
+  assets: Schema.Array(Asset),
 });
 export type CloudRun = typeof CloudRun.Type;
 
@@ -75,9 +46,14 @@ export type CloudTaskSchedule = typeof CloudTaskSchedule.Type;
 export const CloudTaskDelivery = Schema.Struct({ email: Schema.Boolean });
 export type CloudTaskDelivery = typeof CloudTaskDelivery.Type;
 
+const CloudModelName = Schema.Literals(["ruth-sprint", "ruth-core", "ruth-apex"]);
+const CloudNetwork = Schema.Literals(["packages", "open"]);
+
 export const CloudTaskInput = Schema.Struct({
   title: Schema.NonEmptyString,
   prompt: Schema.NonEmptyString,
+  model: Schema.optionalKey(CloudModelName),
+  network: Schema.optionalKey(CloudNetwork),
   schedule: CloudTaskSchedule,
   timeZone: Schema.String,
   preHydration: Schema.Array(HydrationRule),
@@ -97,6 +73,24 @@ export const CloudTask = Schema.Struct({
 });
 export type CloudTask = typeof CloudTask.Type;
 
+/** Path of the Cloud run start/stream endpoint; `<path>/<runId>/stream` replays and tails a run. */
+export const CLOUD_RUN_PATH = "/api/ruth/cloud";
+
+/**
+ * Body of a `CLOUD_RUN_PATH` request: a one-off prompt, or an existing task to run now.
+ * The response is the run's UI message stream, with the run id in `x-ruth-run-id`.
+ */
+export const CloudRunRequest = Schema.Union([
+  Schema.Struct({
+    prompt: Schema.NonEmptyString.check(Schema.isMaxLength(20_000)),
+    model: Schema.optionalKey(CloudModelName),
+    network: Schema.optionalKey(CloudNetwork),
+    timeZone: Schema.optionalKey(Schema.String),
+  }),
+  Schema.Struct({ taskId: CloudTaskId }),
+]);
+export type CloudRunRequest = typeof CloudRunRequest.Type;
+
 export const PendingApprovalStatus = Schema.Literals([
   "pending",
   "accepted",
@@ -108,8 +102,8 @@ export type PendingApprovalStatus = typeof PendingApprovalStatus.Type;
 export const PendingApproval = Schema.Struct({
   id: PendingApprovalId,
   runId: CloudRunId,
-  itemId: ItemId,
-  itemTitle: Schema.String,
+  fileId: FileId,
+  fileTitle: Schema.String,
   kind: Schema.Literal("sync"),
   status: PendingApprovalStatus,
   conflict: Schema.NullOr(Schema.String),

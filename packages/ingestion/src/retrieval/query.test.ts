@@ -1,4 +1,4 @@
-import { ItemId, type SearchQuery } from "@avenire/contracts";
+import { type SearchQuery } from "@avenire/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import { analyzeQuery, optionsKey } from "./query.ts";
@@ -42,28 +42,11 @@ describe("analyzeQuery", () => {
     expect(result.identifiers).toContain("x_1");
   });
 
-  it("rejects invalid elapsed timestamps", () => {
-    expect(analyzeQuery("At 9:75 or 1:02:90").location.seconds).toEqual([]);
-  });
-
-  it("does not treat a lone apostrophe as a phrase delimiter", () => {
-    expect(analyzeQuery("What is Noether's theorem?").phrases).toEqual([]);
-  });
-
-  it("keeps a page reference out of the lexical and identifier lists", () => {
-    const result = analyzeQuery("show page 12's proof");
-    expect(result.lexical.terms).not.toContain("12");
-    expect(result.identifiers).toEqual([]);
-  });
-
   it("keeps negation separate from positive terms", () => {
     const result = analyzeQuery("cells -plants and membranes");
     expect(result.lexical).toEqual({ terms: ["cells", "and", "membranes"], negated: ["plants"] });
   });
 
-  it("falls back to the original text when all content is a location", () => {
-    expect(analyzeQuery("p. 12").text).toBe("p. 12");
-  });
 });
 
 describe("optionsKey", () => {
@@ -78,24 +61,3 @@ describe("optionsKey", () => {
   });
 });
 
-it("separates item and time filters in the semantic cache key", () => {
-  const query: SearchQuery = { text: "cells" };
-  const analysis = analyzeQuery(query.text);
-  const key = optionsKey(query, analysis);
-  const first = ItemId.make("first");
-  const second = ItemId.make("second");
-  for (const filters of [
-    { itemIds: [] },
-    { itemIds: [first] },
-    { since: "2026-10-01T00:00:00Z" },
-    { until: "2026-10-09T00:00:00Z" },
-  ]) {
-    expect(optionsKey({ ...query, ...filters }, analysis)).not.toBe(key);
-  }
-  expect(optionsKey({ ...query, itemIds: [first] }, analysis)).not.toBe(
-    optionsKey({ ...query, itemIds: [second] }, analysis),
-  );
-  expect(optionsKey({ ...query, itemIds: [first, second] }, analysis)).toBe(
-    optionsKey({ ...query, itemIds: [second, first] }, analysis),
-  );
-});

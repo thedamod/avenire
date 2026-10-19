@@ -14,7 +14,12 @@ export async function middleware(request: NextRequest) {
   );
   if (decision === "reject") return new NextResponse(null, { status: 404 });
   if (decision === "widget") return NextResponse.next();
-  if (path.startsWith("/api/") || path.startsWith("/_next/") || path === "/favicon.ico")
+  if (
+    path.startsWith("/a/") ||
+    path.startsWith("/api/") ||
+    path.startsWith("/_next/") ||
+    path === "/favicon.ico"
+  )
     return NextResponse.next();
   const authenticated =
     request.cookies.has("better-auth.session_token") ||

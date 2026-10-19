@@ -2,6 +2,8 @@
 
 import { useChat } from "@ai-sdk/react";
 import {
+  type ChatAddToolApproveResponseFunction,
+  type ChatAddToolOutputFunction,
   DefaultChatTransport,
   getToolName,
   isToolUIPart,
@@ -11,7 +13,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { THEME_TOKEN_NAMES } from "@avenire/ui/tokens";
-import { WidgetFrame } from "@avenire/viz/widget-frame";
+import { WidgetFrame } from "@avenire/ui/widget-frame";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { RuthUIMessage } from "@avenire/ai/message-types";
@@ -106,6 +108,158 @@ function AskUserCard({
   );
 }
 
+/** Renders one message's parts. Chat and the Cloud run watcher share it. */
+export function RuthMessageParts({
+  message,
+  colorScheme,
+  themeTokens,
+  addToolApprovalResponse,
+  addToolOutput,
+}: {
+  readonly message: RuthUIMessage;
+  readonly colorScheme: "light" | "dark";
+  readonly themeTokens: Record<string, string>;
+  readonly addToolApprovalResponse?: ChatAddToolApproveResponseFunction;
+  readonly addToolOutput?: ChatAddToolOutputFunction<RuthUIMessage>;
+}) {
+  function toolView(part: ToolPart, key: string) {
+    if (part.state === "approval-requested") {
+      return (
+        <div key={key} className="grid gap-3 border border-border bg-muted p-3">
+          <p className="font-medium">Approval required</p>
+          <p className="text-sm text-muted-foreground">{describeToolApproval(part)}</p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => addToolApprovalResponse?.({ id: part.approval.id, approved: true })}
+            >
+              Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => addToolApprovalResponse?.({ id: part.approval.id, approved: false })}
+            >
+              Decline
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    if (part.state === "output-denied") {
+      return (
+        <p key={key} className="text-sm text-muted-foreground">
+          Action declined.
+        </p>
+      );
+    }
+    if (
+      (part.type === "tool-write_file" ||
+        part.type === "tool-move_file" ||
+        part.type === "tool-rename_file" ||
+        part.type === "tool-archive_file") &&
+      part.state === "output-available" &&
+      "summary" in part.output
+    ) {
+      return (
+        <p key={key} className="text-sm text-muted-foreground">
+          {part.output.summary}
+        </p>
+      );
+    }
+    if (part.type === "tool-ask_user" && part.state === "input-available") {
+      return (
+        <AskUserCard
+          key={key}
+          question={part.input.question}
+          choices={part.input.choices ?? []}
+          allowCustom={part.input.allowCustom}
+          onAnswer={(answer) =>
+            addToolOutput?.({
+              tool: "ask_user",
+              toolCallId: part.toolCallId,
+              output: { answers: [answer] },
+            })
+          }
+        />
+      );
+    }
+    if (part.type === "tool-render_widget" && part.state === "output-available") {
+      return (
+        <WidgetFrame
+          key={key}
+          url={part.output.url}
+          title={part.output.title}
+          colorScheme={colorScheme}
+          tokens={themeTokens}
+        />
+      );
+    }
+    if (part.type === "tool-publish_asset" && part.state === "output-available") {
+      const asset = part.output;
+      return (
+        <div key={key} className="grid gap-2">
+          {asset.mediaType.startsWith("image/") ? (
+            <img src={asset.url} alt={asset.name} className="max-h-96 max-w-full object-contain" />
+          ) : null}
+          {asset.mediaType.startsWith("video/") ? (
+            <video
+              controls
+              src={asset.url}
+              aria-label={asset.name}
+              className="max-h-96 max-w-full"
+            />
+          ) : null}
+          <a href={`${asset.url}?download=1`} download={asset.name} className="text-sm underline">
+            {asset.name} (
+            {(asset.sizeBytes / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} KB)
+          </a>
+        </div>
+      );
+    }
+    if (part.state === "output-error") {
+      return (
+        <p key={key} className="text-xs text-destructive">
+          {getToolName(part)} failed: {part.errorText}
+        </p>
+      );
+    }
+    return (
+      <p key={key} className="text-xs text-muted-foreground">
+        {getToolName(part).replaceAll("_", " ")}
+        {part.state === "output-available" ? "" : "…"}
+      </p>
+    );
+  }
+
+  function partView(part: Part, key: string) {
+    if (isToolUIPart(part)) return toolView(part, key);
+    switch (part.type) {
+      case "text":
+        return (
+          <div key={key} className="prose prose-sm max-w-none text-foreground dark:prose-invert">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
+          </div>
+        );
+      case "data-subagent":
+        return (
+          <div key={key} className="border border-border p-3 text-sm">
+            Video agent: {part.data.stage ?? part.data.status}
+          </div>
+        );
+      case "data-cloud-run":
+        return (
+          <div key={key} className="border border-border p-3 text-sm">
+            Ruth Cloud run started.
+          </div>
+        );
+      default:
+        return null;
+    }
+  }
+  return <>{message.parts.map((part, index) => partView(part, `${message.id}-${index}`))}</>;
+}
+
 export function RuthPanel() {
   const api = useApi();
   const { resolvedTheme } = useTheme();
@@ -166,146 +320,6 @@ export function RuthPanel() {
     }
   }
 
-  function toolView(part: ToolPart, key: string) {
-    if (part.state === "approval-requested") {
-      return (
-        <div key={key} className="grid gap-3 border border-border bg-muted p-3">
-          <p className="font-medium">Approval required</p>
-          <p className="text-sm text-muted-foreground">{describeToolApproval(part)}</p>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: true })}
-            >
-              Approve
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => addToolApprovalResponse({ id: part.approval.id, approved: false })}
-            >
-              Decline
-            </Button>
-          </div>
-        </div>
-      );
-    }
-    if (part.state === "output-denied") {
-      return (
-        <p key={key} className="text-sm text-muted-foreground">
-          Action declined.
-        </p>
-      );
-    }
-    if (
-      (part.type === "tool-write_file" ||
-        part.type === "tool-move_file" ||
-        part.type === "tool-rename_file" ||
-        part.type === "tool-archive_file") &&
-      part.state === "output-available" &&
-      "summary" in part.output
-    ) {
-      return (
-        <p key={key} className="text-sm text-muted-foreground">
-          {part.output.summary}
-        </p>
-      );
-    }
-    if (part.type === "tool-ask_user" && part.state === "input-available") {
-      return (
-        <AskUserCard
-          key={key}
-          question={part.input.question}
-          choices={part.input.choices ?? []}
-          allowCustom={part.input.allowCustom}
-          onAnswer={(answer) =>
-            addToolOutput({
-              tool: "ask_user",
-              toolCallId: part.toolCallId,
-              output: { answers: [answer] },
-            })
-          }
-        />
-      );
-    }
-    if (part.type === "tool-render_widget" && part.state === "output-available") {
-      return (
-        <WidgetFrame
-          key={key}
-          url={part.output.url}
-          title={part.output.title}
-          colorScheme={colorScheme}
-          tokens={themeTokens}
-        />
-      );
-    }
-    if (part.type === "tool-sandbox_download_artifact" && part.state === "output-available") {
-      const artifact = part.output;
-      return (
-        <div key={key} className="grid gap-2">
-          {artifact.mediaType.startsWith("image/") ? (
-            <img
-              src={artifact.url}
-              alt={artifact.name}
-              className="max-h-96 max-w-full object-contain"
-            />
-          ) : null}
-          {artifact.mediaType.startsWith("video/") ? (
-            <video
-              controls
-              src={artifact.url}
-              aria-label={artifact.name}
-              className="max-h-96 max-w-full"
-            />
-          ) : null}
-          <a href={artifact.url} download={artifact.name} className="text-sm underline">
-            {artifact.name} (
-            {(artifact.size / 1024).toLocaleString(undefined, { maximumFractionDigits: 1 })} KB)
-          </a>
-        </div>
-      );
-    }
-    if (part.state === "output-error") {
-      return (
-        <p key={key} className="text-xs text-destructive">
-          {getToolName(part)} failed: {part.errorText}
-        </p>
-      );
-    }
-    return (
-      <p key={key} className="text-xs text-muted-foreground">
-        {getToolName(part).replaceAll("_", " ")}
-        {part.state === "output-available" ? "" : "…"}
-      </p>
-    );
-  }
-
-  function partView(part: Part, key: string) {
-    if (isToolUIPart(part)) return toolView(part, key);
-    switch (part.type) {
-      case "text":
-        return (
-          <div key={key} className="prose prose-sm max-w-none text-foreground dark:prose-invert">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
-          </div>
-        );
-      case "data-subagent":
-        return (
-          <div key={key} className="border border-border p-3 text-sm">
-            Video agent: {part.data.stage ?? part.data.status}
-          </div>
-        );
-      case "data-cloud-run":
-        return (
-          <div key={key} className="border border-border p-3 text-sm">
-            Ruth Cloud run started.
-          </div>
-        );
-      default:
-        return null;
-    }
-  }
-
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={column} className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
@@ -319,7 +333,13 @@ export function RuthPanel() {
             <p className="text-xs font-medium text-muted-foreground">
               {message.role === "user" ? "You" : "Ruth"}
             </p>
-            {message.parts.map((part, index) => partView(part, `${message.id}-${index}`))}
+            <RuthMessageParts
+              message={message}
+              colorScheme={colorScheme}
+              themeTokens={themeTokens}
+              addToolApprovalResponse={addToolApprovalResponse}
+              addToolOutput={addToolOutput}
+            />
           </article>
         ))}
         {error ? (

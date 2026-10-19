@@ -10,6 +10,7 @@ import { fetch as expoFetch } from "expo/fetch";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   ScrollView,
   Text,
   TextInput,
@@ -198,11 +199,17 @@ export function RuthScreen() {
         </Button>
       );
     }
-    if (part.type === "tool-sandbox_download_artifact" && part.state === "output-available") {
+    if (part.type === "tool-publish_asset" && part.state === "output-available") {
       return (
-        <Button key={key} variant="secondary" onPress={() => void openUrl(part.output.url)}>
-          {`Download ${part.output.name}`}
-        </Button>
+        <View key={key} className="gap-2">
+          {part.output.kind === "image" ? (
+            <AssetImage url={part.output.url} title={part.output.name} />
+          ) : null}
+          <Button
+            variant="secondary"
+            onPress={() => void openUrl(part.output.url)}
+          >{`Open ${part.output.name}`}</Button>
+        </View>
       );
     }
     if (part.state === "output-error") {
@@ -293,4 +300,26 @@ export function RuthScreen() {
       </View>
     </Screen>
   );
+}
+
+/** Native images can send the app session; the external browser still requires its own login. */
+function AssetImage({ url, title }: { url: string; title: string }) {
+  const [headers, setHeaders] = useState<Record<string, string>>();
+  useEffect(() => {
+    let active = true;
+    void getCookieHeader().then((value) => {
+      if (active) setHeaders(value);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  return headers ? (
+    <Image
+      source={{ uri: url, headers }}
+      accessibilityLabel={title}
+      style={{ width: "100%", height: 280 }}
+      resizeMode="contain"
+    />
+  ) : null;
 }

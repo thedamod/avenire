@@ -26,7 +26,6 @@ import { newId } from "@avenire/shared/id";
 import {
   convertToModelMessages,
   safeValidateUIMessages,
-  stepCountIs,
   streamText,
   toUIMessageStream,
   type FlexibleSchema,
@@ -52,13 +51,11 @@ import {
   RuthModels,
   RuthModelsLive,
 } from "../models/index.ts";
-import { RUTH_PROMPT } from "../prompts/ruth.ts";
+import { createAgent } from "./factory.ts";
 import { ruthToolSpecs } from "../tools/index.ts";
 import { findVisuals } from "../tools/page.ts";
 import { createRuthTools, type RuthToolServices, type RuthTurn } from "../tools/ruth.ts";
 
-/** Sandbox work alone (write, run, fix, run, download, close) takes several steps. */
-const MAX_STEPS = 20;
 const DEFAULT_THREAD_TITLE = "New thread";
 const STREAM_ERROR = "Ruth ran into a problem. Please try again.";
 
@@ -173,19 +170,19 @@ export const createRuthAgent = (options: {
   readonly fullAccess: boolean;
   readonly fast?: boolean | undefined;
 }) => {
-  const { tools, toolApproval } = createRuthTools(options.services, {
-    ...options.turn,
+  return createAgent({
+    kind: "ruth",
+    models: options.models,
+    name: options.fast === true ? RUTH_FAST_MODEL : RUTH_DEFAULT_MODEL,
     fullAccess: options.fullAccess,
+    bindTools: (images, profile) =>
+      createRuthTools(
+        options.services,
+        { ...options.turn, fullAccess: options.fullAccess },
+        images,
+        profile,
+      ),
   });
-  return {
-    model: options.models.languageModel(
-      options.fast === true ? RUTH_FAST_MODEL : RUTH_DEFAULT_MODEL,
-    ),
-    system: RUTH_PROMPT({ fullAccess: options.fullAccess }),
-    tools,
-    toolApproval,
-    stopWhen: stepCountIs(MAX_STEPS),
-  };
 };
 
 const textOf = (messages: ReadonlyArray<RuthUIMessage>): Array<string> =>
@@ -274,7 +271,7 @@ const makeRuth = Effect.gen(function* () {
             .onConflictDoUpdate({
               target: ruthMessage.id,
               set: { parts: message.parts, metadata: message.metadata ?? null },
-              setWhere: sql`${ruthMessage.userId} = ${userId} and ${ruthMessage.threadId} = ${threadId}`,
+              setWhere: and(eq(ruthMessage.userId, userId), eq(ruthMessage.threadId, threadId))!,
             }),
         ),
       { discard: true },
@@ -294,15 +291,21 @@ const makeRuth = Effect.gen(function* () {
   const chat = Effect.fn("Ruth.chat")(function* (input: ChatInput) {
     const thread = yield* findThread(input.userId, input.threadId);
     const rows = yield* loadRows(input.userId, input.threadId);
-    const history = yield* validate(
-      "read the thread history",
-      rows.map((row) => ({
-        id: row.id,
-        role: row.role,
-        parts: row.parts,
-        ...(row.metadata === null || row.metadata === undefined ? {} : { metadata: row.metadata }),
-      })),
-    );
+    // safeValidateUIMessages rejects an empty array, and a new thread has no history yet.
+    const history: Array<RuthUIMessage> =
+      rows.length === 0
+        ? []
+        : yield* validate(
+            "read the thread history",
+            rows.map((row) => ({
+              id: row.id,
+              role: row.role,
+              parts: row.parts,
+              ...(row.metadata === null || row.metadata === undefined
+                ? {}
+                : { metadata: row.metadata }),
+            })),
+          );
     const [incoming] = yield* validate("read the message", [input.message], incomingMessageSchemas);
     if (incoming === undefined) {
       return yield* new RuthError({ operation: "read the message", cause: "it is missing" });

@@ -12,10 +12,12 @@ allowBuilds:
   electron-winstaller: false
   protobufjs: false
   tesseract.js: false
+  msgpackr-extract: false
 
 catalog:
   "@ai-sdk/anthropic": 4.0.71
   "@ai-sdk/cohere": 4.0.57
+  "@ai-sdk/fireworks": 3.0.70
   "@ai-sdk/google": 4.0.90
   "@ai-sdk/groq": 4.0.57
   "@ai-sdk/openai": 4.0.83
@@ -24,6 +26,8 @@ catalog:
   "@effect/sql-pg": 4.0.0
   "@effect/tsgo": 0.48.0
   "@effect/vitest": 4.0.0
+  "@testing-library/dom": 10.4.1
+  "@testing-library/react": 16.3.3
   "@types/node": 24.12.4
   "@types/react": ~19.3.0
   "@types/react-dom": ~19.2.3
@@ -33,6 +37,7 @@ catalog:
   drizzle-orm: 0.45.3
   effect: 4.0.0
   files-sdk: 2.6.2
+  happy-dom: 20.14.5
   next: 16.3.8
   pdf-lib: 1.17.1
   posthog-js: 1.435.8
@@ -54,7 +59,8 @@ minimumReleaseAgeExclude:
 overrides:
   # vite-plus bundles its own Vitest; the patched @effect/vitest imports it instead.
   "@effect/vitest>vitest": "-"
-  effect: "catalog:"
+  # @effect/tsgo 0.48 still declares effect ^4.0.0-rc; give it our stable Effect 4.
+  "@effect/tsgo>effect": "catalog:"
   "@types/node": "catalog:"
 
 packageExtensions:
@@ -67,3 +73,4 @@ packageExtensions:
 
 patchedDependencies:
   "@effect/vitest@4.0.0": patches/@effect__vitest@4.0.0.patch
+  files-sdk@2.6.2: patches/files-sdk@2.6.2.patch

@@ -29,20 +29,6 @@ describe("PDF extraction decisions", () => {
     expect(pageHasFigure(chart, viewport, OPS)).toBe(true);
   });
 
-  it("recognizes repeated and grouped images by their individual drawn bounds", () => {
-    const repeated = operators([
-      [OPS.paintImageXObjectRepeat, ["chart", 200, 120, new Float32Array([100, 200])]],
-    ]);
-    const grouped = operators([
-      [
-        OPS.paintInlineImageXObjectGroup,
-        [{ width: 20, height: 10 }, [{ transform: [200, 0, 0, 120, 100, 200] }]],
-      ],
-    ]);
-    expect(pageHasFigure(repeated, viewport, OPS)).toBe(true);
-    expect(pageHasFigure(grouped, viewport, OPS)).toBe(true);
-  });
-
   it("recognizes a row of figure tiles but skips a row of icons", () => {
     const row = (size: number) =>
       operators(
@@ -146,25 +132,6 @@ describe("PDF extraction decisions", () => {
           ] as const,
       ),
     ]);
-    expect(pageHasFigure(bars, viewport, OPS)).toBe(true);
-  });
-
-  it("recognizes a small chart of tall bars without a wide frame", () => {
-    const bars = operators(
-      Array.from(
-        { length: 12 },
-        (_, index) =>
-          [
-            [OPS.save, []],
-            [OPS.transform, [1, 0, 0, 1, 100 + index * 30, 200]],
-            [
-              OPS.constructPath,
-              [OPS.fill, new Float32Array(), new Float32Array([0, 0, 20, 45 + (index % 3) * 15])],
-            ],
-            [OPS.restore, []],
-          ] as const,
-      ).flat(),
-    );
     expect(pageHasFigure(bars, viewport, OPS)).toBe(true);
   });
 

@@ -10,6 +10,10 @@
     "./keys": {
       "types": "./src/keys.ts",
       "import": "./src/keys.ts"
+    },
+    "./archive": {
+      "types": "./src/archive.ts",
+      "import": "./src/archive.ts"
     }
   },
   "scripts": {
@@ -18,11 +22,14 @@
   },
   "dependencies": {
     "@avenire/contracts": "workspace:*",
+    "@avenire/database": "workspace:*",
     "@aws-sdk/client-s3": "^3.913.0",
     "@aws-sdk/s3-presigned-post": "^3.913.0",
     "@aws-sdk/s3-request-presigner": "^3.913.0",
+    "drizzle-orm": "catalog:",
     "effect": "catalog:",
-    "files-sdk": "catalog:"
+    "files-sdk": "catalog:",
+    "uploadthing": "7.7.4"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

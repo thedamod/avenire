@@ -1,40 +1,76 @@
 /** The graph retrieval lane: link the query to entities, then walk relations. */
-import { ChunkId, ItemId, type GraphFact, type SearchQuery, type UserId } from "@avenire/contracts";
-import { Database } from "@avenire/database/client";
-import { type SQL, sql } from "drizzle-orm";
+import { ChunkId, FileId, type GraphFact, type SearchQuery, type UserId } from "@avenire/contracts";
+import { Database, type DatabaseClient } from "@avenire/database/client";
+import { chunk, entity, entityMention, entityRelation, file } from "@avenire/database/schema";
+import {
+  and,
+  cosineDistance,
+  desc,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNotNull,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { alias, unionAll } from "drizzle-orm/pg-core";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { candidateFilter } from "../retrieval/lanes.ts";
-import { toVectorLiteral } from "../text.ts";
 import { entityKey, GraphError } from "./extract.ts";
 import { advanceFrontier, type GraphEdge, mergeSeeds, rankGraph } from "./rank.ts";
 
 /**
- * A search narrowed to items, times, kinds or clusters keeps the walk inside them, so
+ * A search narrowed to files, times, kinds or folders keeps the walk inside them, so
  * out-of-scope entities don't use up its budget. Unscoped searches skip these joins:
  * hits are filtered when their chunks are hydrated either way.
  */
 const isScoped = (query: SearchQuery): boolean =>
-  query.itemIds !== undefined ||
+  query.fileIds !== undefined ||
   query.since !== undefined ||
   query.until !== undefined ||
   (query.kinds?.length ?? 0) > 0 ||
-  (query.clusterIds?.length ?? 0) > 0;
+  (query.folderIds?.length ?? 0) > 0;
 
-const chunkInScope = (userId: UserId, query: SearchQuery, chunkId: SQL): SQL =>
+const chunkInScope = (
+  db: DatabaseClient,
+  userId: UserId,
+  query: SearchQuery,
+  chunkId: typeof entityMention.chunkId | typeof entityRelation.chunkId,
+): SQL | undefined =>
   isScoped(query)
-    ? sql` AND EXISTS (SELECT 1 FROM chunk c JOIN item i ON i.id = c.item_id AND i.user_id = c.user_id
-        WHERE c.id = ${chunkId} AND ${candidateFilter(userId, query)})`
-    : sql``;
-
-const mentionedInScope = (userId: UserId, query: SearchQuery): SQL =>
+    ? exists(
+        db
+          .select({ id: chunk.id })
+          .from(chunk)
+          .innerJoin(file, and(eq(file.id, chunk.fileId), eq(file.userId, chunk.userId)))
+          .where(and(eq(chunk.id, chunkId), candidateFilter(userId, query))),
+      )
+    : undefined;
+const mentionedInScope = (
+  db: DatabaseClient,
+  userId: UserId,
+  query: SearchQuery,
+): SQL | undefined =>
   isScoped(query)
-    ? sql` AND EXISTS (SELECT 1 FROM entity_mention m
-        WHERE m.entity_id = e.id AND m.user_id = ${userId}${chunkInScope(userId, query, sql`m.chunk_id`)})`
-    : sql``;
+    ? exists(
+        db
+          .select({ entityId: entityMention.entityId })
+          .from(entityMention)
+          .where(
+            and(
+              eq(entityMention.entityId, entity.id),
+              eq(entityMention.userId, userId),
+              chunkInScope(db, userId, query, entityMention.chunkId),
+            ),
+          ),
+      )
+    : undefined;
 
 export interface GraphMatches {
   /** Best first; chunks connecting several linked entities rank highest. */
@@ -68,18 +104,12 @@ const EdgeRow = Schema.Struct({
   predicate: Schema.String,
   weight: Schema.Number,
   chunkId: Schema.String,
-  itemId: Schema.String,
+  fileId: Schema.String,
 });
 const MentionRow = Schema.Struct({ entityId: Schema.String, chunkId: Schema.String });
 const decodeSeeds = Schema.decodeUnknownEffect(Schema.Array(SeedRow));
 const decodeEdges = Schema.decodeUnknownEffect(Schema.Array(EdgeRow));
 const decodeMentions = Schema.decodeUnknownEffect(Schema.Array(MentionRow));
-
-const idList = (ids: ReadonlyArray<string>) =>
-  sql.join(
-    ids.map((id) => sql`${id}`),
-    sql`, `,
-  );
 
 /** Linked entities at most; the walk starts from these. */
 const MAX_SEEDS = 10;
@@ -95,7 +125,7 @@ export const GraphSearchLive = Layer.effect(
   Effect.gen(function* () {
     const database = yield* Database;
 
-    /** Entities named in the query (whole words) or close to it in embedding space. */
+    /** Entities named in the query or close to it in embedding space. */
     const findSeeds = (
       userId: UserId,
       text: string,
@@ -104,56 +134,114 @@ export const GraphSearchLive = Layer.effect(
     ) =>
       database
         .useTransaction(async (tx) => {
-          // Iterative scans keep the HNSW search going past other users' entities.
-          await tx.execute(sql`SELECT set_config('hnsw.iterative_scan', 'relaxed_order', true),
-            set_config('hnsw.ef_search', '200', true)`);
-          return tx.execute(sql`
-            WITH nearest AS MATERIALIZED (
-              SELECT e.id, e.embedding <=> ${toVectorLiteral(vector)}::vector AS distance
-              FROM entity AS e
-              WHERE e.user_id = ${userId} AND e.embedding IS NOT NULL${mentionedInScope(userId, query)}
-              ORDER BY distance LIMIT ${SEMANTIC_SEEDS}
-            )
-            SELECT e.id, 1.0::float8 AS score FROM entity AS e
-            WHERE e.user_id = ${userId} AND length(e.key) >= 3${mentionedInScope(userId, query)}
-              AND position(' ' || e.key || ' ' in ${` ${entityKey(text)} `}) > 0
-            UNION ALL
-            SELECT id, (1 - distance)::float8 AS score FROM nearest
-            WHERE 1 - distance >= ${MIN_SEED_SIMILARITY}`);
+          await tx.select({
+            scan: sql`set_config('hnsw.iterative_scan', 'relaxed_order', true)`,
+            ef: sql`set_config('hnsw.ef_search', '200', true)`,
+          });
+          const distance = cosineDistance(entity.embedding, [...vector]);
+          const nearest = tx.$with("nearest").as(
+            tx
+              .select({ id: entity.id, distance: distance.as("distance") })
+              .from(entity)
+              .where(
+                and(
+                  eq(entity.userId, userId),
+                  isNotNull(entity.embedding),
+                  mentionedInScope(tx as DatabaseClient, userId, query),
+                ),
+              )
+              .orderBy(distance)
+              .limit(SEMANTIC_SEEDS),
+          );
+          const named = tx
+            .select({ id: entity.id, score: sql<number>`1.0::float8`.as("score") })
+            .from(entity)
+            .where(
+              and(
+                eq(entity.userId, userId),
+                sql`length(${entity.key}) >= 3`,
+                mentionedInScope(tx as DatabaseClient, userId, query),
+                sql`position(' ' || ${entity.key} || ' ' in ${` ${entityKey(text)} `}) > 0`,
+              ),
+            );
+          const similar = tx
+            .select({
+              id: nearest.id,
+              score: sql<number>`(1 - ${nearest.distance})::float8`.as("score"),
+            })
+            .from(nearest)
+            .where(gte(sql<number>`1 - ${nearest.distance}`, MIN_SEED_SIMILARITY));
+          const combined = tx.$with("combined").as(unionAll(named, similar));
+          return tx
+            .with(nearest, combined)
+            .select({ id: combined.id, score: combined.score })
+            .from(combined);
         })
         .pipe(
           Effect.flatMap(decodeSeeds),
           Effect.map((seeds) => mergeSeeds(seeds, MAX_SEEDS)),
         );
 
+    const source = alias(entity, "source");
+    const target = alias(entity, "target");
     const edgesTouching = (userId: UserId, entityIds: ReadonlyArray<string>, query: SearchQuery) =>
       database
         .use((db) =>
-          db.execute(sql`
-            SELECT r.id, r.source_id AS "sourceId", r.target_id AS "targetId",
-              source.name AS "sourceName", target.name AS "targetName",
-              r.predicate, r.weight::float8 AS weight,
-              r.chunk_id AS "chunkId", r.item_id AS "itemId"
-            FROM entity_relation AS r
-            JOIN entity AS source ON source.id = r.source_id
-            JOIN entity AS target ON target.id = r.target_id
-            WHERE r.user_id = ${userId}${chunkInScope(userId, query, sql`r.chunk_id`)}
-              AND (r.source_id IN (${idList(entityIds)}) OR r.target_id IN (${idList(entityIds)}))
-            ORDER BY r.weight DESC, r.id LIMIT ${EDGES_PER_HOP}`),
+          db
+            .select({
+              id: entityRelation.id,
+              sourceId: entityRelation.sourceId,
+              targetId: entityRelation.targetId,
+              sourceName: source.name,
+              targetName: target.name,
+              predicate: entityRelation.predicate,
+              weight: sql<number>`${entityRelation.weight}::float8`,
+              chunkId: entityRelation.chunkId,
+              fileId: entityRelation.fileId,
+            })
+            .from(entityRelation)
+            .innerJoin(source, eq(source.id, entityRelation.sourceId))
+            .innerJoin(target, eq(target.id, entityRelation.targetId))
+            .where(
+              and(
+                eq(entityRelation.userId, userId),
+                chunkInScope(db, userId, query, entityRelation.chunkId),
+                or(
+                  inArray(entityRelation.sourceId, entityIds),
+                  inArray(entityRelation.targetId, entityIds),
+                ),
+              ),
+            )
+            .orderBy(desc(entityRelation.weight), entityRelation.id)
+            .limit(EDGES_PER_HOP),
         )
         .pipe(Effect.flatMap(decodeEdges));
 
     const mentionsOf = (userId: UserId, entityIds: ReadonlyArray<string>, query: SearchQuery) =>
       database
-        .use((db) =>
-          db.execute(sql`
-            SELECT "entityId", "chunkId" FROM (
-              SELECT m.entity_id AS "entityId", m.chunk_id AS "chunkId",
-                row_number() OVER (PARTITION BY m.entity_id ORDER BY m.chunk_id) AS rank
-              FROM entity_mention AS m
-              WHERE m.user_id = ${userId} AND m.entity_id IN (${idList(entityIds)})${chunkInScope(userId, query, sql`m.chunk_id`)}
-            ) AS ranked WHERE rank <= ${MENTIONS_PER_ENTITY}`),
-        )
+        .use((db) => {
+          const ranked = db
+            .select({
+              entityId: entityMention.entityId,
+              chunkId: entityMention.chunkId,
+              rank: sql<number>`row_number() over (partition by ${entityMention.entityId} order by ${entityMention.chunkId})`.as(
+                "rank",
+              ),
+            })
+            .from(entityMention)
+            .where(
+              and(
+                eq(entityMention.userId, userId),
+                inArray(entityMention.entityId, entityIds),
+                chunkInScope(db, userId, query, entityMention.chunkId),
+              ),
+            )
+            .as("ranked");
+          return db
+            .select({ entityId: ranked.entityId, chunkId: ranked.chunkId })
+            .from(ranked)
+            .where(sql`${ranked.rank} <= ${MENTIONS_PER_ENTITY}`);
+        })
         .pipe(Effect.flatMap(decodeMentions));
 
     const search = Effect.fn("GraphSearch.search")(
@@ -181,7 +269,7 @@ export const GraphSearchLive = Layer.effect(
             relation: edge.predicate,
             target: edge.targetName,
             chunkId: ChunkId.make(edge.chunkId),
-            itemId: ItemId.make(edge.itemId),
+            fileId: FileId.make(edge.fileId),
           })),
         };
       },

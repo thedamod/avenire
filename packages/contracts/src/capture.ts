@@ -2,7 +2,7 @@
  * Capture - what the desktop hotkey observed, before policy, extraction or upload.
  *
  * A snapshot is immutable provenance: it records what was on screen when the
- * hotkey fired. Turning it into inbox items is a separate, idempotent step keyed
+ * hotkey fired. Turning it into inbox files is a separate, idempotent step keyed
  * by each candidate's `dedupeKey`.
  */
 import * as Schema from "effect/Schema";

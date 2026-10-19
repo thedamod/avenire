@@ -42,30 +42,30 @@ export const weightedRrf = (
 };
 
 /**
- * Keeps ranked entries in order, at most `maxPerItem` slots per item, until `limit`.
- * An entry that `sharesSlot` with one already kept from its item doesn't take a new
- * slot. Entries whose item can't be resolved are skipped.
+ * Keeps ranked entries in order, at most `maxPerFile` slots per file, until `limit`.
+ * An entry that `sharesSlot` with one already kept from its file doesn't take a new
+ * slot. Entries whose file can't be resolved are skipped.
  */
-export const capPerItem = <T extends { readonly id: string }>(
+export const capPerFile = <T extends { readonly id: string }>(
   ranked: ReadonlyArray<T>,
-  itemOf: (id: string) => string | undefined,
+  fileOf: (id: string) => string | undefined,
   limit: number,
-  maxPerItem = 2,
+  maxPerFile = 2,
   sharesSlot: (a: T, b: T) => boolean = () => false,
 ): ReadonlyArray<T> => {
-  const keptByItem = new Map<string, Array<T>>();
+  const keptByFile = new Map<string, Array<T>>();
   const slots = new Map<string, number>();
   const kept: Array<T> = [];
   for (const entry of ranked) {
     if (kept.length >= limit) break;
-    const itemId = itemOf(entry.id);
-    if (itemId === undefined) continue;
-    const siblings = keptByItem.get(itemId) ?? [];
+    const fileId = fileOf(entry.id);
+    if (fileId === undefined) continue;
+    const siblings = keptByFile.get(fileId) ?? [];
     const free = siblings.some((sibling) => sharesSlot(sibling, entry));
-    const used = slots.get(itemId) ?? 0;
-    if (!free && used >= maxPerItem) continue;
-    if (!free) slots.set(itemId, used + 1);
-    keptByItem.set(itemId, [...siblings, entry]);
+    const used = slots.get(fileId) ?? 0;
+    if (!free && used >= maxPerFile) continue;
+    if (!free) slots.set(fileId, used + 1);
+    keptByFile.set(fileId, [...siblings, entry]);
     kept.push(entry);
   }
   return kept;

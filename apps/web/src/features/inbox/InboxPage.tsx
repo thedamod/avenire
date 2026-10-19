@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import type { Cluster, IngestionJob, Item } from "@avenire/contracts";
+import type { Folder, IngestionJob, LibraryFile } from "@avenire/contracts";
 import { call } from "@avenire/client-runtime/rpc";
 import { Badge } from "@avenire/ui/components/badge";
 import { Button } from "@avenire/ui/components/button";
@@ -11,20 +11,17 @@ import { getCaptureReceipt, subscribeCaptureReceipt } from "~/features/capture/r
 export function InboxPage() {
   const api = useApi();
   const {
-    data: items,
+    data: files,
     loading,
     error,
     refetch,
-  } = useQuery((client) => client["library.listItems"]({ placement: "inbox" }), "inbox-items");
-  const { data: clusters } = useQuery(
-    (client) => client["library.listClusters"](),
-    "inbox-clusters",
-  );
+  } = useQuery((client) => client["library.listFiles"]({ placement: "inbox" }), "inbox-files");
+  const { data: folders } = useQuery((client) => client["library.listFolders"](), "inbox-folders");
   const [jobsById, setJobsById] = useState<ReadonlyMap<IngestionJob["id"], IngestionJob>>(
     () => new Map(),
   );
-  const [selected, setSelected] = useState<ReadonlySet<Item["id"]>>(() => new Set());
-  const [clusterIds, setClusterIds] = useState<ReadonlyArray<Cluster["id"]>>([]);
+  const [selected, setSelected] = useState<ReadonlySet<LibraryFile["id"]>>(() => new Set());
+  const [folderIds, setFolderIds] = useState<ReadonlyArray<Folder["id"]>>([]);
   const [actionError, setActionError] = useState<string>();
   const receipt = useSyncExternalStore(subscribeCaptureReceipt, getCaptureReceipt, () => undefined);
 
@@ -35,15 +32,15 @@ export function InboxPage() {
     (cause) => setActionError(`Live updates stopped: ${errorMessage(cause)}`),
   );
   async function fileSelected() {
-    if (clusterIds.length === 0) {
+    if (folderIds.length === 0) {
       setActionError("Choose at least one cluster.");
       return;
     }
     setActionError(undefined);
     try {
       await Promise.all(
-        [...selected].map((itemId) =>
-          call(api, (client) => client["library.fileItem"]({ itemId, clusterIds })),
+        [...selected].map((fileId) =>
+          call(api, (client) => client["library.placeFile"]({ fileId, folderIds })),
         ),
       );
       setSelected(new Set());
@@ -53,10 +50,10 @@ export function InboxPage() {
     }
   }
 
-  async function togglePause(itemId: Item["id"], paused: boolean) {
+  async function togglePause(fileId: LibraryFile["id"], paused: boolean) {
     try {
       const job = await call(api, (client) =>
-        client["library.setIngestionPaused"]({ itemId, paused }),
+        client["library.setIngestionPaused"]({ fileId, paused }),
       );
       setJobsById((previous) => new Map(previous).set(job.id, job));
     } catch (cause) {
@@ -64,11 +61,11 @@ export function InboxPage() {
     }
   }
 
-  function toggleItem(itemId: Item["id"]) {
+  function toggleFile(fileId: LibraryFile["id"]) {
     setSelected((previous) => {
       const next = new Set(previous);
-      if (next.has(itemId)) next.delete(itemId);
-      else next.add(itemId);
+      if (next.has(fileId)) next.delete(fileId);
+      else next.add(fileId);
       return next;
     });
   }
@@ -87,17 +84,17 @@ export function InboxPage() {
             Latest capture · {new Date(receipt.capturedAt).toLocaleString()}
           </h2>
           <ul className="mt-2 grid gap-1 text-sm text-muted-foreground">
-            {receipt.items.map((item) => (
-              <li key={item.id}>Captured: {item.title}</li>
+            {receipt.files.map((file) => (
+              <li key={file.id}>Captured: {file.title}</li>
             ))}
-            {receipt.skipped.map((item, index) => (
-              <li key={`${item.title}-${index}`}>
-                Skipped {item.title}: {item.reason}
+            {receipt.skipped.map((file, index) => (
+              <li key={`${file.title}-${index}`}>
+                Skipped {file.title}: {file.reason}
               </li>
             ))}
-            {receipt.blocked.map((item, index) => (
-              <li key={`${item.title}-${index}`}>
-                Blocked {item.title}: {item.category}
+            {receipt.blocked.map((file, index) => (
+              <li key={`${file.title}-${index}`}>
+                Blocked {file.title}: {file.category}
               </li>
             ))}
           </ul>
@@ -109,24 +106,24 @@ export function InboxPage() {
           <select
             className="h-9 min-w-56 border border-input bg-background px-2"
             multiple
-            value={clusterIds}
+            value={folderIds}
             onChange={(event) =>
-              setClusterIds(
+              setFolderIds(
                 Array.from(event.target.selectedOptions).flatMap(
-                  (option) => clusters?.find((cluster) => cluster.id === option.value)?.id ?? [],
+                  (option) => folders?.find((folder) => folder.id === option.value)?.id ?? [],
                 ),
               )
             }
           >
-            {clusters?.map((cluster) => (
-              <option key={cluster.id} value={cluster.id}>
-                {cluster.name}
+            {folders?.map((folder) => (
+              <option key={folder.id} value={folder.id}>
+                {folder.name}
               </option>
             ))}
           </select>
         </label>
         <Button onClick={() => void fileSelected()} disabled={selected.size === 0}>
-          File {selected.size || "selected"} items
+          File {selected.size || "selected"} files
         </Button>
       </div>
       {loading ? <p className="py-8 text-sm text-muted-foreground">Loading inbox…</p> : null}
@@ -140,25 +137,25 @@ export function InboxPage() {
           {actionError}
         </p>
       ) : null}
-      {!loading && items?.length === 0 ? (
+      {!loading && files?.length === 0 ? (
         <p className="py-8 text-sm text-muted-foreground">
           Your inbox is clear. New captures will show up here.
         </p>
       ) : null}
       <ul className="divide-y divide-border">
-        {items?.map((item) => {
-          const job = [...jobsById.values()].find((entry) => entry.itemId === item.id);
+        {files?.map((file) => {
+          const job = [...jobsById.values()].find((entry) => entry.fileId === file.id);
           const status = job?.status ?? "queued";
           return (
-            <li key={item.id} className="flex items-center gap-3 py-4">
+            <li key={file.id} className="flex items-center gap-3 py-4">
               <input
                 type="checkbox"
-                aria-label={`Select ${item.title}`}
-                checked={selected.has(item.id)}
-                onChange={() => toggleItem(item.id)}
+                aria-label={`Select ${file.title}`}
+                checked={selected.has(file.id)}
+                onChange={() => toggleFile(file.id)}
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{item.title}</p>
+                <p className="truncate text-sm font-medium">{file.title}</p>
                 <p className="text-sm text-muted-foreground">
                   {status}
                   {job?.error ? ` · ${job.error}` : ""}
@@ -169,7 +166,7 @@ export function InboxPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => void togglePause(item.id, status !== "paused")}
+                  onClick={() => void togglePause(file.id, status !== "paused")}
                 >
                   {status === "paused" ? "Resume" : "Pause"}
                 </Button>

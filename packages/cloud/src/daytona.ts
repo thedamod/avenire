@@ -1,4 +1,4 @@
-import { Daytona } from "@daytonaio/sdk";
+import { Daytona, DaytonaNotFoundError } from "@daytonaio/sdk";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -26,11 +26,16 @@ export class SandboxTimeout extends Schema.TaggedError<SandboxTimeout>()("Sandbo
 }) {
   override get message(): string {
     if (this.operation === "lifetime") {
-      return "The sandbox hit its 60-minute lifetime limit and was deleted. The next call starts a fresh sandbox if your daily allowance permits.";
+      return `The sandbox hit its ${this.timeoutSeconds / 60}-minute lifetime limit and was deleted. The next call starts a fresh sandbox if your daily allowance permits.`;
     }
     return `Sandbox ${this.operation} timed out after ${this.timeoutSeconds} seconds`;
   }
 }
+
+export class SandboxInputRejected extends Schema.TaggedError<SandboxInputRejected>()(
+  "SandboxInputRejected",
+  { reason: Schema.String },
+) {}
 
 export class DaytonaClient extends Context.Service<DaytonaClient, Daytona>()(
   "avenire/cloud/DaytonaClient",
@@ -73,3 +78,5 @@ export const requireSuccess =
 
 export const decodeBase64 = (encoded: string): Uint8Array =>
   Uint8Array.from(atob(encoded.replace(/^data:[^;]+;base64,/, "")), (char) => char.charCodeAt(0));
+
+export const isDaytonaNotFound = (cause: unknown): boolean => cause instanceof DaytonaNotFoundError;

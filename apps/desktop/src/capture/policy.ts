@@ -1,9 +1,9 @@
 import type { BlockedCategory, CaptureSnapshot } from "@avenire/contracts";
 
-export type BlockedItem = { readonly title: string; readonly category: BlockedCategory };
+export type BlockedFile = { readonly title: string; readonly category: BlockedCategory };
 export type PolicyResult = {
   readonly snapshot: CaptureSnapshot;
-  readonly blocked: readonly BlockedItem[];
+  readonly blocked: readonly BlockedFile[];
 };
 type Rule = { readonly category: BlockedCategory; readonly test: (value: string) => boolean };
 
@@ -71,7 +71,7 @@ function blockedCategory(
 }
 
 export function applyPolicy(snapshot: CaptureSnapshot): PolicyResult {
-  const blocked: BlockedItem[] = [];
+  const blocked: BlockedFile[] = [];
   const tabs = snapshot.tabs.filter((tab) => {
     const category = blockedCategory(tab.finalUrl ?? tab.url, "", tab.title);
     if (category) blocked.push({ title: tab.title, category });

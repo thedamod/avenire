@@ -3,11 +3,11 @@
  * `FOR UPDATE SKIP LOCKED` and hold a lease (`locked_until`), so several worker
  * processes can run side by side and a crashed worker's jobs are picked up again.
  */
-import { IngestionJobId, type IngestionStatus, ItemId, NotFound, UserId } from "@avenire/contracts";
-import { Database } from "@avenire/database/client";
-import { ingestionJob, item } from "@avenire/database/schema";
+import { IngestionJobId, type IngestionStatus, FileId, NotFound, UserId } from "@avenire/contracts";
+import { Database, type DatabaseClient } from "@avenire/database/client";
+import { ingestionJob, file } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import * as Cause from "effect/Cause";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -26,42 +26,38 @@ const IN_PROGRESS: ReadonlyArray<IngestionStatus> = [
   "chunking",
   "embedding",
   "graphing",
-  "clustering",
+  "foldering",
 ];
-const IN_PROGRESS_SQL = sql.join(
-  IN_PROGRESS.map((status) => sql`${status}`),
-  sql`, `,
-);
 
 /** Minutes to wait before retrying a job that failed on its `attempts`-th try. */
 export const retryDelayMinutes = (attempts: number): number => 2 ** attempts;
 
-/** Queue (or re-queue) an item for ingestion. Fails with NotFound if the user doesn't own it. */
+/** Queue (or re-queue) an file for ingestion. Fails with NotFound if the user doesn't own it. */
 export const enqueueIngestion = Effect.fn("Ingestion.enqueue")(function* (
   userId: UserId,
-  itemId: ItemId,
+  fileId: FileId,
 ) {
   const database = yield* Database;
   const owned = yield* database.use((db) =>
-    db.query.item.findFirst({
+    db.query.file.findFirst({
       columns: { id: true },
-      where: and(eq(item.id, itemId), eq(item.userId, userId)),
+      where: and(eq(file.id, fileId), eq(file.userId, userId)),
     }),
   );
-  if (owned === undefined) return yield* new NotFound({ entity: "Item", id: itemId });
+  if (owned === undefined) return yield* new NotFound({ entity: "File", id: fileId });
   const id = yield* newId(IngestionJobId);
   const reset = { status: "queued" as const, attempts: 0, error: null };
   yield* database.use((db) =>
     db
       .insert(ingestionJob)
-      .values({ id, userId, itemId, ...reset })
+      .values({ id, userId, fileId, ...reset })
       .onConflictDoUpdate({
-        target: ingestionJob.itemId,
+        target: ingestionJob.fileId,
         set: {
           ...reset,
           generation: sql`${ingestionJob.generation} + 1`,
           // A running job keeps its lease, so the rerun waits for it instead of racing it.
-          lockedUntil: sql`CASE WHEN ${ingestionJob.status} IN (${IN_PROGRESS_SQL})
+          lockedUntil: sql`CASE WHEN ${inArray(ingestionJob.status, IN_PROGRESS)}
             THEN ${ingestionJob.lockedUntil} ELSE NULL END`,
           updatedAt: sql`now()`,
         },
@@ -69,11 +65,11 @@ export const enqueueIngestion = Effect.fn("Ingestion.enqueue")(function* (
   );
 });
 
-/** A job as returned by the claim query (raw SQL, so columns are aliased to camelCase). */
+/** A job returned by the claim update. */
 const ClaimedJob = Schema.Struct({
   id: IngestionJobId,
   userId: UserId,
-  itemId: ItemId,
+  fileId: FileId,
   generation: Schema.Number,
   attempts: Schema.Number,
 });
@@ -84,22 +80,39 @@ const decodeClaimed = Schema.decodeUnknownEffect(Schema.Array(ClaimedJob));
  * Leases up to `limit` jobs: queued ones whose retry delay has passed, plus
  * in-progress ones whose lease expired (their worker died).
  */
-const claimJobs = (limit: number) => sql`
-  WITH candidates AS (
-    SELECT id FROM ingestion_job
-    WHERE (status = 'queued' AND (locked_until IS NULL OR locked_until < now()))
-       OR (status IN (${IN_PROGRESS_SQL}) AND locked_until < now())
-    ORDER BY created_at
-    FOR UPDATE SKIP LOCKED
-    LIMIT ${limit}
-  )
-  UPDATE ingestion_job AS job
-  SET status = 'extracting', locked_until = now() + interval '10 minutes',
-      attempts = job.attempts + 1, updated_at = now()
-  FROM candidates WHERE job.id = candidates.id
-  RETURNING job.id, job.user_id AS "userId", job.item_id AS "itemId", job.generation,
-    job.attempts
-`;
+export const claimJobs = (db: DatabaseClient, limit: number) => {
+  const due = db
+    .select({ id: ingestionJob.id })
+    .from(ingestionJob)
+    .where(
+      or(
+        and(
+          eq(ingestionJob.status, "queued"),
+          or(isNull(ingestionJob.lockedUntil), lt(ingestionJob.lockedUntil, sql`now()`)),
+        ),
+        and(inArray(ingestionJob.status, IN_PROGRESS), lt(ingestionJob.lockedUntil, sql`now()`)),
+      ),
+    )
+    .orderBy(ingestionJob.createdAt)
+    .limit(limit)
+    .for("update", { skipLocked: true });
+  return db
+    .update(ingestionJob)
+    .set({
+      status: "extracting",
+      lockedUntil: sql`now() + interval '10 minutes'`,
+      attempts: sql`${ingestionJob.attempts} + 1`,
+      updatedAt: sql`now()`,
+    })
+    .where(inArray(ingestionJob.id, due))
+    .returning({
+      id: ingestionJob.id,
+      userId: ingestionJob.userId,
+      fileId: ingestionJob.fileId,
+      generation: ingestionJob.generation,
+      attempts: ingestionJob.attempts,
+    });
+};
 
 const failureReason = (cause: Cause.Cause<unknown>): string => {
   const error = Cause.squash(cause);
@@ -116,7 +129,7 @@ export const IngestionWorkerLive = Layer.effectDiscard(
     );
 
     const claim = database
-      .use((db) => db.execute(claimJobs(concurrency)))
+      .use((db) => claimJobs(db, concurrency))
       .pipe(Effect.flatMap(decodeClaimed), Effect.withSpan("IngestionWorker.claim"));
 
     /** Re-queue with exponential backoff, or fail the job once it is out of attempts. */
@@ -137,7 +150,7 @@ export const IngestionWorkerLive = Layer.effectDiscard(
       );
     };
 
-    /** If the item was re-enqueued while this run held the lease, hand the lease back. */
+    /** If the file was re-enqueued while this run held the lease, hand the lease back. */
     const releaseIfSuperseded = (job: ClaimedJob) =>
       database
         .use((db) =>

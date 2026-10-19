@@ -1,18 +1,29 @@
 /** Bind the shared tool backbone to one request; local tools supply skills and page context. */
 import type { PageContext, ThreadId, UserId } from "@avenire/contracts";
 import type { ChatSandboxes } from "@avenire/cloud/chat-sandbox";
-import { toAiSdkTools } from "@avenire/ruth-kit/ai-sdk";
-import type { ArtifactStore } from "@avenire/ruth-kit/artifacts";
-import type { AgentContext } from "@avenire/ruth-kit/core";
-import { sandboxToolRegistry } from "@avenire/ruth-kit/sandbox-tools";
-import type { RuthKitServices } from "@avenire/ruth-kit/tools";
+import { WIDGET_THEME_TOKENS } from "@avenire/ui/tokens";
+import type { ImageTransport } from "./images.ts";
+import { toAiSdkTools } from "./ai-sdk.ts";
+import type { AssetStore } from "../outputs/assets.ts";
+import type { AgentContext } from "./core.ts";
+import { sandboxToolRegistry } from "./sandbox-tools.ts";
+import type { RuthKitServices } from "./library.ts";
 import { tool, type ToolSet } from "ai";
 import type * as Context from "effect/Context";
 import { askUserSpec, getPageContextSpec, type PageContextResult, ruthToolSpecs } from "./index.ts";
 import { VISUAL_BUDGETS, VISUAL_RUNTIME } from "./page.ts";
 import { loadSkillTool } from "./skills.ts";
 
-export type RuthToolServices = RuthKitServices | ChatSandboxes | ArtifactStore;
+import { makeComputerRegistry, type ComputerServices } from "./computer.ts";
+import { recordingRegistry } from "./recording.ts";
+import type { ScreenProfile } from "@avenire/cloud/screen";
+import type { WidgetPreview } from "./preview.ts";
+export type RuthToolServices =
+  | ComputerServices
+  | WidgetPreview
+  | RuthKitServices
+  | ChatSandboxes
+  | AssetStore;
 export interface RuthTurn {
   readonly userId: UserId;
   readonly threadId: ThreadId;
@@ -24,7 +35,12 @@ export interface RuthTurn {
 export const chatToolNames = Object.keys(ruthToolSpecs).filter(
   (name) => !["load_skill", "get_page_context", "ask_user"].includes(name),
 );
-export const createRuthTools = (services: Context.Context<RuthToolServices>, turn: RuthTurn) => {
+export const createRuthTools = (
+  services: Context.Context<RuthToolServices>,
+  turn: RuthTurn,
+  images?: ImageTransport,
+  profile?: ScreenProfile,
+) => {
   const ctx: AgentContext = {
     agent: "ruth",
     userId: turn.userId,
@@ -37,7 +53,12 @@ export const createRuthTools = (services: Context.Context<RuthToolServices>, tur
     chatToolNames,
     ctx,
     services,
-    sandboxToolRegistry,
+    {
+      ...sandboxToolRegistry,
+      ...makeComputerRegistry(profile, 100).registry,
+      ...recordingRegistry,
+    },
+    images,
   );
   const boundTools: ToolSet = {
     ...tools,
@@ -46,6 +67,14 @@ export const createRuthTools = (services: Context.Context<RuthToolServices>, tur
       ...getPageContextSpec,
       execute: (): PageContextResult => ({
         ...turn.page,
+        themeTokens: {
+          ...turn.page.themeTokens,
+          ...WIDGET_THEME_TOKENS[turn.page.colorScheme],
+        },
+        fonts: {
+          ...turn.page.fonts,
+          mono: WIDGET_THEME_TOKENS[turn.page.colorScheme]["--font-mono"],
+        },
         runtime: VISUAL_RUNTIME,
         budgets: VISUAL_BUDGETS,
         existingVisuals: turn.existingVisuals,

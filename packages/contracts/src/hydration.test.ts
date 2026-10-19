@@ -66,7 +66,7 @@ describe("Cloud task contracts", () => {
       startedAt: null,
       finishedAt: null,
       error: null,
-      artifacts: [],
+      assets: [],
     };
     expect(Schema.decodeUnknownSync(CloudRun)(input)).toEqual(input);
     for (const field of ["taskId", "taskTitle", "scheduledFor", "attempt", "summary"]) {

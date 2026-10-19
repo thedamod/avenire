@@ -21,6 +21,7 @@ interface SkillEntry {
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const SECTIONS_DIR = path.join(ROOT_DIR, "sections");
 export const OUTPUT_FILE = path.join(ROOT_DIR, "skills.ts");
+const KIT_API_FILE = path.resolve(ROOT_DIR, "../../../widget-kit/API.md");
 
 const parseFrontmatter = (raw: string) => {
   const attributes: { name?: string; description?: string } = {};
@@ -73,9 +74,21 @@ const readEntries = async (): Promise<ReadonlyArray<SkillEntry>> => {
         .map((file) => [section, file] as const),
     ),
   );
-  const entries = await Promise.all(
+  const sectionEntries = await Promise.all(
     files.flat().map(([section, file]) => readEntry(section, file)),
   );
+  const kitApi = await readFile(KIT_API_FILE, "utf8");
+  const entries: ReadonlyArray<SkillEntry> = [
+    ...sectionEntries,
+    {
+      id: "kit-api",
+      title: "Ruth widget kits",
+      description: "Use the exact math, isometric SVG and WebGL kit exports in standalone widgets.",
+      section: "tool-guidelines",
+      path: path.relative(ROOT_DIR, KIT_API_FILE).split(path.sep).join("/"),
+      content: `---\nname: kit-api\ndescription: Use the exact math, isometric SVG and WebGL kit exports in standalone widgets.\n---\n\nUse this source for API signatures. Its literal demo colours show kit mechanics; use Avenire tokens from \`style\` in Ruth widgets.\n\n${kitApi}`,
+    },
+  ];
   const duplicate = entries.find((entry, index) =>
     entries.some((other, otherIndex) => otherIndex < index && other.id === entry.id),
   );
@@ -122,6 +135,7 @@ export const renderSkillsModule = async (): Promise<string> => {
     `export const AVAILABLE_SKILLS = ${JSON.stringify(entries.map((entry) => entry.id))} as const;`,
     `export const STUDY_SKILLS = ${idsIn("study-guidelines")} as const;`,
     `export const VISUAL_SKILLS = ${idsIn("visual-guidelines")} as const;`,
+    `export const VISUAL_EXAMPLE_SKILLS = ${idsIn("visual-examples")} as const;`,
     `export const TOOL_SKILLS = ${idsIn("tool-guidelines")} as const;`,
     "",
   ].join("\n");

@@ -1,12 +1,12 @@
 /**
- * Ingestion - turning a stored item into searchable chunks.
+ * Ingestion - turning a stored file into searchable chunks.
  *
  * Status is a strict state machine. Workers claim `queued` jobs; each stage
  * transition is persisted so a crashed worker resumes instead of duplicating work.
  */
 import * as Schema from "effect/Schema";
 
-import { IngestionJobId, ItemId } from "./ids.ts";
+import { IngestionJobId, FileId } from "./ids.ts";
 
 export const IngestionStatus = Schema.Literals([
   "queued",
@@ -14,7 +14,7 @@ export const IngestionStatus = Schema.Literals([
   "chunking",
   "embedding",
   "graphing",
-  "clustering",
+  "foldering",
   "indexed",
   "paused",
   "failed",
@@ -50,7 +50,7 @@ export type ExtractionCoverage = typeof ExtractionCoverage.Type;
 
 export const IngestionJob = Schema.Struct({
   id: IngestionJobId,
-  itemId: ItemId,
+  fileId: FileId,
   status: IngestionStatus,
   attempts: Schema.Number,
   error: Schema.NullOr(Schema.String),

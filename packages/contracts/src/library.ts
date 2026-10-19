@@ -1,14 +1,14 @@
 /**
- * Library - the user's material: inbox items, clusters and the canvas that lays them out.
+ * Library - the user's material: inbox files, folders and the canvas that lays them out.
  *
- * An item can belong to several clusters (the canvas draws the extra memberships
- * as links), so membership is a relation, not a column on the item.
+ * A file can belong to several folders (the canvas draws the extra memberships
+ * as links), so membership is a relation, not a column on the file.
  */
 import * as Schema from "effect/Schema";
 
-import { CanvasNodeId, CaptureId, ClusterId, ItemId, ItemEventId, StorageKey } from "./ids.ts";
+import { CanvasNodeId, CaptureId, FolderId, FileId, FileEventId, StorageKey } from "./ids.ts";
 
-export const ItemKind = Schema.Literals([
+export const FileKind = Schema.Literals([
   "pdf",
   "document",
   "web-page",
@@ -18,34 +18,34 @@ export const ItemKind = Schema.Literals([
   "note",
   "selection",
 ]);
-export type ItemKind = typeof ItemKind.Type;
+export type FileKind = typeof FileKind.Type;
 
 /** `inbox` until the user (or clustering) files it; `archived` hides it from the canvas. */
-export const ItemPlacement = Schema.Literals(["inbox", "filed", "archived"]);
-export type ItemPlacement = typeof ItemPlacement.Type;
+export const FilePlacement = Schema.Literals(["inbox", "filed", "archived"]);
+export type FilePlacement = typeof FilePlacement.Type;
 
-/** Where the item entered the library. */
-export const ItemSource = Schema.Literals(["upload", "capture", "ruth", "ruth-cloud"]);
-export type ItemSource = typeof ItemSource.Type;
+/** Where the file entered the library. */
+export const FileSource = Schema.Literals(["upload", "capture", "ruth", "ruth-cloud"]);
+export type FileSource = typeof FileSource.Type;
 
-export const ItemEventKind = Schema.Literals(["opened", "edited", "captured", "uploaded"]);
-export type ItemEventKind = typeof ItemEventKind.Type;
+export const FileEventKind = Schema.Literals(["opened", "edited", "captured", "uploaded"]);
+export type FileEventKind = typeof FileEventKind.Type;
 
-export const ItemEvent = Schema.Struct({
-  id: ItemEventId,
-  itemId: ItemId,
-  kind: ItemEventKind,
+export const FileEvent = Schema.Struct({
+  id: FileEventId,
+  fileId: FileId,
+  kind: FileEventKind,
   /** Event time (ISO). */
   at: Schema.String,
 });
-export type ItemEvent = typeof ItemEvent.Type;
+export type FileEvent = typeof FileEvent.Type;
 
-export const Item = Schema.Struct({
-  id: ItemId,
-  kind: ItemKind,
+export const LibraryFile = Schema.Struct({
+  id: FileId,
+  kind: FileKind,
   title: Schema.String,
-  placement: ItemPlacement,
-  source: ItemSource,
+  placement: FilePlacement,
+  source: FileSource,
   tags: Schema.Array(Schema.String),
   /** Last content change (ISO); null until the original content has changed. */
   contentModifiedAt: Schema.NullOr(Schema.String),
@@ -56,27 +56,27 @@ export const Item = Schema.Struct({
   mimeType: Schema.NullOr(Schema.String),
   sizeBytes: Schema.NullOr(Schema.Number),
   captureId: Schema.NullOr(CaptureId),
-  clusterIds: Schema.Array(ClusterId),
+  folderIds: Schema.Array(FolderId),
   /** Seek position for media captured mid-playback. */
   mediaPositionSec: Schema.NullOr(Schema.Number),
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
-export type Item = typeof Item.Type;
+export type LibraryFile = typeof LibraryFile.Type;
 
-export const Cluster = Schema.Struct({
-  id: ClusterId,
+export const Folder = Schema.Struct({
+  id: FolderId,
   name: Schema.String,
   /** Set when the name came from automatic clustering rather than the user. */
   suggested: Schema.Boolean,
-  itemCount: Schema.Number,
+  fileCount: Schema.Number,
   createdAt: Schema.String,
 });
-export type Cluster = typeof Cluster.Type;
+export type Folder = typeof Folder.Type;
 
 export const CanvasNodeRef = Schema.Union([
-  Schema.TaggedStruct("item", { itemId: ItemId }),
-  Schema.TaggedStruct("cluster", { clusterId: ClusterId }),
+  Schema.TaggedStruct("file", { fileId: FileId }),
+  Schema.TaggedStruct("folder", { folderId: FolderId }),
   Schema.TaggedStruct("sketch", { strokes: Schema.Unknown }),
 ]);
 export type CanvasNodeRef = typeof CanvasNodeRef.Type;

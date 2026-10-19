@@ -1,0 +1,32 @@
+/** Files copied into the image, also reused by the live desktop iteration script. */
+export const DESKTOP_PACKAGES =
+  "bibata-cursor-theme papirus-icon-theme librsvg2-common arc-theme gnome-themes-extra gtk2-engines-murrine sassc xfce4-whiskermenu-plugin chromium x11-utils x11-xserver-utils wmctrl fonts-inter fonts-dejavu-core mousepad poppler-utils xdotool";
+export const DESKTOP_FILES = [
+  ["xsettings.xml", "/home/daytona/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml"],
+  ["xfwm4.xml", "/home/daytona/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml"],
+  ["xfce4-desktop.xml", "/home/daytona/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml"],
+  ["xfce4-panel.xml", "/home/daytona/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml"],
+  ["terminalrc", "/home/daytona/.config/xfce4/terminal/terminalrc"],
+  ["gtk.css", "/home/daytona/.config/gtk-3.0/gtk.css"],
+  ["index.theme", "/usr/share/icons/default/index.theme"],
+  ["cursor.sh", "/etc/profile.d/avenire-cursor.sh"],
+  ["avenire-browser", "/usr/local/bin/avenire-browser"],
+  ["browser.desktop", "/usr/share/applications/avenire-browser.desktop"],
+  ["terminal.desktop", "/home/daytona/.config/xfce4/panel/launcher-10/terminal.desktop"],
+  ["files.desktop", "/home/daytona/.config/xfce4/panel/launcher-11/files.desktop"],
+  ["browser.desktop", "/home/daytona/.config/xfce4/panel/launcher-12/browser.desktop"],
+  ["editor.desktop", "/home/daytona/.config/xfce4/panel/launcher-13/editor.desktop"],
+  ["wallpaper.png", "/usr/share/backgrounds/avenire/wallpaper.png"],
+  ["install-graphite.sh", "/tmp/install-graphite.sh"],
+  ["Xresources", "/home/daytona/.Xresources"],
+  ["desktop-session", "/usr/local/bin/avenire-desktop-session"],
+  ["desktop-session.desktop", "/home/daytona/.config/autostart/avenire-desktop-session.desktop"],
+  ["chromium-policies.json", "/etc/chromium/policies/managed/avenire.json"],
+  ["whiskermenu.rc", "/home/daytona/.config/xfce4/panel/whiskermenu-1.rc"],
+  ["xfce4-notifyd.xml", "/home/daytona/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-notifyd.xml"],
+  ["helpers.rc", "/home/daytona/.config/xfce4/helpers.rc"],
+  ["browser-helper.desktop", "/usr/share/xfce4/helpers/avenire-browser.desktop"],
+  ["files.desktop", "/usr/share/applications/avenire-files.desktop"],
+  ["terminal.desktop", "/usr/share/applications/avenire-terminal.desktop"],
+  ["editor.desktop", "/usr/share/applications/avenire-editor.desktop"],
+] as const;

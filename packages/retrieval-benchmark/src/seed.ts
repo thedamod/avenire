@@ -1,8 +1,8 @@
-import { ItemId, UserId } from "@avenire/contracts";
+import { FileId, UserId } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import { item, user } from "@avenire/database/schema";
+import { file, user } from "@avenire/database/schema";
 import { Embedder } from "@avenire/ingestion/embed";
-import { ItemIndexer } from "@avenire/ingestion/indexer";
+import { FileIndexer } from "@avenire/ingestion/indexer";
 import { eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 
@@ -16,11 +16,11 @@ const seedDocument = Effect.fn("RetrievalBenchmark.seedDocument")(function* (
   document: (typeof documents)[number],
 ) {
   const database = yield* Database;
-  const indexer = yield* ItemIndexer;
-  const itemId = ItemId.make(document.id);
+  const indexer = yield* FileIndexer;
+  const fileId = FileId.make(document.id);
   yield* database.use((db) =>
-    db.insert(item).values({
-      id: itemId,
+    db.insert(file).values({
+      id: fileId,
       userId: BENCH_USER_ID,
       kind: "note",
       title: document.title,
@@ -31,7 +31,7 @@ const seedDocument = Effect.fn("RetrievalBenchmark.seedDocument")(function* (
   );
   return yield* indexer.index({
     userId: BENCH_USER_ID,
-    itemId,
+    fileId,
     title: document.title,
     sections: document.sections.map(({ text, heading }) => ({ text, location: { heading } })),
   });
@@ -58,7 +58,7 @@ export const seedCorpus = Effect.gen(function* () {
         set: { name: "Retrieval benchmark", updatedAt: now },
       }),
   );
-  yield* database.use((db) => db.delete(item).where(eq(item.userId, BENCH_USER_ID)));
+  yield* database.use((db) => db.delete(file).where(eq(file.userId, BENCH_USER_ID)));
   const stats = yield* Effect.forEach(documents, seedDocument);
   return {
     documents: documents.length,

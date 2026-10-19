@@ -1,12 +1,7 @@
-/**
- * Ruth's model registry. Call sites use `ruth-*` names and never a provider or
- * model id, so models change through `RUTH_MODEL_*` without code changes:
- *
- * - `ruth-sprint`: fast and cheap (chat with Fast on, summaries, routing)
- * - `ruth-core`: the default for interactive chat
- * - `ruth-apex`: strongest reasoning (hard analysis, long video plans)
- */
-import { createAnthropic } from "@ai-sdk/anthropic";
+/** Call sites use Ruth names (`ruth-*`); this is the only module that names a provider or model id. */
+import { SCREEN_PROFILES, type ScreenProfile } from "@avenire/cloud/screen";
+import { createFireworks } from "@ai-sdk/fireworks";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { customProvider, type LanguageModel } from "ai";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -16,42 +11,69 @@ import * as Redacted from "effect/Redacted";
 
 export const RUTH_MODEL_NAMES = ["ruth-sprint", "ruth-core", "ruth-apex"] as const;
 export type RuthModelName = (typeof RUTH_MODEL_NAMES)[number];
-
-/** Underlying model ids; each is overridable with `RUTH_MODEL_<NAME>`, e.g. `RUTH_MODEL_CORE`. */
-export const RUTH_MODEL_DEFAULTS: Record<RuthModelName, string> = {
-  "ruth-sprint": "claude-haiku-4-5-20251001",
-  "ruth-core": "claude-sonnet-5-5",
-  "ruth-apex": "claude-opus-5-5",
-};
-
 export const RUTH_DEFAULT_MODEL: RuthModelName = "ruth-core";
 export const RUTH_FAST_MODEL: RuthModelName = "ruth-sprint";
 
+export interface ModelCapabilities {
+  readonly vision: boolean;
+  /** Whether screenshots may ride inside tool results; otherwise they follow as a user message. */
+  readonly toolResultImages: boolean;
+  readonly screenProfile?: ScreenProfile;
+  /** Reasoning effort for Ruth chat, for models that otherwise default to maximum thinking. */
+  readonly reasoning?: "low";
+  /** USD per 1M tokens, for providers that report no cost (OpenRouter reports it per call). */
+  readonly pricing?: {
+    readonly input: number;
+    readonly cachedInput: number;
+    readonly output: number;
+  };
+}
+
+const screen = (id: (typeof SCREEN_PROFILES)[number]["id"]) =>
+  SCREEN_PROFILES.find((profile) => profile.id === id)!;
+
+export const RUTH_MODEL_CAPABILITIES: Record<RuthModelName, ModelCapabilities> = {
+  "ruth-sprint": {
+    vision: true,
+    toolResultImages: false,
+    screenProfile: screen("normalized-1000"),
+    reasoning: "low",
+    // Fireworks serverless list price (fireworks.ai/models/fireworks/glm-5p3-flash, 2026-10-13).
+    pricing: { input: 0.15, cachedInput: 0.03, output: 0.5 },
+  },
+  "ruth-core": { vision: true, toolResultImages: true, screenProfile: screen("pixels-1280x720") },
+  "ruth-apex": { vision: true, toolResultImages: true, screenProfile: screen("pixels-1280x720") },
+};
+
 export class RuthModels extends Context.Service<
   RuthModels,
-  { readonly languageModel: (name: RuthModelName) => LanguageModel }
+  {
+    readonly languageModel: (name: RuthModelName) => LanguageModel;
+    readonly capabilities: (name: RuthModelName) => ModelCapabilities;
+    readonly maxImages: number;
+  }
 >()("avenire/ai/RuthModels") {}
 
-const envName = (name: RuthModelName) => `RUTH_MODEL_${name.slice("ruth-".length).toUpperCase()}`;
-
-/** Reads `ANTHROPIC_API_KEY` and the `RUTH_MODEL_*` overrides. */
 export const RuthModelsLive = Layer.effect(
   RuthModels,
   Effect.gen(function* () {
-    const apiKey = yield* Config.Redacted("ANTHROPIC_API_KEY");
-    const anthropic = createAnthropic({ apiKey: Redacted.value(apiKey) });
-    const ids = yield* Config.all(
-      Object.fromEntries(
-        RUTH_MODEL_NAMES.map((name) => [
-          name,
-          Config.String(envName(name)).pipe(Config.withDefault(RUTH_MODEL_DEFAULTS[name])),
-        ]),
-      ),
-    );
-    const languageModels = Object.fromEntries(
-      Object.entries(ids).map(([name, id]) => [name, anthropic(id)]),
-    );
+    const openrouter = createOpenRouter({
+      apiKey: Redacted.value(yield* Config.Redacted("OPENROUTER_API_KEY")),
+    });
+    const fireworks = createFireworks({
+      apiKey: Redacted.value(yield* Config.Redacted("FIREWORKS_API_KEY")),
+    });
+    const options = { parallelToolCalls: false, usage: { include: true } };
+    const languageModels: Record<RuthModelName, LanguageModel> = {
+      "ruth-sprint": fireworks.chatModel("accounts/fireworks/models/glm-5p3-flash"),
+      "ruth-core": openrouter.chat("anthropic/claude-sonnet-5.5", options),
+      "ruth-apex": openrouter.chat("anthropic/claude-opus-5.5", options),
+    };
     const ruth = customProvider({ languageModels });
-    return RuthModels.of({ languageModel: (name) => ruth.languageModel(name) });
+    return RuthModels.of({
+      languageModel: (name) => ruth.languageModel(name),
+      capabilities: (name) => RUTH_MODEL_CAPABILITIES[name],
+      maxImages: 3,
+    });
   }),
 );

@@ -17,35 +17,35 @@ import {
 } from "@xyflow/react";
 import * as Schema from "effect/Schema";
 import { FileText, Image, Link2, Pencil, Video, Music2 } from "lucide-react";
-import type { CanvasNode, Cluster, Item } from "@avenire/contracts";
+import type { CanvasNode, Folder, LibraryFile } from "@avenire/contracts";
 import { CanvasNodeId } from "@avenire/contracts";
 import { Button } from "@avenire/ui/components/button";
 import { Input } from "@avenire/ui/components/input";
 import { useApi, useQuery, errorMessage } from "~/lib/rpc";
 import { call } from "@avenire/client-runtime/rpc";
-import { ItemDetail } from "~/features/library/ItemDetail";
+import { FileDetail } from "~/features/library/FileDetail";
 
 type CanvasNodeData = {
   readonly ref: CanvasNode["ref"];
-  readonly item?: Item;
-  readonly cluster?: Cluster;
-  readonly onOpenItem: (item: Item) => void;
-  readonly onRename: (cluster: Cluster, name: string) => void;
+  readonly file?: LibraryFile;
+  readonly folder?: Folder;
+  readonly onOpenFile: (file: LibraryFile) => void;
+  readonly onRename: (folder: Folder, name: string) => void;
 };
 type FlowNode = Node<CanvasNodeData>;
 
-function iconFor(kind: Item["kind"]) {
+function iconFor(kind: LibraryFile["kind"]) {
   if (kind === "video" || kind === "audio") return kind === "video" ? Video : Music2;
   if (kind === "image") return Image;
   if (kind === "web-page") return Link2;
   return FileText;
 }
 
-function ClusterCard({ data }: NodeProps<FlowNode>) {
+function FolderCard({ data }: NodeProps<FlowNode>) {
   const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(data.cluster?.name ?? "Cluster");
-  const cluster = data.cluster;
-  if (!cluster) return null;
+  const [name, setName] = useState(data.folder?.name ?? "Cluster");
+  const folder = data.folder;
+  if (!folder) return null;
   return (
     <div className="h-full w-full border border-border bg-card/80 p-3">
       <Handle type="target" position={Position.Left} />
@@ -54,7 +54,7 @@ function ClusterCard({ data }: NodeProps<FlowNode>) {
           className="flex gap-1"
           onSubmit={(event) => {
             event.preventDefault();
-            data.onRename(cluster, name);
+            data.onRename(folder, name);
             setEditing(false);
           }}
         >
@@ -70,44 +70,44 @@ function ClusterCard({ data }: NodeProps<FlowNode>) {
         </form>
       ) : (
         <div className="flex items-center gap-2">
-          <span className="font-medium">{cluster.name}</span>
-          {cluster.suggested ? (
+          <span className="font-medium">{folder.name}</span>
+          {folder.suggested ? (
             <span className="text-xs text-muted-foreground">Suggested</span>
           ) : null}
           <button
             className="ml-auto text-muted-foreground hover:text-foreground"
-            aria-label={`Rename ${cluster.name}`}
+            aria-label={`Rename ${folder.name}`}
             onClick={() => setEditing(true)}
           >
             <Pencil size={14} />
           </button>
         </div>
       )}
-      <p className="mt-1 text-xs text-muted-foreground">{cluster.itemCount} items</p>
+      <p className="mt-1 text-xs text-muted-foreground">{folder.fileCount} files</p>
       <Handle type="source" position={Position.Right} />
     </div>
   );
 }
 
-function ItemCard({ data }: NodeProps<FlowNode>) {
-  const item = data.item;
-  if (!item) return null;
-  const Icon = iconFor(item.kind);
+function FileCard({ data }: NodeProps<FlowNode>) {
+  const file = data.file;
+  if (!file) return null;
+  const Icon = iconFor(file.kind);
   return (
     <button
       className="flex h-full w-full items-center gap-2 border border-border bg-background px-3 text-left text-sm hover:bg-muted"
-      onDoubleClick={() => data.onOpenItem(item)}
+      onDoubleClick={() => data.onOpenFile(file)}
       title="Double-click to open"
     >
       <Handle type="target" position={Position.Left} />
       <Icon size={16} className="shrink-0 text-muted-foreground" />
-      <span className="line-clamp-2">{item.title}</span>
+      <span className="line-clamp-2">{file.title}</span>
       <Handle type="source" position={Position.Right} />
     </button>
   );
 }
 
-const nodeTypes: NodeTypes = { cluster: ClusterCard, item: ItemCard };
+const nodeTypes: NodeTypes = { folder: FolderCard, file: FileCard };
 
 export function CanvasPage() {
   const api = useApi();
@@ -117,29 +117,20 @@ export function CanvasPage() {
     error: savedError,
     refetch,
   } = useQuery((client) => client["library.getCanvas"](), "canvas-nodes");
-  const { data: clusters } = useQuery(
-    (client) => client["library.listClusters"](),
-    "canvas-clusters",
+  const { data: folders } = useQuery((client) => client["library.listFolders"](), "canvas-folders");
+  const { data: files } = useQuery(
+    (client) => client["library.listFiles"]({ placement: "filed" }),
+    "canvas-files",
   );
-  const { data: items } = useQuery(
-    (client) => client["library.listItems"]({ placement: "filed" }),
-    "canvas-items",
-  );
-  const [selectedItem, setSelectedItem] = useState<Item>();
+  const [selectedFile, setSelectedFile] = useState<LibraryFile>();
   const [nodes, setNodes] = useState<FlowNode[]>([]);
   const [error, setError] = useState<string>();
-  const clusterById = useMemo(
-    () => new Map((clusters ?? []).map((cluster) => [cluster.id, cluster])),
-    [clusters],
-  );
-  const itemById = useMemo(() => new Map((items ?? []).map((item) => [item.id, item])), [items]);
-
   const rename = useCallback(
-    (cluster: Cluster, name: string) => {
+    (folder: Folder, name: string) => {
       const cleanName = name.trim();
       if (!cleanName) return;
       void call(api, (client) =>
-        client["library.renameCluster"]({ clusterId: cluster.id, name: cleanName }),
+        client["library.renameFolder"]({ folderId: folder.id, name: cleanName }),
       )
         .then(() => refetch())
         .catch((cause: unknown) => setError(errorMessage(cause)));
@@ -148,77 +139,77 @@ export function CanvasPage() {
   );
 
   useEffect(() => {
-    if (!saved || !clusters || !items) return;
+    if (!saved || !folders || !files) return;
     const canvasByRef = new Map<string, CanvasNode[]>();
     for (const node of saved) {
       const key =
-        node.ref._tag === "item"
-          ? `item:${node.ref.itemId}`
-          : node.ref._tag === "cluster"
-            ? `cluster:${node.ref.clusterId}`
+        node.ref._tag === "file"
+          ? `file:${node.ref.fileId}`
+          : node.ref._tag === "folder"
+            ? `folder:${node.ref.folderId}`
             : `sketch:${node.id}`;
       const matching = canvasByRef.get(key) ?? [];
       matching.push(node);
       canvasByRef.set(key, matching);
     }
     const next: FlowNode[] = [];
-    clusters.forEach((cluster, index) => {
-      const stored = canvasByRef.get(`cluster:${cluster.id}`)?.[0];
+    folders.forEach((folder, index) => {
+      const stored = canvasByRef.get(`folder:${folder.id}`)?.[0];
       next.push({
-        id: stored?.id ?? Schema.decodeUnknownSync(CanvasNodeId)(`auto-cluster-${cluster.id}`),
-        type: "cluster",
+        id: stored?.id ?? Schema.decodeUnknownSync(CanvasNodeId)(`auto-folder-${folder.id}`),
+        type: "folder",
         position: {
           x: stored?.x ?? 80 + (index % 3) * 440,
           y: stored?.y ?? 80 + Math.floor(index / 3) * 340,
         },
         style: { width: stored?.width ?? 360, height: stored?.height ?? 280 },
         data: {
-          ref: { _tag: "cluster", clusterId: cluster.id },
-          cluster,
-          onOpenItem: setSelectedItem,
+          ref: { _tag: "folder", folderId: folder.id },
+          folder,
+          onOpenFile: setSelectedFile,
           onRename: rename,
         },
         zIndex: 0,
       });
     });
     const copies = new Map<string, string[]>();
-    const canvasItems = items.filter((item) => item.placement === "filed");
-    canvasItems.forEach((item, index) => {
-      const memberships = item.clusterIds.length > 0 ? item.clusterIds : [undefined];
-      memberships.forEach((clusterId, copyIndex) => {
-        const key = `item:${item.id}${clusterId ? `:${clusterId}` : ""}`;
-        const stored = canvasByRef.get(`item:${item.id}`)?.[copyIndex];
+    const canvasFiles = files.filter((file) => file.placement === "filed");
+    canvasFiles.forEach((file, index) => {
+      const memberships = file.folderIds.length > 0 ? file.folderIds : [undefined];
+      memberships.forEach((folderId, copyIndex) => {
+        const key = `file:${file.id}${folderId ? `:${folderId}` : ""}`;
+        const stored = canvasByRef.get(`file:${file.id}`)?.[copyIndex];
         const id =
           stored?.id ??
-          Schema.decodeUnknownSync(CanvasNodeId)(`auto-item-${item.id}-${clusterId ?? "loose"}`);
-        const clusterIndex = clusterId
+          Schema.decodeUnknownSync(CanvasNodeId)(`auto-file-${file.id}-${folderId ?? "loose"}`);
+        const folderIndex = folderId
           ? Math.max(
               0,
-              clusters.findIndex((cluster) => cluster.id === clusterId),
+              folders.findIndex((folder) => folder.id === folderId),
             )
-          : clusters.length;
-        const x = stored?.x ?? 104 + (clusterIndex % 3) * 440 + (index % 2) * 170;
-        const y = stored?.y ?? 138 + Math.floor(clusterIndex / 3) * 340 + (index % 6) * 48;
+          : folders.length;
+        const x = stored?.x ?? 104 + (folderIndex % 3) * 440 + (index % 2) * 170;
+        const y = stored?.y ?? 138 + Math.floor(folderIndex / 3) * 340 + (index % 6) * 48;
         next.push({
           id,
-          type: "item",
+          type: "file",
           position: { x, y },
           style: { width: 220, height: 62 },
           data: {
-            ref: { _tag: "item", itemId: item.id },
-            item,
-            onOpenItem: setSelectedItem,
+            ref: { _tag: "file", fileId: file.id },
+            file,
+            onOpenFile: setSelectedFile,
             onRename: rename,
           },
         });
-        const ids = copies.get(item.id) ?? [];
+        const ids = copies.get(file.id) ?? [];
         ids.push(id);
-        copies.set(item.id, ids);
+        copies.set(file.id, ids);
         void key;
       });
     });
     setNodes(next);
-  }, [saved, clusters, items, rename]);
+  }, [saved, folders, files, rename]);
 
   const onNodesChange: OnNodesChange<FlowNode> = useCallback(
     (changes) => setNodes((current) => applyNodeChanges(changes, current)),
@@ -227,20 +218,20 @@ export function CanvasPage() {
   const edges = useMemo<Edge[]>(() => {
     const memberships = new Map<string, string[]>();
     for (const node of nodes) {
-      if (node.data.item) {
-        const existing = memberships.get(node.data.item.id) ?? [];
+      if (node.data.file) {
+        const existing = memberships.get(node.data.file.id) ?? [];
         existing.push(node.id);
-        memberships.set(node.data.item.id, existing);
+        memberships.set(node.data.file.id, existing);
       }
     }
     const links: Edge[] = [];
-    for (const [itemId, ids] of memberships) {
+    for (const [fileId, ids] of memberships) {
       for (let index = 1; index < ids.length; index += 1) {
         const source = ids[0];
         const target = ids[index];
         if (source && target)
           links.push({
-            id: `symlink-${itemId}-${index}`,
+            id: `symlink-${fileId}-${index}`,
             source,
             target,
             style: { strokeDasharray: "5 5" },
@@ -279,7 +270,7 @@ export function CanvasPage() {
           </p>
         ) : null}
       </header>
-      {savedLoading || !clusters || !items ? (
+      {savedLoading || !folders || !files ? (
         <p className="p-5 text-sm text-muted-foreground">Loading your library…</p>
       ) : (
         <div className="relative min-h-0 flex-1">
@@ -299,8 +290,8 @@ export function CanvasPage() {
             <Controls />
             <MiniMap pannable zoomable />
           </ReactFlow>
-          {selectedItem ? (
-            <ItemDetail item={selectedItem} onClose={() => setSelectedItem(undefined)} />
+          {selectedFile ? (
+            <FileDetail file={selectedFile} onClose={() => setSelectedFile(undefined)} />
           ) : null}
         </div>
       )}

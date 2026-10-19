@@ -1,14 +1,16 @@
 import type { PageContextResult } from "./index.ts";
 
-/** Stored HTML widgets run in an isolated iframe; chart/simulation kits are coming later. */
+/** Shipped browser kits; Node builds use the full read-only sandbox toolchain. */
 export const VISUAL_RUNTIME = {
   version: "0.1.0",
-  kits: [],
-  capabilities: ["html", "svg", "canvas2d", "pointer", "params", "readouts"],
+  sourceRoot: "/opt/avenire/figures",
+  kits: ["/kits/math.js", "/kits/iso.js", "/kits/iso-gl.js", "/kits/iso.css"],
+  capabilities: ["html", "svg", "canvas2d", "webgl", "pointer", "params", "readouts"],
 } as const;
 
 export const VISUAL_BUDGETS = {
-  maxSourceBytes: 512 * 1024,
+  maxSourceBytes: 8 * 1024 * 1024,
+  maxInlineSourceBytes: 512_000,
   frameBudgetMs: 8,
 } as const;
 

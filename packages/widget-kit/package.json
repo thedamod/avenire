@@ -1,0 +1,20 @@
+{
+  "name": "@avenire/widget-kit",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./math": "./src/math/index.ts",
+    "./iso": "./src/iso/index.ts",
+    "./iso-gl": "./src/iso/gl.ts",
+    "./kits-dir": "./src/kits-dir.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir .",
+    "build": "node scripts/build.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}
