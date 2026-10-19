@@ -15,6 +15,14 @@
       "types": "./src/embed.ts",
       "import": "./src/embed.ts"
     },
+    "./models": {
+      "types": "./src/models.ts",
+      "import": "./src/models.ts"
+    },
+    "./indexer": {
+      "types": "./src/indexer.ts",
+      "import": "./src/indexer.ts"
+    },
     "./pipeline": {
       "types": "./src/pipeline.ts",
       "import": "./src/pipeline.ts"
@@ -23,13 +31,61 @@
       "types": "./src/worker.ts",
       "import": "./src/worker.ts"
     },
-    "./retrieval": {
-      "types": "./src/retrieval.ts",
-      "import": "./src/retrieval.ts"
-    },
     "./cluster": {
       "types": "./src/cluster.ts",
       "import": "./src/cluster.ts"
+    },
+    "./graph/extract": {
+      "types": "./src/graph/extract.ts",
+      "import": "./src/graph/extract.ts"
+    },
+    "./graph/indexer": {
+      "types": "./src/graph/indexer.ts",
+      "import": "./src/graph/indexer.ts"
+    },
+    "./graph/search": {
+      "types": "./src/graph/search.ts",
+      "import": "./src/graph/search.ts"
+    },
+    "./retrieval": {
+      "types": "./src/retrieval/retrieval.ts",
+      "import": "./src/retrieval/retrieval.ts"
+    },
+    "./retrieval/rerank": {
+      "types": "./src/retrieval/rerank.ts",
+      "import": "./src/retrieval/rerank.ts"
+    },
+    "./retrieval/planner": {
+      "types": "./src/retrieval/planner.ts",
+      "import": "./src/retrieval/planner.ts"
+    },
+    "./retrieval/cache": {
+      "types": "./src/retrieval/cache.ts",
+      "import": "./src/retrieval/cache.ts"
+    },
+    "./extract/ocr": {
+      "types": "./src/extract/ocr.ts",
+      "import": "./src/extract/ocr.ts"
+    },
+    "./extract/transcribe": {
+      "types": "./src/extract/transcribe.ts",
+      "import": "./src/extract/transcribe.ts"
+    },
+    "./extract/describe": {
+      "types": "./src/extract/describe.ts",
+      "import": "./src/extract/describe.ts"
+    },
+    "./extract/media": {
+      "types": "./src/extract/media.ts",
+      "import": "./src/extract/media.ts"
+    },
+    "./extract/remote": {
+      "types": "./src/extract/remote.ts",
+      "import": "./src/extract/remote.ts"
+    },
+    "./extract/transcript-cache": {
+      "types": "./src/extract/transcript-cache.ts",
+      "import": "./src/extract/transcript-cache.ts"
     }
   },
   "scripts": {
@@ -37,7 +93,9 @@
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
-    "@ai-sdk/openai": "catalog:",
+    "@ai-sdk/cohere": "catalog:",
+    "@ai-sdk/google": "catalog:",
+    "@ai-sdk/groq": "catalog:",
     "@avenire/contracts": "workspace:*",
     "@avenire/database": "workspace:*",
     "@avenire/shared": "workspace:*",
@@ -48,6 +106,7 @@
     "effect": "catalog:",
     "linkedom": "0.18.13",
     "officeparser": "8.1.0",
+    "pdf-lib": "catalog:",
     "unpdf": "1.8.1",
     "youtube-transcript": "1.3.1"
   },

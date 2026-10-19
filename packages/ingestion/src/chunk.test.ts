@@ -1,5 +1,23 @@
 import { describe, expect, it } from "@effect/vitest";
-import { chunkSections } from "./chunk.ts";
+import { chunkSections, embeddingText, formatTimestamp } from "./chunk.ts";
+
+describe("embeddingText", () => {
+  it("includes heading and a page marker", () => {
+    expect(
+      embeddingText("Biology", {
+        content: "Cells divide.",
+        location: { heading: "Mitosis", page: 7 },
+      }),
+    ).toBe("Biology › Mitosis (p. 7)\nCells divide.");
+  });
+
+  it("prefers time over page and formats hours", () => {
+    expect(
+      embeddingText("Lecture", { content: "x equals 2", location: { startSec: 3723.9, page: 1 } }),
+    ).toBe("Lecture [1:02:03]\nx equals 2");
+    expect(formatTimestamp(95)).toBe("1:35");
+  });
+});
 
 describe("chunkSections", () => {
   it("keeps chunks within the hard token bound", () => {

@@ -37,7 +37,9 @@ export const DatabaseConfig = Config.Redacted("DATABASE_URL");
 export const makeDatabase = (
   url: string,
 ): { readonly sql: ReturnType<typeof postgres>; readonly db: DatabaseClient } => {
-  const sql = postgres(url);
+  // Notices (e.g. "text-search query contains only stop words") are informational;
+  // postgres.js would print them with console.log.
+  const sql = postgres(url, { onnotice: () => {} });
   return { sql, db: drizzle(sql, { schema }) };
 };
 

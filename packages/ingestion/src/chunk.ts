@@ -1,6 +1,11 @@
 import type { ChunkKind, ChunkLocation } from "@avenire/contracts";
 
-export type ChunkSection = { readonly text: string; readonly location: ChunkLocation };
+export type ChunkSection = {
+  readonly text: string;
+  readonly location: ChunkLocation;
+  /** Overrides the inferred kind for every chunk of the section (transcript, slide, figure). */
+  readonly kind?: ChunkKind;
+};
 export type Chunk = {
   readonly ordinal: number;
   readonly kind: ChunkKind;
@@ -9,9 +14,36 @@ export type Chunk = {
   readonly tokenCount: number;
 };
 
+export const formatTimestamp = (seconds: number): string => {
+  const whole = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const remainder = String(whole % 60).padStart(2, "0");
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${remainder}`
+    : `${minutes}:${remainder}`;
+};
+
+/** Where a chunk sits, as a short marker: `[mm:ss]`, `(p. 3)`, `(slide 4)`, `(sheet Scores)`. */
+const locationMarker = ({ startSec, page, slide, sheet }: ChunkLocation): string => {
+  if (startSec !== undefined) return ` [${formatTimestamp(startSec)}]`;
+  if (slide !== undefined) return ` (slide ${slide})`;
+  if (page !== undefined) return ` (p. ${page})`;
+  if (sheet !== undefined) return ` (sheet ${sheet})`;
+  return "";
+};
+
+/** The text embedded and reranked for a chunk: its item title, heading and location first. */
+export const embeddingText = (
+  title: string,
+  chunk: { readonly content: string; readonly location: ChunkLocation },
+): string => {
+  const heading = chunk.location.heading ? ` › ${chunk.location.heading}` : "";
+  return `${title}${heading}${locationMarker(chunk.location)}\n${chunk.content}`;
+};
+
 const estimate = (text: string) => Math.ceil(text.length / 4);
-const classify = (text: string, transcript: boolean): ChunkKind => {
-  if (transcript) return "transcript";
+const classify = (text: string): ChunkKind => {
   if (/^\s*proof\b/i.test(text)) return "proof";
   if (/\b(?:is defined as|we define)\b/i.test(text)) return "definition";
   if (/^\s*example\b|\be\.g\.|\bfor instance\b/i.test(text)) return "example";
@@ -62,7 +94,6 @@ export const chunkSections = (
     readonly targetTokens?: number;
     readonly maxTokens?: number;
     readonly overlapTokens?: number;
-    readonly transcript?: boolean;
   } = {},
 ): ReadonlyArray<Chunk> => {
   const target = options.targetTokens ?? 320;
@@ -80,7 +111,7 @@ export const chunkSections = (
       const content = pending.join("\n\n");
       chunks.push({
         ordinal: chunks.length,
-        kind: classify(content, options.transcript ?? false),
+        kind: section.kind ?? classify(content),
         content,
         location: section.location,
         tokenCount: estimate(content),
@@ -93,7 +124,7 @@ export const chunkSections = (
         for (const content of splitOversized(paragraph, max, overlap)) {
           chunks.push({
             ordinal: chunks.length,
-            kind: classify(content, options.transcript ?? false),
+            kind: section.kind ?? classify(content),
             content,
             location: section.location,
             tokenCount: estimate(content),

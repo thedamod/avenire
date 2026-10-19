@@ -3,32 +3,8 @@ import * as Effect from "effect/Effect";
 import * as HttpClient from "effect/http/HttpClient";
 import { parseHTML } from "linkedom";
 
-import { type ExtractedDocument, ExtractionError } from "./types.ts";
-
-type HeadedSection = { readonly text: string; readonly location: { readonly heading?: string } };
-
-/** Splits markdown at headings; each section remembers the heading it sits under. */
-const sectionsFromMarkdown = (markdown: string): ReadonlyArray<HeadedSection> => {
-  const sections: Array<HeadedSection> = [];
-  let heading: string | undefined;
-  let lines: Array<string> = [];
-  const flush = () => {
-    const text = lines.join("\n").trim();
-    if (text) sections.push({ text, location: heading ? { heading } : {} });
-    lines = [];
-  };
-  for (const line of markdown.split("\n")) {
-    const match = /^#{1,6}\s+(.+)$/.exec(line.trim());
-    if (match) {
-      flush();
-      heading = (match[1] ?? "").trim();
-    } else {
-      lines.push(line);
-    }
-  }
-  flush();
-  return sections;
-};
+import { type ExtractedDocument, ExtractionError, fullCoverage } from "./types.ts";
+import { sectionsFromMarkdown } from "./markdown.ts";
 
 const fetchHtml = (url: string) =>
   Effect.gen(function* () {
@@ -45,6 +21,7 @@ const parseHtml = (html: string) =>
       return {
         ...(parsed.title ? { title: parsed.title } : {}),
         sections: sectionsFromMarkdown(parsed.contentMarkdown ?? parsed.content),
+        coverage: fullCoverage("text"),
       };
     },
     catch: (cause) => new ExtractionError({ source: "web-parse", cause }),

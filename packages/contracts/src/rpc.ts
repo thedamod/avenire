@@ -12,7 +12,7 @@ import { ApiError } from "./errors.ts";
 import { ArtifactId, ClusterId, CloudRunId, ItemId, ThreadId } from "./ids.ts";
 import { IngestionJob } from "./ingestion.ts";
 import { CanvasNode, Cluster, Item, ItemPlacement } from "./library.ts";
-import { SearchHit, SearchQuery } from "./retrieval.ts";
+import { SearchQuery, SearchResult } from "./retrieval.ts";
 import { RuthMessage, RuthThread } from "./ruth.ts";
 import { Authenticated } from "./session.ts";
 
@@ -65,7 +65,7 @@ export class LibraryRpcs extends RpcGroup.make(
 export class SearchRpcs extends RpcGroup.make(
   Rpc.make("search.query", {
     payload: SearchQuery,
-    success: Schema.Array(SearchHit),
+    success: SearchResult,
     error: ApiError,
   }),
 ).middleware(Authenticated) {}

@@ -3,11 +3,11 @@
  * `FOR UPDATE SKIP LOCKED` and hold a lease (`locked_until`), so several worker
  * processes can run side by side and a crashed worker's jobs are picked up again.
  */
-import { IngestionJobId, ItemId, NotFound, UserId } from "@avenire/contracts";
+import { IngestionJobId, type IngestionStatus, ItemId, NotFound, UserId } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { ingestionJob, item } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import * as Cause from "effect/Cause";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -20,6 +20,18 @@ import { IngestionPipeline } from "./pipeline.ts";
 const MAX_ATTEMPTS = 3;
 const IDLE_DELAY = "2 seconds";
 const OUTAGE_DELAY = "10 seconds";
+
+const IN_PROGRESS: ReadonlyArray<IngestionStatus> = [
+  "extracting",
+  "chunking",
+  "embedding",
+  "graphing",
+  "clustering",
+];
+const IN_PROGRESS_SQL = sql.join(
+  IN_PROGRESS.map((status) => sql`${status}`),
+  sql`, `,
+);
 
 /** Minutes to wait before retrying a job that failed on its `attempts`-th try. */
 export const retryDelayMinutes = (attempts: number): number => 2 ** attempts;
@@ -38,14 +50,21 @@ export const enqueueIngestion = Effect.fn("Ingestion.enqueue")(function* (
   );
   if (owned === undefined) return yield* new NotFound({ entity: "Item", id: itemId });
   const id = yield* newId(IngestionJobId);
-  const reset = { status: "queued" as const, attempts: 0, error: null, lockedUntil: null };
+  const reset = { status: "queued" as const, attempts: 0, error: null };
   yield* database.use((db) =>
     db
       .insert(ingestionJob)
       .values({ id, userId, itemId, ...reset })
       .onConflictDoUpdate({
         target: ingestionJob.itemId,
-        set: { ...reset, updatedAt: sql`now()` },
+        set: {
+          ...reset,
+          generation: sql`${ingestionJob.generation} + 1`,
+          // A running job keeps its lease, so the rerun waits for it instead of racing it.
+          lockedUntil: sql`CASE WHEN ${ingestionJob.status} IN (${IN_PROGRESS_SQL})
+            THEN ${ingestionJob.lockedUntil} ELSE NULL END`,
+          updatedAt: sql`now()`,
+        },
       }),
   );
 });
@@ -55,6 +74,7 @@ const ClaimedJob = Schema.Struct({
   id: IngestionJobId,
   userId: UserId,
   itemId: ItemId,
+  generation: Schema.Number,
   attempts: Schema.Number,
 });
 type ClaimedJob = typeof ClaimedJob.Type;
@@ -68,8 +88,7 @@ const claimJobs = (limit: number) => sql`
   WITH candidates AS (
     SELECT id FROM ingestion_job
     WHERE (status = 'queued' AND (locked_until IS NULL OR locked_until < now()))
-       OR (status IN ('extracting', 'chunking', 'embedding', 'clustering')
-           AND locked_until < now())
+       OR (status IN (${IN_PROGRESS_SQL}) AND locked_until < now())
     ORDER BY created_at
     FOR UPDATE SKIP LOCKED
     LIMIT ${limit}
@@ -78,7 +97,8 @@ const claimJobs = (limit: number) => sql`
   SET status = 'extracting', locked_until = now() + interval '10 minutes',
       attempts = job.attempts + 1, updated_at = now()
   FROM candidates WHERE job.id = candidates.id
-  RETURNING job.id, job.user_id AS "userId", job.item_id AS "itemId", job.attempts
+  RETURNING job.id, job.user_id AS "userId", job.item_id AS "itemId", job.generation,
+    job.attempts
 `;
 
 const failureReason = (cause: Cause.Cause<unknown>): string => {
@@ -113,17 +133,36 @@ export const IngestionWorkerLive = Layer.effectDiscard(
               : sql`now() + (${retryDelayMinutes(job.attempts)} * interval '1 minute')`,
             updatedAt: sql`now()`,
           })
-          .where(eq(ingestionJob.id, job.id)),
+          .where(and(eq(ingestionJob.id, job.id), eq(ingestionJob.generation, job.generation))),
       );
     };
 
+    /** If the item was re-enqueued while this run held the lease, hand the lease back. */
+    const releaseIfSuperseded = (job: ClaimedJob) =>
+      database
+        .use((db) =>
+          db
+            .update(ingestionJob)
+            .set({ lockedUntil: null })
+            .where(
+              and(
+                eq(ingestionJob.id, job.id),
+                ne(ingestionJob.generation, job.generation),
+                eq(ingestionJob.status, "queued"),
+              ),
+            ),
+        )
+        .pipe(
+          Effect.catchTags({
+            DatabaseError: (error) =>
+              Effect.logError("Could not release a superseded ingestion lease", error),
+          }),
+        );
+
     const handleFailure = (job: ClaimedJob, cause: Cause.Cause<unknown>) => {
       const reason = failureReason(cause);
-      return Effect.logWarning("Ingestion failed", {
-        jobId: job.id,
-        attempts: job.attempts,
-        error: reason,
-      }).pipe(
+      return Effect.logWarning("Ingestion failed", cause).pipe(
+        Effect.annotateLogs({ jobId: job.id, attempts: job.attempts }),
         Effect.andThen(recordFailure(job, reason)),
         Effect.catchTag("DatabaseError", (error) =>
           Effect.logError("Could not record the ingestion failure", { jobId: job.id, error }),
@@ -135,13 +174,12 @@ export const IngestionWorkerLive = Layer.effectDiscard(
     // crashes the pipeline would be re-claimed forever. Interruption (shutdown)
     // is left to the lease.
     const runJob = (job: ClaimedJob) =>
-      pipeline
-        .run(job)
-        .pipe(
-          Effect.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : handleFailure(job, cause),
-          ),
-        );
+      pipeline.run(job).pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : handleFailure(job, cause),
+        ),
+        Effect.andThen(releaseIfSuperseded(job)),
+      );
 
     const pollOnce = claim.pipe(
       Effect.flatMap((jobs) =>

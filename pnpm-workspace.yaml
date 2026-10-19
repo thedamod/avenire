@@ -15,6 +15,9 @@ allowBuilds:
 
 catalog:
   "@ai-sdk/anthropic": 4.0.71
+  "@ai-sdk/cohere": 4.0.57
+  "@ai-sdk/google": 4.0.90
+  "@ai-sdk/groq": 4.0.57
   "@ai-sdk/openai": 4.0.83
   "@ai-sdk/react": 4.0.130
   "@effect/platform-node": 4.0.0
@@ -31,6 +34,7 @@ catalog:
   effect: 4.0.0
   files-sdk: 2.6.2
   next: 16.3.8
+  pdf-lib: 1.17.1
   posthog-js: 1.435.8
   posthog-node: 5.55.0
   react: 19.3.0
@@ -41,6 +45,11 @@ catalog:
 
 minimumReleaseAgeExclude:
   - lucide-react@1.51.0
+  - "@ai-sdk/cohere@4.0.57"
+  - "@ai-sdk/google@4.0.90"
+  - "@ai-sdk/provider-utils@5.0.56"
+  - "@ai-sdk/provider@4.0.24"
+  - "@ai-sdk/groq@4.0.57"
 
 overrides:
   # vite-plus bundles its own Vitest; the patched @effect/vitest imports it instead.
@@ -57,4 +66,4 @@ packageExtensions:
         optional: true
 
 patchedDependencies:
-  '@effect/vitest@4.0.0': patches/@effect__vitest@4.0.0.patch
+  "@effect/vitest@4.0.0": patches/@effect__vitest@4.0.0.patch

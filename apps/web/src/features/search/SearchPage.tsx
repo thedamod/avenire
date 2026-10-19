@@ -31,6 +31,7 @@ export function SearchPage() {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<ItemKind | "all">("all");
   const [hits, setHits] = useState<ReadonlyArray<SearchHit>>([]);
+  const [abstained, setAbstained] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   useEffect(() => {
@@ -38,6 +39,7 @@ export function SearchPage() {
     let active = true;
     if (!text) {
       setHits([]);
+      setAbstained(false);
       setLoading(false);
       setError(undefined);
       return () => {
@@ -51,7 +53,10 @@ export function SearchPage() {
         client["search.query"]({ text, limit: 30, ...(kind === "all" ? {} : { kinds: [kind] }) }),
       )
         .then((results) => {
-          if (active) setHits(results);
+          if (active) {
+            setHits(results.hits);
+            setAbstained(results.abstained);
+          }
         })
         .catch((cause: unknown) => {
           if (active) setError(errorMessage(cause));
@@ -112,7 +117,9 @@ export function SearchPage() {
         </p>
       ) : null}
       {!loading && !error && query.trim() && hits.length === 0 ? (
-        <p className="py-8 text-sm text-muted-foreground">No results found.</p>
+        <p className="py-8 text-sm text-muted-foreground">
+          {abstained ? "Nothing in your materials matches this." : "No results found."}
+        </p>
       ) : null}
       <div className="divide-y divide-border">
         {grouped.map(([itemId, itemHits]) => (

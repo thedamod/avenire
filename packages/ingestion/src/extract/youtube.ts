@@ -1,39 +1,40 @@
 import * as Effect from "effect/Effect";
 import { fetchTranscript } from "youtube-transcript";
 
-import { type ExtractedDocument, ExtractionError } from "./types.ts";
+import { cleanCaptionText, groupCues } from "./transcript.ts";
+import { type ExtractedDocument, ExtractionError, fullCoverage } from "./types.ts";
 
-/** Transcript cues are grouped into sections of about this many seconds. */
-const SECTION_SECONDS = 60;
+export { cleanCaptionText, groupCues } from "./transcript.ts";
 
-type Cue = Awaited<ReturnType<typeof fetchTranscript>>[number];
-type TimedSection = { text: string; location: { startSec: number; endSec: number } };
-
-export const isYouTubeUrl = (url: string | null): boolean =>
-  url !== null && /(?:youtube\.com|youtu\.be)/i.test(url);
-
-/** Groups consecutive cues into roughly minute-long sections with their time range. */
-const groupCues = (cues: ReadonlyArray<Cue>): ReadonlyArray<TimedSection> => {
-  // Depending on the video, offsets come back in seconds or milliseconds.
+export const toTimedCues = (
+  cues: ReadonlyArray<{ text: string; offset: number; duration: number }>,
+) => {
   const scale = cues.some((cue) => cue.offset > 10_000 || cue.duration > 1_000) ? 1000 : 1;
-  const sections: Array<TimedSection> = [];
-  let current: TimedSection | undefined;
-  for (const cue of cues) {
-    const startSec = cue.offset / scale;
-    const endSec = (cue.offset + cue.duration) / scale;
-    if (current === undefined || startSec - current.location.startSec >= SECTION_SECONDS) {
-      current = { text: cue.text, location: { startSec, endSec } };
-      sections.push(current);
-    } else {
-      current.text += ` ${cue.text}`;
-      current.location.endSec = endSec;
-    }
-  }
-  return sections;
+  return cues.map((cue) => ({
+    text: cleanCaptionText(cue.text),
+    startSec: cue.offset / scale,
+    endSec: (cue.offset + cue.duration) / scale,
+  }));
 };
 
-export const extractYouTube = (url: string): Effect.Effect<ExtractedDocument, ExtractionError> =>
+export const fetchYouTubeCues = (url: string) =>
   Effect.tryPromise({
     try: () => fetchTranscript(url),
     catch: (cause) => new ExtractionError({ source: "youtube", cause }),
-  }).pipe(Effect.map((cues) => ({ sections: groupCues(cues) })));
+  }).pipe(Effect.map(toTimedCues));
+
+export const extractYouTube = (url: string): Effect.Effect<ExtractedDocument, ExtractionError> =>
+  fetchYouTubeCues(url).pipe(
+    Effect.map((cues) => {
+      const sections = groupCues(cues);
+      return {
+        sections,
+        coverage: sections.length
+          ? fullCoverage("transcript")
+          : {
+              status: "none",
+              parts: [{ part: "transcript", status: "none", detail: "No searchable captions" }],
+            },
+      };
+    }),
+  );

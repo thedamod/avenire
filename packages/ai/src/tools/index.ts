@@ -10,6 +10,10 @@ import {
   FileAction,
   ItemId,
   PageContext,
+  GraphFact,
+  SearchAspect,
+  SearchDepth,
+  SearchHit,
 } from "@avenire/contracts";
 import { tool } from "ai";
 import * as Schema from "effect/Schema";
@@ -26,11 +30,29 @@ const ChunkResult = Schema.Struct({
 });
 
 export const searchMaterialsSpec = {
-  description: "Search the user's own study material. Always do this before explaining a concept.",
+  description:
+    "Search the user's study material before explaining a concept. Use deep depth for comparisons, multi-step, or relationship questions. Abstained means the materials do not cover the question; facts are graph relations with chunk citations.",
   inputSchema: standardSchema(
-    Schema.Struct({ query: Schema.NonEmptyString, limit: Schema.optionalKey(Schema.Int) }),
+    Schema.Struct({
+      query: Schema.NonEmptyString,
+      limit: Schema.optionalKey(Schema.Int),
+      depth: Schema.optionalKey(SearchDepth),
+    }),
   ),
-  outputSchema: standardSchema(Schema.Array(ChunkResult)),
+  outputSchema: standardSchema(
+    Schema.Struct({
+      hits: Schema.Array(
+        Schema.Struct({
+          ...ChunkResult.fields,
+          relevance: Schema.NullOr(Schema.Number),
+          context: SearchHit.fields.context,
+        }),
+      ),
+      facts: Schema.Array(GraphFact),
+      aspects: Schema.Array(SearchAspect),
+      abstained: Schema.Boolean,
+    }),
+  ),
 };
 
 export const readItemSpec = {

@@ -1,40 +1,123 @@
-import type { ItemRow } from "@avenire/database/schema";
 import * as Effect from "effect/Effect";
 import type * as HttpClient from "effect/http/HttpClient";
+import * as Option from "effect/Option";
 
-import { extractOffice, supportsOffice } from "./office.ts";
+import { extractMedia, extractRemoteMedia } from "./av.ts";
+import { extractCaptions } from "./captions.ts";
+import type { ImageDescriber } from "./describe.ts";
+import { extractImage } from "./image.ts";
+import type { MediaProcessor } from "./media.ts";
+import type { Ocr } from "./ocr.ts";
+import { extractOffice } from "./office.ts";
 import { extractPdf } from "./pdf.ts";
+import { RemoteMedia } from "./remote.ts";
+import { resolveFormat } from "./resolve.ts";
 import { extractTextDocument } from "./text.ts";
-import { type ExtractedDocument, type ExtractionError, UnsupportedSource } from "./types.ts";
+import type { TranscriptCache } from "./transcript-cache.ts";
+import type { Transcriber } from "./transcribe.ts";
+import {
+  type ExtractedDocument,
+  type ExtractionError,
+  type SourceInput,
+  storableDocument,
+  UnsupportedSource,
+} from "./types.ts";
 import { extractWeb } from "./web.ts";
-import { extractYouTube, isYouTubeUrl } from "./youtube.ts";
+import { fetchYouTubeCues } from "./youtube.ts";
 
-export type { ExtractedDocument } from "./types.ts";
+export type { ExtractedDocument, SourceInput } from "./types.ts";
 export { ExtractionError, UnsupportedSource } from "./types.ts";
 
-/** Picks the extractor for an item from its kind, stored bytes and source URL. */
+/** Services the extractors call: page fetches, OCR, speech to text, vision, ffmpeg, yt-dlp. */
+export type ExtractionServices =
+  | HttpClient.HttpClient
+  | Ocr
+  | Transcriber
+  | TranscriptCache
+  | ImageDescriber
+  | MediaProcessor
+  | RemoteMedia;
+
+/** YouTube's caption endpoint is quick when it works; give up on it fast. */
+const YOUTUBE_CAPTIONS_TIMEOUT = "30 seconds";
+
+/** A media URL: cheap YouTube captions first, then yt-dlp metadata, captions or audio. */
+const extractUrlMedia = Effect.fn("extractUrlMedia")(function* (
+  url: string,
+  source: SourceInput,
+  youtube: boolean,
+) {
+  const remote = yield* RemoteMedia;
+  const cues = youtube
+    ? Option.getOrElse(
+        yield* fetchYouTubeCues(url).pipe(Effect.timeout(YOUTUBE_CAPTIONS_TIMEOUT), Effect.option),
+        () => [],
+      )
+    : [];
+  const metadata = yield* remote.metadata(url).pipe(Effect.option);
+  if (Option.isNone(metadata) && cues.length === 0) {
+    return yield* new UnsupportedSource({
+      kind: source.kind,
+      reason: "The URL has no supported video or audio",
+    });
+  }
+  return yield* extractRemoteMedia(
+    url,
+    source,
+    Option.getOrElse(metadata, () => ({
+      chapters: [],
+      subtitleLanguages: [],
+      automaticCaptionLanguages: [],
+    })),
+    cues,
+  );
+});
+
+/** Extracts a source with the extractor its bytes, MIME type and URL call for. */
 export const extract = (
-  item: ItemRow,
-  source: Uint8Array | null,
-): Effect.Effect<ExtractedDocument, ExtractionError | UnsupportedSource, HttpClient.HttpClient> => {
-  if (item.kind === "pdf" && source) return extractPdf(source);
-  if (item.kind === "document" && source && supportsOffice(item.mimeType)) {
-    return extractOffice(item.mimeType, source);
-  }
-  if ((item.kind === "web-page" || item.kind === "video") && item.sourceUrl) {
-    if (isYouTubeUrl(item.sourceUrl)) return extractYouTube(item.sourceUrl);
-    if (item.kind === "web-page") return extractWeb(item.sourceUrl, source);
-  }
-  if ((item.kind === "note" || item.kind === "selection") && source) {
-    return Effect.succeed(extractTextDocument(source, item.title));
+  source: SourceInput,
+): Effect.Effect<ExtractedDocument, ExtractionError | UnsupportedSource, ExtractionServices> =>
+  extractWith(source).pipe(Effect.map(storableDocument));
+
+const extractWith = (
+  source: SourceInput,
+): Effect.Effect<ExtractedDocument, ExtractionError | UnsupportedSource, ExtractionServices> => {
+  const { bytes, sourceUrl } = source;
+  const format = resolveFormat(source);
+  if (bytes !== null) {
+    switch (format) {
+      case "pdf":
+        return extractPdf(bytes);
+      case "office":
+        return extractOffice(source.mimeType, bytes);
+      case "image":
+        return extractImage(bytes, source);
+      case "media":
+        return extractMedia(bytes, source);
+      case "captions":
+        return Effect.succeed(extractCaptions(bytes, source));
+      case "text":
+        return Effect.succeed(extractTextDocument(bytes, source));
+      case "html":
+        return extractWeb(sourceUrl ?? "", bytes);
+    }
+  } else if (sourceUrl !== null) {
+    if (format === "youtube") return extractUrlMedia(sourceUrl, source, true);
+    if (format === "web") return extractWeb(sourceUrl, null);
+    if (format === "remote") {
+      const media = extractUrlMedia(sourceUrl, source, false);
+      return source.kind === "web-page"
+        ? media.pipe(Effect.catchTags({ UnsupportedSource: () => extractWeb(sourceUrl, null) }))
+        : media;
+    }
   }
   return Effect.fail(
     new UnsupportedSource({
-      kind: item.kind,
+      kind: source.kind,
       reason:
-        source === null
+        bytes === null
           ? "This source requires stored content or a supported URL"
-          : "No extractor is available for this item format",
+          : "No extractor is available for this file format",
     }),
   );
 };

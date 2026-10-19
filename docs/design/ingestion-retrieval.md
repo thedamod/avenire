@@ -419,58 +419,86 @@ Principles from §1.5. **Fuse by rank, never by raw score.** **Every stage must 
 measurable on the benchmark before it ships**, because v1's constants and fallbacks
 compounded unmeasured. **Prefer an index-backed SQL lane over an LLM call.** **Let Ruth
 own query rewriting**: it already writes the `search_materials` query, so there's no
-per-query expansion or HyDE in the hot path.
+per-query expansion or HyDE, and the one LLM call in search (aspect planning) only runs
+when Ruth asks for `depth: "deep"`.
 
-Already done (`9112434`): iterative HNSW scans, OR lexical, two chunks per item, pure
-RRF. Next steps, in order, each landing on its own:
+`Retrieval.search` (`packages/ingestion/src/retrieval/`) runs these steps:
 
-1. **Fix negation in the OR rewrite.** Build the tsquery from tokens instead of
-   string-replacing `websearch_to_tsquery` output: OR the positive terms, keep phrases as
-   `<->`, AND any `!term` onto the whole disjunction (`(a | b) & !c`). Unit test:
-   `cells -plants` must not match a chunk that contains neither word.
-2. **Guard the embedding space.** Add `AND c.embedding_model = ${embedder.model}` to the
-   semantic lane, and backfill or re-embed on model change. This is cheap, and prevents
-   silently comparing vectors from different models.
-3. **Weighted lexical vector.** Replace the generated `search` column with a stored
-   `setweight(to_tsvector(title), 'A') || setweight(to_tsvector(heading), 'B') ||
-   setweight(to_tsvector(content), 'D')`, written at chunk insert (the title is
-   denormalised per chunk, and rewritten on item rename). Keep it a single GIN-indexed
-   column: v1's OR across per-row `to_tsvector(title)` lost the index and flooded results
-   with title-only matches (§1.5 item 2). Don't index `kind` or `source`.
-4. **Contextual chunk embeddings.** Embed `"{item title} › {heading path}\n{content}"`,
-   plus `[mm:ss]` for transcript chunks. Display and FTS keep the raw content. This
-   needs a `chunker_version` bump and a re-embed, so it goes with the embedding-cache
-   work in §2.4.
-5. **Exact lane for symbols.** When the query has a quoted phrase, a code identifier or
-   math symbols (v1's `extractTrigramQuery` heuristic is fine), add a third RRF list:
-   `content ILIKE '%…%'` on raw `content`, served by a `gin_trgm_ops` index. Do the
-   normalisation (NFKC, dash folding) at insert time in a stored `content_norm` column,
-   so the predicate stays indexable (§1.5 item 3).
-6. **Reranker with a real score.** A `Reranker` service (Cohere `rerank-v3.5` or Voyage
-   `rerank-2`) over the top ~30 fused candidates, documents formatted as `"{title} ›
-   {heading} [{location}]\n{content}"`. If it fails, return the RRF order and flag
-   `reranked: false`. No re-embedding fallback, and no reuse of another stage's scores as
-   a rerank score (§1.5 item 13).
-7. **Expose relevance, then abstain.** `SearchHit` gains `relevance` (the rerank score,
-   or `null` when not reranked) and the result gains `reranked`. Pick one threshold on
-   the benchmark's no-answer queries; below it, return no hits plus `abstained: true`, so
-   Ruth says the materials don't cover it. No intent-based bypasses (§1.5 item 14).
-8. **Location-aware queries.** Parse `p. 12`, `page 12`, `12:30` and `slide 4` from the
-   query, and add an RRF list of chunks whose `location` contains that page or time
-   (v1's `temporalProximityMultiplier`, as a ranked list instead of a multiplier).
-9. **Neighbour stitching in the hit, not the context.** Keep `read_item` for deliberate
-   reads. For hits whose chunk was a mid-paragraph word-window split, attach
-   `before`/`after` snippets of about 60 tokens with the overlap removed, fetched in one
-   query for all hits. Don't splice whole neighbours into the hit content; v1 blew its
-   budget and blurred citations that way (§1.5 items 18–19).
+1. **Analyze the query** (`query.ts`). Parse `p. 12` / `pages 2-4` and `mm:ss` times
+   into a location filter and strip them from the text; collect double-quoted or
+   backticked phrases and code/formula identifiers for the exact lane; collect `-term`
+   negations. Build the tsquery from parts in SQL (`(a | b | "c d") & !e`), never by
+   rewriting `websearch_to_tsquery` output, so negation stays a negation.
+2. **Semantic cache** (`cache.ts`, table `search_cache`). An exact repeat of the
+   normalized text is answered without embedding; otherwise the query embedding is
+   compared with recent queries' (cosine ≥ `SEARCH_CACHE_SIMILARITY`, default 0.95).
+   Entries are keyed by an options fingerprint (filters, limit, depth, parsed locations,
+   phrases, negations), so "page 12" never answers "page 13". Entries expire after 24 h
+   and are deleted whenever the user's corpus changes (re-index, rename, move,
+   archive). Degraded (un-reranked) results are never cached.
+3. **Lanes**, each a ranked list from one index:
+   - *semantic*: HNSW cosine with iterative scans, filtered to the current
+     `embedding_model` so a model change never compares vectors from different spaces;
+   - *lexical*: the stored weighted tsvector (title A, heading B, content D, written at
+     chunk insert; `kind` and `source` are not indexed);
+   - *exact*: `content_norm LIKE` on NFKC-folded text, served by a `gin_trgm_ops` index,
+     only when the query has phrases or identifiers;
+   - *location*: chunks on the parsed pages, or whose time range is within 20 s of a
+     parsed time, nearest first;
+   - *graph*: see below.
+   Every lane filters by user and drops archived items.
+4. **Weighted RRF** (`fusion.ts`) merges lanes by rank only. The lane weights are untuned
+   defaults until the benchmark fits them. At most four chunks per item enter the
+   rerank pool of 40.
+5. **Rerank** (`rerank.ts`, Cohere `rerank-v4.0-fast`). Documents are the contextual
+   text `"{title} › {heading} [{location}]\n{content}"`. If the reranker fails, hits
+   keep fused order with `reranked: false` and `relevance: null`; no other stage's score
+   is passed off as relevance.
+6. **Abstain** when the best relevance is below `RETRIEVAL_MIN_RELEVANCE` (default 0.1,
+   to be fitted on the no-answer lane): no hits, `abstained: true`, so Ruth says the
+   materials don't cover it. There are no intent-based bypasses.
+7. **Shape**: two chunks per item, then `limit`.
+
+**Deep search** (`depth: "deep"`, chosen by Ruth for comparisons and multi-step
+questions) fixes v1's coverage gaps (§1.5 decomposition; audit items 8–9): the planner
+splits the question into at most four standalone aspects, each aspect adds its own
+semantic and lexical lists, the graph walk goes two hops, the pool is reranked against
+every aspect, and each aspect's best hit is reserved in the result when it clears the
+threshold. `aspects[].covered` reports which parts the materials answer, so a missing
+side of a comparison is visible instead of silently dropped.
+
+**Graph RAG** is for multi-hop questions, where the answer bridges two passages through
+a shared entity ("the mathematician behind Gram–Schmidt" → Schmidt → "studied under
+Hilbert"). At index time `GraphIndexer` asks `ingest-graph` for the entities and typed
+relations in each new chunk, keyed per user by a normalized name (`entity`,
+`entity_mention`, `entity_relation`); unchanged chunks keep theirs, and entities no
+chunk mentions are pruned. At query time `GraphSearch` links the query to entities by
+name and by embedding, walks relations one hop (two in deep mode) with decaying scores,
+and ranks chunks by the relations they state and the linked entities they mention, so
+bridge chunks rank highest. The walked edges come back as `facts` with chunk citations.
+
+**Indexing** (`indexer.ts`) embeds `embeddingText(title, chunk)` (title, heading, and
+`[mm:ss]` or `(p. N)`) through `embedding_cache` keyed by (model, SHA-256), diffs chunks
+by that hash so unchanged chunks keep their rows, vectors and graph, and swaps the
+item's chunks in one transaction after every provider call has succeeded, so a failed
+re-ingest leaves the previous index searchable (audit item 5).
+
+Remaining steps:
+
+- **Neighbour stitching in the hit, not the context.** Keep `read_item` for deliberate
+  reads. For hits whose chunk was a mid-paragraph word-window split, attach
+  `before`/`after` snippets of about 60 tokens with the overlap removed, fetched in one
+  query for all hits. Don't splice whole neighbours into the hit content; v1 blew its
+  budget and blurred citations that way (§1.5 items 18–19).
+- **Slide locations** for the location lane once slide chunks exist (§2.3).
 
 **Video search specifically** (fixes §1.1 and the v2 gaps in §1.3):
 
-- **Title, chapter and time in every transcript chunk.** Steps 3–4 apply to transcripts
+- **Title, chapter and time in every transcript chunk.** Contextual embedding text and the weighted lexical vector apply to transcripts
   as `"{video title} › {chapter} [mm:ss]\n{text}"` in the embedding text, with title and
   chapter in the weighted lexical vector. This fixes v1 #3 and v2's title blindness
   without v1's flood of intro chunks (#4).
-- **Timestamp lane first.** Step 8 is the highest-value change for lectures. "At 9:15 in
+- **Timestamp lane first.** The location lane is the highest-value change for lectures. "At 9:15 in
   lecture 1" becomes a location list (chunks whose `[startSec, endSec]` contains or is
   near 555 s) fused with the title match, so the right minute of the right video ranks
   first. Strip the parsed time from the text before it reaches the other lanes (v1 #5).
@@ -486,18 +514,18 @@ RRF. Next steps, in order, each landing on its own:
   transcript chunk at the same timestamp as one slot.
 - **No modality multipliers.** When the user means a video, Ruth passes
   `kinds: ["video"]`; otherwise every kind competes on rank (v1 #1–2).
-- **Rerank documents carry title and time** (step 6), so the cross-encoder judges a
+- **Rerank documents carry title and time** (§2.5 rerank), so the cross-encoder judges a
   fragment in context (v1 #7).
 
 Deliberately not ported from v1: regex intent detection and modality multipliers (use
-`kinds` filters chosen by Ruth instead), LLM query expansion, HyDE and decomposition in
-the hot path, learner-signal boosts, the fast/slow router and shadow calibration, the
+`kinds` filters chosen by Ruth instead), LLM query expansion and HyDE, decomposition on
+every query (deep search does it only on request), learner-signal boosts, the fast/slow router and shadow calibration, the
 warm-up job, and token-overlap "quality" telemetry. Any of these can come back only with
 a benchmark result showing it helps.
 
 Later, when the data justifies it: per-user `chunk` partitioning, `halfvec`, and a
-small learned weight for RRF lists (dense / lexical / exact / location) fitted on the
-benchmark.
+learned weight for each RRF list (semantic / lexical / exact / location / graph) fitted on
+the benchmark.
 
 ### 2.6 Benchmark additions
 
@@ -514,7 +542,7 @@ benchmark.
   lectures' vocabulary, so v1 #1-style bias shows up as a metric. Report Recall@10 for
   video items and timestamp error.
 - A **no-answer lane:** questions whose answer is not in the seeded corpus. Report
-  abstention precision and recall next to Recall@k, so the threshold in §2.5 step 7 is
+  abstention precision and recall next to Recall@k, so the §2.5 abstention threshold is
   chosen on data.
 - **Query-shape lanes** matching §1.5's failure modes: question-style, negation, quoted
   phrase or formula, code identifier, title-only ("what's in the thermodynamics notes"),
@@ -603,14 +631,14 @@ reported on `test`. Rung 0 is the baseline every later number is compared agains
 | --- | --- | --- | --- |
 | 0 | **Baseline as-is:** `auto`, `full` and `fast` modes; expansion/HyDE on and off | establishes `v1-asis` | — |
 | 1 | **No-regret bugs:** rerank fallback uses its cosine scores (or drop the fallback); HyDE token cap; `ingestion_embedding.model` filter; stop selecting `e.embedding`; don't send `:`-containing questions to trigram | correctness; fewer provider calls | model filter and no re-embed fallback are already in §2.5 |
-| 2 | **Recall:** `hnsw.iterative_scan` + `ef_search = 200`; OR lexical with negation preserved | `dense` / `lexical` stage Recall@50 | already in v2, negation fix in §2.5 step 1 |
-| 3 | **Lexical quality:** stored weighted tsvector (title A, content D) as one GIN column; drop `kind`/`source` from it; trigram on a stored normalized column | `paraphrase`, `exact-identifier`; latency | §2.5 steps 3, 5 |
+| 2 | **Recall:** `hnsw.iterative_scan` + `ef_search = 200`; OR lexical with negation preserved | `dense` / `lexical` stage Recall@50 | already in v2, negation fix in §2.5 query analysis |
+| 3 | **Lexical quality:** stored weighted tsvector (title A, content D) as one GIN column; drop `kind`/`source` from it; trigram on a stored normalized column | `paraphrase`, `exact-identifier`; latency | §2.5 lexical and exact lanes |
 | 4 | **Fusion:** pure RRF over lanes; remove raw-score addition, modality multipliers, doc bonus and intent regexes, as one ablation | `video-transcript` slice; no regression on `direct-fact` | already in v2 (pure RRF) |
-| 5 | **Timestamp lane:** wire `extractQueryTimestampMs` as an RRF location list | `timestamp` family MRR@10 | §2.5 step 8 |
-| 6 | **Contextual transcript chunks:** re-ingest the benchmark corpus with title + `[mm:ss]` in the embedding text; keyframes stop duplicating transcript | `timestamp`, `video-transcript`, `cross-file` | §2.5 step 4 and the video block |
-| 7 | **Rerank wider and with context:** top 40 RRF candidates, documents include title + location | `rerank-output` nDCG@10 | §2.5 step 6 |
-| 8 | **Calibrated abstention:** one threshold fitted on `development` unanswerables, no bypasses | `unanswerable` abstention F1 | §2.5 step 7 |
-| 9 | **Context assembly:** no whole-neighbour splicing; trim overlap | `final` Recall@8 ≈ `rerank-output` Recall@8 | §2.5 step 9 |
+| 5 | **Timestamp lane:** wire `extractQueryTimestampMs` as an RRF location list | `timestamp` family MRR@10 | §2.5 location lane |
+| 6 | **Contextual transcript chunks:** re-ingest the benchmark corpus with title + `[mm:ss]` in the embedding text; keyframes stop duplicating transcript | `timestamp`, `video-transcript`, `cross-file` | §2.5 indexing and the video block |
+| 7 | **Rerank wider and with context:** top 40 RRF candidates, documents include title + location | `rerank-output` nDCG@10 | §2.5 rerank |
+| 8 | **Calibrated abstention:** one threshold fitted on `development` unanswerables, no bypasses | `unanswerable` abstention F1 | §2.5 abstain |
+| 9 | **Context assembly:** no whole-neighbour splicing; trim overlap | `final` Recall@8 ≈ `rerank-output` Recall@8 | §2.5 neighbour stitching |
 | 10 | **Cost ablations:** expansion, HyDE, decomposition, learner boosts, fast path, each on and off on top of rung 9 | quality delta vs calls/latency | port only what wins on `test` |
 | 11 | **Ingest:** extension media routing; real caption cues (store SRT/Whisper cues, serve VTT from them) | evidence materialization rate; time-locator precision | §2.2–2.4 |
 
@@ -634,17 +662,17 @@ needs `pnpm install` there. It also needs Postgres with pgvector ≥ 0.8 (for ru
 in its README: `corpus:fetch`, `corpus:ingest-controlled -- --user-email …`,
 `run:controlled`, `report:run`.
 
-## 4. What changes in code (when we implement)
+## 4. What changes in code
 
 | Package | Change |
 | --- | --- |
-| `contracts` | `CapturedMedia` gains `pageUrl`, `currentTimeSec`; `IngestionJob` gains `coverage`; `ChunkKind` gains `slide` and `outline`; `SearchHit` gains `relevance`, search results gain `reranked` / `abstained` |
-| `database` | `chunk.embedding → halfvec(1536)`, `chunk.content_hash`; stored weighted `search` (title A, heading B, content D); `content_norm` + `gin_trgm_ops` index; `embedding_cache`; `item.document_key`, `extractor_version` |
-| `ingestion` | `resolve` stage; media extractor (sandboxed ffmpeg / yt-dlp / Whisper / OCR); `NormalizedDocument` persistence; hash-diffed chunk upsert; contextual embedding text; retrieval changes in §2.5 |
+| `contracts` | `CapturedMedia` gains `pageUrl`, `currentTimeSec`; `IngestionJob` gains `coverage`; `ChunkKind` gains `slide` and `outline`; done: `SearchResult` (`relevance`, `lanes`, `facts`, `aspects`, `reranked`, `abstained`, `cached`) |
+| `database` | `chunk.embedding → halfvec(1536)`; `item.document_key`, `extractor_version`. Done: `chunk.content_hash`, stored weighted `search`, `content_norm` + `gin_trgm_ops`, `embedding_cache`, the entity graph tables, `search_cache` |
+| `ingestion` | `resolve` stage; media extractor (sandboxed ffmpeg / yt-dlp / Whisper / OCR); `NormalizedDocument` persistence. Done: hash-diffed chunk upsert, contextual embedding text, graph indexing, retrieval in §2.5 |
 | `cloud` | `avenire-media` snapshot and a `MediaJobs` runner (segment checkpointing) |
 | `apps/desktop` + extension | report video pages with time position; native media goes through the media path, never "note" |
 | `retrieval-benchmark` | adopt v1's contract (pinned manifest, locator qrels, families, stage metrics, strength gate) behind one retriever adapter for v1 and v2; versioned baselines; then the video, capture-to-index, no-answer, query-shape and cost additions (§2.6, §3.2) |
 
-The retrieval steps in §2.5 are independent of the media pipeline. Steps 1–3 and 5
-are SQL and schema only. Step 4 rides on the re-embed in §2.4. Steps 6–7 need the
-no-answer benchmark lane first.
+Retrieval (§2.5) is independent of the media pipeline. Its untuned constants (lane
+weights, abstention threshold, cache similarity) need the no-answer and multi-hop
+benchmark lanes before they can be fitted.
