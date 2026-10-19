@@ -1,10 +1,10 @@
 import type {
+  CanvasNodeRef,
   AssetKind,
   AssetVisibility,
   ChunkKind,
   CloudRunStatus,
   CaptureSnapshot,
-  CanvasNodeRef,
   ChunkLocation,
   ExtractionCoverage,
   FileKind,
@@ -26,6 +26,7 @@ import {
   boolean,
   customType,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -46,6 +47,8 @@ const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
   cloudInputsSlug: text("cloud_inputs_slug"),
+  /** Advances atomically with every change to the searchable library. */
+  corpusRevision: integer("corpus_revision").notNull().default(0),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").notNull().default(false),
@@ -138,6 +141,8 @@ export const file = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     archivedAt: timestamptz("archived_at"),
+    /** Once claimed, storage deletion is irreversible; restore must reject the claim. */
+    purgeStartedAt: timestamptz("purge_started_at"),
     sourceUrl: text("source_url"),
     storageKey: text("storage_key"),
     mimeType: text("mime_type"),
@@ -155,6 +160,7 @@ export const file = pgTable(
   },
   (t) => [
     unique("file_user_dedupe_key_unique").on(t.userId, t.dedupeKey),
+    unique("file_id_user_unique").on(t.id, t.userId),
     index("file_user_placement_idx").on(t.userId, t.placement),
     index("file_user_content_modified_idx").on(t.userId, t.contentModifiedAt),
     index("file_capture_id_idx").on(t.captureId),
@@ -181,6 +187,48 @@ export const fileEvent = pgTable(
     index("file_event_user_at_idx").on(t.userId, t.at),
     index("file_event_user_file_at_idx").on(t.userId, t.fileId, t.at),
     index("file_event_file_id_idx").on(t.fileId),
+  ],
+);
+
+/** Short-lived, owner-scoped staging for originals acquired on the user's device. */
+export const sourceUpload = pgTable(
+  "source_upload",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    fileId: text("file_id").notNull(),
+    title: text("title").notNull(),
+    kind: text("kind").$type<FileKind>().notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+    sha256: text("sha256").notNull(),
+    /** Citation provenance only. Never a credential or a fallback download target. */
+    sourceUrl: text("source_url"),
+    storageKey: text("storage_key"),
+    abandonedStorageKeys: text("abandoned_storage_keys")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    status: text("status")
+      .$type<"pending" | "uploading" | "completed" | "cancelled">()
+      .notNull()
+      .default("pending"),
+    expiresAt: timestamptz("expires_at").notNull(),
+    claimToken: text("claim_token"),
+    claimExpiresAt: timestamptz("claim_expires_at"),
+    completedFileId: text("completed_file_id").references(() => file.id, { onDelete: "set null" }),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+    updatedAt: timestamptz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    unique("source_upload_user_idempotency_unique").on(t.userId, t.idempotencyKey),
+    unique("source_upload_file_id_unique").on(t.fileId),
+    unique("source_upload_storage_key_unique").on(t.storageKey),
+    index("source_upload_user_status_idx").on(t.userId, t.status),
+    index("source_upload_expiry_idx").on(t.expiresAt),
   ],
 );
 
@@ -256,6 +304,8 @@ export const ingestionJob = pgTable(
     error: text("error"),
     coverage: jsonb("coverage").$type<ExtractionCoverage>(),
     lockedUntil: timestamptz("locked_until"),
+    /** Fresh on every claim/reclaim, independently of source generation. */
+    claimToken: text("claim_token"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
     updatedAt: timestamptz("updated_at").notNull().defaultNow(),
   },
@@ -321,6 +371,10 @@ export const embeddingCache = pgTable(
 export const transcriptCache = pgTable(
   "transcript_cache",
   {
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    fileId: text("file_id").notNull(),
     model: text("model").notNull(),
     contentHash: text("content_hash").notNull(),
     segments: jsonb("segments")
@@ -329,8 +383,17 @@ export const transcriptCache = pgTable(
       >()
       .notNull(),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
+    expiresAt: timestamptz("expires_at").notNull(),
   },
-  (t) => [primaryKey({ columns: [t.model, t.contentHash] })],
+  (t) => [
+    primaryKey({ columns: [t.userId, t.fileId, t.model, t.contentHash] }),
+    foreignKey({
+      columns: [t.fileId, t.userId],
+      foreignColumns: [file.id, file.userId],
+      name: "transcript_cache_file_owner_fk",
+    }).onDelete("cascade"),
+    index("transcript_cache_expires_idx").on(t.expiresAt),
+  ],
 );
 
 /** A named thing in the user's material (a concept, person, theorem, ...), one row per key. */
@@ -429,6 +492,7 @@ export const searchCache = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    corpusRevision: integer("corpus_revision").notNull().default(0),
     optionsKey: text("options_key").notNull(),
     /** Normalized query text, for exact repeats that skip embedding entirely. */
     queryText: text("query_text").notNull(),
@@ -440,7 +504,7 @@ export const searchCache = pgTable(
     expiresAt: timestamptz("expires_at").notNull(),
   },
   (t) => [
-    index("search_cache_lookup_idx").on(t.userId, t.optionsKey, t.queryText),
+    index("search_cache_lookup_idx").on(t.userId, t.corpusRevision, t.optionsKey, t.queryText),
     index("search_cache_expires_at_idx").on(t.expiresAt),
   ],
 );
@@ -515,6 +579,8 @@ export const cloudTask = pgTable(
     builtin: text("builtin").$type<"nightly-digest">(),
     /** A hidden task backing one `POST /api/ruth/cloud` run; never listed, scheduled or editable. */
     oneOff: boolean("one_off").notNull().default(false),
+    /** Retiring a task preserves runs, outstanding review and cleanup obligations. */
+    retiredAt: timestamptz("retired_at"),
     maxAttempts: integer("max_attempts").notNull().default(2),
     nextRunAt: timestamptz("next_run_at"),
     lastRunAt: timestamptz("last_run_at"),
@@ -559,6 +625,9 @@ export const cloudRun = pgTable(
         meteredUntil?: number;
         cleanupComplete?: boolean;
         resumeFailures?: number;
+        execution?: { status: "completed"; text: string };
+        reportText?: string;
+        lengthContinuations?: number;
       }>()
       .notNull()
       .default({ inputTokens: 0, outputTokens: 0, cost: 0, actions: 0 }),
@@ -806,9 +875,10 @@ export const schema = {
   capture,
   file,
   fileEvent,
+  sourceUpload,
+  canvasNode,
   folder,
   fileFolder,
-  canvasNode,
   ingestionJob,
   chunk,
   embeddingCache,
@@ -844,9 +914,10 @@ export type AccountRow = typeof account.$inferSelect;
 export type VerificationRow = typeof verification.$inferSelect;
 export type CaptureRow = typeof capture.$inferSelect;
 export type FileRow = typeof file.$inferSelect;
+export type CanvasNodeRow = typeof canvasNode.$inferSelect;
+export type SourceUploadRow = typeof sourceUpload.$inferSelect;
 export type FolderRow = typeof folder.$inferSelect;
 export type FileFolderRow = typeof fileFolder.$inferSelect;
-export type CanvasNodeRow = typeof canvasNode.$inferSelect;
 export type IngestionJobRow = typeof ingestionJob.$inferSelect;
 export type ChunkRow = typeof chunk.$inferSelect;
 export type EntityRow = typeof entity.$inferSelect;

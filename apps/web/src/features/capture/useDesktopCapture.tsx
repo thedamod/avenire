@@ -1,8 +1,9 @@
 "use client";
 
+import { applyPolicy } from "@avenire/desktop/capture-policy";
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { call } from "@avenire/client-runtime/rpc";
+import { call, invalidateLibrary } from "@avenire/client-runtime/rpc";
 import { useApi, errorMessage } from "~/lib/rpc";
 import { setCaptureReceipt } from "./receipt";
 
@@ -13,9 +14,16 @@ export function useDesktopCapture() {
     const bridge = window.avenire;
     if (!bridge) return;
 
-    return bridge.onCapture((payload) => {
+    return bridge.onCapture((incoming) => {
+      // Enforce the same outbound allowlist even with an older desktop bridge.
+      const filtered = applyPolicy(incoming.snapshot);
+      const payload = {
+        snapshot: filtered.snapshot,
+        blocked: [...incoming.blocked, ...filtered.blocked],
+      };
       void call(api, (client) => client["library.submitCapture"]({ snapshot: payload.snapshot }))
         .then((result) => {
+          invalidateLibrary(api);
           const receipt = {
             capturedAt: payload.snapshot.capturedAt,
             files: result.files,

@@ -15,7 +15,9 @@ import { IngestionModelsLive } from "@avenire/ingestion/models";
 import { IngestionPipelineLive } from "@avenire/ingestion/pipeline";
 import { IngestionWorkerLive } from "@avenire/ingestion/worker";
 import * as Layer from "effect/Layer";
+import * as Effect from "effect/Effect";
 import { ServicesLive } from "./services.ts";
+import { cleanupUploads, SourceUploadsLive } from "./sourceUploads.ts";
 
 const ExtractionLive = Layer.mergeAll(
   OcrLive,
@@ -33,6 +35,9 @@ const PipelineLive = IngestionPipelineLive.pipe(
   Layer.provideMerge(Layer.mergeAll(ExtractionLive, IndexingLive)),
 );
 const ExecutorLive = CloudRunsLive.pipe(Layer.provideMerge(RuthCloudLive));
+const UploadCleanupLive = Layer.effectDiscard(cleanupUploads.pipe(Effect.forkScoped)).pipe(
+  Layer.provide(SourceUploadsLive),
+);
 
 /** A single graph shares infrastructure with the request runtime; the worker owns every background fiber. */
 export const WorkerLive = Layer.mergeAll(
@@ -40,4 +45,5 @@ export const WorkerLive = Layer.mergeAll(
   ArchivePurgeLive,
   CloudSchedulerLive.pipe(Layer.provideMerge(ExecutorLive)),
   ChatSandboxSweeperLive,
+  UploadCleanupLive,
 ).pipe(Layer.provideMerge(ServicesLive));

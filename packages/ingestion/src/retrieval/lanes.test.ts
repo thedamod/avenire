@@ -35,6 +35,8 @@ describe("retrieval lane builders", () => {
       .toSQL();
     expect(query.sql).toContain('"chunk"."user_id" =');
     expect(query.sql).toContain('"file"."placement" <>');
+    expect(query.sql).toContain('"file"."archived_at" is null');
+    expect(query.sql).toContain('"file"."purge_started_at" is null');
     expect(query.sql).toContain('"file"."id" in');
     expect(query.sql).toContain('coalesce("file"."content_modified_at", "file"."created_at") >=');
     expect(query.sql).toContain('coalesce("file"."content_modified_at", "file"."created_at") <');

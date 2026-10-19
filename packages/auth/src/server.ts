@@ -3,7 +3,7 @@ import { UserId } from "@avenire/contracts";
 import { emailOutbox, user, session, account, verification } from "@avenire/database/schema";
 import { Database, type DatabaseClient } from "@avenire/database/client";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { expo } from "@better-auth/expo";
 import { nextCookies } from "better-auth/next-js";
 import * as Config from "effect/Config";
@@ -37,18 +37,24 @@ const enqueueEmail = (
     props: { name, url },
   });
 
-export const createAuth = (options: CreateAuthOptions) =>
+export const createAuth = (
+  options: CreateAuthOptions,
+  database: BetterAuthOptions["database"] = drizzleAdapter(options.db, {
+    provider: "pg",
+    schema: { user, session, account, verification },
+  }),
+) =>
   betterAuth({
     baseURL: options.baseURL,
+    basePath: "/api/auth",
     secret: options.secret,
     trustedOrigins: [...options.trustedOrigins],
-    database: drizzleAdapter(options.db, {
-      provider: "pg",
-      schema: { user, session, account, verification },
-    }),
+    advanced: { disableOriginCheck: false, disableCSRFCheck: false },
+    database,
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
+      revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user: authUser, url }) => {
         await enqueueEmail(options.db, "reset-password", authUser.email, authUser.name, url);
       },
@@ -90,7 +96,7 @@ export class AuthService extends Context.Service<
   }
 >()("avenire/auth/AuthService") {}
 
-const parseOrigins = (value: string): ReadonlyArray<string> =>
+export const parseOrigins = (value: string): ReadonlyArray<string> =>
   value
     .split(",")
     .map((origin) => origin.trim())
@@ -111,14 +117,22 @@ export const AuthLive = Layer.effect(
       secret: Redacted.value(config.secret),
       trustedOrigins: Option.match(config.trustedOrigins, {
         onNone: () => [config.baseURL, "avenire://"],
-        onSome: parseOrigins,
+        onSome: (value) => [...new Set([config.baseURL, "avenire://", ...parseOrigins(value)])],
       }),
       ...Option.match(google, { onNone: () => ({}), onSome: (google) => ({ google }) }),
     });
 
-    const getSession = (headers: Headers) =>
+    return makeAuthService(auth);
+  }),
+);
+
+/** Resolve every protected request against the session store, including revocations. */
+export const makeAuthService = (auth: Auth): AuthService["Service"] =>
+  AuthService.of({
+    auth,
+    getSession: (headers) =>
       Effect.tryPromise({
-        try: () => auth.api.getSession({ headers }),
+        try: () => auth.api.getSession({ headers, query: { disableCookieCache: true } }),
         catch: (cause) => new AuthError({ cause }),
       }).pipe(
         Effect.map((result): SessionUser | null =>
@@ -131,8 +145,5 @@ export const AuthLive = Layer.effect(
               },
         ),
         Effect.withSpan("AuthService.getSession"),
-      );
-
-    return AuthService.of({ auth, getSession });
-  }),
-);
+      ),
+  });

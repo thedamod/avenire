@@ -1,4 +1,4 @@
-import { FolderId, FileId } from "@avenire/contracts";
+import { FolderId, FileId, StorageKey } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { SemanticCache } from "@avenire/ingestion/retrieval/cache";
 import { Storage, StorageMemory } from "@avenire/storage/storage";
@@ -25,6 +25,7 @@ const cache = SemanticCache.of({
 const fileId = FileId.make("file");
 const folder = FolderId.make("folder");
 const inaccessible = fakeDatabase({
+  select: () => ({ from: () => ({ where: () => ({ for: async () => [] }) }) }),
   query: {
     file: { findFirst: async () => undefined },
     folder: { findFirst: async () => undefined },
@@ -58,10 +59,15 @@ it.effect("writes a Ruth note, folder membership, uploaded event and ingestion j
   const writes: Array<{ table: string; values: Record<string, unknown> }> = [];
   const statements: Array<{ sql: string; params: unknown[] }> = [];
   let invalidated = 0;
+  let revisions = 0;
   const database = fakeDatabase({
     query: {
       folder: { findFirst: async () => ({ id: folder }) },
-      file: { findFirst: async () => ({ id: fileId }) },
+      file: {
+        findFirst: async () => ({
+          storageKey: writes.find((write) => write.table === "file")?.values.storageKey,
+        }),
+      },
     },
     insert: (table: { [key: symbol]: unknown }) => ({
       values: (values: Record<string, unknown>) => {
@@ -72,6 +78,14 @@ it.effect("writes a Ruth note, folder membership, uploaded event and ingestion j
       },
     }),
     select: () => ({ from: () => ({ where: () => ({ for: async () => [{ id: fileId }] }) }) }),
+    update: () => ({
+      set: () => ({
+        where: async () => {
+          revisions++;
+          return [];
+        },
+      }),
+    }),
     recordStatement: async (statement: SQL) => {
       statements.push(new PgDialect().sqlToQuery(statement));
       return [{ id: fileId }];
@@ -123,7 +137,8 @@ it.effect("writes a Ruth note, folder membership, uploaded event and ingestion j
         yield* storage.get(fileSourceKey(ctx.userId, result.fileId, "note.md")),
       ),
     ).toBe("# Hello");
-    expect(invalidated).toBe(1);
+    expect(invalidated).toBe(0);
+    expect(revisions).toBe(1);
   }).pipe(Effect.provide(StorageMemory));
 });
 it.effect(
@@ -174,5 +189,55 @@ it.effect(
         ),
       ).toBe(true);
     }).pipe(Effect.provide(services));
+  },
+);
+
+it.effect.each(["folder-removed", "transaction-failed"] as const)(
+  "cleans the staged note after %s",
+  (failure) => {
+    let locks = 0;
+    let inserts = 0;
+    const database = fakeDatabase({
+      query: {
+        folder: { findFirst: async () => ({ id: folder }) },
+        file: { findFirst: async () => undefined },
+      },
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            for: async () => {
+              locks++;
+              return locks === 1 ? [{ id: ctx.userId }] : [];
+            },
+          }),
+        }),
+      }),
+      insert: () => ({
+        values: async () => {
+          inserts++;
+          throw new Error("injected transaction failure");
+        },
+      }),
+    });
+    return Effect.gen(function* () {
+      const storage = yield* Storage;
+      const services = Context.make(Database, database).pipe(
+        Context.add(Storage, storage),
+        Context.add(Crypto.Crypto, testCrypto),
+      ) as Context.Context<RuthKitServices>;
+      const outcome = yield* ruthKitTools
+        .write_file(
+          {
+            title: "Note",
+            content: "private",
+            ...(failure === "folder-removed" ? { folderId: folder } : {}),
+          },
+          ctx,
+        )
+        .pipe(Effect.provide(services), Effect.result);
+      expect(outcome._tag).toBe("Failure");
+      expect(inserts).toBe(failure === "folder-removed" ? 0 : 1);
+      expect(yield* storage.list(StorageKey.make(`users/${ctx.userId}/`))).toEqual([]);
+    }).pipe(Effect.provide(StorageMemory));
   },
 );

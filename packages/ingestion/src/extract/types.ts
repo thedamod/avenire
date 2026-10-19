@@ -1,5 +1,6 @@
 import { ChunkKind, ChunkLocation, ExtractionCoverage, type FileKind } from "@avenire/contracts";
 import * as Schema from "effect/Schema";
+import type { TranscriptScope } from "./transcript-cache.ts";
 
 /**
  * Bump when any extractor's output changes. Stored documents from older versions
@@ -13,8 +14,13 @@ export interface SourceInput {
   readonly title: string;
   readonly mimeType: string | null;
   readonly sourceUrl: string | null;
+  /** Stored originals never use sourceUrl for acquisition; it is citation provenance only.
+   * The pipeline derives this from the persisted storageKey, independently of read success.
+   * Omitted only by legacy callers, where non-null bytes still always win. */
+  readonly acquisitionMode?: "stored" | "public-url";
   /** The stored original, when there is one. */
   readonly bytes: Uint8Array | null;
+  readonly transcriptScope?: TranscriptScope;
 }
 
 export const ExtractedSection = Schema.Struct({

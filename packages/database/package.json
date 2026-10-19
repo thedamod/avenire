@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./corpus": {
+      "types": "./src/corpus.ts",
+      "import": "./src/corpus.ts"
+    },
     "./schema": {
       "types": "./src/schema.ts",
       "import": "./src/schema.ts"

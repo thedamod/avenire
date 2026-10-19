@@ -41,7 +41,9 @@ function FrameAttempt({
   onError,
   retry,
 }: WidgetFrameProps & { retry: () => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const [active, setActive] = useState(() => typeof IntersectionObserver === "undefined");
   const ready = useRef(false);
   const failed = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -70,6 +72,21 @@ function FrameAttempt({
     [colorScheme, tokens],
   );
 
+  useEffect(() => {
+    if (active || !containerRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setActive(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "400px" },
+    );
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [active]);
+
   // Register during the commit: a cached document may post ready before passive effects.
   useLayoutEffect(() => {
     const receive = (event: MessageEvent) => {
@@ -96,10 +113,10 @@ function FrameAttempt({
   }, [postTheme, maxHeight, fail]);
 
   useEffect(() => {
-    if (ready.current || failed.current) return;
+    if (!active || ready.current || failed.current) return;
     timer.current = setTimeout(() => fail("This visual couldn't load."), loadTimeoutMs);
     return () => clearTimeout(timer.current);
-  }, [loadTimeoutMs, fail]);
+  }, [active, loadTimeoutMs, fail]);
 
   // React delegates iframe errors, but native error events do not bubble.
   useLayoutEffect(() => {
@@ -107,7 +124,7 @@ function FrameAttempt({
     const handleError = () => fail("This visual couldn't load.");
     frame?.addEventListener("error", handleError);
     return () => frame?.removeEventListener("error", handleError);
-  }, [fail]);
+  }, [active, fail]);
 
   useEffect(() => {
     if (ready.current && !failed.current) postTheme();
@@ -115,6 +132,7 @@ function FrameAttempt({
 
   return (
     <div
+      ref={containerRef}
       role="figure"
       aria-label={title}
       data-slot="widget-frame"
@@ -136,20 +154,20 @@ function FrameAttempt({
             Retry
           </button>
         </div>
-      ) : (
+      ) : active ? (
         <iframe
           ref={frameRef}
           src={url}
           title={title}
           sandbox={WIDGET_IFRAME_SANDBOX}
           referrerPolicy="no-referrer"
-          loading="lazy"
+          loading="eager"
           allow=""
           className="block h-full"
           style={{ width: "100%", border: 0, colorScheme: "normal" }}
           onError={() => fail("This visual couldn't load.")}
         />
-      )}
+      ) : null}
     </div>
   );
 }

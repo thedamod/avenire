@@ -17,7 +17,7 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { stableToolId } from "../cloud/journal.ts";
-import { AssetStore, type StoredAsset } from "../outputs/assets.ts";
+import { AssetStore } from "../outputs/assets.ts";
 import { COMPUTER_TOOL_SPECS } from "./computer-specs.ts";
 import { targetFor, type ComputerServices } from "./computer.ts";
 import { RuthToolError, type AgentContext } from "./core.ts";
@@ -98,13 +98,11 @@ export const recordingScope = (ctx: Pick<AgentContext, "runId" | "threadId">) =>
   `ruth-${ctx.runId ?? ctx.threadId}`;
 
 /** Chat has no journal: its recording is found by the deterministic per-thread label. */
-const findRecording = (
+export const findRecording = (
   list: ReadonlyArray<RecordingInfo>,
   scope: string,
   storedId: string | null,
-) =>
-  list.find((r) => r.id === storedId) ??
-  list.findLast((r) => r.fileName.includes(scope) && isActive(r));
+) => list.find((r) => r.id === storedId) ?? list.findLast((r) => r.fileName.includes(scope));
 
 /** Cloud journals the running recording so a resumed run can stop or finalise it. */
 const journal = Effect.fn("Recording.journal")(function* (
@@ -113,12 +111,72 @@ const journal = Effect.fn("Recording.journal")(function* (
 ) {
   if (!ctx.runId) return;
   const database = yield* Database;
-  yield* database.use((db) =>
+  const saved = yield* database.use((db) =>
     db
       .update(cloudRun)
       .set({ recordingId })
-      .where(and(eq(cloudRun.id, ctx.runId!), eq(cloudRun.userId, ctx.userId))),
+      .where(
+        and(
+          eq(cloudRun.id, ctx.runId!),
+          eq(cloudRun.userId, ctx.userId),
+          ...(ctx.leaseOwner ? [eq(cloudRun.leasedBy, ctx.leaseOwner)] : []),
+        ),
+      )
+      .returning({ id: cloudRun.id }),
   );
+  if (!saved.length)
+    return yield* new RuthToolError({
+      tool: "screen_record",
+      code: "conflict",
+      message: "The recording lease is no longer owned by this worker.",
+      recoverable: false,
+      checkpointFatal: true,
+    });
+});
+
+/** One recording has one asset across explicit stops and executor recovery. The Cloud run retains
+ * its recording id through delivery and cleanup, so every crash window can find this asset. */
+export const finalizeRecording = Effect.fn("Recording.finalize")(function* (input: {
+  sandbox: RecordingSandbox;
+  recordingId: string;
+  ctx: Pick<AgentContext, "userId" | "runId" | "threadId">;
+  title: string;
+}) {
+  const { ctx, recordingId } = input;
+  const assetId = AssetId.make(
+    stableToolId(
+      {
+        ...(ctx.runId ? { runId: ctx.runId } : {}),
+        toolCallId: `${ctx.runId ? "cloud" : ctx.threadId}:recording:${recordingId}`,
+      },
+      "asset",
+    ),
+  );
+  const assets = yield* AssetStore;
+  const prior = yield* assets.get(assetId);
+  const recorder = input.sandbox.computerUse.recording;
+  const listed = yield* attempt("recordingList", () => recorder.list());
+  const current = listed.recordings.find((recording) => recording.id === recordingId);
+  if (!current && Option.isNone(prior))
+    return yield* fail("The recording is no longer available.", "not_found");
+  const stopped =
+    current && isActive(current)
+      ? yield* attempt("recordingStop", () => recorder.stop(current.id))
+      : current;
+  const asset = Option.isSome(prior)
+    ? prior.value
+    : yield* storeRecording({
+        download: (localPath) =>
+          attempt("recordingDownload", () => recorder.download(recordingId, localPath)),
+        userId: ctx.userId,
+        title: input.title,
+        threadId: ctx.threadId,
+        runId: ctx.runId,
+        idempotencyId: assetId,
+      });
+  // Do not clear the journal on delete failure: a later recovery must retry remote cleanup.
+  if (current) yield* attempt("recordingDelete", () => recorder.delete(recordingId));
+  return { asset, durationSeconds: stopped?.durationSeconds ?? 0 };
 });
 
 export const screenRecord = registerTool({
@@ -140,8 +198,11 @@ export const screenRecord = registerTool({
     const current = findRecording(listed.recordings, scope, storedId);
     if (input.action === "start") {
       // A second start, or a resumed one, reports the recording that is already running.
-      if (current && isActive(current))
+      if (current && isActive(current)) {
+        // A worker may have died after recorder.start succeeded but before journal committed.
+        yield* journal(ctx, current.id);
         return { action: "start" as const, recordingId: current.id, alreadyRecording: true };
+      }
       yield* attempt("computerStart", () => sandbox.computerUse.start());
       const started = yield* attempt("recordingStart", () =>
         recorder.start(`${scope}-${ctx.toolCallId ?? randomUUID().slice(0, 8)}`),
@@ -149,39 +210,29 @@ export const screenRecord = registerTool({
       yield* journal(ctx, started.id);
       return { action: "start" as const, recordingId: started.id, alreadyRecording: false };
     }
-    const assetId =
-      ctx.runId && ctx.toolCallId ? AssetId.make(stableToolId(ctx, "asset")) : undefined;
-    const prior = assetId ? yield* (yield* AssetStore).get(assetId) : Option.none<StoredAsset>();
-    if (!current && Option.isNone(prior))
-      return yield* fail("No recording is running.", "not_found");
-    const stopped = current
-      ? isActive(current)
-        ? yield* attempt("recordingStop", () => recorder.stop(current.id))
-        : current
-      : undefined;
-    const asset = Option.isSome(prior)
-      ? prior.value
-      : yield* storeRecording({
-          download: (localPath) =>
-            attempt("recordingDownload", () => recorder.download(stopped!.id, localPath)),
-          userId: ctx.userId,
-          title: input.label?.trim() || "Screen recording",
-          threadId: ctx.threadId,
-          runId: ctx.runId,
-          idempotencyId: assetId,
-        });
-    yield* journal(ctx, null);
-    // The file now lives in the asset store; free the box's disk. Replays may already have deleted it.
-    if (stopped)
-      yield* attempt("recordingDelete", () => recorder.delete(stopped.id)).pipe(
-        Effect.ignore({ log: "Warn" }),
-      );
-    return {
-      action: "stop" as const,
-      assetId: asset.id,
-      url: asset.url,
-      durationSeconds: stopped?.durationSeconds ?? 0,
-    };
+    const id = current?.id ?? storedId;
+    if (!id) return yield* fail("No recording is running.", "not_found");
+    const { asset, durationSeconds } = yield* finalizeRecording({
+      sandbox,
+      recordingId: id,
+      ctx,
+      title: input.label?.trim() || "Screen recording",
+    }).pipe(
+      Effect.mapError((cause) =>
+        ctx.runId
+          ? new RuthToolError({
+              tool: "screen_record",
+              message: "Recording finalization is incomplete. Resume this call before continuing.",
+              code: "failed",
+              recoverable: false,
+              checkpointFatal: true,
+            })
+          : cause,
+      ),
+    );
+    // Keep the Cloud id until run cleanup: if the tool result write is lost, replay still knows
+    // which deterministic asset to return even though the box file has already been deleted.
+    return { action: "stop" as const, assetId: asset.id, url: asset.url, durationSeconds };
   }),
 });
 export const recordingRegistry = { screen_record: screenRecord } satisfies Record<

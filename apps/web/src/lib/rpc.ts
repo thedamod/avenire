@@ -3,6 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
   call,
+  subscribeLibraryProjection,
+  QueryRequest,
   stream,
   type AvenireRpcClient,
   type ClientRuntime,
@@ -29,30 +31,37 @@ export function useQuery<T, E>(
   const [data, setData] = useState<T>();
   const [error, setError] = useState<unknown>();
   const [loading, setLoading] = useState(true);
-  const generation = useRef(0);
+  const request = useRef(new QueryRequest());
 
-  const refetch = useCallback(async () => {
-    const request = ++generation.current;
-    setLoading(true);
-    setError(undefined);
-    try {
-      const result = await call(runtime, (client) => fnRef.current(client));
-      if (generation.current === request) setData(result);
-    } catch (cause) {
-      if (generation.current === request) setError(cause);
-    } finally {
-      if (generation.current === request) setLoading(false);
-    }
-  }, [runtime, queryKey]);
+  const refetch = useCallback(
+    () =>
+      request.current.run(
+        (signal) => call(runtime, (client) => fnRef.current(client), { signal }),
+        {
+          start: () => {
+            setLoading(true);
+            setError(undefined);
+          },
+          success: setData,
+          error: setError,
+          finish: () => setLoading(false),
+        },
+      ),
+    [runtime, queryKey],
+  );
 
   useEffect(() => {
     void refetch();
+    const unsubscribe = subscribeLibraryProjection(runtime, queryKey, () => {
+      void refetch();
+    });
     return () => {
-      generation.current += 1;
+      request.current.cancel();
+      unsubscribe();
     };
-  }, [refetch]);
+  }, [refetch, runtime, queryKey]);
 
-  return { data, error, loading, refetch };
+  return { data, error, loading, refetch, setData };
 }
 
 export function useStream<T, E>(

@@ -18,6 +18,7 @@ import {
   gte,
   inArray,
   isNotNull,
+  isNull,
   lt,
   ne,
   or,
@@ -71,6 +72,8 @@ export const candidateFilter = (userId: UserId, query: SearchQuery): SQL =>
     eq(chunk.userId, userId),
     eq(file.userId, userId),
     ne(file.placement, "archived"),
+    isNull(file.archivedAt),
+    isNull(file.purgeStartedAt),
     ...(query.kinds?.length ? [inArray(file.kind, query.kinds)] : []),
     ...(query.folderIds?.length
       ? [

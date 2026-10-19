@@ -14,9 +14,24 @@ import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as RpcClient from "effect/rpc/RpcClient";
 import type { RpcClientError } from "effect/rpc/RpcClientError";
+import { disposeConversation } from "./conversation.ts";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import * as Stream from "effect/Stream";
+export {
+  invalidateLibrary,
+  libraryProjection,
+  subscribeLibraryProjection,
+  updateLatestJob,
+  pruneJobs,
+} from "./library-projections.ts";
+export { QueryRequest } from "./query.ts";
+export {
+  ConversationSession,
+  conversationSession,
+  disposeConversation,
+  questionAnswer,
+} from "./conversation.ts";
 
 export type AvenireRpcClient = RpcClient.RpcClient<
   RpcGroup.Rpcs<typeof AvenireRpcs>,
@@ -60,13 +75,20 @@ export const makeClientLayer = (options: ClientOptions) => {
 export const makeClientRuntime = (options: ClientOptions) =>
   ManagedRuntime.make(makeClientLayer(options));
 
+/** Dispose UI-owned conversations as well as RPC fibers on auth-owner changes. */
+export const disposeClientRuntime = (runtime: ClientRuntime): Promise<void> => {
+  disposeConversation(runtime);
+  return runtime.dispose();
+};
+
 export type ClientRuntime = ReturnType<typeof makeClientRuntime>;
 
 /** Run one RPC as a Promise. Typed failures reject with the tagged error instance. */
 export const call = <A, E>(
   runtime: ClientRuntime,
   fn: (client: AvenireRpcClient) => Effect.Effect<A, E>,
-): Promise<A> => runtime.runPromise(Effect.flatMap(Effect.service(AvenireClient), fn));
+  options?: { readonly signal?: AbortSignal },
+): Promise<A> => runtime.runPromise(Effect.flatMap(Effect.service(AvenireClient), fn), options);
 
 /** Subscribe to a streaming RPC. Returns a function that cancels the subscription. */
 export const stream = <A, E>(
@@ -91,3 +113,29 @@ export const stream = <A, E>(
   );
   return () => cancel();
 };
+
+/** Hydrate only chat threads; Cloud histories have a separate presentation. */
+export const loadConversation = async <Message>(
+  runtime: ClientRuntime,
+  session: import("./conversation.ts").ConversationSession<Message>,
+  decode: (messages: unknown) => Promise<Message[]>,
+): Promise<void> =>
+  session.hydrate(async (selected) => {
+    const threads = selected ? [] : await call(runtime, (client) => client["ruth.listThreads"]());
+    const threadId =
+      selected ??
+      threads
+        .filter((thread) => thread.kind === "chat")
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.id;
+    if (!threadId) return { messages: [] };
+    const saved = await call(runtime, (client) => client["ruth.listMessages"]({ threadId }));
+    const messages = await decode(
+      saved.map(({ id, role, parts, metadata }) => ({
+        id,
+        role,
+        parts,
+        ...(metadata == null ? {} : { metadata }),
+      })),
+    );
+    return { threadId, messages };
+  });

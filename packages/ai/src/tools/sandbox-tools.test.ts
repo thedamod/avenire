@@ -101,6 +101,7 @@ const provide = <A, E>(
     Effect.provideService(
       CloudBoxes,
       CloudBoxes.of({
+        reconnect: () => Effect.die("Cloud reconnect not used"),
         ensure: () => Effect.die("unused"),
         running: () => Effect.die("unused"),
         stop: () => Effect.void,

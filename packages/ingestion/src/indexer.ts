@@ -3,11 +3,19 @@
  * contextual embeddings, weighted lexical vectors and normalized text, plus the
  * file's knowledge graph. Unchanged chunks keep their rows, vectors and graph.
  */
-import { ChunkId, type FileId, type UserId } from "@avenire/contracts";
+import {
+  ChunkId,
+  FileEventId,
+  FolderId,
+  type StorageKey,
+  type FileId,
+  type UserId,
+} from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import { chunk, embeddingCache } from "@avenire/database/schema";
+import { advanceCorpusRevision, lockCorpus } from "@avenire/database/corpus";
+import { chunk, embeddingCache, file, fileEvent, ingestionJob } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import type { PgInsertValue } from "drizzle-orm/pg-core";
 import * as Arr from "effect/Array";
 import * as Context from "effect/Context";
@@ -19,7 +27,14 @@ import * as Schema from "effect/Schema";
 import { type Chunk, type ChunkSection, chunkSections, embeddingText } from "./chunk.ts";
 import { Embedder } from "./embed.ts";
 import { GraphIndexer } from "./graph/indexer.ts";
-import { SemanticCache } from "./retrieval/cache.ts";
+import {
+  type IngestionClaim,
+  type SourceSnapshot,
+  IngestionLeaseLost,
+  ownsPublication,
+} from "./claim.ts";
+import { assignFoldersTx } from "./folder.ts";
+import type { DatabaseTransaction } from "@avenire/database/client";
 import { normalizeForMatch, sha256Hex } from "./text.ts";
 
 export class IndexError extends Schema.TaggedError<IndexError>()("IndexError", {
@@ -38,6 +53,17 @@ export interface IndexInput {
   /** Title used in contextual embedding text and the lexical vector (weight A). */
   readonly title: string;
   readonly sections: ReadonlyArray<ChunkSection>;
+  readonly claim?: IngestionClaim;
+  readonly source?: SourceSnapshot;
+  /** Publish useful content while reserving the next extraction retry in the same commit. */
+  readonly retryAfterMinutes?: number | undefined;
+  /** An extracted object staged before publication; its pointer commits with the index. */
+  readonly document?: {
+    readonly key: StorageKey;
+    readonly contentHash: string;
+    readonly extractorVersion: number;
+    readonly contentChanged: boolean;
+  };
 }
 
 export interface IndexStats {
@@ -140,8 +166,8 @@ export const FileIndexerLive = Layer.effect(
     const database = yield* Database;
     const embedder = yield* Embedder;
     const graphIndexer = yield* GraphIndexer;
-    const semanticCache = yield* SemanticCache;
-    const chunkId = newId(ChunkId).pipe(Effect.provideService(Crypto.Crypto, yield* Crypto.Crypto));
+    const crypto = yield* Crypto.Crypto;
+    const chunkId = newId(ChunkId).pipe(Effect.provideService(Crypto.Crypto, crypto));
 
     const loadExisting = (input: IndexInput) =>
       database.use((db) =>
@@ -211,16 +237,15 @@ export const FileIndexerLive = Layer.effect(
       return { vectors, embedded: fresh.length };
     });
 
-    /** Applies the diff in one transaction, so readers see the old index or the new one. */
+    /** No remote calls occur after the fence: chunks, graph, metadata and folders publish together. */
     const write = (
+      tx: DatabaseTransaction,
       input: IndexInput,
       diff: ReturnType<typeof planChunkDiff>,
       rows: ReadonlyArray<PgInsertValue<typeof chunk>>,
     ) =>
-      database.useTransaction(async (tx) => {
+      (async () => {
         const owned = and(eq(chunk.userId, input.userId), eq(chunk.fileId, input.fileId));
-        // Statements on one transaction run one after another anyway.
-        /* eslint-disable no-await-in-loop */
         for (const ids of Arr.chunksOf(
           diff.deleted.map((row) => row.id),
           BATCH_SIZE,
@@ -233,35 +258,9 @@ export const FileIndexerLive = Layer.effect(
             .set({ ordinal: value.ordinal, kind: value.kind, location: value.location })
             .where(and(owned, eq(chunk.id, id)));
         }
-        for (const batch of Arr.chunksOf(rows, BATCH_SIZE)) {
+        for (const batch of Arr.chunksOf(rows, BATCH_SIZE))
           await tx.insert(chunk).values([...batch]);
-        }
-        /* eslint-enable no-await-in-loop */
-      });
-
-    /** Extracts the graph for chunks that don't have one yet, then marks them done. */
-    const indexGraph = Effect.fn("FileIndexer.indexGraph")(function* (
-      input: IndexInput,
-      chunks: ReadonlyArray<{ readonly id: string; readonly content: string }>,
-    ) {
-      const graph = yield* graphIndexer.indexChunks({
-        userId: input.userId,
-        fileId: input.fileId,
-        title: input.title,
-        chunks: chunks.map(({ id, content }) => ({ id: ChunkId.make(id), content })),
-      });
-      yield* Effect.forEach(
-        Arr.chunksOf(
-          chunks.map(({ id }) => id),
-          BATCH_SIZE,
-        ),
-        (ids) =>
-          database.use((db) =>
-            db.update(chunk).set({ graphIndexed: true }).where(inArray(chunk.id, ids)),
-          ),
-      );
-      return graph;
-    });
+      })();
 
     const index = Effect.fn("FileIndexer.index")(function* <E>(
       input: IndexInput,
@@ -276,7 +275,6 @@ export const FileIndexerLive = Layer.effect(
       const changed = diff.added.length + diff.deleted.length + diff.moved.length > 0;
       const graphPending = diff.kept.filter((row) => !row.graphIndexed);
       const stats = { chunks: incoming.length, embedded: 0, entities: 0, relations: 0 };
-      if (!changed && graphPending.length === 0) return stats;
 
       if (onStage) yield* onStage("embedding");
       const { vectors, embedded } = yield* vectorsFor(diff.added).pipe(failedWhile("embedding"));
@@ -297,18 +295,120 @@ export const FileIndexerLive = Layer.effect(
           search: searchVector(input.title, value),
         })),
       ).pipe(failedWhile("writing"));
-      if (changed) {
-        yield* write(input, diff, rows).pipe(failedWhile("writing"));
-        yield* semanticCache.invalidate(input.userId).pipe(failedWhile("writing"));
-      }
-
       if (onStage) yield* onStage("graphing");
-      // Runs after the swap: the graph references chunk rows. Chunks it hasn't
-      // finished stay `graph_indexed = false` and are picked up by the next run.
-      const graph = yield* indexGraph(input, [...graphPending, ...rows]).pipe(
-        failedWhile("graphing"),
+      const pending = [...graphPending, ...rows].map(({ id, content }) => ({
+        id: ChunkId.make(id),
+        content,
+      }));
+      const graph = yield* graphIndexer
+        .prepareChunks({
+          userId: input.userId,
+          fileId: input.fileId,
+          title: input.title,
+          chunks: pending,
+        })
+        .pipe(failedWhile("graphing"));
+      const newFolderId = yield* newId(FolderId).pipe(
+        Effect.provideService(Crypto.Crypto, crypto),
+        failedWhile("writing"),
       );
-      return { ...stats, embedded, ...graph };
+      const eventId = yield* newId(FileEventId).pipe(
+        Effect.provideService(Crypto.Crypto, crypto),
+        failedWhile("writing"),
+      );
+      const published = yield* database
+        .useTransaction(async (tx) => {
+          if (input.claim) {
+            if (!(await ownsPublication(tx, input.claim, input.source))) return false;
+          } else {
+            await lockCorpus(tx, input.userId);
+            const [owned] = await tx
+              .select({ id: file.id })
+              .from(file)
+              .where(
+                and(
+                  eq(file.id, input.fileId),
+                  eq(file.userId, input.userId),
+                  isNull(file.archivedAt),
+                  isNull(file.purgeStartedAt),
+                  ne(file.placement, "archived"),
+                ),
+              )
+              .for("update");
+            if (!owned) return false;
+          }
+          if (changed) await write(tx, input, diff, rows);
+          await graph.publish(tx);
+          for (const ids of Arr.chunksOf(
+            pending.map((row) => row.id),
+            BATCH_SIZE,
+          )) {
+            await tx
+              .update(chunk)
+              .set({ graphIndexed: true })
+              .where(
+                and(
+                  eq(chunk.userId, input.userId),
+                  eq(chunk.fileId, input.fileId),
+                  inArray(chunk.id, ids),
+                ),
+              );
+          }
+          if (input.document) {
+            await tx
+              .update(file)
+              .set({
+                contentHash: input.document.contentHash,
+                documentKey: input.document.key,
+                extractorVersion: input.document.extractorVersion,
+                ...(input.document.contentChanged
+                  ? { contentModifiedAt: sql`now()`, updatedAt: sql`now()` }
+                  : {}),
+              })
+              .where(and(eq(file.id, input.fileId), eq(file.userId, input.userId)));
+            if (input.document.contentChanged)
+              await tx.insert(fileEvent).values({
+                id: eventId,
+                userId: input.userId,
+                fileId: input.fileId,
+                kind: "edited",
+              });
+          }
+          await assignFoldersTx(tx, input.userId, input.fileId, input.title, newFolderId);
+          // Revision, rather than best-effort deletion, defines cache validity.
+          await advanceCorpusRevision(tx, input.userId);
+          // Completion belongs to the same fenced commit as the searchable corpus.
+          if (input.claim)
+            await tx
+              .update(ingestionJob)
+              .set({
+                status: input.retryAfterMinutes === undefined ? "indexed" : "queued",
+                error:
+                  input.retryAfterMinutes === undefined
+                    ? null
+                    : "Partial extraction; retry scheduled.",
+                lockedUntil:
+                  input.retryAfterMinutes === undefined
+                    ? null
+                    : sql`now() + (${input.retryAfterMinutes} * interval '1 minute')`,
+                claimToken: null,
+                updatedAt: sql`now()`,
+              })
+              .where(
+                and(
+                  eq(ingestionJob.id, input.claim.id),
+                  eq(ingestionJob.claimToken, input.claim.claimToken),
+                  eq(ingestionJob.generation, input.claim.generation),
+                ),
+              );
+          return true;
+        })
+        .pipe(failedWhile("writing"));
+      if (!published)
+        return yield* failedWhile("writing")(
+          Effect.fail(new IngestionLeaseLost({ fileId: input.fileId })),
+        );
+      return { ...stats, embedded, ...graph.stats };
     });
 
     return FileIndexer.of({ index });

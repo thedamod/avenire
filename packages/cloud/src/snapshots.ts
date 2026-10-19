@@ -3,13 +3,10 @@ import { DaytonaNotFoundError, Image, type Daytona } from "@daytonaio/sdk";
 import * as Effect from "effect/Effect";
 import { fileURLToPath } from "node:url";
 import { DESKTOP_FILES, DESKTOP_PACKAGES } from "./desktop.ts";
+export { AVENIRE_SNAPSHOT, SANDBOX_RESOURCES } from "./snapshot-policy.ts";
 
 import { attempt } from "./daytona.ts";
 
-export const AVENIRE_SNAPSHOT = "avenire-sandbox-v7";
-/** Daytona 0.220.0 fixes resources on the snapshot; create-from-snapshot has no override.
- * 10 GB is the per-sandbox disk maximum on the current Daytona plan. */
-export const SANDBOX_RESOURCES = { cpu: 4, memory: 8, disk: 10 } as const;
 /** manimgx requires Python 3.13 or newer. */
 export const PYTHON_VERSION = "3.13";
 

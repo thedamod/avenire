@@ -19,7 +19,7 @@ const IGNORED = [
 export default defineConfig({
   test: {
     environment: "node",
-    exclude: ["**/context/**", "**/node_modules/**", "**/dist/**", "**/.next/**"],
+    exclude: ["**/context/**", "**/node_modules/**", "**/dist/**", "**/.next/**", "**/patches/**"],
     hookTimeout: 60_000,
     testTimeout: 60_000,
   },

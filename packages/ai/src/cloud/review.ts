@@ -20,9 +20,9 @@ import {
   type DatabaseClient,
   type DatabaseTransaction,
 } from "@avenire/database/client";
-import { file, pendingApproval, type PendingApprovalRow } from "@avenire/database/schema";
+import { lockCorpus, advanceCorpusRevision } from "@avenire/database/corpus";
+import { cloudRun, file, pendingApproval, type PendingApprovalRow } from "@avenire/database/schema";
 import { markContentChanged } from "@avenire/ingestion/events";
-import { SemanticCache, type SearchCacheError } from "@avenire/ingestion/retrieval/cache";
 import { enqueueIngestion } from "@avenire/ingestion/worker";
 import { fileSourceKey, keyFilename, newKeyVersion } from "@avenire/storage/keys";
 import { Storage, type ObjectNotFound, type StorageError } from "@avenire/storage/storage";
@@ -41,7 +41,6 @@ export type CloudReviewError =
   | DatabaseError
   | StorageError
   | ObjectNotFound
-  | SearchCacheError
   | PlatformError.PlatformError;
 export class CloudReview extends Context.Service<
   CloudReview,
@@ -54,12 +53,12 @@ export class CloudReview extends Context.Service<
       userId: UserId,
       approvalId: PendingApprovalId,
       decision: ApprovalDecision,
-    ) => Effect.Effect<void, CloudReviewError>;
+    ) => Effect.Effect<PendingApproval, CloudReviewError>;
     readonly resolveRun: (
       userId: UserId,
       runId: CloudRunId,
       decision: ApprovalDecision,
-    ) => Effect.Effect<void, CloudReviewError>;
+    ) => Effect.Effect<readonly PendingApproval[], CloudReviewError>;
   }
 >()("avenire/ai/CloudReview") {}
 const wireApproval = (row: PendingApprovalRow & { fileTitle: string }): PendingApproval => ({
@@ -94,7 +93,6 @@ export const CloudReviewLive = Layer.effect(
   Effect.gen(function* () {
     const database = yield* Database;
     const storage = yield* Storage;
-    const cache = yield* SemanticCache;
     const crypto = yield* Crypto.Crypto;
     const list = Effect.fn("CloudReview.list")(function* (userId: UserId, runId?: CloudRunId) {
       const rows = yield* database.use((db) =>
@@ -112,6 +110,22 @@ export const CloudReviewLive = Layer.effect(
           .orderBy(desc(pendingApproval.createdAt), desc(pendingApproval.id)),
       );
       return rows.map(({ approval, fileTitle }) => wireApproval({ ...approval, fileTitle }));
+    });
+    const get = Effect.fn("CloudReview.get")(function* (
+      userId: UserId,
+      approvalId: PendingApprovalId,
+    ) {
+      const row = yield* database.use((db) =>
+        db.query.pendingApproval.findFirst({
+          where: and(eq(pendingApproval.id, approvalId), eq(pendingApproval.userId, userId)),
+        }),
+      );
+      if (!row) return yield* new NotFound({ entity: "PendingApproval", id: approvalId });
+      const source = yield* database.use((db) =>
+        db.query.file.findFirst({ where: and(eq(file.id, row.fileId), eq(file.userId, userId)) }),
+      );
+      if (!source) return yield* new NotFound({ entity: "File", id: row.fileId });
+      return wireApproval({ ...row, fileTitle: source.title });
     });
     const cleanup = (key: string) =>
       storage
@@ -139,6 +153,7 @@ export const CloudReviewLive = Layer.effect(
       let written: StorageKey | undefined;
       const outcome = yield* database
         .useTransaction(async (tx) => {
+          await lockCorpus(tx, userId);
           const where = and(eq(pendingApproval.id, approvalId), eq(pendingApproval.userId, userId));
           const [current] = await tx.select().from(pendingApproval).where(where).for("update");
           if (!current) return { kind: "missing" as const };
@@ -157,9 +172,16 @@ export const CloudReviewLive = Layer.effect(
             .where(and(eq(file.id, current.fileId), eq(file.userId, userId)))
             .for("update");
           if (!original) return { kind: "missingFile" as const };
-          const conflict = !original.storageKey
-            ? "This file can't be updated in place"
-            : detectConflict(current.baseHash, original.contentHash, original.contentModifiedAt);
+          const conflict =
+            original.archivedAt || original.purgeStartedAt
+              ? "Restore this file before accepting a Cloud change"
+              : !original.storageKey
+                ? "This file can't be updated in place"
+                : detectConflict(
+                    current.baseHash,
+                    original.contentHash,
+                    original.contentModifiedAt,
+                  );
           if (conflict) {
             await tx.update(pendingApproval).set({ status: "conflict", conflict }).where(where);
             // Unresolved conflicts retain their proposal so review can still skip or retry them.
@@ -201,6 +223,7 @@ export const CloudReviewLive = Layer.effect(
             markContentChanged(userId, fileId, current.proposedHash),
           );
           await Effect.runPromiseWith(services)(enqueueIngestion(userId, fileId));
+          await advanceCorpusRevision(tx, userId);
           await tx
             .update(pendingApproval)
             .set({ status: "accepted", conflict: null, resolvedAt: now })
@@ -219,26 +242,31 @@ export const CloudReviewLive = Layer.effect(
       if (outcome.kind === "missingFile")
         return yield* new NotFound({ entity: "File", id: approval.fileId });
       if (outcome.kind === "resolved") return yield* new Conflict({ reason: "Already resolved" });
-      if (outcome.kind === "conflict") return;
+      if (outcome.kind === "conflict") return yield* get(userId, approvalId);
       if (outcome.kind === "accepted") {
         const stale = [approval.proposedKey, ...outcome.superseded];
-        yield* cache.invalidate(userId).pipe(
-          Effect.ensuring(
-            Effect.forEach(stale, (key) => (key ? cleanup(key) : Effect.void), {
-              discard: true,
-            }),
-          ),
-        );
-        return;
+        yield* Effect.forEach(stale, (key) => (key ? cleanup(key) : Effect.void), {
+          discard: true,
+        });
+        return yield* get(userId, approvalId);
       }
       yield* cleanup(approval.proposedKey);
+      return yield* get(userId, approvalId);
     }, Effect.uninterruptible);
     return CloudReview.of({
       list,
       resolve,
       resolveRun: Effect.fn("CloudReview.resolveRun")(function* (userId, runId, decision) {
+        const run = yield* database.use((db) =>
+          db.query.cloudRun.findFirst({
+            where: and(eq(cloudRun.id, runId), eq(cloudRun.userId, userId)),
+          }),
+        );
+        if (!run) return yield* new NotFound({ entity: "CloudRun", id: runId });
         const approvals = yield* list(userId, runId);
-        for (const approval of approvals) yield* resolve(userId, approval.id, decision);
+        return yield* Effect.forEach(approvals, (approval) =>
+          resolve(userId, approval.id, decision),
+        );
       }),
     });
   }),

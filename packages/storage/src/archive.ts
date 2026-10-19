@@ -1,41 +1,69 @@
-/** Reversible library archival and storage-first retention cleanup. */
-import { FileId, NotFound, type UserId, UserId as UserIdSchema } from "@avenire/contracts";
+/** Reversible archival followed by claimed, recoverable retention cleanup. */
+import {
+  Conflict,
+  FileId,
+  NotFound,
+  type UserId,
+  UserId as UserIdSchema,
+} from "@avenire/contracts";
 import { Database, type DatabaseClient } from "@avenire/database/client";
-import { file, fileFolder } from "@avenire/database/schema";
-import { and, eq, exists, lt, sql } from "drizzle-orm";
+import {
+  advanceCorpusRevision,
+  lockCorpus,
+  refreshFolderCentroidsTx,
+} from "@avenire/database/corpus";
+import { file, fileFolder, transcriptCache } from "@avenire/database/schema";
+import { and, eq, exists, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 
-import { filePrefix } from "./keys.ts";
-import { Storage, type StorageError } from "./storage.ts";
+import { makeFilePurger } from "./purge.ts";
 
 export const ARCHIVE_RETENTION_DAYS = 30;
 const PURGE_BATCH_SIZE = 100;
+const TRANSCRIPT_GC_BATCH_SIZE = 1000;
 
 /** Retention is thirty elapsed days; files exactly at the cutoff are retained. */
 export const archiveCutoff = (nowMillis: number): number =>
   nowMillis - ARCHIVE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
-/** Archives the user's file. Callers invalidate retrieval caches. */
+/** Archive, private derivative deletion and corpus publication share one transaction. */
 export const archiveFile = Effect.fn("Archive.archiveFile")(function* (
   userId: UserId,
   fileId: FileId,
 ) {
   const database = yield* Database;
-  const rows = yield* database.use((db) =>
-    db
+  const rows = yield* database.useTransaction(async (tx) => {
+    await lockCorpus(tx, userId);
+    const rows = await tx
       .update(file)
-      .set({ placement: "archived", archivedAt: sql`now()`, updatedAt: sql`now()` })
-      .where(and(eq(file.id, fileId), eq(file.userId, userId)))
-      .returning({ id: file.id }),
-  );
+      .set({
+        placement: "archived",
+        archivedAt: sql`coalesce(${file.archivedAt}, now())`,
+        updatedAt: sql`now()`,
+      })
+      .where(and(eq(file.id, fileId), eq(file.userId, userId), isNull(file.purgeStartedAt)))
+      .returning({ id: file.id });
+    if (rows.length > 0) {
+      await tx
+        .delete(transcriptCache)
+        .where(and(eq(transcriptCache.fileId, fileId), eq(transcriptCache.userId, userId)));
+      await refreshFolderCentroidsTx(tx, userId);
+      await advanceCorpusRevision(tx, userId);
+    }
+    return rows;
+  });
   if (rows.length === 0) return yield* new NotFound({ entity: "File", id: fileId });
 });
 
 /** Restores membership-bearing files to filed and other files to inbox. */
-export const restoreStatement = (db: DatabaseClient, userId: UserId, fileId: FileId) =>
+export const restoreStatement = (
+  db: Pick<DatabaseClient, "update" | "select">,
+  userId: UserId,
+  fileId: FileId,
+) =>
   db
     .update(file)
     .set({
@@ -48,7 +76,7 @@ export const restoreStatement = (db: DatabaseClient, userId: UserId, fileId: Fil
       archivedAt: null,
       updatedAt: sql`now()`,
     })
-    .where(and(eq(file.id, fileId), eq(file.userId, userId)))
+    .where(and(eq(file.id, fileId), eq(file.userId, userId), isNull(file.purgeStartedAt)))
     .returning({ id: file.id });
 
 export const restoreFile = Effect.fn("Archive.restoreFile")(function* (
@@ -56,37 +84,114 @@ export const restoreFile = Effect.fn("Archive.restoreFile")(function* (
   fileId: FileId,
 ) {
   const database = yield* Database;
-  const rows = yield* database.use((db) => restoreStatement(db, userId, fileId));
-  if (rows.length === 0) return yield* new NotFound({ entity: "File", id: fileId });
+  const outcome = yield* database.useTransaction(async (tx) => {
+    await lockCorpus(tx, userId);
+    const rows = await restoreStatement(tx, userId, fileId);
+    if (rows.length > 0) {
+      await refreshFolderCentroidsTx(tx, userId);
+      await advanceCorpusRevision(tx, userId);
+      return "restored" as const;
+    }
+    // The user lock keeps this ownership-scoped diagnosis atomic with the failed restore.
+    const [claimed] = await tx
+      .select({ id: file.id })
+      .from(file)
+      .where(and(eq(file.id, fileId), eq(file.userId, userId), isNotNull(file.purgeStartedAt)))
+      .limit(1);
+    return claimed === undefined ? ("missing" as const) : ("purging" as const);
+  });
+  if (outcome === "purging") {
+    return yield* new Conflict({
+      reason: "File deletion has already started and cannot be restored.",
+    });
+  }
+  if (outcome === "missing") return yield* new NotFound({ entity: "File", id: fileId });
 });
 
-/** Deletes a row only after all of its objects have been removed. Storage failures retain it. */
-export const purgeFile = Effect.fn("Archive.purgeFile")(function* <E, R>(
+/** Claim is atomic with restore, remains irreversible, and is retried after storage failures. */
+export const claimPurgeStatement = (
+  db: Pick<DatabaseClient, "update">,
   userId: UserId,
   fileId: FileId,
-  deleteRow: Effect.Effect<void, E, R>,
-) {
-  const storage = yield* Storage;
-  const removed = yield* Effect.gen(function* () {
-    const objects = yield* storage.list(filePrefix(userId, fileId));
-    yield* Effect.forEach(objects, ({ key }) => storage.remove(key), { discard: true });
-    return true;
-  }).pipe(
-    Effect.catchTag("StorageError", (error: StorageError) =>
-      Effect.as(
-        Effect.logWarning("Archive purge storage failed; retaining file", { fileId, error }),
-        false,
+  cutoff: Date,
+) =>
+  db
+    .update(file)
+    .set({
+      purgeStartedAt: sql`coalesce(${file.purgeStartedAt}, now())`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(file.id, fileId),
+        eq(file.userId, userId),
+        eq(file.placement, "archived"),
+        or(isNotNull(file.purgeStartedAt), lt(file.archivedAt, cutoff)),
       ),
-    ),
-  );
-  if (!removed) return false;
-  yield* deleteRow;
-  return true;
+    )
+    .returning({ id: file.id });
+
+/** No object removal is possible until an owned expired file has been claimed. */
+export const purgeFile = Effect.fn("Archive.purgeFileOwned")(function* (
+  userId: UserId,
+  fileId: FileId,
+) {
+  const database = yield* Database;
+  const now = yield* DateTime.now;
+  return yield* makeFilePurger({
+    claim: (owner, id) =>
+      database.useTransaction(async (tx) => {
+        await lockCorpus(tx, owner);
+        const rows = await claimPurgeStatement(
+          tx,
+          owner,
+          id,
+          new Date(archiveCutoff(DateTime.toEpochMillis(now))),
+        );
+        if (rows.length === 0) return false;
+        await tx
+          .delete(transcriptCache)
+          .where(and(eq(transcriptCache.fileId, id), eq(transcriptCache.userId, owner)));
+        await advanceCorpusRevision(tx, owner);
+        return true;
+      }),
+    complete: (owner, id) =>
+      database.useTransaction(async (tx) => {
+        await lockCorpus(tx, owner);
+        const rows = await tx
+          .delete(file)
+          .where(and(eq(file.id, id), eq(file.userId, owner), isNotNull(file.purgeStartedAt)))
+          .returning({ id: file.id });
+        if (rows.length === 0) return false;
+        await refreshFolderCentroidsTx(tx, owner);
+        await advanceCorpusRevision(tx, owner);
+        return true;
+      }),
+  })(userId, fileId);
 });
+
+/** Bounded physical erasure of expired plaintext, including inactive owners. */
+export const collectExpiredTranscripts = Effect.fn("Archive.collectExpiredTranscripts")(
+  function* () {
+    const database = yield* Database;
+    return yield* database.use((db) => {
+      // ctid is a PostgreSQL system column, so only that expression needs raw SQL.
+      const expired = db
+        .select({ ctid: sql<string>`ctid` })
+        .from(transcriptCache)
+        .where(lte(transcriptCache.expiresAt, sql`now()`))
+        .orderBy(transcriptCache.expiresAt)
+        .limit(TRANSCRIPT_GC_BATCH_SIZE)
+        .for("update", { skipLocked: true });
+      return db.delete(transcriptCache).where(sql`ctid in (${expired})`);
+    });
+  },
+);
 
 /** At most one hundred expired files per tick; cascading deletes clean up their metadata. */
 export const purgeArchived = Effect.fn("Archive.purgeArchived")(function* () {
   const database = yield* Database;
+  yield* collectExpiredTranscripts();
   const now = yield* DateTime.now;
   const expired = yield* database.use((db) =>
     db
@@ -95,20 +200,17 @@ export const purgeArchived = Effect.fn("Archive.purgeArchived")(function* () {
       .where(
         and(
           eq(file.placement, "archived"),
-          lt(file.archivedAt, new Date(archiveCutoff(DateTime.toEpochMillis(now)))),
+          or(
+            isNotNull(file.purgeStartedAt),
+            lt(file.archivedAt, new Date(archiveCutoff(DateTime.toEpochMillis(now)))),
+          ),
         ),
       )
       .orderBy(file.archivedAt, file.id)
       .limit(PURGE_BATCH_SIZE),
   );
   const purged = yield* Effect.forEach(expired, (row) =>
-    purgeFile(
-      UserIdSchema.make(row.userId),
-      FileId.make(row.id),
-      database
-        .use((db) => db.delete(file).where(and(eq(file.id, row.id), eq(file.userId, row.userId))))
-        .pipe(Effect.asVoid),
-    ),
+    purgeFile(UserIdSchema.make(row.userId), FileId.make(row.id)),
   );
   yield* Effect.logInfo("Purged archived files", {
     found: expired.length,

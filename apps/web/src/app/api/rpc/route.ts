@@ -1,3 +1,3 @@
-import { handleAssetsRpc } from "~/server/assetsRpc";
+import { handleRpc } from "~/server/rpc";
 export const runtime = "nodejs";
-export const POST = handleAssetsRpc;
+export const POST = handleRpc;

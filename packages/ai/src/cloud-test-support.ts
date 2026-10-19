@@ -40,6 +40,34 @@ export const recordingDatabase = (events: string[] = []) => {
     if (!where) return true;
     const compiled = dialect.sqlToQuery(where);
     statements.push(compiled);
+    for (const match of compiled.sql.matchAll(/"(\w+)"\."(\w+)" is null/gi))
+      if (match[1] === name && row[camel(match[2]!)] != null) return false;
+    if (name === "cloud_run" && compiled.sql.includes("cleanupComplete")) {
+      const blocks = (candidate: Row) =>
+        ["provisioning", "running"].includes(String(candidate.status)) ||
+        (candidate.leasedBy != null &&
+          (candidate.usage as { cleanupComplete?: boolean } | undefined)?.cleanupComplete !== true);
+      if (compiled.sql.includes("not exists")) {
+        if (
+          rows(name).some(
+            (candidate) =>
+              candidate.userId === row.userId && candidate.id !== row.id && blocks(candidate),
+          )
+        )
+          return false;
+      } else if (!blocks(row)) return false;
+    }
+    const expiry =
+      /coalesce\("cloud_run"\."lease_expires_at", '-infinity'::timestamptz\) <= \$(\d+)/.exec(
+        compiled.sql,
+      );
+    if (
+      name === "cloud_run" &&
+      expiry &&
+      row.leaseExpiresAt != null &&
+      Number(row.leaseExpiresAt) > Number(compiled.params[Number(expiry[1]) - 1])
+    )
+      return false;
     for (const match of compiled.sql.matchAll(/"(\w+)"\."(\w+)" (=|<>|!=|<=|>=|<|>) \$(\d+)/g)) {
       if (match[1] !== name) continue;
       const value = row[camel(match[2]!)];
@@ -60,6 +88,8 @@ export const recordingDatabase = (events: string[] = []) => {
     }
     for (const match of compiled.sql.matchAll(/"(\w+)"\."(\w+)" in \(([^)]+)\)/gi)) {
       if (match[1] !== name) continue;
+      // Literal status alternatives in blocksUser are evaluated as one OR expression above.
+      if (!match[3]!.includes("$")) continue;
       const values = [...match[3]!.matchAll(/\$(\d+)/g)].map(
         (slot) => compiled.params[Number(slot[1]) - 1],
       );

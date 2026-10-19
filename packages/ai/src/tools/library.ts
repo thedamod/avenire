@@ -1,11 +1,19 @@
-import { ChunkId, FolderId, FileId, NotFound } from "@avenire/contracts";
+import {
+  ChunkId,
+  FolderId,
+  FileId,
+  FileEventId,
+  IngestionJobId,
+  NotFound,
+} from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import { chunk, folder, file, fileFolder } from "@avenire/database/schema";
+import { advanceCorpusRevision, lockCorpus } from "@avenire/database/corpus";
+import { chunk, folder, file, fileEvent, fileFolder } from "@avenire/database/schema";
 import { archiveFile } from "@avenire/storage/archive";
-import { recordFileEvent } from "@avenire/ingestion/events";
 import { Retrieval } from "@avenire/ingestion/retrieval";
 import { SemanticCache } from "@avenire/ingestion/retrieval/cache";
-import { enqueueIngestion } from "@avenire/ingestion/worker";
+import { enqueueIngestionTx, renameFile } from "@avenire/ingestion/worker";
+import { setFileFolders } from "@avenire/ingestion/folder";
 import { newId } from "@avenire/shared/id";
 import { Analytics } from "@avenire/shared/observability";
 import { fileSourceKey } from "@avenire/storage/keys";
@@ -54,6 +62,7 @@ const ownedFile = Effect.fn("RuthKit.ownedFile")(function* (ctx: AgentContext, f
         eq(file.userId, ctx.userId),
         ne(file.placement, "archived"),
         isNull(file.archivedAt),
+        isNull(file.purgeStartedAt),
       ),
     }),
   );
@@ -155,6 +164,7 @@ export const ruthKitTools: RuthToolImplementations = {
                   eq(file.userId, folder.userId),
                   ne(file.placement, "archived"),
                   isNull(file.archivedAt),
+                  isNull(file.purgeStartedAt),
                 ),
               )
               .where(eq(folder.userId, ctx.userId))
@@ -197,6 +207,7 @@ export const ruthKitTools: RuthToolImplementations = {
             eq(file.userId, ctx.userId),
             ne(file.placement, "archived"),
             isNull(file.archivedAt),
+            isNull(file.purgeStartedAt),
             ...(input.fromOrdinal === undefined
               ? []
               : [gte(chunk.ordinal, Math.max(0, input.fromOrdinal))]),
@@ -219,7 +230,18 @@ export const ruthKitTools: RuthToolImplementations = {
     const storageKey = fileSourceKey(ctx.userId, fileId, "note.md");
     const bytes = new TextEncoder().encode(input.content);
     yield* storage.put(storageKey, bytes, { contentType: "text/markdown" });
-    yield* database.useTransaction(async (tx) => {
+    const jobId = yield* newId(IngestionJobId);
+    const eventId = yield* newId(FileEventId);
+    const publish = database.useTransaction(async (tx) => {
+      await lockCorpus(tx, ctx.userId);
+      if (input.folderId !== undefined) {
+        const [target] = await tx
+          .select({ id: folder.id })
+          .from(folder)
+          .where(and(eq(folder.id, input.folderId), eq(folder.userId, ctx.userId)))
+          .for("update");
+        if (!target) return false;
+      }
       await tx.insert(file).values({
         id: fileId,
         userId: ctx.userId,
@@ -236,74 +258,45 @@ export const ruthKitTools: RuthToolImplementations = {
         await tx
           .insert(fileFolder)
           .values({ userId: ctx.userId, fileId: fileId, folderId: input.folderId });
+      await tx
+        .insert(fileEvent)
+        .values({ id: eventId, userId: ctx.userId, fileId, kind: "uploaded" });
+      await enqueueIngestionTx(tx, ctx.userId, fileId, jobId);
+      await advanceCorpusRevision(tx, ctx.userId);
+      return true;
     });
-    yield* recordFileEvent(ctx.userId, fileId, "uploaded");
-    yield* enqueueIngestion(ctx.userId, fileId);
-    const cache = yield* SemanticCache;
-    yield* cache.invalidate(ctx.userId);
+    const published = yield* publish.pipe(
+      Effect.ensuring(
+        Effect.gen(function* () {
+          // Preserve a source when an ambiguous database error actually committed it.
+          const current = yield* database.use((db) =>
+            db.query.file.findFirst({
+              columns: { storageKey: true },
+              where: and(eq(file.id, fileId), eq(file.userId, ctx.userId)),
+            }),
+          );
+          if (current?.storageKey !== storageKey) yield* storage.remove(storageKey);
+        }).pipe(
+          Effect.catchCause((cause) => Effect.logWarning("Could not clean staged note", cause)),
+        ),
+      ),
+    );
+    if (!published) return yield* new NotFound({ entity: "Folder", id: input.folderId! });
     return { fileId, summary: `Created the note "${input.title}".` };
   }),
   move_file: Effect.fn("RuthKit.moveFile")(function* (input, ctx) {
-    const database = yield* Database;
-    const moved = yield* database.useTransaction(async (tx) => {
-      const target = await tx.query.folder.findFirst({
-        columns: { id: true },
-        where: and(eq(folder.id, input.folderId), eq(folder.userId, ctx.userId)),
-      });
-      const owned = await tx.query.file.findFirst({
-        columns: { id: true },
-        where: and(
-          eq(file.id, input.fileId),
-          eq(file.userId, ctx.userId),
-          ne(file.placement, "archived"),
-          isNull(file.archivedAt),
-        ),
-      });
-      if (!target || !owned) return false;
-      await tx
-        .delete(fileFolder)
-        .where(and(eq(fileFolder.fileId, input.fileId), eq(fileFolder.userId, ctx.userId)));
-      await tx
-        .insert(fileFolder)
-        .values({ fileId: input.fileId, folderId: input.folderId, userId: ctx.userId });
-      await tx
-        .update(file)
-        .set({ placement: "filed", updatedAt: sql`now()` })
-        .where(and(eq(file.id, input.fileId), eq(file.userId, ctx.userId)));
-      return true;
-    });
-    if (!moved) return yield* new NotFound({ entity: "File or folder", id: input.fileId });
-    const cache = yield* SemanticCache;
-    yield* cache.invalidate(ctx.userId);
+    yield* ownedFile(ctx, input.fileId);
+    yield* ownedFolder(ctx, input.folderId);
+    yield* setFileFolders(ctx.userId, input.fileId, [input.folderId]);
     return { fileId: input.fileId, summary: "Moved the file to another folder." };
   }),
   rename_file: Effect.fn("RuthKit.renameFile")(function* (input, ctx) {
-    const database = yield* Database;
-    const rows = yield* database.use((db) =>
-      db
-        .update(file)
-        .set({ title: input.title, updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(file.id, input.fileId),
-            eq(file.userId, ctx.userId),
-            ne(file.placement, "archived"),
-            isNull(file.archivedAt),
-          ),
-        )
-        .returning({ id: file.id }),
-    );
-    if (rows.length === 0) return yield* new NotFound({ entity: "File", id: input.fileId });
-    // A title is indexed, so re-ingest; it isn't a content change, so no `edited` event.
-    yield* enqueueIngestion(ctx.userId, input.fileId);
-    const cache = yield* SemanticCache;
-    yield* cache.invalidate(ctx.userId);
+    yield* ownedFile(ctx, input.fileId);
+    yield* renameFile(ctx.userId, input.fileId, input.title);
     return { fileId: input.fileId, summary: `Renamed the file to "${input.title}".` };
   }),
   archive_file: Effect.fn("RuthKit.archiveFile")(function* (input, ctx) {
     yield* archiveFile(ctx.userId, input.fileId);
-    const cache = yield* SemanticCache;
-    yield* cache.invalidate(ctx.userId);
     return { fileId: input.fileId, summary: "Archived the file. You can undo this for 30 days." };
   }),
   render_widget: Effect.fn("RuthKit.renderWidget")(function* (input, ctx) {

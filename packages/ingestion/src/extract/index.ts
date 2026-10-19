@@ -23,6 +23,7 @@ import {
   UnsupportedSource,
 } from "./types.ts";
 import { extractWeb } from "./web.ts";
+import { extractPublicDocument } from "./public-document.ts";
 import { fetchYouTubeCues } from "./youtube.ts";
 
 export type { ExtractedDocument, SourceInput } from "./types.ts";
@@ -58,7 +59,8 @@ const extractUrlMedia = Effect.fn("extractUrlMedia")(function* (
   if (Option.isNone(metadata) && cues.length === 0) {
     return yield* new UnsupportedSource({
       kind: source.kind,
-      reason: "The URL has no supported video or audio",
+      reason:
+        "The URL has no anonymously accessible supported video or audio. For private media, acquire the original on your device and upload it.",
     });
   }
   return yield* extractRemoteMedia(
@@ -101,13 +103,17 @@ const extractWith = (
       case "html":
         return extractWeb(sourceUrl ?? "", bytes);
     }
-  } else if (sourceUrl !== null) {
+  } else if (source.acquisitionMode !== "stored" && sourceUrl !== null) {
     if (format === "youtube") return extractUrlMedia(sourceUrl, source, true);
-    if (format === "web") return extractWeb(sourceUrl, null);
+    if (format === "web") return extractPublicDocument(sourceUrl, source.kind);
     if (format === "remote") {
       const media = extractUrlMedia(sourceUrl, source, false);
       return source.kind === "web-page"
-        ? media.pipe(Effect.catchTags({ UnsupportedSource: () => extractWeb(sourceUrl, null) }))
+        ? media.pipe(
+            Effect.catchTags({
+              UnsupportedSource: () => extractPublicDocument(sourceUrl, source.kind),
+            }),
+          )
         : media;
     }
   }
@@ -115,9 +121,11 @@ const extractWith = (
     new UnsupportedSource({
       kind: source.kind,
       reason:
-        bytes === null
-          ? "This source requires stored content or a supported URL"
-          : "No extractor is available for this file format",
+        source.acquisitionMode === "stored" && bytes === null
+          ? "The stored original is unavailable. Upload the original bytes again from your device; its citation URL cannot replace it."
+          : bytes === null
+            ? "This source requires stored content or a supported URL"
+            : "No extractor is available for this file format",
     }),
   );
 };

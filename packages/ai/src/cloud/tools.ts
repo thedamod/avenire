@@ -344,8 +344,20 @@ const hydrateProgram = Effect.fn("RuthCloud.hydrateInputs")(function* (
     if (!selectedSkip && !fetchIds.has(candidate.fileId)) continue;
     const old = existing.find((row) => row.fileId === candidate.fileId);
     const cachedInfo = selectedSkip ? yield* box.fileInfo(candidate.sandboxPath) : Option.none();
+    // Commands run as the workspace owner and can chmod cached inputs. Hash on the box so
+    // verifying a large cache entry does not download or buffer it on the application worker.
+    const cachedHash =
+      selectedSkip &&
+      Option.isSome(cachedInfo) &&
+      !cachedInfo.value.isDir &&
+      cachedInfo.value.size === old?.sizeBytes
+        ? yield* box.exec(
+            `/usr/bin/sha256sum -- ${"'" + candidate.sandboxPath.replaceAll("'", "'\\''") + "'"}`,
+          )
+        : undefined;
     const skipped =
-      selectedSkip && Option.isSome(cachedInfo) && cachedInfo.value.size === old?.sizeBytes;
+      cachedHash?.exitCode === 0 &&
+      /^[a-f0-9]{64}/.exec(cachedHash.output)?.[0] === candidate.contentHash;
     const previouslyProtected = old?.lastRunId === runId ? old.sizeBytes : 0;
     const projectedSize = skipped ? old!.sizeBytes : candidate.sizeBytes;
     if (
@@ -372,7 +384,7 @@ const hydrateProgram = Effect.fn("RuthCloud.hydrateInputs")(function* (
         continue;
       }
       size = bytes.byteLength;
-      hash = candidate.contentHash ?? hashBytes(bytes);
+      hash = hashBytes(bytes);
       if (old)
         yield* box.exec(
           `chmod u+w -- ${"'" + candidate.sandboxPath.replaceAll("'", "'\\''") + "'"}`,

@@ -38,7 +38,7 @@ export const ProvidersLive = Layer.mergeAll(
   RerankerLive,
   QueryPlannerLive.pipe(Layer.provide(IngestionModelsLive)),
 );
-const RetrievalServicesLive = RetrievalLive.pipe(
+export const RetrievalServicesLive = RetrievalLive.pipe(
   Layer.provideMerge(Layer.mergeAll(GraphSearchLive, SemanticCacheLive)),
   Layer.provideMerge(ProvidersLive),
 );

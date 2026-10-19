@@ -185,7 +185,13 @@ describe("CloudTasks", () => {
       expect((yield* service.cancelRun(userId, first.id)).status).toBe("cancelled");
       expect(yield* service.listRuns(userId)).toHaveLength(1);
       yield* service.delete(userId, taskId);
-      expect(f.rows("cloud_task").some((row) => row.id === taskId)).toBe(false);
+      expect(f.rows("cloud_task").find((row) => row.id === taskId)).toMatchObject({
+        retiredAt: expect.any(Date),
+        enabled: false,
+        nextRunAt: null,
+      });
+      expect((yield* service.list(userId)).some((task) => task.id === taskId)).toBe(false);
+      expect(yield* service.listRuns(userId)).toHaveLength(1);
     }).pipe(Effect.provide(CloudTasksLive.pipe(Layer.provide(f.services))));
   });
 });
@@ -215,3 +221,38 @@ it.effect(
     }).pipe(Effect.provide(f.services));
   },
 );
+
+it.effect("retiring a terminal task retains pending review and recoverable cleanup", () => {
+  const f = fixture();
+  queue(f, "finished", "succeeded");
+  Object.assign(f.rows("cloud_run")[0]!, {
+    leasedBy: "dead",
+    leaseExpiresAt: new Date(0),
+    usage: { cleanupComplete: false },
+    recordingId: "video",
+  });
+  f.rows("pending_approval").push({
+    id: "approval",
+    runId: "finished",
+    userId,
+    status: "pending",
+    proposedKey: "proposal",
+  });
+  return Effect.gen(function* () {
+    const tasks = yield* CloudTasks;
+    yield* tasks.delete(userId, taskId);
+    expect((yield* tasks.list(userId)).some((task) => task.id === taskId)).toBe(false);
+    expect(f.rows("pending_approval")[0]).toMatchObject({
+      status: "pending",
+      proposedKey: "proposal",
+    });
+    expect(f.rows("cloud_run")[0]).toMatchObject({ status: "succeeded", recordingId: "video" });
+    yield* schedulerTick();
+    expect(f.started).toEqual(["finished"]);
+    expect(f.rows("cloud_run")).toHaveLength(1);
+    expect(f.rows("cloud_task")[0]).toMatchObject({ retiredAt: expect.any(Date) });
+  }).pipe(
+    Effect.provide(CloudTasksLive.pipe(Layer.provide(f.services))),
+    Effect.provide(f.services),
+  );
+});

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from "@effect/vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { WIDGET_THEME_TOKENS } from "../styles/tokens.ts";
 import { WidgetFrame } from "./WidgetFrame.tsx";
@@ -16,7 +16,11 @@ function message(data: unknown, source: MessageEventSource | null = iframe().con
     window.dispatchEvent(new MessageEvent("message", { data, source }));
   });
 }
+beforeEach(() => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+});
 afterEach(() => {
+  vi.unstubAllGlobals();
   cleanup();
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -104,4 +108,40 @@ describe("WidgetFrame", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     expect(iframe().src).toContain("#other");
   });
+});
+
+it("does not start a timeout until the offscreen widget is activated", () => {
+  vi.useFakeTimers();
+  let activate: IntersectionObserverCallback | undefined;
+  const disconnect = vi.fn();
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        activate = callback;
+      }
+      observe = vi.fn();
+      disconnect = disconnect;
+    },
+  );
+  try {
+    render(<WidgetFrame {...props} loadTimeoutMs={100} />);
+    expect(screen.queryByTitle(props.title)).toBeNull();
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.queryByRole("alert")).toBeNull();
+    act(() =>
+      activate?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      ),
+    );
+    expect(iframe()).toBeTruthy();
+    expect(disconnect).toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(99));
+    expect(screen.queryByRole("alert")).toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.getByRole("alert")).toBeTruthy();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

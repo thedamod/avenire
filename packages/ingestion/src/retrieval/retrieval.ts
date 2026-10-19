@@ -14,6 +14,8 @@ import type {
   SearchResult,
   UserId,
 } from "@avenire/contracts";
+import { user } from "@avenire/database/schema";
+import { eq } from "drizzle-orm";
 import { Database } from "@avenire/database/client";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -352,7 +354,17 @@ export const RetrievalLive = Layer.effect(
     const search = Effect.fn("Retrieval.search")(
       function* (userId: UserId, query: SearchQuery) {
         const analysis = analyzeQuery(query.text);
-        const key = { userId, optionsKey: optionsKey(query, analysis) };
+        const corpus = yield* database.use((db) =>
+          db.query.user.findFirst({
+            columns: { corpusRevision: true },
+            where: eq(user.id, userId),
+          }),
+        );
+        const key = {
+          userId,
+          corpusRevision: corpus?.corpusRevision ?? 0,
+          optionsKey: optionsKey(query, analysis),
+        };
         const repeat = yield* fromCache(cache.lookupExact(key, analysis.normalized));
         if (Option.isSome(repeat)) return repeat.value;
 

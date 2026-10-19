@@ -29,7 +29,6 @@ const nextConfig: NextConfig = {
       "../../node_modules/.pnpm/agent-browser@*/node_modules/agent-browser/bin/**/*",
     ],
   },
-  typescript: { ignoreBuildErrors: true },
 };
 
 export default nextConfig;

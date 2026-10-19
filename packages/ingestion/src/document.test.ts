@@ -6,7 +6,15 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { randomBytes } from "node:crypto";
 
-import { loadDocument, removeDocument, reusableDocumentKey, saveDocument } from "./document.ts";
+import {
+  loadDocument,
+  removeDocument,
+  reusableDocumentKey,
+  saveDocument,
+  shouldRetryDocument,
+  extractionRetryMinutes,
+  mergeExtractionRetry,
+} from "./document.ts";
 import { EXTRACTOR_VERSION, type ExtractedDocument } from "./extract/types.ts";
 
 const userId = UserId.make("user");
@@ -55,4 +63,63 @@ it("reuses a document only for the recorded bytes and extractor version", () => 
   ).toBeNull();
   expect(reusableDocumentKey({ ...found, documentKey: null }, "abc")).toBeNull();
   expect(reusableDocumentKey(found, null)).toBeNull();
+});
+
+it("retries transient partial work three times while leaving intentional caps reusable", () => {
+  const partial = {
+    ...document,
+    coverage: {
+      status: "partial" as const,
+      parts: [
+        {
+          part: "ocr",
+          status: "partial" as const,
+          detail: "Failed or capped pages: 2, 151; capped: 151",
+        },
+      ],
+    },
+  };
+  expect(shouldRetryDocument(partial)).toBe(true);
+  expect(
+    [0, 1, 2, 3].map((retryCount) => extractionRetryMinutes({ ...partial, retryCount })),
+  ).toEqual([2, 4, 8, undefined]);
+  expect(extractionRetryMinutes(document)).toBeUndefined();
+  expect(shouldRetryDocument({ ...partial, retryCount: 2 })).toBe(true);
+  expect(shouldRetryDocument({ ...partial, retryCount: 3 })).toBe(false);
+  expect(
+    shouldRetryDocument({
+      ...partial,
+      coverage: {
+        status: "partial",
+        parts: [
+          { part: "ocr", status: "partial", detail: "Failed or capped pages: 151; capped: 151" },
+        ],
+      },
+    }),
+  ).toBe(false);
+  expect(shouldRetryDocument(document)).toBe(false);
+});
+
+it("retains recovered sections through another partial retry and replaces them on full recovery", () => {
+  const previous = {
+    ...document,
+    sections: [
+      { text: "Page one", location: { page: 1 } },
+      { text: "Page two", location: { page: 2 } },
+    ],
+  };
+  const fresh = {
+    ...document,
+    sections: [{ text: "Recovered page three", location: { page: 3 } }],
+  };
+  expect(mergeExtractionRetry(previous, fresh).sections.map((section) => section.text)).toEqual([
+    "Recovered page three",
+    "Page one",
+    "Page two",
+  ]);
+  const recovered = {
+    ...fresh,
+    coverage: { status: "full" as const, parts: [{ part: "ocr", status: "full" as const }] },
+  };
+  expect(mergeExtractionRetry(previous, recovered)).toEqual(recovered);
 });

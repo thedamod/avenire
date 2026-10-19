@@ -1,7 +1,8 @@
 /** Semantic cache: reuse a recent result for the same or a near-identical question. */
 import { SearchResult, type UserId } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import { searchCache } from "@avenire/database/schema";
+import { advanceCorpusRevision, lockCorpus } from "@avenire/database/corpus";
+import { searchCache, user } from "@avenire/database/schema";
 import { and, cosineDistance, desc, eq, gt, inArray, lte, or, type SQL, sql } from "drizzle-orm";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -24,6 +25,7 @@ export class SearchCacheError extends Schema.TaggedError<SearchCacheError>()("Se
 
 export interface CacheKey {
   readonly userId: UserId;
+  readonly corpusRevision: number;
   /** Fingerprint of everything but the wording: filters, limit, depth, locations, phrases. */
   readonly optionsKey: string;
 }
@@ -49,7 +51,7 @@ export class SemanticCache extends Context.Service<
         readonly result: SearchResult;
       },
     ) => Effect.Effect<void, SearchCacheError>;
-    /** Drops the user's entries; call whenever their searchable corpus changes. */
+    /** Compatibility invalidation. Canonical mutations advance revision in their own transaction. */
     readonly invalidate: (userId: UserId) => Effect.Effect<void, SearchCacheError>;
   }
 >()("avenire/ingestion/SemanticCache") {}
@@ -93,6 +95,8 @@ export const SemanticCacheLive = Layer.effect(
             .where(
               and(
                 eq(searchCache.userId, key.userId),
+                eq(searchCache.corpusRevision, key.corpusRevision),
+                sql`${key.corpusRevision} = (SELECT ${user.corpusRevision} FROM ${user} WHERE ${user.id} = ${key.userId})`,
                 eq(searchCache.optionsKey, key.optionsKey),
                 eq(searchCache.embeddingModel, embedder.model),
                 gt(searchCache.expiresAt, sql`now()`),
@@ -133,9 +137,17 @@ export const SemanticCacheLive = Layer.effect(
       function* (key: CacheKey, entry: Parameters<SemanticCache["Service"]["store"]>[1]) {
         const id = yield* crypto.randomUUIDv7;
         yield* database.useTransaction(async (tx) => {
+          await lockCorpus(tx, key.userId);
+          const current = await tx.query.user.findFirst({
+            columns: { corpusRevision: true },
+            where: eq(user.id, key.userId),
+          });
+          // A search started before mutation cannot repopulate the current cache.
+          if (!current || current.corpusRevision !== key.corpusRevision) return;
           await tx.insert(searchCache).values({
             id,
             userId: key.userId,
+            corpusRevision: key.corpusRevision,
             optionsKey: key.optionsKey,
             queryText: entry.queryText,
             embedding: [...entry.vector],
@@ -164,7 +176,10 @@ export const SemanticCacheLive = Layer.effect(
 
     const invalidate = (userId: UserId) =>
       database
-        .use((db) => db.delete(searchCache).where(eq(searchCache.userId, userId)))
+        .useTransaction(async (tx) => {
+          await advanceCorpusRevision(tx, userId);
+          await tx.delete(searchCache).where(eq(searchCache.userId, userId));
+        })
         .pipe(
           Effect.asVoid,
           Effect.mapError((cause) => new SearchCacheError({ operation: "invalidate", cause })),

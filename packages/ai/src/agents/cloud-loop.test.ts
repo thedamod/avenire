@@ -333,3 +333,68 @@ it.effect("halts on a failed journal write while preserving the unresolved publi
     expect(model.doStreamCalls).toHaveLength(1);
   }).pipe(Effect.provideService(Database, database), Effect.provide(AnalyticsNoop));
 });
+
+for (const mode of ["stop", "publish_report"] as const) {
+  it.effect(`replays ${mode} final checkpoint twice with zero further model or tool calls`, () => {
+    const model = scriptedModel(
+      mode === "stop"
+        ? [{ text: "Final answer", finish: "stop" }]
+        : [
+            {
+              toolCalls: [
+                { id: "report", name: "publish_report", input: '{"markdown":"Final answer"}' },
+              ],
+            },
+          ],
+    );
+    const capabilities = { vision: false, toolResultImages: false };
+    let calls = 0;
+    let persisted: LoopCheckpoint = {
+      messages: [{ role: "user", content: "Finish" }],
+      stepIndex: 0,
+      usage: { inputTokens: 0, outputTokens: 0, cost: 0, actions: 0 },
+    };
+    let crash = true;
+    const execute = () =>
+      runCloudLoop({
+        model,
+        system: "Finish",
+        capabilities,
+        images: createImageTransport(capabilities),
+        tools: {
+          publish_report: tool({
+            inputSchema: jsonSchema<{ markdown: string }>({
+              type: "object",
+              properties: { markdown: { type: "string" } },
+              required: ["markdown"],
+            }),
+            execute: async () => {
+              calls++;
+              return { saved: true };
+            },
+          }),
+        },
+        checkpoint: structuredClone(persisted),
+        deadline: persisted.usage.execution ? -1 : 100000,
+        maxCost: 1,
+        maxActions: 10,
+        ...idle,
+        save: (state) =>
+          Effect.gen(function* () {
+            persisted = structuredClone(state);
+            if (crash && persisted.usage.execution) {
+              crash = false;
+              return yield* new SimulatedCrash({});
+            }
+          }),
+      });
+    return Effect.gen(function* () {
+      expect((yield* Effect.result(execute()))._tag).toBe("Failure");
+      expect(persisted.usage.execution).toEqual({ status: "completed", text: "Final answer" });
+      expect((yield* execute()).text).toBe("Final answer");
+      expect((yield* execute()).text).toBe("Final answer");
+      expect(model.doStreamCalls).toHaveLength(1);
+      expect(calls).toBe(mode === "stop" ? 0 : 1);
+    });
+  });
+}

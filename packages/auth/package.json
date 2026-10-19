@@ -7,6 +7,10 @@
       "types": "./src/server.ts",
       "import": "./src/server.ts"
     },
+    "./middleware": {
+      "types": "./src/middleware.ts",
+      "import": "./src/middleware.ts"
+    },
     "./client": {
       "types": "./src/client.ts",
       "import": "./src/client.ts"
@@ -24,7 +28,7 @@
     "@avenire/contracts": "workspace:*",
     "@avenire/database": "workspace:*",
     "@avenire/emailer": "workspace:*",
-    "@better-auth/expo": "1.7.7",
+    "@better-auth/expo": "1.7.10",
     "better-auth": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"

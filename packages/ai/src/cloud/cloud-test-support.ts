@@ -15,6 +15,7 @@ import { Database } from "@avenire/database/client";
 import { Retrieval } from "@avenire/ingestion/retrieval";
 import { SemanticCache } from "@avenire/ingestion/retrieval/cache";
 import { Storage } from "@avenire/storage/storage";
+import { createHash } from "node:crypto";
 import { getTableName, type SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -236,10 +237,17 @@ export const cloudFixture = () => {
   let invalidated = 0;
   const box: CloudBox = {
     sandbox: {} as CloudBox["sandbox"],
-    recordings: Effect.succeed([]),
     id: "sandbox",
     userId: ctx.userId,
-    exec: () => Effect.succeed({ exitCode: 0, output: "" }),
+    exec: (command) =>
+      Effect.sync(() => {
+        const path = [...files.keys()].find((path) => command.includes(path));
+        const bytes = path ? files.get(path) : undefined;
+        return {
+          exitCode: bytes ? 0 : 1,
+          output: bytes ? createHash("sha256").update(bytes).digest("hex") : "",
+        };
+      }),
     writeFile: (path, bytes) =>
       Effect.sync(() => {
         written.push(path);
@@ -264,16 +272,12 @@ export const cloudFixture = () => {
         removed.push(path);
         files.delete(path);
       }),
-    startCommand: () => Effect.die("unused"),
-    commandStatus: () => Effect.die("unused"),
-    commandLogs: () => Effect.die("unused"),
     endSession: () => Effect.void,
     startDesktop: Effect.void,
-    startRecording: () => Effect.succeed(Option.none()),
-    stopRecording: () => Effect.void,
   };
   const boxes = CloudBoxes.of({
     ensure: () => Effect.succeed(box),
+    reconnect: () => Effect.succeed(Option.some(box)),
     running: () => Effect.succeed(running ? Option.some(box) : Option.none()),
     stop: () => Effect.void,
   });

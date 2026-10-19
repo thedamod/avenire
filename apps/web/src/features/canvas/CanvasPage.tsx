@@ -22,7 +22,7 @@ import { CanvasNodeId } from "@avenire/contracts";
 import { Button } from "@avenire/ui/components/button";
 import { Input } from "@avenire/ui/components/input";
 import { useApi, useQuery, errorMessage } from "~/lib/rpc";
-import { call } from "@avenire/client-runtime/rpc";
+import { call, invalidateLibrary } from "@avenire/client-runtime/rpc";
 import { FileDetail } from "~/features/library/FileDetail";
 
 type CanvasNodeData = {
@@ -115,9 +115,11 @@ export function CanvasPage() {
     data: saved,
     loading: savedLoading,
     error: savedError,
-    refetch,
   } = useQuery((client) => client["library.getCanvas"](), "canvas-nodes");
-  const { data: folders } = useQuery((client) => client["library.listFolders"](), "canvas-folders");
+  const { data: folders, setData: setFolders } = useQuery(
+    (client) => client["library.listFolders"](),
+    "canvas-folders",
+  );
   const { data: files } = useQuery(
     (client) => client["library.listFiles"]({ placement: "filed" }),
     "canvas-files",
@@ -132,10 +134,15 @@ export function CanvasPage() {
       void call(api, (client) =>
         client["library.renameFolder"]({ folderId: folder.id, name: cleanName }),
       )
-        .then(() => refetch())
+        .then((updated) => {
+          setFolders((current) =>
+            current?.map((entry) => (entry.id === updated.id ? updated : entry)),
+          );
+          invalidateLibrary(api, ["folders"]);
+        })
         .catch((cause: unknown) => setError(errorMessage(cause)));
     },
-    [api, refetch],
+    [api, setFolders],
   );
 
   useEffect(() => {
@@ -208,7 +215,19 @@ export function CanvasPage() {
         void key;
       });
     });
-    setNodes(next);
+    setNodes((current) => {
+      const existing = new Map(current.map((node) => [node.id, node]));
+      return next.map((node) => {
+        const previous = existing.get(node.id);
+        return previous
+          ? {
+              ...node,
+              position: previous.position,
+              ...(previous.style === undefined ? {} : { style: previous.style }),
+            }
+          : node;
+      });
+    });
   }, [saved, folders, files, rename]);
 
   const onNodesChange: OnNodesChange<FlowNode> = useCallback(

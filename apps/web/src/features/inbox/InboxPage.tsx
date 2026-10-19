@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
-import type { Folder, IngestionJob, LibraryFile } from "@avenire/contracts";
-import { call } from "@avenire/client-runtime/rpc";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import type { FileId, Folder, IngestionJob, LibraryFile } from "@avenire/contracts";
+import { call, invalidateLibrary, pruneJobs, updateLatestJob } from "@avenire/client-runtime/rpc";
 import { Badge } from "@avenire/ui/components/badge";
 import { Button } from "@avenire/ui/components/button";
 import { useApi, useQuery, useStream, errorMessage } from "~/lib/rpc";
@@ -17,9 +17,14 @@ export function InboxPage() {
     refetch,
   } = useQuery((client) => client["library.listFiles"]({ placement: "inbox" }), "inbox-files");
   const { data: folders } = useQuery((client) => client["library.listFolders"](), "inbox-folders");
-  const [jobsById, setJobsById] = useState<ReadonlyMap<IngestionJob["id"], IngestionJob>>(
-    () => new Map(),
+  const [jobsByFile, setJobsByFile] = useState<ReadonlyMap<FileId, IngestionJob>>(() => new Map());
+  const visibleFiles = useMemo(
+    () => (files ? new Set(files.map((file) => file.id)) : undefined),
+    [files],
   );
+  useEffect(() => {
+    if (visibleFiles) setJobsByFile((previous) => pruneJobs(previous, visibleFiles));
+  }, [visibleFiles]);
   const [selected, setSelected] = useState<ReadonlySet<LibraryFile["id"]>>(() => new Set());
   const [folderIds, setFolderIds] = useState<ReadonlyArray<Folder["id"]>>([]);
   const [actionError, setActionError] = useState<string>();
@@ -27,7 +32,10 @@ export function InboxPage() {
 
   useStream(
     (client) => client["library.watchIngestion"](),
-    (job) => setJobsById((previous) => new Map(previous).set(job.id, job)),
+    (job) => {
+      setJobsByFile((previous) => updateLatestJob(previous, job, visibleFiles));
+      if (job.status === "indexed") invalidateLibrary(api);
+    },
     "inbox-ingestion-watch",
     (cause) => setActionError(`Live updates stopped: ${errorMessage(cause)}`),
   );
@@ -44,7 +52,7 @@ export function InboxPage() {
         ),
       );
       setSelected(new Set());
-      await refetch();
+      invalidateLibrary(api);
     } catch (cause) {
       setActionError(errorMessage(cause));
     }
@@ -55,7 +63,7 @@ export function InboxPage() {
       const job = await call(api, (client) =>
         client["library.setIngestionPaused"]({ fileId, paused }),
       );
-      setJobsById((previous) => new Map(previous).set(job.id, job));
+      setJobsByFile((previous) => updateLatestJob(previous, job, visibleFiles));
     } catch (cause) {
       setActionError(errorMessage(cause));
     }
@@ -144,7 +152,7 @@ export function InboxPage() {
       ) : null}
       <ul className="divide-y divide-border">
         {files?.map((file) => {
-          const job = [...jobsById.values()].find((entry) => entry.fileId === file.id);
+          const job = jobsByFile.get(file.id);
           const status = job?.status ?? "queued";
           return (
             <li key={file.id} className="flex items-center gap-3 py-4">
