@@ -1,0 +1,187 @@
+<!doctype html><html><head><meta charset="utf-8"><title>C · The shelf</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Avenire design system v1 — dark first.
+   Shared: colour + type. Landing and App differ only in corners, spacing and depth. */
+:root {
+  /* Ground and surfaces (anatomy dark plate greys) */
+  --color-bg: #0b0b0b;
+  --color-surface-1: #111111;
+  --color-surface-2: #161616;
+  --color-surface-3: #1c1c1c;
+  --color-surface-4: #242424;
+  --color-border: #222222;
+  --color-border-strong: #2e2e2e;
+
+  /* Text */
+  --color-text-strong: #ededed;
+  --color-text: #a3a3a3;
+  --color-text-muted: #6e6e6e;
+
+  /* Accent: amber lamp. One per view. */
+  --color-accent: #ffb547;
+  --color-accent-text: #ffc46b;
+  --color-accent-tint: #1f1810;
+  --color-accent-line: #4a3818;
+  --color-on-accent: #1a1206;
+
+  /* Signals (anatomy) */
+  --color-signal-red: #ff6b6b;
+  --color-signal-green: #6be0a0;
+  --color-signal-blue: #6b9bff;
+
+  /* Figure inks (anatomy iso.css, dark) */
+  --color-iso-paper: #131313;
+  --color-iso-top: #1c1c1c;
+  --color-iso-shade-0: #0f0f0f;
+  --color-iso-shade-1: #121212;
+  --color-iso-shade-2: #151515;
+  --color-iso-shade-3: #181818;
+  --color-iso-hi: #d4d4d4;
+  --color-iso-mid: #6a6a6a;
+  --color-iso-lo: #3e3e3e;
+  --color-iso-faint: #2a2a2a;
+  --color-iso-lit-top: #2a2112;
+
+  /* Notebook covers: the only saturated colour */
+  --color-cover-graphite: #2e2e33;
+  --color-cover-moss: #18803a;
+  --color-cover-orchid: #b526c9;
+  --color-cover-mustard: #d9a50d;
+  --color-cover-sky: #2b9bd8;
+  --color-cover-lime: #8bdf3c;
+  --color-cover-silver: #d3d3d8;
+  --color-cover-tangerine: #ee7b14;
+  --color-cover-rose: #ef4579;
+  --color-cover-lilac: #b48bf2;
+
+  /* Type */
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --tracking-display: -0.035em;
+  --tracking-heading: -0.02em;
+  --tracking-label: 0.08em;
+  --text-mono: 11px;
+
+  /* Landing scale */
+  --text-l-display: 60px; --leading-l-display: 64px;
+  --text-l-h2: 44px;      --leading-l-h2: 48px;
+  --text-l-h3: 28px;      --leading-l-h3: 34px;
+  --text-l-lead: 20px;    --leading-l-lead: 30px;
+  --text-l-body: 16px;    --leading-l-body: 26px;
+
+  /* App scale */
+  --text-a-title: 22px;   --leading-a-title: 28px;
+  --text-a-heading: 16px; --leading-a-heading: 22px;
+  --text-a-read: 15px;    --leading-a-read: 26px;
+  --text-a-body: 14px;    --leading-a-body: 22px;
+  --text-a-ui: 13px;      --leading-a-ui: 18px;
+  --text-a-small: 12px;   --leading-a-small: 16px;
+
+  /* Radius */
+  --radius-pill: 999px;
+  --radius-l-card: 2px;   /* landing cards, media, figure plates */
+  --radius-xs: 4px;       /* app chips, kbd, citations */
+  --radius-sm: 6px;       /* app rows */
+  --radius-md: 8px;       /* app controls */
+  --radius-lg: 10px;      /* app panels, composer — the maximum */
+
+  /* Elevation: app floating layers only (promptbox, menus, toasts). Never cards. */
+  --shadow-float: 0 16px 40px -20px rgba(0, 0, 0, 0.8);
+
+  /* Spacing (4px grid) */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px;
+  --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px; --space-16: 64px;
+  --space-20: 80px; --space-24: 96px; --space-30: 120px; --space-40: 160px;
+
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Shared base for landing explorations */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+body { width: 1440px; }
+.fig { display: flex; align-items: center; justify-content: center; }
+.fig svg { width: 100%; height: 100%; display: block; }
+.mono { font-family: var(--font-mono); font-size: var(--text-mono); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-muted); }
+.display { font-weight: 500; font-size: var(--text-l-display); line-height: var(--leading-l-display); letter-spacing: var(--tracking-display); color: var(--color-text-strong); }
+.h2 { font-weight: 500; font-size: var(--text-l-h2); line-height: var(--leading-l-h2); letter-spacing: var(--tracking-display); color: var(--color-text-strong); }
+.h3 { font-weight: 500; font-size: var(--text-l-h3); line-height: var(--leading-l-h3); letter-spacing: var(--tracking-heading); color: var(--color-text-strong); }
+.quiet { color: var(--color-text-muted); }
+.lead { font-size: var(--text-l-lead); line-height: var(--leading-l-lead); color: var(--color-text-muted); }
+.body { font-size: var(--text-l-body); line-height: var(--leading-l-body); color: var(--color-text); }
+.btn { display: inline-flex; align-items: center; height: 44px; padding: 0 22px; border-radius: var(--radius-pill); font-size: 15px; font-weight: 500; white-space: nowrap; }
+.btn-sm { height: 34px; padding: 0 16px; font-size: 14px; }
+.btn-primary { background: var(--color-text-strong); color: var(--color-bg); }
+.btn-ghost { border: 1px solid var(--color-border-strong); color: var(--color-text-strong); }
+.nav { display: flex; align-items: center; justify-content: space-between; height: 72px; padding: 0 32px; }
+.nav-links { display: flex; gap: 32px; font-size: 14px; color: var(--color-text); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: -0.02em; color: var(--color-text-strong); }
+.rails { margin: 0 112px; border-left: 1px solid var(--color-border); border-right: 1px solid var(--color-border); }
+.tag { position: fixed; top: 0; left: 0; z-index: 9; padding: 6px 10px; background: var(--color-text-strong); color: var(--color-bg); font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+
+/* app bits reused inside landing shots */
+.win { border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-1); overflow: hidden; }
+.win-bar { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--color-border); font-size: 12px; color: var(--color-text-muted); }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 7px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); font-size: 12px; color: var(--color-text); white-space: nowrap; }
+.cite { display: inline-flex; align-items: center; height: 17px; padding: 0 5px; border-radius: var(--radius-xs); background: var(--color-surface-3); border: 1px solid var(--color-border-strong); font-family: var(--font-mono); font-size: 10px; color: var(--color-text); vertical-align: 1px; }
+.cov { display: inline-block; width: 9px; height: 12px; border-radius: 1px 2px 2px 1px; flex-shrink: 0; }
+.kbd { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); font-family: var(--font-mono); font-size: 10.5px; color: var(--color-text-muted); }
+
+.hero { padding: 112px 48px 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 24px; }
+.shelf { position: relative; margin: 72px 0 0; height: 440px; display: flex; align-items: flex-end; justify-content: center; gap: 18px; padding: 0 40px; border-bottom: 1px solid var(--color-border-strong); }
+.book { position: relative; flex-shrink: 0; border-radius: 4px 12px 12px 4px; display: flex; overflow: hidden; }
+.book::before { content: ""; width: 12px; background: rgba(0,0,0,.2); }
+.book .t { position: absolute; left: 26px; top: 20px; right: 16px; font-size: 19px; font-weight: 600; line-height: 22px; letter-spacing: -0.01em; color: #fff; text-align: left; }
+.book .n { position: absolute; left: 26px; bottom: 16px; font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,.7); }
+.book .fig { position: absolute; right: 12px; bottom: 34px; width: 120px; height: 120px; color: rgba(0,0,0,.5); }
+.book.dark .t, .book.dark .n { color: #1a1206; } .book.dark .n { opacity: .6; }
+.lifted { transform: translateY(-28px); }
+.flag { position: absolute; top: -70px; left: 50%; transform: translateX(-50%); white-space: nowrap; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 13px; color: var(--color-text-strong); }
+.flag::after { content: ""; width: 1px; height: 22px; background: var(--color-border-strong); }
+.section { border-top: 1px solid var(--color-border); margin-top: 120px; padding: 104px 48px 112px; display: grid; grid-template-columns: 1fr 1.3fr; gap: 64px; align-items: center; }
+.page { border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-1); overflow: hidden; }
+.tabs { display: flex; gap: 20px; padding: 0 20px; border-bottom: 1px solid var(--color-border); }
+.tab { padding: 12px 0 11px; font-size: 13px; color: var(--color-text-muted); } .tab.on { color: var(--color-text-strong); box-shadow: inset 0 -1.5px 0 var(--color-text-strong); }
+.nrow { display: grid; grid-template-columns: 1fr 120px 70px; align-items: center; height: 46px; padding: 0 20px; font-size: 13.5px; color: var(--color-text-strong); }
+.nrow + .nrow { border-top: 1px solid var(--color-border); }
+.nrow .by { font-size: 12px; color: var(--color-text-muted); } .nrow .d { font-size: 12px; color: var(--color-text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+</style></head><body>
+<div class="tag">C · The shelf</div>
+<div class="rails">
+  <nav class="nav"><div class="brand"><svg width="20" height="16" viewBox="0 0 198 154" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M119 116.5V81.5C119 79.1 117 78.1666 116 77.9999H83C79.8 77.9999 78.3807 80.3333 78.071 81.5V116.5C78.071 117.667 76.752 120.223 72.1038 122.5C67 125 34.9745 143.667 19.3934 153C18.5647 153.333 16.6087 153.5 15.4153 151.5C14.2219 149.5 10.6084 143.333 8.95082 140.5C8.45355 139.333 8.25465 136.6 11.4372 135C14.6197 133.4 36.3005 121 46.7432 115C47.5719 114.167 49.0306 112.1 48.235 110.5C47.4393 108.9 45.9144 108.167 45.2514 108H1.98907C1.32605 108 0 107.6 0 106V91.3892C0 90.5928 0.397815 89 1.98907 89H44.3705C45.6587 89 48.235 88.3 48.235 85.5C48.235 82.7 45.2514 81 43.7596 80.5L9.44809 60.5C8.95082 60.1667 8.25465 59 9.44809 57C10.6415 55 14.918 47.5 16.9071 44C17.2386 43.6667 18.3989 43.3 20.388 44.5C22.377 45.7 59.3406 67.3333 77.5738 77.9999L43.7596 19.4999C43.2623 18.8333 42.8645 17.1999 45.2514 15.9999C47.6383 14.7999 54.5337 10.4999 57.6831 8.49994C58.1803 8.16661 59.5727 8.19994 61.1639 10.9999C62.7552 13.7999 75.7505 36.1666 82.0492 47C84.204 47.6667 88.5137 47.9 88.5137 43.5V1.38477C88.5137 0.923177 89.0109 0 91 0H106C108 0 108.5 0.923177 108.5 1.38477V43.5C108.5 47.9 112.833 47.6667 115 47C121.333 36.1666 134.4 13.7999 136 10.9999C137.6 8.19994 139 8.16661 139.5 8.49994C142.667 10.4999 149.6 14.7999 152 15.9999C154.4 17.1999 154 18.8333 153.5 19.4999L119.5 77.9999C137.833 67.3333 175 45.7 177 44.5C179 43.3 180.167 43.6667 180.5 44C182.5 47.5 186.8 55 188 57C189.2 59 188.5 60.1667 188 60.5L153.5 80.5C152 81 149 82.7 149 85.5C149 88.3 151.59 89 152.886 89H195.5C197.1 89 197.5 90.5928 197.5 91.3892V106C197.5 107.6 196.167 108 195.5 108H152C151.333 108.167 149.8 108.9 149 110.5C148.2 112.1 149.667 114.167 150.5 115C161 121 182.8 133.4 186 135C189.2 136.6 189 139.333 188.5 140.5C186.833 143.333 183.2 149.5 182 151.5C180.8 153.5 178.833 153.333 178 153C162.333 143.667 129.5 125 125 122.5C120.454 119.975 119 117.667 119 116.5Z" fill="currentColor"/>
+</svg>
+Avenire</div><div class="nav-links"><span>Product</span><span>Ruth Cloud</span><span>Pricing</span><span>Changelog</span></div><div style="display:flex; gap:10px;"><span class="btn btn-sm btn-ghost">Log in</span><span class="btn btn-sm btn-primary">Get started</span></div></nav>
+  <header class="hero">
+    <h1 class="display" style="max-width:860px;">A notebook for every subject.<br><span class="quiet">Ruth keeps them up to date.</span></h1>
+    <p class="lead" style="max-width:560px;">Drop in your lecture PDFs, recordings and links. Overnight, Ruth files them into the right notebook and writes the notes for you.</p>
+    <div style="display:flex; gap:12px; margin-top:8px;"><span class="btn btn-primary">Start your library</span><span class="btn btn-ghost">See how it works</span></div>
+  </header>
+  <div class="shelf">
+    <div class="book" style="width:196px; height:300px; background:var(--color-cover-mustard);"><span class="t" style="color:#1a1206">Organic Chemistry</span><div class="fig fig-legacy"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Chemistry" stroke="currentColor" stroke-width="1.1"><g fill="none" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="m41.5 87.1-2-1.4-4.9-8.4 .6-2.3 1.8-4.2 16-24.1-.1 .3v-16.8m25.6 56.9 2-1.4 4.9-8.4-.6-2.3-1.8-4.2-16-24.1 .1 .3v-16.8m-14.2 0 .7-1.5 1.4-1 4.1-1 2.7 .1 3.2 .9 1.4 1 .7 1.5m11.4 56.9-2.8 1.6-3.4 1.4-3.8 1-7.1 .8-5.7-.2-5.5-.9-3.7-1.1-5-2.6m23.5-54.4-1.8 .7-3.2 .4-3.2-.4-3.1-1.5-.7-1.1v-1.1l.7-1.1 1.3-.9 1.8-.6 2.1-.4h2.2l2.1 .4 1.8 .6 1.3 .9 .7 1.1v1.1l-.3 .5-.4 .6zm1 4.2-3.4 1.1-2.6 .2-3.9-.5-1.1-.3-2.6-1.5-.8-1.3v-1.3l1.5-1.9 3-1.3 2.6-.4 5.2 .4 3 1.3 1.5 1.9v1.3l-.3 .6-.5 .7zm11 30.2-.3 1.6-1 1.6-1.6 1.5-2.1 1.3-5.5 1.8-6.5 .7-6.5-.7-5.5-1.8-2.1-1.3-1.6-1.5-1-1.6-.3-1.6m6.6-2.4-.3-1.3-.8-1.1-1-.5-.8 .3-.2 1.7 1 1.7 .5 .4 .9 .1 .4-.3zm7.5-4.4-.2-.9-.9-1h-.7l-.4 .4v.9l.8 1.2 .9 .3z"/></g></svg></div><span class="n" style="color:rgba(0,0,0,.55)">18 FILES</span></div>
+    <div class="book" style="width:210px; height:330px; background:var(--color-cover-moss);"><span class="t">Algorithms</span><div class="fig fig-legacy"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Computer science" stroke="currentColor" stroke-width="1.1"><g fill="none" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="m69 71.1-9 4.5-19-9.5-4 2m23 7.5 19 9.6-4 2m-54.1-11.1-8 4 38.1 19.1 8-4m.6-28.9 .4-.7 13-6.5 1.4-.2 18.7 9.2 .3 .7m0 7.4-13.4 6.8-1.3 .2-19.1-9.5m33.8-4.9v7.4m-33.8-9.9v7.4m33.8-4.9-13.4 6.8-1.3 .2-19.1-9.5m-48.1 5 .4-.7 14-7 1.4-.2 18.7 9.2 .3 .7m0 7.4-14.3 7.3-1.4 .2-19.1-9.5m34.8-5.4v7.4m-34.8-9.4v7.4m34.8-5.4-14.3 7.3-1.4 .2-19.1-9.5m38.1 19 .4-.6 14-7 1.4-.2 18.6 9.2 .4 .7m0 7.3-14.4 7.3-1.4 .2-19-9.5m34.8-5.3v7.3m-34.8-9.4v7.4m34.8-5.3-14.4 7.3-1.4 .2-19-9.6m22.4-25.7 10 5m-58.1 0 10.1 5m28 14.1 10 5"/></g></svg></div><span class="n">67 FILES</span></div>
+    <div class="book lifted" style="width:226px; height:360px; background:var(--color-cover-sky); overflow:visible;"><div class="flag">3 new notes from Ruth</div><span class="t">Physics 101</span><div class="fig fig-legacy"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Physics" stroke="currentColor" stroke-width="1.1"><g fill="none" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="m16.6 75.7 .3-.7 32.1-16 1.3-.2 52.8 26.3 .3 .6m0 2.5-32.4 16.3-1.3 .2-53.1-26.5m86.8 7.5v2.5m-86.8-12.5v2.5m86.8 7.5-.3 .4-32.1 16-1.3 .2-53.1-26.6m31.4-12.2v-46.6l46.1 23v46.7m-68.2-12.1v-46.6l46.1 23.1v46.6m-24-80.7-22.1 11m68.2 12-22.1 11.1m-12-28.1-9.3 34.5m-12.7-23.5 9.3 25.2m-5.4 4.9 .5-2.7 1.6-2.3 1-.9 1.3-.6 1.3-.5 1.4-.1 1.4 .1 1.3 .5 2.3 1.5 1.5 2.3 .6 2.7-.6 2.7-1.5 2.3-2.3 1.5-2.7 .6-2.7-.6-1.3-.6-1-.9-1.6-2.3zm29.1-35.6-9.3 34.5m-12.7-23.5 9.3 25.2m-5.4 4.9 .6-2.7 1.5-2.3 2.3-1.5 2.7-.6 2.7 .6 2.3 1.5 1.5 2.3 .6 2.7-.6 2.7-1.5 2.3-2.3 1.5-1.3 .5-1.4 .1-1.4-.1-1.3-.5-2.3-1.5-1.5-2.3zm29.1-35.6-9.3 34.5m-12.7-23.5 9.3 25.2m-5.4 4.9 .6-2.7 1.5-2.3 2.3-1.5 2.7-.6 2.7 .6 1.3 .6 1 .9 1.6 2.3 .5 2.7-.5 2.7-1.6 2.3-2.3 1.6-2.7 .5-2.7-.5-2.3-1.6-1.5-2.3z"/></g></svg></div><span class="n">42 FILES</span></div>
+    <div class="book" style="width:200px; height:318px; background:var(--color-cover-rose);"><span class="t">Art History</span><div class="fig fig-legacy"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Art history" stroke="currentColor" stroke-width="1.1"><g fill="none" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="m24.9 78.5 7.8-15.3m17.9-35.4 5.4-10.6m13 83.3-1.2-19.8m-2.9-45.8-.9-13.7m-8-4 8 4m-38.7 37 .1-.4 8.1-4h1l47.2 23.9m0 2.5-8.2 4.1h-1l-47.2-23.7m56.4 17.1v2.5m-56.4-22v2.4m56.4 17.1-8.2 4.2h-1l-47.2-23.7m13.7-36.5 1.5-.7 38 19v33.1l-1.5 .8-38-19zm0 0 38 19.1m1.5-.8-1.5 .8m0 0v33.1m-34-21.9 30 15v-23.3l-30-15.1zm0-6.2 11-3.1 9 13.1 10 1.4m-5-9.9-.4-1.6-1-1.4-1.2-.6-1 .3-.3 .6v1.5l.7 1.6 .6 .6 1.8 .6 .7-.9z"/></g></svg></div><span class="n">9 FILES</span></div>
+    <div class="book" style="width:206px; height:340px; background:var(--color-cover-graphite); outline:1px solid var(--color-border-strong);"><span class="t">Building a Radio</span><div style="position:absolute; right:12px; bottom:34px; width:120px; height:120px; color:rgba(255,255,255,.3);"><div class="fig fig-legacy"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Electronics" stroke="currentColor" stroke-width="1.1"><g fill="none" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"><path d="m24.2 40.3v-.8l.7-.6 18.1-9 1.2-.4h1.5l1.3 .4 48.1 24 .7 .7v.7m0 35.6-.7 .6-18.1 9-1.2 .4h-1.5l-1.3-.4-48.1-24-.7-.6m71.6-20.6v35.6m-71.6-50.6v35.6m71.6-20.6-.7 .6-18.1 9.1-2.7 .3-1.3-.3-48.1-24.1-.7-.6m3.7 32.8 28.1 14v-23.3l-28.1-14zm4.1-1.7v-15.9m5 18.4v-15.9m5 18.4v-15.9m5 18.4v-15.9m5 18.4v-15.9m18 22.5-.7-3.3-2.1-2.8-2.4-1.2-1.1 .1-.9 .7-.6 1.1-.2 1.4 .2 1.6 1.5 3.2 1.1 1.2 1.2 .9 1.2 .4 1.2-.2 .9-.6zm-1.3-15.4-.5-2.2-1.4-1.9-1.6-.8-1.4 .5-.4 .7v2.1l.4 1.1 1.4 1.9 .8 .6 1.6 .1 1-1.1zm-3.7 12.9 3 .3m-17-46.9v-13.5l20 10v13.5m16 5 5.1-18.3m-1.5 0 .1-.6 1.1-.8 1.3 .4 .4 1-.4 1-.8 .4-1-.2z"/></g></svg></div></div><span class="n">23 FILES</span></div>
+  </div>
+
+  <section class="section">
+    <div style="display:flex; flex-direction:column; gap:20px;">
+      <span class="mono">Inside a notebook</span>
+      <h2 class="h2">Your writing and Ruth's,<br><span class="quiet">side by side.</span></h2>
+      <p class="body" style="color:var(--color-text-muted); max-width:440px;">Notes are your saved answers and your own writing. Media is the PDFs, pages and recordings they came from. Every note cites its source.</p>
+    </div>
+    <div class="page">
+      <div style="display:flex; align-items:center; gap:12px; padding:20px 20px 16px;"><span class="cov" style="width:16px; height:21px; background:var(--color-cover-sky)"></span><span style="font-size:22px; font-weight:500; letter-spacing:-0.02em; color:var(--color-text-strong);">Physics 101</span></div>
+      <div style="padding:0 20px 16px;"><div style="height:40px; display:flex; align-items:center; padding:0 12px; border:1px solid var(--color-border-strong); border-radius:var(--radius-lg); font-size:13.5px; color:var(--color-text-muted);">Ask about Physics 101…<span class="kbd" style="margin-left:auto">⌘ ↵</span></div></div>
+      <div class="tabs"><span class="tab on">Notes</span><span class="tab">Media</span></div>
+      <div class="nrow"><span>Lecture 7 in five paragraphs</span><span class="by">Ruth · overnight</span><span class="d">07:00</span></div>
+      <div class="nrow"><span>MOSFET switching</span><span class="by">Saved answer</span><span class="d">Mon</span></div>
+      <div class="nrow"><span>Transistors quiz · 8 questions</span><span class="by">Ruth · overnight</span><span class="d">07:00</span></div>
+      <div class="nrow"><span>My notes on lab 3</span><span class="by">You</span><span class="d">Sep 30</span></div>
+      <div class="nrow"><span>Why the load line matters</span><span class="by">Saved answer</span><span class="d">Sep 28</span></div>
+    </div>
+  </section>
+</div>
+</body></html>

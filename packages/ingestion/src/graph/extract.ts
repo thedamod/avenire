@@ -1,11 +1,14 @@
 /** Entity and relation extraction from chunk text, for graph retrieval. */
 import * as Context from "effect/Context";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { generateText, Output } from "ai";
+import * as Schedule from "effect/Schedule";
+import * as Semaphore from "effect/Semaphore";
+import { APICallError, generateText, NoObjectGeneratedError, Output, RetryError } from "ai";
 
-import { INGESTION_RETRY, IngestionModels } from "../models.ts";
+import { IngestionModels } from "../models.ts";
 import { normalizeForMatch } from "../text.ts";
 
 export class GraphError extends Schema.TaggedError<GraphError>()("GraphError", {
@@ -172,33 +175,124 @@ const SYSTEM = [
   "Include the concepts, definitions, theorems, methods, named formulas, people, works, institutions and events a student would ask about.",
   "Use canonical singular names without leading articles. Prefer full names; put abbreviations in the description.",
   "At most about 12 entities and 12 relations per chunk. A relation only connects entities named in that same chunk.",
+  "Keep descriptions to one short sentence. Always include both entities and relations arrays, even when empty.",
   "Predicates are short lowercase verb phrases. Strength is 1 for a weak or implied link and 10 for a stated definition or theorem.",
   "Skip generic words such as example, equation and figure.",
 ].join("\n");
+
+const apiFailure = (error: unknown): APICallError | undefined => {
+  if (RetryError.isInstance(error)) return apiFailure(error.lastError);
+  return APICallError.isInstance(error) ? error : undefined;
+};
+
+/** A request-size rejection cannot recover by waiting for the rate-limit window. */
+const oversized = (error: unknown): boolean =>
+  /request too large|request's expected output tokens exceed/i.test(
+    apiFailure(error)?.message ?? "",
+  );
+
+/** Rate limits apply across files; wait for the provider's reset before releasing the lane. */
+export const graphRetryDelay = (error: unknown, now: number): number | undefined => {
+  const failure = apiFailure(error);
+  if (failure?.statusCode !== 429 || oversized(failure)) return undefined;
+  const headers = failure.responseHeaders;
+  const milliseconds = Number.parseFloat(headers?.["retry-after-ms"] ?? "");
+  if (Number.isFinite(milliseconds) && milliseconds >= 0) return milliseconds;
+  const after = headers?.["retry-after"];
+  if (after) {
+    const seconds = Number(after);
+    const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(after) - now;
+    if (Number.isFinite(delay) && delay >= 0) return delay;
+  }
+  return 60_000;
+};
+
+const truncated = (error: unknown): boolean =>
+  (NoObjectGeneratedError.isInstance(error) && error.finishReason === "length") ||
+  /max[_ ]completion[_ ]tokens|output was truncated/i.test(apiFailure(error)?.message ?? "");
 
 export const GraphExtractorLive = Layer.effect(
   GraphExtractor,
   Effect.gen(function* () {
     const models = yield* IngestionModels;
+    const lane = yield* Semaphore.make(1);
+    const retrySchedule = Schedule.exponential("5 seconds").pipe(
+      Schedule.modifyDelay(({ input, duration, now }: Schedule.Metadata<unknown, GraphError>) =>
+        Effect.succeed(graphRetryDelay(input.cause, now) ?? duration),
+      ),
+    );
+    const extractBatch = (
+      title: string,
+      chunks: ReadonlyArray<string>,
+      maxOutputTokens = 4096,
+      constrained = false,
+    ): Effect.Effect<ExtractedGraph, GraphError> =>
+      Effect.tryPromise({
+        try: async (abortSignal) => {
+          const result = await generateText({
+            model: models.languageModel("ingest-graph"),
+            system: constrained
+              ? `${SYSTEM}\nThis request has a strict output budget. Return at most 4 entities and 4 relations per chunk, using brief descriptions.`
+              : SYSTEM,
+            prompt: `File title: ${title}\n\n${chunks.map((chunk, index) => `[${index}] ${chunk}`).join("\n\n")}`,
+            output: graphOutput,
+            maxOutputTokens,
+            // One retry owner, shared across files, rather than multiplying SDK and Effect retries.
+            maxRetries: 0,
+            abortSignal,
+          });
+          return result.output;
+        },
+        catch: (cause) => new GraphError({ operation: "extract", cause }),
+      }).pipe(
+        Effect.timeout("90 seconds"),
+        Effect.catchTag("TimeoutError", (cause) =>
+          Effect.fail(new GraphError({ operation: "extract", cause })),
+        ),
+        Effect.retry({
+          times: 3,
+          schedule: retrySchedule,
+          // Longer quota resets belong in the durable queue, freeing the worker slot.
+          while: (error) =>
+            Clock.currentTimeMillis.pipe(
+              Effect.map(
+                (now) =>
+                  apiFailure(error.cause)?.isRetryable === true &&
+                  !oversized(error.cause) &&
+                  (graphRetryDelay(error.cause, now) ?? 0) <= 60_000,
+              ),
+            ),
+        }),
+        Effect.map((result) => ({
+          chunks: result.chunks.filter((entry) => entry.index >= 0 && entry.index < chunks.length),
+        })),
+        Effect.catchTag("GraphError", (error): Effect.Effect<ExtractedGraph, GraphError> => {
+          if (!truncated(error.cause) && !oversized(error.cause)) return Effect.fail(error);
+          if (chunks.length === 1)
+            return oversized(error.cause)
+              ? !constrained
+                ? extractBatch(title, chunks, 900, true)
+                : Effect.fail(error)
+              : !constrained && maxOutputTokens < 6000
+                ? extractBatch(title, chunks, 6000)
+                : Effect.fail(error);
+          const middle = Math.ceil(chunks.length / 2);
+          return Effect.gen(function* () {
+            const left = yield* extractBatch(title, chunks.slice(0, middle));
+            const right = yield* extractBatch(title, chunks.slice(middle));
+            return {
+              chunks: [
+                ...left.chunks,
+                ...right.chunks.map((entry) => ({ ...entry, index: entry.index + middle })),
+              ],
+            };
+          });
+        }),
+      );
     return GraphExtractor.of({
       extract: Effect.fn("GraphExtractor.extract")(function* (input) {
         if (input.chunks.length === 0) return { chunks: [] };
-        const result = yield* Effect.tryPromise({
-          try: (abortSignal) =>
-            generateText({
-              model: models.languageModel("ingest-graph"),
-              system: SYSTEM,
-              prompt: `File title: ${input.title}\n\n${input.chunks.map((chunk, index) => `[${index}] ${chunk}`).join("\n\n")}`,
-              output: graphOutput,
-              abortSignal,
-            }),
-          catch: (cause) => new GraphError({ operation: "extract", cause }),
-        }).pipe(Effect.retry(INGESTION_RETRY));
-        return {
-          chunks: result.output.chunks.filter(
-            (entry) => entry.index >= 0 && entry.index < input.chunks.length,
-          ),
-        };
+        return yield* extractBatch(input.title, input.chunks).pipe(lane.withPermits(1));
       }),
     });
   }),

@@ -1,0 +1,59 @@
+<!doctype html><html><head><meta charset="utf-8"><title>D · The night log</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/*{{tokens}}*/
+/*{{base}}*/
+.hero { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--color-border); }
+.hero-l { padding: 120px 48px 96px; display: flex; flex-direction: column; gap: 28px; border-right: 1px solid var(--color-border); }
+.hero-r { padding: 40px 0 0; display: flex; flex-direction: column; }
+.log-h { display: flex; justify-content: space-between; padding: 0 32px 16px; }
+.entry { display: grid; grid-template-columns: 64px 1fr; gap: 18px; padding: 15px 32px; border-top: 1px solid var(--color-border); }
+.entry .ts { font-family: var(--font-mono); font-size: 12px; color: var(--color-text-muted); padding-top: 2px; font-variant-numeric: tabular-nums; }
+.entry .tx { font-size: 15px; line-height: 23px; color: var(--color-text-strong); }
+.entry .tx small { display: block; font-size: 13px; color: var(--color-text-muted); margin-top: 2px; }
+.k { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; margin-right: 8px; }
+.k-read { color: var(--color-signal-blue); } .k-file { color: var(--color-text); } .k-write { color: var(--color-accent-text); } .k-ready { color: var(--color-signal-green); }
+.entry.dim .tx { color: var(--color-text); }
+.essay { display: grid; grid-template-columns: 220px 1fr 300px; gap: 48px; padding: 112px 48px; border-top: 1px solid var(--color-border); }
+.essay p { font-size: 22px; line-height: 34px; letter-spacing: -0.01em; color: var(--color-text-strong); }
+.essay p + p { margin-top: 24px; }
+.essay .q { color: var(--color-text-muted); }
+.note { font-family: var(--font-mono); font-size: 11.5px; line-height: 18px; color: var(--color-text-muted); border-left: 1px solid var(--color-border-strong); padding-left: 12px; }
+.pb { border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-2); overflow: hidden; }
+.pb-in { height: 46px; display: flex; align-items: center; padding: 0 14px; font-size: 14px; color: var(--color-text-strong); border-bottom: 1px solid var(--color-border); }
+.pb-b { padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+</style></head><body>
+<div class="tag">D · The night log</div>
+<div class="rails">
+  <nav class="nav"><div class="brand">{{logo}}Avenire</div><div class="nav-links"><span>Product</span><span>Ruth Cloud</span><span>Pricing</span><span>Changelog</span></div><div style="display:flex; gap:10px;"><span class="btn btn-sm btn-ghost">Log in</span><span class="btn btn-sm btn-primary">Get started</span></div></nav>
+  <header class="hero">
+    <div class="hero-l">
+      <span class="mono">Last night, for one student</span>
+      <h1 class="display">You went to bed at midnight.<br><span class="quiet">Ruth kept going.</span></h1>
+      <p class="lead" style="max-width:520px;">Avenire is a library for everything you study. Overnight, Ruth reads what you added, files it, and writes what you'll need tomorrow. You accept it over breakfast.</p>
+      <div style="display:flex; gap:12px; margin-top:8px;"><span class="btn btn-primary">Start your library</span><span class="btn btn-ghost">Read the manifesto</span></div>
+    </div>
+    <div class="hero-r">
+      <div class="log-h"><span class="mono">Ruth · Tue 14 Oct</span><span class="mono">7 h · 31 files</span></div>
+      <div class="entry dim"><span class="ts">00:04</span><span class="tx"><span class="k k-read">READ</span>3 items you captured at 21:04<small>Lecture 7 — Amplifiers.pdf, a Wikipedia tab, MIT 6.002 at 18:42</small></span></div>
+      <div class="entry"><span class="ts">00:41</span><span class="tx"><span class="k k-file">FILE</span>Moved Lecture 7 into Physics 101<small>Proposed. Waiting for you.</small></span></div>
+      <div class="entry"><span class="ts">01:12</span><span class="tx"><span class="k k-read">READ</span>52 min of lecture audio<small>Transcribed with timestamps you can cite</small></span></div>
+      <div class="entry"><span class="ts">02:30</span><span class="tx"><span class="k k-write">WRITE</span>Lecture 7 in five paragraphs<small>6 citations to the slides and your lab notes</small></span></div>
+      <div class="entry"><span class="ts">03:55</span><span class="tx"><span class="k k-write">WRITE</span>Transistors quiz, 8 questions<small>For Thursday's lab</small></span></div>
+      <div class="entry"><span class="ts">07:00</span><span class="tx"><span class="k k-ready">READY</span>Your morning report<small>3 notes ready · 4 changes to accept</small></span></div>
+    </div>
+  </header>
+
+  <section class="essay">
+    <span class="mono">During the day</span>
+    <div>
+      <p>Press ⌥ Space over whatever you're doing and ask. <span class="q">Ruth answers from your own notes, one sentence at a time, and tells you the page it came from.</span></p>
+      <p>If the answer is worth keeping, save it to a notebook. <span class="q">It becomes a note with its sources attached, and tonight Ruth will build on it.</span></p>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:20px;">
+      <div class="pb"><div class="pb-in">Why does a MOSFET need a threshold?</div><div class="pb-b"><span style="font-size:13px; line-height:19px; color:var(--color-text-strong); opacity:.25;">The gate and channel form a capacitor.</span><span style="font-size:16px; line-height:23px; color:var(--color-text-strong);">Below the threshold no channel forms, so no current flows. <span class="cite">p.14</span></span></div></div>
+      <span class="note">The promptbox. Only the current sentence is shown; the last one fades out.</span>
+    </div>
+  </section>
+</div>
+</body></html>

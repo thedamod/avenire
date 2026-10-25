@@ -9,6 +9,7 @@ import { toAiSdkTools } from "./ai-sdk.ts";
 import { ctx, recordingAnalytics } from "./test-support.ts";
 import type { RuthKitServices } from "./library.ts";
 import { RUTH_TOOL_SPECS } from "./specs.ts";
+import { ruthStreamError } from "../agents/stream-error.ts";
 
 const usage = {
   inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
@@ -197,4 +198,83 @@ it.effect("additional paired specs inherit agent filtering and execution telemet
       ),
     ).toEqual([]);
   }),
+);
+
+it.effect(
+  "keeps a recoverable tool failure in the conversation and allows the next model step",
+  () =>
+    Effect.promise(async () => {
+      const { RuthToolError } = await import("./core.ts");
+      const { stepCountIs } = await import("ai");
+      const services = Context.make(
+        Analytics,
+        recordingAnalytics(),
+      ) as Context.Context<RuthKitServices>;
+      const adapter = toAiSdkTools(["archive_file"], { ...ctx, fullAccess: true }, services, {
+        archive_file: () =>
+          Effect.fail(
+            new RuthToolError({
+              tool: "archive_file",
+              code: "conflict",
+              message: "The file changed. Read it again.",
+              recoverable: true,
+            }),
+          ),
+      });
+      let step = 0;
+      const model = new MockLanguageModelV4({
+        doStream: async () => ({
+          stream:
+            step++ === 0
+              ? convertArrayToReadableStream([
+                  {
+                    type: "tool-call",
+                    toolCallId: "recoverable",
+                    toolName: "archive_file",
+                    input: '{"fileId":"file"}',
+                  },
+                  {
+                    type: "finish",
+                    finishReason: { unified: "tool-calls", raw: "tool-calls" },
+                    usage,
+                  },
+                ])
+              : convertArrayToReadableStream([
+                  { type: "text-start", id: "reply" },
+                  { type: "text-delta", id: "reply", delta: "Recovered" },
+                  { type: "text-end", id: "reply" },
+                  { type: "finish", finishReason: { unified: "stop", raw: "stop" }, usage },
+                ]),
+        }),
+      });
+      const result = streamText({
+        model,
+        ...adapter,
+        prompt: "Archive the file",
+        stopWhen: stepCountIs(2),
+        onError: () => undefined,
+      });
+      const [parts, uiParts] = await Promise.all([
+        collect(result.fullStream),
+        collect(result.toUIMessageStream({ onError: ruthStreamError })),
+      ]);
+      expect(parts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "tool-error", toolName: "archive_file" }),
+          expect.objectContaining({ type: "text-delta", text: "Recovered" }),
+        ]),
+      );
+      expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(
+        "The file changed. Read it again.",
+      );
+      expect(uiParts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "tool-output-error",
+            errorText: "The file changed. Read it again.",
+          }),
+        ]),
+      );
+      expect(await result.finishReason).toBe("stop");
+    }),
 );

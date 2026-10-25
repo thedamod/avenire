@@ -5,12 +5,12 @@ description: Choose a direct model, mechanism, analogy, data chart or published 
 
 # Visuals
 
-Start with the learning question and choose the simplest faithful representation. Load `explainer` for interactive concept figures and physical models, `style` for the common frame/tokens, and `kit-api` only when exact signatures are needed. The code can be concise SVG/Canvas, kit components or an optional Node build.
+Start with the learning question and choose the clearest faithful representation. Load `explainer` for interactive concept figures and physical models, `mechanism` as well for real machines and constructed assemblies, `style` for the common frame/tokens, and `kit-api` when exact signatures are needed. Choose SVG/Canvas, kit components or a Node build to support the required geometry.
 
 | Request | Representation |
 | --- | --- |
 | “Show a simple pendulum”; “play with a double pendulum” | Direct physical model: pivot, rods and bobs; real numerical state |
-| “Explain how an engine works” | The actual mechanism/cutaway: piston, crank, valves and four strokes |
+| “Explain how an engine works”; “interactive afterburner” | `explainer` + `mechanism`: a detailed dimensional assembly/cutaway of the actual machine, with connected parts and model-driven motion |
 | “Explain how gradient descent finds a minimum, with the help of an interactive visualization” | A follower on a loss profile with slope-controlled feed, or direct mathematical geometry if clearer |
 | “Why does a cache avoid repeated work?” | A faithful analogy/mechanism showing the matching state and avoided work |
 | “Compare v1 and v2 numbers”; “plot this spreadsheet”; “show the trend” | `chart` with actual data, units and shared scales |
@@ -18,6 +18,8 @@ Start with the learning question and choose the simplest faithful representation
 | A timed sequence that does not benefit from input | `sandbox` video, published with `publish_asset` |
 
 Do not invent an elaborate analogy for a physical system that already explains itself. Prefer a real mechanism for a real machine. Use analogy for abstract/complex concepts when its correspondences make the cause and effect easier to see. Never invent observations, numeric results or citations. Use prose or a small table if a visual adds no value.
+
+Simple controls, brief prose and thin lines do not require simplified geometry. For an actual machine, preserve its construction, volume and purposeful detail; a flat labelled schematic is appropriate when the user asks for a schematic, not a substitute for a crafted mechanical figure.
 
 Keep the widget quiet: one figure, a short title/hint, minimal labelled controls and 2–4 live values. A small legend and at most two short caption sentences can sit below the card. Explanations, derivations, examples and detailed assumptions belong in chat, not text panels inside the widget.
 

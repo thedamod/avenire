@@ -7,13 +7,65 @@ import { Library } from "./library.ts";
 
 /** The same ownership boundary serves RPC and REST. */
 export const LibraryHandlersLive = LibraryRpcs.toLayer({
-  "library.getCanvas": () =>
+  "library.getFile": ({ fileId }) =>
     Effect.gen(function* () {
-      return yield* (yield* Library).getCanvas((yield* CurrentUser).id);
+      return yield* (yield* Library).getFile((yield* CurrentUser).id, fileId);
     }).pipe(sanitizeApiDefects),
-  "library.saveCanvas": ({ nodes }) =>
+  "library.renameFile": ({ fileId, title }) =>
     Effect.gen(function* () {
-      return yield* (yield* Library).saveCanvas((yield* CurrentUser).id, nodes);
+      return yield* (yield* Library).renameFile((yield* CurrentUser).id, fileId, title);
+    }).pipe(sanitizeApiDefects),
+  "library.getFileContentUrl": ({ fileId }) =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).getFileContentUrl((yield* CurrentUser).id, fileId);
+    }).pipe(sanitizeApiDefects),
+  "library.createNote": (input) =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).createNote((yield* CurrentUser).id, input);
+    }).pipe(sanitizeApiDefects),
+  "library.getNote": ({ fileId }) =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).getNote((yield* CurrentUser).id, fileId);
+    }).pipe(sanitizeApiDefects),
+  "library.saveNote": (input) =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).saveNote((yield* CurrentUser).id, input);
+    }).pipe(sanitizeApiDefects),
+  "library.getFolder": ({ folderId }) =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).getFolder((yield* CurrentUser).id, folderId);
+    }).pipe(sanitizeApiDefects),
+  "library.updateFolder": (input) =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).updateFolder((yield* CurrentUser).id, input);
+    }).pipe(sanitizeApiDefects),
+  "library.trashFiles": ({ fileIds }) =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).trashFiles((yield* CurrentUser).id, fileIds);
+    }).pipe(sanitizeApiDefects),
+  "library.trashFolder": ({ folderId }) =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).trashFolder((yield* CurrentUser).id, folderId);
+    }).pipe(sanitizeApiDefects),
+  "library.restore": ({ refs }) =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).restore((yield* CurrentUser).id, refs);
+    }).pipe(sanitizeApiDefects),
+  "library.purge": ({ refs }) =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).purge((yield* CurrentUser).id, refs);
+    }).pipe(sanitizeApiDefects),
+  "library.listTrash": () =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).listTrash((yield* CurrentUser).id);
+    }).pipe(sanitizeApiDefects),
+  "library.emptyTrash": () =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).emptyTrash((yield* CurrentUser).id);
+    }).pipe(sanitizeApiDefects),
+  "library.createFolder": ({ name, ...options }) =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).createFolder((yield* CurrentUser).id, name, options);
     }).pipe(sanitizeApiDefects),
   "library.listFiles": (filters) =>
     Effect.gen(function* () {

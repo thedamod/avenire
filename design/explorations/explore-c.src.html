@@ -1,0 +1,59 @@
+<!doctype html><html><head><meta charset="utf-8"><title>C · The shelf</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/*{{tokens}}*/
+/*{{base}}*/
+.hero { padding: 112px 48px 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 24px; }
+.shelf { position: relative; margin: 72px 0 0; height: 440px; display: flex; align-items: flex-end; justify-content: center; gap: 18px; padding: 0 40px; border-bottom: 1px solid var(--color-border-strong); }
+.book { position: relative; flex-shrink: 0; border-radius: 4px 12px 12px 4px; display: flex; overflow: hidden; }
+.book::before { content: ""; width: 12px; background: rgba(0,0,0,.2); }
+.book .t { position: absolute; left: 26px; top: 20px; right: 16px; font-size: 19px; font-weight: 600; line-height: 22px; letter-spacing: -0.01em; color: #fff; text-align: left; }
+.book .n { position: absolute; left: 26px; bottom: 16px; font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,.7); }
+.book .fig { position: absolute; right: 12px; bottom: 34px; width: 120px; height: 120px; color: rgba(0,0,0,.5); }
+.book.dark .t, .book.dark .n { color: #1a1206; } .book.dark .n { opacity: .6; }
+.lifted { transform: translateY(-28px); }
+.flag { position: absolute; top: -70px; left: 50%; transform: translateX(-50%); white-space: nowrap; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 13px; color: var(--color-text-strong); }
+.flag::after { content: ""; width: 1px; height: 22px; background: var(--color-border-strong); }
+.section { border-top: 1px solid var(--color-border); margin-top: 120px; padding: 104px 48px 112px; display: grid; grid-template-columns: 1fr 1.3fr; gap: 64px; align-items: center; }
+.page { border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-1); overflow: hidden; }
+.tabs { display: flex; gap: 20px; padding: 0 20px; border-bottom: 1px solid var(--color-border); }
+.tab { padding: 12px 0 11px; font-size: 13px; color: var(--color-text-muted); } .tab.on { color: var(--color-text-strong); box-shadow: inset 0 -1.5px 0 var(--color-text-strong); }
+.nrow { display: grid; grid-template-columns: 1fr 120px 70px; align-items: center; height: 46px; padding: 0 20px; font-size: 13.5px; color: var(--color-text-strong); }
+.nrow + .nrow { border-top: 1px solid var(--color-border); }
+.nrow .by { font-size: 12px; color: var(--color-text-muted); } .nrow .d { font-size: 12px; color: var(--color-text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+</style></head><body>
+<div class="tag">C · The shelf</div>
+<div class="rails">
+  <nav class="nav"><div class="brand">{{logo}}Avenire</div><div class="nav-links"><span>Product</span><span>Ruth Cloud</span><span>Pricing</span><span>Changelog</span></div><div style="display:flex; gap:10px;"><span class="btn btn-sm btn-ghost">Log in</span><span class="btn btn-sm btn-primary">Get started</span></div></nav>
+  <header class="hero">
+    <h1 class="display" style="max-width:860px;">A notebook for every subject.<br><span class="quiet">Ruth keeps them up to date.</span></h1>
+    <p class="lead" style="max-width:560px;">Drop in your lecture PDFs, recordings and links. Overnight, Ruth files them into the right notebook and writes the notes for you.</p>
+    <div style="display:flex; gap:12px; margin-top:8px;"><span class="btn btn-primary">Start your library</span><span class="btn btn-ghost">See how it works</span></div>
+  </header>
+  <div class="shelf">
+    <div class="book" style="width:196px; height:300px; background:var(--color-cover-mustard);"><span class="t" style="color:#1a1206">Organic Chemistry</span>{{fig:doodle-chemistry}}<span class="n" style="color:rgba(0,0,0,.55)">18 FILES</span></div>
+    <div class="book" style="width:210px; height:330px; background:var(--color-cover-moss);"><span class="t">Algorithms</span>{{fig:doodle-computer-science}}<span class="n">67 FILES</span></div>
+    <div class="book lifted" style="width:226px; height:360px; background:var(--color-cover-sky); overflow:visible;"><div class="flag">3 new notes from Ruth</div><span class="t">Physics 101</span>{{fig:doodle-physics}}<span class="n">42 FILES</span></div>
+    <div class="book" style="width:200px; height:318px; background:var(--color-cover-rose);"><span class="t">Art History</span>{{fig:doodle-easel}}<span class="n">9 FILES</span></div>
+    <div class="book" style="width:206px; height:340px; background:var(--color-cover-graphite); outline:1px solid var(--color-border-strong);"><span class="t">Building a Radio</span><div style="position:absolute; right:12px; bottom:34px; width:120px; height:120px; color:rgba(255,255,255,.3);">{{fig:doodle-radio}}</div><span class="n">23 FILES</span></div>
+  </div>
+
+  <section class="section">
+    <div style="display:flex; flex-direction:column; gap:20px;">
+      <span class="mono">Inside a notebook</span>
+      <h2 class="h2">Your writing and Ruth's,<br><span class="quiet">side by side.</span></h2>
+      <p class="body" style="color:var(--color-text-muted); max-width:440px;">Notes are your saved answers and your own writing. Media is the PDFs, pages and recordings they came from. Every note cites its source.</p>
+    </div>
+    <div class="page">
+      <div style="display:flex; align-items:center; gap:12px; padding:20px 20px 16px;"><span class="cov" style="width:16px; height:21px; background:var(--color-cover-sky)"></span><span style="font-size:22px; font-weight:500; letter-spacing:-0.02em; color:var(--color-text-strong);">Physics 101</span></div>
+      <div style="padding:0 20px 16px;"><div style="height:40px; display:flex; align-items:center; padding:0 12px; border:1px solid var(--color-border-strong); border-radius:var(--radius-lg); font-size:13.5px; color:var(--color-text-muted);">Ask about Physics 101…<span class="kbd" style="margin-left:auto">⌘ ↵</span></div></div>
+      <div class="tabs"><span class="tab on">Notes</span><span class="tab">Media</span></div>
+      <div class="nrow"><span>Lecture 7 in five paragraphs</span><span class="by">Ruth · overnight</span><span class="d">07:00</span></div>
+      <div class="nrow"><span>MOSFET switching</span><span class="by">Saved answer</span><span class="d">Mon</span></div>
+      <div class="nrow"><span>Transistors quiz · 8 questions</span><span class="by">Ruth · overnight</span><span class="d">07:00</span></div>
+      <div class="nrow"><span>My notes on lab 3</span><span class="by">You</span><span class="d">Sep 30</span></div>
+      <div class="nrow"><span>Why the load line matters</span><span class="by">Saved answer</span><span class="d">Sep 28</span></div>
+    </div>
+  </section>
+</div>
+</body></html>

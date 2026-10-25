@@ -34,6 +34,8 @@ const file = {
   captureId: null,
   folderIds: [],
   mediaPositionSec: null,
+  preview: null,
+  purgeAt: null,
   createdAt: "2026-10-18T00:00:00Z",
   updatedAt: "2026-10-18T00:00:00Z",
 };

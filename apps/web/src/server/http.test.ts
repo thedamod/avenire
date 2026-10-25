@@ -55,12 +55,8 @@ it.effect("enforces the body limit with and without Content-Length", () =>
   }),
 );
 it("keeps widget documents off the app host and all other routes off the widget host", () => {
-  expect(widgetHostDecision("widgets.localhost:3000", "/w/token", "widgets.localhost:3000")).toBe(
-    "widget",
-  );
-  expect(widgetHostDecision("WIDGETS.LOCALHOST:3000", "/w/token", "widgets.localhost:3000")).toBe(
-    "widget",
-  );
+  expect(widgetHostDecision("127.0.0.1:3000", "/w/token", "127.0.0.1:3000")).toBe("widget");
+  expect(widgetHostDecision("WIDGETS.TEST", "/w/token", "widgets.test")).toBe("widget");
   for (const path of [
     "/",
     "/api/ruth/chat",
@@ -69,16 +65,10 @@ it("keeps widget documents off the app host and all other routes off the widget 
     "/sign-in",
     "/w",
   ])
-    expect(widgetHostDecision("widgets.localhost:3000", path, "widgets.localhost:3000")).toBe(
-      "reject",
-    );
-  expect(widgetHostDecision("localhost:3000", "/w/token", "widgets.localhost:3000")).toBe("reject");
-  expect(widgetHostDecision("widgets.localhost:4000", "/w/token", "widgets.localhost:3000")).toBe(
-    "reject",
-  );
-  expect(widgetHostDecision("localhost:3000", "/api/ruth/chat", "widgets.localhost:3000")).toBe(
-    "app",
-  );
+    expect(widgetHostDecision("127.0.0.1:3000", path, "127.0.0.1:3000")).toBe("reject");
+  expect(widgetHostDecision("localhost:3000", "/w/token", "127.0.0.1:3000")).toBe("reject");
+  expect(widgetHostDecision("127.0.0.1:4000", "/w/token", "127.0.0.1:3000")).toBe("reject");
+  expect(widgetHostDecision("localhost:3000", "/api/ruth/chat", "127.0.0.1:3000")).toBe("app");
 });
 it("escapes download filenames while preserving a UTF-8 name", () => {
   const disposition = attachmentDisposition('café"\r\n.svg');

@@ -7,6 +7,8 @@ description: Shared figure tokens and figure framing for all Ruth widgets, chart
 
 Every widget uses the shared two-theme token layer. The host injects it before first paint and on `avenire:themechange`; it updates `.iso` wrappers’ data-theme and values. Standalone kit `--light` pages retain their own theme outside the host. Read Canvas/WebGL tokens on its nearest `.iso` wrapper (and redraw/reconfigure on themechange). Use CSS variables for every colour and preserve the kit’s four facing shades; do not replace them with opacity approximations.
 
+The restraint applies to chrome, palette and line weight; it does not flatten the object. Mechanical figures retain solid thickness, facing shades, smooth curved shading and grounded contact shadows. Localized physical light, flame or exhaust may use the source kit's shader/material treatment inside the object; keep it in perspective and the surrounding UI stable. Avoid decorative page gradients and ambient UI glow, while preserving the physical shading that makes an assembly readable. See `mechanism` for construction and close-up fidelity.
+
 | Token | Purpose | Light | Dark |
 | --- | --- | --- | --- |
 | `--figure-page` | Page ground | `#f2f2ef` | `#0b0b0b` |

@@ -3,21 +3,22 @@ import * as Http from "node:http";
 import { CapturedTab } from "@avenire/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { extensionReceiverPort } from "../config.ts";
+import { extensionReceiverPort, extensionIds } from "../config.ts";
 
-let report: { readonly tabs: readonly CapturedTab[]; readonly at: number } | undefined;
+const reports = new Map<string, { readonly tabs: readonly CapturedTab[]; readonly at: number }>();
 
 const decodeTabsReport = Schema.decodeUnknownOption(
-  Schema.fromJsonString(Schema.Array(CapturedTab)),
+  Schema.fromJsonString(
+    Schema.Union([
+      Schema.Array(CapturedTab),
+      Schema.Struct({ senderId: Schema.String, tabs: Schema.Array(CapturedTab) }),
+    ]),
+  ),
 );
 let server: Http.Server | undefined;
+let listening = false;
 
 const LOOPBACK_ADDRESSES = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
-const EXTENSION_PROTOCOLS = new Set([
-  "chrome-extension:",
-  "moz-extension:",
-  "safari-web-extension:",
-]);
 
 /**
  * Only the Avenire extension may report tabs: the request must come from this machine,
@@ -28,15 +29,18 @@ function isFromExtension(request: Http.IncomingMessage): boolean {
   const origin = request.headers.origin;
   if (origin === undefined) return false;
   try {
-    return EXTENSION_PROTOCOLS.has(new URL(origin).protocol);
+    const url = new URL(origin);
+    return url.protocol === "chrome-extension:" && extensionIds.has(url.hostname);
   } catch {
     return false;
   }
 }
 
-export function startTabsReceiver(): void {
-  if (server) return;
+export function startTabsReceiver(): Http.Server {
+  if (server) return server;
   server = Http.createServer((request, response) => {
+    request.on("error", () => {});
+    response.on("error", () => {});
     if (request.method !== "POST" || request.url !== "/tabs" || !isFromExtension(request)) {
       response.writeHead(403).end();
       return;
@@ -54,20 +58,61 @@ export function startTabsReceiver(): void {
         response.writeHead(400).end();
         return;
       }
-      report = { tabs: decoded.value, at: Date.now() };
+      const value = decoded.value;
+      const tabs = Array.isArray(value)
+        ? (value as readonly CapturedTab[])
+        : (value as { tabs: readonly CapturedTab[] }).tabs;
+      const sender = Array.isArray(value)
+        ? "legacy"
+        : (value as { senderId: string }).senderId.slice(0, 200);
+      if (tabs.length > 200) {
+        response.writeHead(413).end();
+        return;
+      }
+      if (!reports.has(sender) && reports.size >= 16) reports.delete(reports.keys().next().value!);
+      reports.set(sender, { tabs: tabs.filter((tab) => !tab.incognito), at: Date.now() });
       response.writeHead(204).end();
     });
   });
-  server.listen(extensionReceiverPort, "127.0.0.1");
+  server.requestTimeout = 5000;
+  server.headersTimeout = 5000;
+  server.on("error", () => {
+    listening = false;
+    console.warn("Browser capture receiver unavailable; document capture is still available.");
+  });
+  server.listen(extensionReceiverPort, "127.0.0.1", () => {
+    listening = true;
+  });
+  return server;
+}
+
+export function tabsReceiverAvailable(): boolean {
+  return listening;
+}
+export function stopTabsReceiver(): void {
+  server?.closeAllConnections();
+  server?.close();
+  server = undefined;
+  reports.clear();
+  listening = false;
 }
 
 export function latestTabs(): readonly CapturedTab[] {
-  if (!report || Date.now() - report.at > 10_000) return [];
-  return report.tabs.filter(
-    (tab) =>
-      tab.activeInWindow ||
-      tab.engagement.dwellMs >= 8_000 ||
-      tab.engagement.scrollDepthPct >= 15 ||
-      tab.engagement.mediaPlaying,
-  );
+  const tabs: CapturedTab[] = [];
+  for (const [sender, report] of reports) {
+    if (Date.now() - report.at > 10_000) {
+      reports.delete(sender);
+      continue;
+    }
+    tabs.push(...report.tabs);
+  }
+  return tabs
+    .filter(
+      (tab) =>
+        tab.activeInWindow ||
+        tab.engagement.dwellMs >= 8_000 ||
+        tab.engagement.scrollDepthPct >= 15 ||
+        tab.engagement.mediaPlaying,
+    )
+    .slice(0, 200);
 }

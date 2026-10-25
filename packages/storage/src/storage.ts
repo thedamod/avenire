@@ -6,7 +6,8 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
-import { Files } from "files-sdk";
+import { Files, FilesError, type MultipartOptions } from "files-sdk";
+import type { UploadThingAdapter } from "files-sdk/uploadthing";
 import { createHash } from "node:crypto";
 
 import { StorageKey } from "@avenire/contracts";
@@ -47,7 +48,7 @@ export class Storage extends Context.Service<
     readonly put: (
       key: StorageKey,
       body: Uint8Array | ReadableStream<Uint8Array> | Blob | string,
-      options?: { readonly contentType?: string },
+      options?: { readonly contentType?: string; readonly multipart?: boolean | MultipartOptions },
     ) => Effect.Effect<void, StorageError>;
     readonly get: (key: StorageKey) => Effect.Effect<Uint8Array, StorageError | ObjectNotFound>;
     readonly head: (key: StorageKey) => Effect.Effect<StoredObject, StorageError | ObjectNotFound>;
@@ -207,10 +208,24 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * with 409, and a deleted customId can't be reused, so callers write new keys instead of
  * overwriting (see the review accept and document cache). Here:
  * - keys are fitted to the 128-character customId limit;
+ * - reads resolve customIds to file keys: the CDN 404s on our slash-containing customIds;
  * - `download`/`head` retry a brief NotFound while the CDN catches up after an upload;
  * - `url` drops the content-disposition override, which UploadThing cannot set. */
-const forUploadThing = (adapter: FilesAdapter): FilesAdapter =>
-  new Proxy(adapter, {
+const forUploadThing = (adapter: UploadThingAdapter): FilesAdapter => {
+  // Only cache successful resolutions. Keys are write-once; missing uploads must be retried.
+  const readKeys = new Map<string, string>();
+  const readKey = async (key: string) => {
+    const customId = fitKey(key);
+    const cached = readKeys.get(customId);
+    if (cached) return cached;
+    const { data } = await adapter.raw.getFileUrls(customId, { keyType: "customId" });
+    const resolved = data[0]?.key;
+    if (!resolved) throw new FilesError("NotFound", "UploadThing object does not exist");
+    if (readKeys.size >= 256) readKeys.delete(readKeys.keys().next().value!);
+    readKeys.set(customId, resolved);
+    return resolved;
+  };
+  return new Proxy(adapter, {
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
       if (typeof value !== "function" || property === "list" || property === "listAll")
@@ -229,7 +244,8 @@ const forUploadThing = (adapter: FilesAdapter): FilesAdapter =>
         return async (key: string, ...rest: unknown[]) => {
           for (let attempt = 1; ; attempt++) {
             try {
-              return await call(key, rest);
+              const file = await value.call(target, await readKey(key), ...rest);
+              return { ...file, key: fitKey(key), name: fitKey(key) };
             } catch (error) {
               if ((error as { code?: unknown }).code !== "NotFound" || attempt === 4) throw error;
               await pause(500 * attempt);
@@ -237,13 +253,23 @@ const forUploadThing = (adapter: FilesAdapter): FilesAdapter =>
           }
         };
       if (property === "url")
-        return (key: string, options?: { responseContentDisposition?: string }) => {
+        return async (key: string, options?: { responseContentDisposition?: string }) => {
           const { responseContentDisposition: _ignored, ...rest } = options ?? {};
-          return call(key, [rest]);
+          return value.call(target, await readKey(key), rest);
+        };
+      if (property === "exists")
+        return async (key: string, ...rest: unknown[]) => {
+          try {
+            return await value.call(target, await readKey(key), ...rest);
+          } catch (error) {
+            if ((error as { code?: unknown }).code === "NotFound") return false;
+            throw error;
+          }
         };
       return (first: unknown, ...rest: unknown[]) => call(first, rest);
     },
   });
+};
 
 // Drivers are imported lazily so a deployment only loads the SDK it actually uses.
 const makeAdapter = (config: StorageConfig): Effect.Effect<FilesAdapter> => {

@@ -11,6 +11,28 @@ import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 import { useApi } from "../state/api";
 
+/**
+ * A reused keep-alive connection that the server just closed comes back as a body-less 200
+ * ("Received empty HTTP response") on Android. Reads are safe to repeat; mutations use `call` directly.
+ */
+const droppedResponse = (cause: unknown) =>
+  /empty HTTP response|ended before RPC request completed/.test(String(cause));
+
+async function callWithRetry<T, E>(
+  runtime: ReturnType<typeof useApi>,
+  run: (client: AvenireRpcClient) => Effect.Effect<T, E>,
+  signal: AbortSignal,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await call(runtime, run, { signal });
+    } catch (cause) {
+      if (attempt >= 2 || signal.aborted || !droppedResponse(cause)) throw cause;
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
+}
+
 export function useQuery<T, E>(
   fn: (client: AvenireRpcClient) => Effect.Effect<T, E>,
   queryKey: string,
@@ -26,7 +48,7 @@ export function useQuery<T, E>(
   const refetch = useCallback(
     () =>
       request.current.run(
-        (signal) => call(runtime, (client) => fnRef.current(client), { signal }),
+        (signal) => callWithRetry(runtime, (client) => fnRef.current(client), signal),
         {
           start: () => {
             setLoading(true);

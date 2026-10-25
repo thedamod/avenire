@@ -1,0 +1,67 @@
+<!doctype html><html><head><meta charset="utf-8"><title>B · One machine</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/*{{tokens}}*/
+/*{{base}}*/
+:root { --files: var(--color-signal-blue); --ruth: var(--color-accent); --ready: var(--color-signal-green); }
+.hero { padding: 104px 48px 0; display: grid; grid-template-columns: 1fr 380px; gap: 48px; align-items: end; }
+.plate { position: relative; margin: 56px 48px 0; height: 700px; border: 1px solid var(--color-border); border-radius: var(--radius-l-card); background: var(--color-iso-paper); overflow: hidden; }
+.plate > .fig { position: absolute; left: 100px; top: 10px; width: 1000px; height: 688px; }
+.corner { position: absolute; font-family: var(--font-mono); font-size: 11px; letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-muted); }
+.callout { position: absolute; display: flex; align-items: center; gap: 10px; }
+.num { width: 22px; height: 22px; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 11px; color: var(--color-bg); font-weight: 500; flex-shrink: 0; }
+.callout .t { display: flex; flex-direction: column; gap: 2px; }
+.callout .t b { font-weight: 500; font-size: 14px; color: var(--color-text-strong); }
+.callout .t span { font-size: 12.5px; color: var(--color-text-muted); }
+.legend { display: flex; flex-direction: column; gap: 14px; padding-bottom: 8px; }
+.legend div { display: flex; align-items: center; gap: 12px; font-size: 14px; color: var(--color-text); }
+.sw { width: 18px; height: 2px; flex-shrink: 0; }
+.section { border-top: 1px solid var(--color-border); margin-top: 96px; padding: 104px 48px 112px; }
+.zooms { display: grid; grid-template-columns: repeat(3, 1fr); margin: 64px -48px 0; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
+.zcol { padding: 28px 32px 36px; display: flex; flex-direction: column; }
+.zcol + .zcol { border-left: 1px solid var(--color-border); }
+.zoom { position: relative; height: 300px; margin: 18px 0 26px; overflow: hidden; border-radius: var(--radius-l-card); background: var(--color-iso-paper); border: 1px solid var(--color-border); }
+.zcol h4 { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 500; letter-spacing: -0.01em; color: var(--color-text-strong); margin-bottom: 8px; }
+.zcol p { font-size: 15px; line-height: 24px; color: var(--color-text-muted); }
+</style></head><body>
+<div class="tag">B · One machine</div>
+<div class="rails">
+  <nav class="nav"><div class="brand">{{logo}}Avenire</div><div class="nav-links"><span>Product</span><span>Ruth Cloud</span><span>Pricing</span><span>Changelog</span></div><div style="display:flex; gap:10px;"><span class="btn btn-sm btn-ghost">Log in</span><span class="btn btn-sm btn-primary">Get started</span></div></nav>
+  <header class="hero">
+    <div style="display:flex; flex-direction:column; gap:24px;">
+      <span class="mono">Fig 1 · How Avenire works</span>
+      <h1 class="display">Leave it on the desk.<br><span class="quiet">It's sorted by morning.</span></h1>
+      <div style="display:flex; gap:12px; margin-top:8px;"><span class="btn btn-primary">Start your library</span><span class="btn btn-ghost">See how it works</span></div>
+    </div>
+    <div class="legend">
+      <div><span class="sw" style="background:var(--files)"></span>Your files: everything you capture</div>
+      <div><span class="sw" style="background:var(--ruth)"></span>Ruth: what she's working on</div>
+      <div><span class="sw" style="background:var(--ready)"></span>Ready: waiting for you to accept</div>
+    </div>
+  </header>
+
+  <div class="plate">
+    <span class="corner" style="top:20px; left:24px;">Fig 1</span><span class="corner" style="top:20px; right:24px;">The overnight desk</span>
+    <span class="corner" style="bottom:20px; left:24px;">Pages in · notebook out</span><span class="corner" style="bottom:20px; right:24px; text-transform:none; letter-spacing:0; color:var(--color-text);">3 ready · 07:00</span>
+    {{fig:hero}}
+    <svg style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none;" viewBox="0 0 1120 760" fill="none" stroke-width="1">
+      <path d="M345 296 L345 520 L190 520" stroke="var(--files)"/>
+      <path d="M622 166 L622 110 L760 110" stroke="var(--ruth)"/>
+      <path d="M865 386 L865 560 L896 560" stroke="var(--ready)"/>
+      <circle cx="345" cy="296" r="3" fill="var(--files)"/><circle cx="622" cy="166" r="3" fill="var(--ruth)"/><circle cx="865" cy="386" r="3" fill="var(--ready)"/>
+    </svg>
+    <div class="callout" style="left:56px; top:504px;"><span class="num" style="background:var(--files)">1</span><div class="t"><b>In-tray</b><span>Captured pages land here</span></div></div>
+    <div class="callout" style="left:772px; top:94px;"><span class="num" style="background:var(--ruth)">2</span><div class="t"><b>The notebook Ruth just filed</b><span>Physics 101 · 3 new notes</span></div></div>
+    <div class="callout" style="left:900px; top:544px;"><span class="num" style="background:var(--ready)">3</span><div class="t"><b>07:00</b><span>Your morning report</span></div></div>
+  </div>
+
+  <section class="section">
+    <h2 class="h2"><span class="quiet">One desk, three stations.</span><br>Look closer at each.</h2>
+    <div class="zooms">
+      <div class="zcol"><span class="mono">Fig 1.1</span><div class="zoom"><div style="position:absolute; left:calc(50% - 1500px * 0.245); top:calc(50% - 1031px * 0.43); width:1500px; height:1031px;">{{fig:hero}}</div></div><h4><span class="num" style="background:var(--files)">1</span>Capture</h4><p>Press the hotkey in any app. PDFs, tabs and videos go to your Inbox.</p></div>
+      <div class="zcol"><span class="mono">Fig 1.2</span><div class="zoom"><div style="position:absolute; left:calc(50% - 1500px * 0.52); top:calc(50% - 1031px * 0.30); width:1500px; height:1031px;">{{fig:hero}}</div></div><h4><span class="num" style="background:var(--ruth)">2</span>Ruth files and writes</h4><p>Overnight she reads what's new, files it into notebooks and writes cited notes.</p></div>
+      <div class="zcol"><span class="mono">Fig 1.3</span><div class="zoom"><div style="position:absolute; left:calc(50% - 1500px * 0.765); top:calc(50% - 1031px * 0.55); width:1500px; height:1031px;">{{fig:hero}}</div></div><h4><span class="num" style="background:var(--ready)">3</span>You accept</h4><p>At 07:00 one page lists every change. Nothing applies until you accept it.</p></div>
+    </div>
+  </section>
+</div>
+</body></html>

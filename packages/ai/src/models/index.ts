@@ -1,12 +1,19 @@
 /** Call sites use Ruth names (`ruth-*`); this is the only module that names a provider or model id. */
 import { SCREEN_PROFILES, type ScreenProfile } from "@avenire/cloud/screen";
 import { createFireworks } from "@ai-sdk/fireworks";
+import { createGroq } from "@ai-sdk/groq";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { customProvider, type LanguageModel } from "ai";
+import {
+  customProvider,
+  defaultSettingsMiddleware,
+  wrapLanguageModel,
+  type LanguageModel,
+} from "ai";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 
 export const RUTH_MODEL_NAMES = ["ruth-sprint", "ruth-core", "ruth-apex"] as const;
@@ -74,6 +81,34 @@ export const RuthModelsLive = Layer.effect(
       languageModel: (name) => ruth.languageModel(name),
       capabilities: (name) => RUTH_MODEL_CAPABILITIES[name],
       maxImages: 3,
+    });
+  }),
+);
+
+/** A small, internal model for titles; it is not a selectable Ruth chat model. */
+export class RuthTitleModel extends Context.Service<
+  RuthTitleModel,
+  { readonly model: LanguageModel | undefined }
+>()("avenire/ai/RuthTitleModel") {}
+
+export const RuthTitleModelLive = Layer.effect(
+  RuthTitleModel,
+  Effect.gen(function* () {
+    const key = yield* Config.option(Config.Redacted("GROQ_API_KEY"));
+    if (Option.isNone(key) || !Redacted.value(key.value).trim()) {
+      yield* Effect.logWarning("Chat title generation is disabled: GROQ_API_KEY is missing");
+      return RuthTitleModel.of({ model: undefined });
+    }
+    const groq = createGroq({ apiKey: Redacted.value(key.value) });
+    return RuthTitleModel.of({
+      model: wrapLanguageModel({
+        model: groq("openai/gpt-oss-20b"),
+        middleware: defaultSettingsMiddleware({
+          settings: {
+            providerOptions: { groq: { reasoningEffort: "low", reasoningFormat: "parsed" } },
+          },
+        }),
+      }),
     });
   }),
 );

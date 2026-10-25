@@ -16,6 +16,8 @@ export function ApiProvider({ children }: PropsWithChildren) {
       makeClientRuntime({
         baseUrl: apiUrl,
         getAuthHeaders: getCookieHeader,
+        // The session cookie is attached by hand; "include" lets the native cookie jar clobber it.
+        credentials: "omit",
       }),
     [owner],
   );

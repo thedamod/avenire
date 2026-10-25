@@ -3,6 +3,7 @@ packages:
   - packages/*
 
 allowBuilds:
+  agent-browser: true
   electron: true
   esbuild: true
   sharp: true
@@ -49,12 +50,15 @@ catalog:
   vite-plus: 1.0.0
 
 minimumReleaseAgeExclude:
+  - officeparser@8.2.0
   - lucide-react@1.51.0
   - "@ai-sdk/cohere@4.0.57"
   - "@ai-sdk/google@4.0.90"
   - "@ai-sdk/provider-utils@5.0.56"
   - "@ai-sdk/provider@4.0.24"
   - "@ai-sdk/groq@4.0.57"
+  - '@expo/config-plugins@57.0.11'
+  - expo-sharing@57.0.24
 
 overrides:
   # vite-plus bundles its own Vitest; the patched @effect/vitest imports it instead.

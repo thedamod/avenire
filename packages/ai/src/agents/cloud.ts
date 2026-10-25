@@ -9,12 +9,12 @@ import {
   type HydrationResult,
 } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
+import { Mailer } from "@avenire/emailer/mailer";
 import {
   cloudHydration,
   cloudRun,
   cloudTask,
   cloudToolCall,
-  emailOutbox,
   file,
   fileFolder,
   pendingApproval,
@@ -126,6 +126,7 @@ const describeFailure = (error: unknown): string | undefined => {
 };
 export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: RuthCloudOptions) {
   const database = yield* Database;
+  const mailer = yield* Mailer;
   const boxes = yield* CloudBoxes;
   const assets = yield* AssetStore;
   const crypto = yield* Crypto.Crypto;
@@ -307,17 +308,17 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
       if (!thread) return yield* new NotFound({ entity: "RuthCloudThread", id: userId });
       const now = DateTime.toDateUtc(yield* DateTime.now);
       const messageId = yield* newId(MessageId).pipe(Effect.provideService(Crypto.Crypto, crypto));
-      const emailId = yield* crypto.randomUUIDv7;
       const person =
         task.delivery.email && status !== "cancelled"
           ? yield* database.use((db) => db.query.user.findFirst({ where: eq(user.id, userId) }))
           : undefined;
       const reportUrl = `${appUrl}/ruth/${thread.id}?message=${messageId}`;
       const taskForReport = task;
-      // Report, terminal state and outbox commit together; restart cannot post the same report twice.
-      yield* database.useTransaction(async (tx) => {
+      // Report and terminal state commit together; restart cannot post the same report twice.
+      // The status comes back only from the attempt that posted, which alone sends the email.
+      const postedStatus = yield* database.useTransaction(async (tx) => {
         const [locked] = await tx.select().from(cloudRun).where(ownedWhere).for("update");
-        if (!locked || locked.reportMessageId || locked.leasedBy !== leaseOwner) return;
+        if (!locked || locked.reportMessageId || locked.leasedBy !== leaseOwner) return undefined;
         const finalStatus = locked.status === "cancelled" ? "cancelled" : status;
         const report = buildReport({
           run: { ...locked, status: finalStatus, finishedAt: now },
@@ -351,39 +352,53 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
             error: error ? error : null,
           })
           .where(ownedWhere);
-        if (person && finalStatus !== "cancelled")
-          await tx.insert(emailOutbox).values({
-            id: emailId,
-            userId,
-            toAddress: person.email,
-            template: finalStatus === "failed" ? "cloud-run-failed" : "morning-digest",
-            props:
-              finalStatus === "failed"
-                ? {
-                    name: person.name,
-                    taskTitle: taskForReport.title,
-                    reason: error ?? summary,
-                    retryUrl: `${appUrl}/cloud`,
-                  }
-                : {
-                    name: person.name,
-                    date: DateTime.formatIsoDate(
-                      DateTime.makeZonedUnsafe(now, { timeZone: taskForReport.timeZone }),
-                    ),
-                    taskTitle: taskForReport.title,
-                    summary: summary.slice(0, 600),
-                    filesRead: readFiles(manifests).length,
-                    produced: produced.map((file) => ({
-                      title: file.title,
-                      url: `${appUrl}/library?file=${encodeURIComponent(file.id)}`,
-                    })),
-                    pendingApprovals: approvals.length,
-                    reportUrl,
-                  },
-          });
+        return finalStatus;
       });
+      if (person && postedStatus && postedStatus !== "cancelled") {
+        // The report is committed, so a mail failure is logged and never fails or retries the run.
+        // The key makes a replay of this send a no-op at Resend.
+        const idempotencyKey = `cloud-run-${runId}`;
+        yield* (
+          postedStatus === "failed"
+            ? mailer.send({
+                to: person.email,
+                template: "cloud-run-failed",
+                idempotencyKey,
+                props: {
+                  name: person.name,
+                  taskTitle: taskForReport.title,
+                  reason: error ?? summary,
+                  retryUrl: `${appUrl}/cloud`,
+                },
+              })
+            : mailer.send({
+                to: person.email,
+                template: "morning-digest",
+                idempotencyKey,
+                props: {
+                  name: person.name,
+                  date: DateTime.formatIsoDate(
+                    DateTime.makeZonedUnsafe(now, { timeZone: taskForReport.timeZone }),
+                  ),
+                  taskTitle: taskForReport.title,
+                  summary: summary.slice(0, 600),
+                  filesRead: readFiles(manifests).length,
+                  produced: produced.map((file) => ({
+                    title: file.title,
+                    url: `${appUrl}/library?file=${encodeURIComponent(file.id)}`,
+                  })),
+                  pendingApprovals: approvals.length,
+                  reportUrl,
+                },
+              })
+        ).pipe(
+          Effect.catchTag("EmailSendError", (failure) =>
+            Effect.logWarning("Ruth Cloud report email failed", { runId, error: failure.message }),
+          ),
+        );
+      }
       yield* endEvents(status, error);
-      yield* logStep("report posted and delivery enqueued");
+      yield* logStep("report posted and delivery sent");
     });
 
     /** Bill this attempt's box time (from when it ensured the box). Gaps between attempts, such as

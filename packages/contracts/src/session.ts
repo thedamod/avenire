@@ -6,6 +6,8 @@ import { UserId } from "./ids.ts";
 
 export interface SessionUser {
   readonly id: UserId;
+  /** Server-resolved session identity; never supplied by RPC message metadata. */
+  readonly sessionId?: string;
   readonly email: string;
   readonly name: string;
 }

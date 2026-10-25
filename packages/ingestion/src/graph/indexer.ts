@@ -45,7 +45,7 @@ export class GraphIndexer extends Context.Service<
 >()("avenire/ingestion/GraphIndexer") {}
 
 /** Chunks per extraction request. */
-const BATCH_CHUNKS = 8;
+const BATCH_CHUNKS = 2;
 
 const entityText = (row: AggregatedEntity) => `${row.name} (${row.type}): ${row.description}`;
 
@@ -164,7 +164,7 @@ export const GraphIndexerLive = Layer.effect(
               })),
             ),
           ),
-        { concurrency: 3 },
+        { concurrency: 1 },
       ).pipe(Effect.map((batches) => ({ chunks: batches.flat() })));
 
     /** Vectors for entities the user doesn't already have embedded with the current model. */

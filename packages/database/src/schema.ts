@@ -1,5 +1,7 @@
 import type {
-  CanvasNodeRef,
+  FolderColor,
+  FolderCover,
+  UserSettings,
   AssetKind,
   AssetVisibility,
   ChunkKind,
@@ -22,6 +24,7 @@ import type {
   SearchResult,
 } from "@avenire/contracts";
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   customType,
@@ -47,6 +50,7 @@ const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
   cloudInputsSlug: text("cloud_inputs_slug"),
+  onboardingCompletedAt: timestamptz("onboarding_completed_at"),
   /** Advances atomically with every change to the searchable library. */
   corpusRevision: integer("corpus_revision").notNull().default(0),
   name: text("name").notNull(),
@@ -141,6 +145,12 @@ export const file = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     archivedAt: timestamptz("archived_at"),
+    archivedViaFolderId: text("archived_via_folder_id").references((): AnyPgColumn => folder.id, {
+      onDelete: "set null",
+    }),
+    purgeRequestedAt: timestamptz("purge_requested_at"),
+    preview: text("preview"),
+    noteRevision: text("note_revision"),
     /** Once claimed, storage deletion is irreversible; restore must reject the claim. */
     purgeStartedAt: timestamptz("purge_started_at"),
     sourceUrl: text("source_url"),
@@ -163,6 +173,8 @@ export const file = pgTable(
     unique("file_id_user_unique").on(t.id, t.userId),
     index("file_user_placement_idx").on(t.userId, t.placement),
     index("file_user_content_modified_idx").on(t.userId, t.contentModifiedAt),
+    index("file_archived_via_folder_idx").on(t.archivedViaFolderId),
+    index("file_purge_requested_idx").on(t.purgeRequestedAt),
     index("file_capture_id_idx").on(t.captureId),
     index("file_placement_archived_at_idx").on(t.placement, t.archivedAt),
   ],
@@ -241,11 +253,19 @@ export const folder = pgTable(
       .references(() => user.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     suggested: boolean("suggested").notNull().default(false),
+    color: text("color").$type<FolderColor>().notNull().default("blue"),
+    cover: text("cover").$type<FolderCover>().notNull().default("book"),
+    archivedAt: timestamptz("archived_at"),
+    purgeRequestedAt: timestamptz("purge_requested_at"),
+    purgeStartedAt: timestamptz("purge_started_at"),
     centroid: vector("centroid", { dimensions: 1536 }),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
     updatedAt: timestamptz("updated_at").notNull().defaultNow(),
   },
-  (t) => [index("folder_user_id_idx").on(t.userId)],
+  (t) => [
+    index("folder_user_id_idx").on(t.userId),
+    index("folder_archived_at_idx").on(t.archivedAt),
+  ],
 );
 
 export const fileFolder = pgTable(
@@ -267,23 +287,6 @@ export const fileFolder = pgTable(
     index("file_folder_folder_id_idx").on(t.folderId),
     index("file_folder_user_id_idx").on(t.userId),
   ],
-);
-
-export const canvasNode = pgTable(
-  "canvas_node",
-  {
-    id: text("id").primaryKey(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    ref: jsonb("ref").$type<CanvasNodeRef>().notNull(),
-    x: real("x").notNull(),
-    y: real("y").notNull(),
-    width: real("width").notNull(),
-    height: real("height").notNull(),
-    updatedAt: timestamptz("updated_at").notNull().defaultNow(),
-  },
-  (t) => [index("canvas_node_user_id_idx").on(t.userId)],
 );
 
 export const ingestionJob = pgTable(
@@ -520,6 +523,7 @@ export const ruthThread = pgTable(
     title: text("title").notNull(),
     /** Full access: Ruth applies file actions without asking for approval. */
     fullAccess: boolean("full_access").notNull().default(false),
+    folderId: text("folder_id").references(() => folder.id, { onDelete: "set null" }),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
     updatedAt: timestamptz("updated_at").notNull().defaultNow(),
   },
@@ -527,6 +531,7 @@ export const ruthThread = pgTable(
     uniqueIndex("ruth_thread_user_cloud_unique")
       .on(t.userId)
       .where(sql`${t.kind} = 'ruth-cloud'`),
+    index("ruth_thread_folder_id_idx").on(t.folderId),
     index("ruth_thread_user_updated_at_idx").on(t.userId, t.updatedAt),
   ],
 );
@@ -638,6 +643,7 @@ export const cloudRun = pgTable(
     notBefore: timestamptz("not_before").notNull().defaultNow(),
     attempt: integer("attempt").notNull().default(1),
     summary: text("summary"),
+    startHere: text("start_here"),
     reportMessageId: text("report_message_id"),
     logTail: text("log_tail"),
     status: text("status").$type<CloudRunStatus>().notNull(),
@@ -820,27 +826,6 @@ export const asset = pgTable(
   ],
 );
 
-export const emailOutbox = pgTable(
-  "email_outbox",
-  {
-    id: text("id").primaryKey(),
-    userId: text("user_id").references(() => user.id, { onDelete: "cascade" }),
-    toAddress: text("to_address").notNull(),
-    template: text("template").notNull(),
-    props: jsonb("props").$type<Record<string, unknown>>().notNull(),
-    status: text("status").$type<"pending" | "sent" | "failed">().notNull().default("pending"),
-    attempts: integer("attempts").notNull().default(0),
-    lastError: text("last_error"),
-    sendAfter: timestamptz("send_after").notNull().defaultNow(),
-    sentAt: timestamptz("sent_at"),
-    createdAt: timestamptz("created_at").notNull().defaultNow(),
-  },
-  (t) => [
-    index("email_outbox_status_send_after_idx").on(t.status, t.sendAfter),
-    index("email_outbox_user_id_idx").on(t.userId),
-  ],
-);
-
 export const fileRelations = relations(file, ({ many }) => ({
   chunks: many(chunk),
   folders: many(fileFolder),
@@ -876,7 +861,6 @@ export const schema = {
   file,
   fileEvent,
   sourceUpload,
-  canvasNode,
   folder,
   fileFolder,
   ingestionJob,
@@ -897,7 +881,6 @@ export const schema = {
   pendingApproval,
   sandboxUsage,
   asset,
-  emailOutbox,
   fileRelations,
   chunkRelations,
   entityRelations,
@@ -914,7 +897,6 @@ export type AccountRow = typeof account.$inferSelect;
 export type VerificationRow = typeof verification.$inferSelect;
 export type CaptureRow = typeof capture.$inferSelect;
 export type FileRow = typeof file.$inferSelect;
-export type CanvasNodeRow = typeof canvasNode.$inferSelect;
 export type SourceUploadRow = typeof sourceUpload.$inferSelect;
 export type FolderRow = typeof folder.$inferSelect;
 export type FileFolderRow = typeof fileFolder.$inferSelect;
@@ -926,7 +908,6 @@ export type RuthThreadRow = typeof ruthThread.$inferSelect;
 export type RuthMessageRow = typeof ruthMessage.$inferSelect;
 export type CloudRunRow = typeof cloudRun.$inferSelect;
 export type AssetRow = typeof asset.$inferSelect;
-export type EmailOutboxRow = typeof emailOutbox.$inferSelect;
 
 export type FileEventRow = typeof fileEvent.$inferSelect;
 export type CloudTaskRow = typeof cloudTask.$inferSelect;
@@ -935,3 +916,11 @@ export type CloudHydrationRow = typeof cloudHydration.$inferSelect;
 export type CloudWorkspaceFileRow = typeof cloudWorkspaceFile.$inferSelect;
 export type PendingApprovalRow = typeof pendingApproval.$inferSelect;
 export type SandboxUsageRow = typeof sandboxUsage.$inferSelect;
+
+export const userSettings = pgTable("user_settings", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  preferences: jsonb("preferences").$type<UserSettings>().notNull(),
+  updatedAt: timestamptz("updated_at").notNull().defaultNow(),
+});

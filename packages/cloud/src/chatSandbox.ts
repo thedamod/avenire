@@ -1,6 +1,6 @@
 /** Per-thread ephemeral compute. Packages belong in the snapshot: egress is blocked by default. */
 import type { Sandbox } from "@daytonaio/sdk";
-import { DaytonaNotFoundError, DaytonaConnectionError } from "@daytonaio/sdk";
+import { DaytonaNotFoundError } from "@daytonaio/sdk";
 import { posix } from "node:path";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -18,7 +18,9 @@ import {
   DaytonaClient,
   SandboxInputRejected,
   SandboxTimeout,
+  isTransientCloudError,
 } from "./daytona.ts";
+import { runChatCommand } from "./chatCommand.ts";
 import { AVENIRE_SNAPSHOT, SANDBOX_RESOURCES } from "./snapshot-policy.ts";
 
 export interface SandboxOwner {
@@ -168,14 +170,18 @@ export const ChatSandboxesLive: Layer.Layer<ChatSandboxes, never, DaytonaClient 
       );
       if (lifetimeMinutes < 1 || idleStopMinutes < 1)
         return yield* Effect.die("Chat sandbox minute limits must be positive");
-      // Only retry idempotent directory preparation, never an uncertain user command.
-      const prepareFolder = (sandbox: Sandbox, path: string, operation: string) =>
-        attempt(operation, () => sandbox.fs.createFolder(path, "755")).pipe(
+      // Retry only idempotent filesystem operations and lookups. Never repeat creation or a
+      // user command: its effect may have completed before the connection was lost.
+      const fileOperation = <A>(operation: string, run: () => Promise<A>) =>
+        attempt(operation, run).pipe(
           Effect.retry({
             times: 2,
-            while: (error) => error.cause instanceof DaytonaConnectionError,
+            schedule: Schedule.exponential("250 millis"),
+            while: isTransientCloudError,
           }),
         );
+      const prepareFolder = (sandbox: Sandbox, path: string, operation: string) =>
+        fileOperation(operation, () => sandbox.fs.createFolder(path, "755"));
       const computerWorkspaces = new WeakSet<Sandbox>();
       const registry = new Map<string, Entry>();
       const deletedIds = new Set<string>();
@@ -191,7 +197,7 @@ export const ChatSandboxesLive: Layer.Layer<ChatSandboxes, never, DaytonaClient 
           return effect.pipe(lock.withPermits(1));
         });
       const list = (queryLabels: Record<string, string>) =>
-        attempt("listChatSandboxes", async () => {
+        fileOperation("listChatSandboxes", async () => {
           const sandboxes: Sandbox[] = [];
           for await (const sandbox of daytona.list({ labels: queryLabels }))
             if (live(sandbox) && !deletedIds.has(sandbox.id)) sandboxes.push(sandbox);
@@ -274,8 +280,22 @@ export const ChatSandboxesLive: Layer.Layer<ChatSandboxes, never, DaytonaClient 
           daytona.create({ ...common, snapshot: AVENIRE_SNAPSHOT }),
         ).pipe(
           Effect.catchTag("CloudError", (error) =>
-            Effect.fail(
-              new SandboxUnavailable({ detail: "creating the sandbox failed", cause: error.cause }),
+            Effect.logError("Daytona sandbox creation failed", {
+              message:
+                error.cause instanceof Error
+                  ? error.cause.message
+                  : typeof error.cause === "string"
+                    ? error.cause
+                    : "Provider returned no readable error message",
+            }).pipe(
+              Effect.andThen(
+                Effect.fail(
+                  new SandboxUnavailable({
+                    detail: "creating the sandbox failed",
+                    cause: error.cause,
+                  }),
+                ),
+              ),
             ),
           ),
         );
@@ -331,15 +351,11 @@ export const ChatSandboxesLive: Layer.Layer<ChatSandboxes, never, DaytonaClient 
             const cwd = yield* resolvePath(input.cwd ?? CHAT_WORKDIR);
             const sandbox = yield* acquire(owner);
             const start = yield* Clock.currentTimeMillis;
-            const response = yield* attempt("chatExec", () =>
-              sandbox.process.executeCommand(input.command, cwd, undefined, timeout),
-            ).pipe(
-              Effect.timeoutOrElse({
-                duration: `${timeout + 30} seconds`,
-                orElse: () =>
-                  Effect.fail(new SandboxTimeout({ operation: "exec", timeoutSeconds: timeout })),
-              }),
-            );
+            const response = yield* runChatCommand(sandbox, {
+              command: input.command,
+              cwd,
+              timeoutSeconds: timeout,
+            });
             const bytes = Buffer.from(response.result);
             const truncated = bytes.length > CHAT_SANDBOX_LIMITS.maxOutputBytes;
             // Drop an incomplete UTF-8 prefix rather than introducing a replacement character.
@@ -359,12 +375,9 @@ export const ChatSandboxesLive: Layer.Layer<ChatSandboxes, never, DaytonaClient 
             if (input.bytes.length > CHAT_SANDBOX_LIMITS.maxWriteBytes)
               return yield* reject("File exceeds the 10 MB write limit");
             const sandbox = yield* acquire(owner);
-            yield* attempt("createChatParent", () =>
-              sandbox.fs.createFolder(posix.dirname(path), "755"),
-            );
-            yield* attempt("writeChatFile", () =>
-              sandbox.fs.uploadFile(Buffer.from(input.bytes), path),
-            );
+            yield* prepareFolder(sandbox, posix.dirname(path), "createChatParent");
+            const bytes = Buffer.from(input.bytes);
+            yield* fileOperation("writeChatFile", () => sandbox.fs.uploadFile(bytes, path));
             return { path, size: input.bytes.length };
           }),
         ),
@@ -376,13 +389,15 @@ export const ChatSandboxesLive: Layer.Layer<ChatSandboxes, never, DaytonaClient 
               return yield* reject("maxBytes must be a non-negative integer");
             const max = Math.min(requested, CHAT_SANDBOX_LIMITS.maxReadBytes);
             const sandbox = yield* acquire(owner);
-            const details = yield* attempt("statChatFile", () => sandbox.fs.getFileDetails(path));
+            const details = yield* fileOperation("statChatFile", () =>
+              sandbox.fs.getFileDetails(path),
+            );
             // Downloads are whole-file, so refuse files we could never return anyway.
             if (details.isDir || details.size > CHAT_SANDBOX_LIMITS.maxArtifactBytes)
               return yield* reject(
                 "sandbox_read reads files up to 50 MB; use sandbox_exec (head, tail, grep) for larger ones",
               );
-            const bytes = yield* attempt("readChatFile", () => sandbox.fs.downloadFile(path));
+            const bytes = yield* fileOperation("readChatFile", () => sandbox.fs.downloadFile(path));
             return {
               path,
               bytes: new Uint8Array(bytes.subarray(0, max)),
@@ -408,12 +423,12 @@ export const ChatSandboxesLive: Layer.Layer<ChatSandboxes, never, DaytonaClient 
               error.cause instanceof DaytonaNotFoundError
                 ? reject("Artifact does not exist")
                 : Effect.fail(error);
-            const details = yield* attempt("statChatArtifact", () =>
+            const details = yield* fileOperation("statChatArtifact", () =>
               sandbox.fs.getFileDetails(path),
             ).pipe(Effect.catchTag("CloudError", missing));
             if (details.isDir || details.size > maxBytes)
               return yield* reject(`Artifact must be a file no larger than ${maxBytes} bytes`);
-            const bytes = yield* attempt("readChatArtifact", () =>
+            const bytes = yield* fileOperation("readChatArtifact", () =>
               sandbox.fs.downloadFile(path),
             ).pipe(Effect.catchTag("CloudError", missing));
             if (bytes.length > maxBytes) return yield* reject(`Artifact exceeds ${maxBytes} bytes`);

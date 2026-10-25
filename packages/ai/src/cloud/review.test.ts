@@ -161,6 +161,11 @@ it.effect(
             .every((approval) => approval.status === "skipped"),
         ).toBe(true);
         expect(f.rows("pending_approval")[2]?.status).toBe("pending");
+        expect(yield* review.list(cloudCtx.userId, cloudCtx.runId!)).toEqual([]);
+        const resolved = yield* review.list(cloudCtx.userId, cloudCtx.runId!, true);
+        expect(resolved.map((approval) => approval.id)).toEqual([first, second]);
+        expect(resolved.every((approval) => approval.status === "skipped")).toBe(true);
+        expect(yield* review.list(UserId.make("other-user"), cloudCtx.runId!, true)).toEqual([]);
       }).pipe(Effect.provide(CloudReviewLive), Effect.provide(f.services(storage)));
     }).pipe(Effect.provide(StorageMemory));
   },

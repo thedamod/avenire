@@ -23,6 +23,25 @@ CREATE TABLE "source_upload" (
 	CONSTRAINT "source_upload_storage_key_unique" UNIQUE("storage_key")
 );
 --> statement-breakpoint
+-- Remove only obsolete board references from persisted chat metadata.
+-- File and notebook references, message parts and library content are retained.
+UPDATE "ruth_message"
+SET "metadata" = jsonb_set(
+  "metadata",
+  '{references}',
+  COALESCE((
+    SELECT jsonb_agg(reference)
+    FROM jsonb_array_elements(
+      CASE WHEN jsonb_typeof("metadata"->'references') = 'array'
+        THEN "metadata"->'references' ELSE '[]'::jsonb END
+    ) AS reference
+    WHERE reference->>'kind' IS DISTINCT FROM 'canvasNode'
+  ), '[]'::jsonb)
+)
+WHERE jsonb_typeof("metadata"->'references') = 'array'
+  AND "metadata"->'references' @> '[{"kind":"canvasNode"}]'::jsonb;
+--> statement-breakpoint
+DROP TABLE "canvas_node";--> statement-breakpoint
 ALTER TABLE "source_upload" ADD CONSTRAINT "source_upload_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "source_upload" ADD CONSTRAINT "source_upload_completed_file_id_file_id_fk" FOREIGN KEY ("completed_file_id") REFERENCES "public"."file"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "source_upload_user_status_idx" ON "source_upload" USING btree ("user_id","status");--> statement-breakpoint

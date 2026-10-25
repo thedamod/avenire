@@ -1,3 +1,4 @@
+import { markdownPreview } from "@avenire/shared/notebook";
 import {
   ChunkId,
   FolderId,
@@ -76,7 +77,7 @@ const ownedFolder = Effect.fn("RuthKit.ownedFolder")(function* (
   const row = yield* database.use((db) =>
     db.query.folder.findFirst({
       columns: { id: true },
-      where: and(eq(folder.id, folderId), eq(folder.userId, ctx.userId)),
+      where: and(eq(folder.id, folderId), eq(folder.userId, ctx.userId), isNull(folder.archivedAt)),
     }),
   );
   if (!row) return yield* new NotFound({ entity: "Folder", id: folderId });
@@ -92,6 +93,12 @@ export const ruthKitTools: RuthToolImplementations = {
     const retrieval = yield* Retrieval;
     const result = yield* retrieval.search(ctx.userId, {
       text: input.query,
+      ...(input.widenScope
+        ? {}
+        : {
+            ...(ctx.scope?.folderIds?.length ? { folderIds: ctx.scope.folderIds } : {}),
+            ...(ctx.scope?.fileIds?.length ? { fileIds: ctx.scope.fileIds } : {}),
+          }),
       ...(input.limit === undefined ? {} : { limit: input.limit }),
       ...(input.depth === undefined ? {} : { depth: input.depth }),
     });
@@ -238,7 +245,13 @@ export const ruthKitTools: RuthToolImplementations = {
         const [target] = await tx
           .select({ id: folder.id })
           .from(folder)
-          .where(and(eq(folder.id, input.folderId), eq(folder.userId, ctx.userId)))
+          .where(
+            and(
+              eq(folder.id, input.folderId),
+              eq(folder.userId, ctx.userId),
+              isNull(folder.archivedAt),
+            ),
+          )
           .for("update");
         if (!target) return false;
       }
@@ -246,6 +259,7 @@ export const ruthKitTools: RuthToolImplementations = {
         id: fileId,
         userId: ctx.userId,
         kind: "note",
+        preview: markdownPreview(input.content),
         title: input.title,
         source: "ruth",
         placement: input.folderId === undefined ? "inbox" : "filed",

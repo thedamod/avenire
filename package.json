@@ -3,11 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vp run --parallel --filter @avenire/web --filter @avenire/emailer dev",
+    "dev": "vp run --filter @avenire/web dev",
     "dev:web": "vp run --filter @avenire/web dev",
     "dev:desktop": "vp run --filter @avenire/desktop dev",
     "dev:mobile": "vp run --filter @avenire/mobile dev",
-    "dev:emailer": "vp run --filter @avenire/emailer dev",
+    "email:preview": "vp run --filter @avenire/emailer preview",
     "build": "vp run --filter './apps/*' build",
     "typecheck": "vp run -r --concurrency-limit 4 typecheck",
     "test": "vp run -r test",
@@ -23,6 +23,7 @@
   "devDependencies": {
     "@effect/tsgo": "catalog:",
     "@types/node": "catalog:",
+    "@types/react": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:"
   },

@@ -1,0 +1,78 @@
+<!doctype html><html><head><meta charset="utf-8"><title>E · Everywhere → one place</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/*{{tokens}}*/
+/*{{base}}*/
+.hero { padding: 104px 48px 0; display: flex; flex-direction: column; gap: 24px; }
+.field { position: relative; margin: 64px 48px 0; height: 600px; border: 1px solid var(--color-border); border-radius: var(--radius-l-card); background: var(--color-surface-1); overflow: hidden; }
+.src { position: absolute; width: 228px; padding: 10px 12px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-l-card); background: var(--color-surface-2); display: flex; flex-direction: column; gap: 4px; }
+.src .o { font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; color: var(--color-text-muted); }
+.src .n { font-size: 13px; color: var(--color-text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.src .m { font-size: 11.5px; color: var(--color-text-muted); }
+.hub { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 380px; border: 1px solid var(--color-text-muted); border-radius: var(--radius-lg); background: var(--color-surface-2); overflow: hidden; }
+.hub-top { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; font-size: 15px; color: var(--color-text-strong); }
+.hub-bot { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-top: 1px solid var(--color-border); font-size: 12.5px; color: var(--color-text-muted); }
+.section { border-top: 1px solid var(--color-border); margin-top: 104px; padding: 104px 48px 112px; }
+.answer { margin-top: 56px; display: grid; grid-template-columns: 1fr 1.1fr; border: 1px solid var(--color-border); border-radius: var(--radius-l-card); overflow: hidden; }
+.answer-l { padding: 32px; display: flex; flex-direction: column; gap: 18px; border-right: 1px solid var(--color-border); }
+.q { font-size: 22px; line-height: 30px; letter-spacing: -0.015em; color: var(--color-text-strong); }
+.prov { display: grid; grid-template-columns: 110px 1fr; row-gap: 10px; font-size: 13px; }
+.prov span:nth-child(odd) { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; color: var(--color-text-muted); padding-top: 2px; }
+.prov span:nth-child(even) { color: var(--color-text-strong); }
+.pagev { background: var(--color-iso-paper); padding: 32px; display: flex; justify-content: center; }
+.pg { width: 100%; background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: 2px; padding: 24px 26px; display: flex; flex-direction: column; gap: 10px; }
+.pg p { font-size: 12.5px; line-height: 19px; color: var(--color-text); }
+.pg .hl { background: var(--color-accent-tint); box-shadow: inset 2px 0 0 var(--color-accent); color: var(--color-text-strong); padding: 6px 8px; margin: 0 -8px; }
+</style></head><body>
+<div class="tag">E · Everywhere → one place</div>
+<div class="rails">
+  <nav class="nav"><div class="brand">{{logo}}Avenire</div><div class="nav-links"><span>Capture</span><span>Search</span><span>Pricing</span><span>Changelog</span></div><div style="display:flex; gap:10px;"><span class="btn btn-sm btn-ghost">Log in</span><span class="btn btn-sm btn-primary">Get started</span></div></nav>
+  <header class="hero">
+    <span class="mono">For students with notes in eight places</span>
+    <h1 class="display" style="max-width:1060px;">Your course is spread across eight apps.<br><span class="quiet">Avenire is the one place you look.</span></h1>
+    <p class="lead" style="max-width:640px;">Press one key to capture whatever you have open. When you need it, ask. No folders, no renaming, no "where did I save that".</p>
+    <div style="display:flex; gap:12px; margin-top:8px;"><span class="btn btn-primary">Download for Mac</span><span class="btn btn-ghost">How capture works</span></div>
+  </header>
+
+  <div class="field">
+    <svg style="position:absolute; inset:0; width:100%; height:100%;" viewBox="0 0 1120 600" fill="none" stroke="var(--color-border-strong)" stroke-width="1">
+      <path d="M150 92 C 330 92, 420 230, 470 278"/><path d="M560 60 L560 248"/><path d="M970 96 C 790 96, 700 230, 650 278"/>
+      <path d="M150 300 L 370 300"/><path d="M970 300 L 750 300"/>
+      <path d="M150 510 C 330 510, 420 370, 470 322"/><path d="M560 540 L560 352"/><path d="M970 506 C 790 506, 700 370, 650 322"/>
+    </svg>
+    <div class="src" style="left:36px; top:60px;"><span class="o">GOOGLE DRIVE</span><span class="n">Untitled document (3)</span><span class="m">Lab 3 notes, maybe</span></div>
+    <div class="src" style="left:446px; top:24px;"><span class="o">CANVAS · PHYS 101</span><span class="n">Lecture 6 — Transistors.pdf</span><span class="m">38 pages</span></div>
+    <div class="src" style="right:36px; top:64px;"><span class="o">WHATSAPP · STUDY GROUP</span><span class="n">IMG_4471.jpg</span><span class="m">photo of the whiteboard</span></div>
+    <div class="src" style="left:36px; top:268px;"><span class="o">DOWNLOADS</span><span class="n">lecture6 final (1).pdf</span><span class="m">the same slides, again</span></div>
+    <div class="src" style="right:36px; top:268px;"><span class="o">YOUTUBE</span><span class="n">MIT 6.002 Lecture 12</span><span class="m">the bit at 18:42</span></div>
+    <div class="src" style="left:36px; top:478px;"><span class="o">NOTION</span><span class="n">PHYS 101 — week 6</span><span class="m">half finished</span></div>
+    <div class="src" style="left:446px; top:508px;"><span class="o">PHOTOS</span><span class="n">Screenshot 2026-09-29 at 11.02</span><span class="m">a slide you meant to read</span></div>
+    <div class="src" style="right:36px; top:474px;"><span class="o">EMAIL · TA</span><span class="n">Re: lab 3 rubric</span><span class="m">attachment: rubric.docx</span></div>
+    <div class="hub"><div class="hub-top">{{logo}}<span>Captured 8 items</span><span class="kbd" style="margin-left:auto">⌥ C</span></div><div class="hub-bot">Everything in one library, searchable by what's inside it</div></div>
+  </div>
+
+  <section class="section">
+    <h2 class="h2"><span class="quiet">You don't remember where you saved it.</span><br>You remember what it said.</h2>
+    <div class="answer">
+      <div class="answer-l">
+        <span class="mono">You ask</span>
+        <span class="q">"the slide where he explains why the channel needs a threshold"</span>
+        <span class="mono" style="margin-top:8px">Avenire finds</span>
+        <div class="prov">
+          <span>FILE</span><span>Lecture 6 — Transistors.pdf · page 14</span>
+          <span>CAME FROM</span><span>Canvas · PHYS 101</span>
+          <span>CAPTURED</span><span>Sep 29, with ⌥ C</span>
+          <span>ALSO IN</span><span>Downloads · lecture6 final (1).pdf <span style="color:var(--color-text-muted)">duplicate</span></span>
+        </div>
+      </div>
+      <div class="pagev"><div class="pg">
+        <span class="mono" style="letter-spacing:.04em">6.3 · The MOS capacitor</span>
+        <p style="font-size:14px; color:var(--color-text-strong); font-weight:500;">Inversion and the threshold voltage</p>
+        <p>With zero gate bias the surface holds majority holes and no channel exists between the n+ source and drain regions.</p>
+        <p class="hl">Only when V<sub>GS</sub> exceeds V<sub>th</sub> does the electron concentration at the surface exceed the hole concentration in the bulk: the surface is inverted and a conducting channel appears.</p>
+        <p>Thinner oxides give a lower V<sub>th</sub> for the same doping.</p>
+      </div></div>
+    </div>
+  </section>
+</div>
+</body></html>

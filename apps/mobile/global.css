@@ -2,39 +2,34 @@
 @import "uniwind";
 
 @theme {
-  --color-background: #f7f6f2;
-  --color-foreground: #25252b;
-  --color-card: #ffffff;
-  --color-muted: #eeece6;
-  --color-muted-foreground: #777782;
-  --color-border: #e2dfd7;
-  --color-primary: #5556a8;
-  --color-primary-foreground: #ffffff;
-  --color-destructive: #b42318;
-}
-
-@layer theme {
-  :root {
-    --background: #f7f6f2;
-    --foreground: #25252b;
-    --card: #ffffff;
-    --muted: #eeece6;
-    --muted-foreground: #777782;
-    --border: #e2dfd7;
-    --primary: #5556a8;
-    --primary-foreground: #ffffff;
-    --destructive: #b42318;
-  }
-
-  .dark {
-    --background: #18181d;
-    --foreground: #eeedf2;
-    --card: #222229;
-    --muted: #2e2e37;
-    --muted-foreground: #aaa8b4;
-    --border: #393943;
-    --primary: #aaa9f2;
-    --primary-foreground: #20202a;
-    --destructive: #ff8b82;
-  }
+  --color-bg: #0b0b0b;
+  --color-surface-1: #111111;
+  --color-surface-2: #161616;
+  --color-surface-3: #1c1c1c;
+  --color-surface-4: #242424;
+  --color-sheet: #131313;
+  --color-fg: #ededed;
+  --color-fg-2: #a3a3a3;
+  --color-fg-3: #6e6e6e;
+  --color-line: #222222;
+  --color-line-2: #2e2e2e;
+  --color-accent: #abc4ff;
+  --color-accent-text: #c2d4ff;
+  --color-accent-tint: #151b2b;
+  --color-accent-line: #2e3b5e;
+  --color-on-accent: #0b1020;
+  --color-red: #ff6b6b;
+  --color-green: #6be0a0;
+  --color-amber: #f2c46d;
+  --color-notebook-thermo: #2b9bd8;
+  --color-notebook-ethics: #ef4579;
+  --color-notebook-options: #18803a;
+  --color-notebook-ochem: #d9a50d;
+  --color-notebook-research: #b48bf2;
+  --color-notebook-stat: #b48bf2;
+  --font-mono: "GeistMono";
+  --radius-sheet: 24px;
+  --radius-composer: 26px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }

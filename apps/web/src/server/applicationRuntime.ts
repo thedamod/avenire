@@ -1,3 +1,4 @@
+import { SettingsLive } from "./settings.ts";
 /** Separate lazy scopes keep library reads and Cloud enqueue independent of chat providers. */
 import { CloudRunEventsLive } from "@avenire/ai/cloud/events";
 import { CloudReviewLive } from "@avenire/ai/cloud/review";
@@ -60,6 +61,9 @@ export const domainRuntime = <R, E>(layer: Layer.Layer<R, E>) => {
     runRoute,
   };
 };
+export const SettingsServicesLive = SettingsLive.pipe(Layer.provideMerge(CloudServicesLive));
+const settings = domainRuntime(SettingsServicesLive);
+export const provideSettings = settings.provide;
 const library = domainRuntime(LibraryServicesLive);
 const threads = domainRuntime(ThreadServicesLive);
 const search = domainRuntime(SearchServicesLive);
@@ -74,14 +78,35 @@ export const runSearchRoute = search.runRoute;
 export const runCloudRoute = cloud.runRoute;
 
 export const LibraryRpcService = Layer.succeed(Library, {
-  getCanvas: (...args) =>
-    provideLibrary(Effect.flatMap(Library, (service) => service.getCanvas(...args))),
-  saveCanvas: (...args) =>
-    provideLibrary(Effect.flatMap(Library, (service) => service.saveCanvas(...args))),
-  listFiles: (...args) =>
-    provideLibrary(Effect.flatMap(Library, (service) => service.listFiles(...args))),
   getFile: (...args) =>
     provideLibrary(Effect.flatMap(Library, (service) => service.getFile(...args))),
+  renameFile: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.renameFile(...args))),
+  getFileContentUrl: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.getFileContentUrl(...args))),
+  createNote: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.createNote(...args))),
+  getNote: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.getNote(...args))),
+  saveNote: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.saveNote(...args))),
+  getFolder: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.getFolder(...args))),
+  updateFolder: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.updateFolder(...args))),
+  trashFiles: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.trashFiles(...args))),
+  trashFolder: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.trashFolder(...args))),
+  restore: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.restore(...args))),
+  purge: (...args) => provideLibrary(Effect.flatMap(Library, (service) => service.purge(...args))),
+  listTrash: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.listTrash(...args))),
+  emptyTrash: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.emptyTrash(...args))),
+  listFiles: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.listFiles(...args))),
   submitCapture: (...args) =>
     provideLibrary(Effect.flatMap(Library, (service) => service.submitCapture(...args))),
   placeFile: (...args) =>

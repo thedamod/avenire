@@ -3,6 +3,8 @@ import { CloudError } from "@avenire/cloud/daytona";
 import { CloudBoxes, type CloudBox } from "@avenire/cloud/cloud-box";
 import { CloudRunId, UserId } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
+import { Mailer, type SendRequest } from "@avenire/emailer/mailer";
+import type { TemplateName } from "@avenire/emailer/templates";
 import { cloudRun, cloudTask } from "@avenire/database/schema";
 import { Analytics, AnalyticsNoop } from "@avenire/shared/observability";
 import { Storage } from "@avenire/storage/storage";
@@ -94,7 +96,23 @@ const setup = (options: {
   const model = scriptedModel([
     { toolCalls: [{ id: "report-1", name: "publish_report", input: '{"markdown":"Finished"}' }] },
   ]);
-  return { db, box, boxes, model, counts: () => ({ recordingsStarted, recordingStops, boxStops }) };
+  const sent: Array<SendRequest<TemplateName>> = [];
+  const mailer = Mailer.of({
+    send: (request) =>
+      Effect.sync(() => {
+        sent.push(request);
+        return { id: `mail-${sent.length}` };
+      }),
+  });
+  return {
+    db,
+    box,
+    boxes,
+    model,
+    mailer,
+    sent,
+    counts: () => ({ recordingsStarted, recordingStops, boxStops }),
+  };
 };
 const run = (options: {
   leftRecording: boolean;
@@ -102,7 +120,7 @@ const run = (options: {
   lostDeleteResponse?: boolean;
   cleanupStopFailure?: boolean;
 }) => {
-  const { db, boxes, model, counts } = setup(options);
+  const { db, boxes, model, mailer, sent, counts } = setup(options);
   let crash = options.crashAfterExecution;
   const database = Database.of({
     ...db.database,
@@ -148,6 +166,7 @@ const run = (options: {
     const services = (yield* Effect.context<AssetStore | Storage | Analytics>()).pipe(
       Context.add(Database, database),
       Context.add(CloudBoxes, boxes),
+      Context.add(Mailer, mailer),
       Context.add(Crypto.Crypto, fakeCrypto),
       Context.add(
         RuthModels,
@@ -157,7 +176,9 @@ const run = (options: {
           maxImages: 1,
         }),
       ),
-    ) as Context.Context<CloudToolServices | RuthToolServices | ComputerServices | RuthModels>;
+    ) as Context.Context<
+      CloudToolServices | RuthToolServices | ComputerServices | RuthModels | Mailer
+    >;
     const executor = yield* makeRuthCloud({ appUrl: "https://app.test" }).pipe(
       Effect.provideContext(services),
     );
@@ -188,11 +209,21 @@ const run = (options: {
       usage: { cleanupComplete: true, inputTokens: 10 },
     });
     expect(db.rows("ruth_message")).toHaveLength(1);
-    expect(db.rows("email_outbox")).toHaveLength(1);
+    // The report email goes out once, from the attempt that posted the report.
+    expect(sent).toMatchObject([
+      {
+        to: "owner@example.test",
+        template: "morning-digest",
+        idempotencyKey: "cloud-run-run",
+        props: { name: "Owner", taskTitle: "Study" },
+      },
+    ]);
     expect(db.rows("cloud_run")[0]?.recordingId).toBeNull();
     const assets = yield* AssetStore;
     const stored = yield* assets.list(UserId.make("owner"), { runId: CloudRunId.make("run") });
     yield* executor.execute({ runId: CloudRunId.make("run"), lease: "worker" });
+    // Replaying a finished run must not email again.
+    expect(sent).toHaveLength(1);
     // The executor never starts a recording; it only finalises one the agent left running.
     expect(counts()).toMatchObject({
       recordingsStarted: 0,

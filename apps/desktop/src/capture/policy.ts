@@ -109,6 +109,10 @@ export function applyPolicy(snapshot: CaptureSnapshot): PolicyResult {
     }
   };
   const tabs = snapshot.tabs.flatMap((tab) => {
+    if (tab.incognito) {
+      report("private-window");
+      return [];
+    }
     const category =
       blockedCategory(tab.url, "", tab.title) ?? blockedCategory(tab.finalUrl, "", tab.title);
     if (category) {

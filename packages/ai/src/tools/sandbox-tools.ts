@@ -36,12 +36,17 @@ const ownerFor = (tool: string, ctx: AgentContext): Effect.Effect<SandboxOwner, 
 export const sandboxTools: SandboxImpls = {
   preview_widget: Effect.fn("RuthKit.previewWidget")(function* (input, ctx) {
     const previews = yield* WidgetPreview;
-    return yield* previews.preview(input, ctx);
+    const result = yield* previews.preview(input, ctx);
+    return { ...result, ...(result.ok && input.activity ? { activity: input.activity } : {}) };
   }),
   sandbox_exec: Effect.fn("RuthKit.sandboxExec")(function* (input, ctx) {
     const owner = yield* ownerFor("sandbox_exec", ctx);
     const sandboxes = yield* ChatSandboxes;
-    return yield* sandboxes.exec(owner, input);
+    const result = yield* sandboxes.exec(owner, input);
+    return {
+      ...result,
+      ...(result.exitCode === 0 && input.activity ? { activity: input.activity } : {}),
+    };
   }),
   sandbox_write: Effect.fn("RuthKit.sandboxWrite")(function* (input, ctx) {
     const owner = yield* ownerFor("sandbox_write", ctx);
@@ -60,7 +65,8 @@ export const sandboxTools: SandboxImpls = {
       input.encoding === "base64"
         ? new Uint8Array(Buffer.from(input.content, "base64"))
         : new TextEncoder().encode(input.content);
-    return yield* sandboxes.write(owner, { path: input.path, bytes });
+    const result = yield* sandboxes.write(owner, { path: input.path, bytes });
+    return { ...result, ...(input.activity ? { activity: input.activity } : {}) };
   }),
   sandbox_read: Effect.fn("RuthKit.sandboxRead")(function* (input, ctx) {
     const owner = yield* ownerFor("sandbox_read", ctx);

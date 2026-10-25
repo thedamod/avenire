@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 
 export interface AgentContext {
   readonly userId: UserId;
+  readonly scope?: import("@avenire/contracts").ChatScope | undefined;
   readonly agent: "ruth" | "ruth-cloud";
   readonly threadId?: ThreadId;
   readonly runId?: CloudRunId;
@@ -54,6 +55,7 @@ const codes: Readonly<Record<string, RuthToolError["code"]>> = {
   SandboxQuotaExceeded: "quota_exceeded",
   SandboxUnavailable: "sandbox_unavailable",
   SandboxInputRejected: "invalid_input",
+  TimeoutError: "timeout",
 };
 const unexpected = "The tool failed unexpectedly. Try a different approach.";
 
@@ -83,14 +85,42 @@ export const toToolError = (
     return Effect.fail(error as RuthToolError);
   const tagged =
     typeof error === "object" && error !== null
-      ? (error as { _tag?: string; message?: unknown; reason?: unknown })
+      ? (error as { _tag?: string; message?: unknown; reason?: unknown; operation?: string })
       : {};
+  // CloudError.message includes the raw provider response, which may include request data.
+  if (tagged._tag === "CloudError") {
+    const operation = tagged.operation ?? "operation";
+    const action =
+      {
+        createChatParent: "prepare the sandbox file's parent directory",
+        writeChatFile: "upload the file to the sandbox",
+        statChatFile: "inspect the sandbox file",
+        readChatFile: "read the sandbox file",
+        statChatArtifact: "inspect the sandbox artifact",
+        readChatArtifact: "read the sandbox artifact",
+        listChatSandboxes: "find this thread's sandbox",
+        chatExec: "run the sandbox command",
+      }[operation] ?? "complete the sandbox operation";
+    return Effect.fail(
+      new RuthToolError({
+        tool,
+        code: "sandbox_unavailable",
+        message:
+          operation === "chatExecSessionCreate" || operation === "chatExecSessionRecover"
+            ? "Could not start the sandbox command session. No command was submitted; try again."
+            : operation === "chatExec" || operation.startsWith("chatExec")
+              ? "The sandbox command's result is unavailable. Check the sandbox state before deciding whether to run it again."
+              : `Could not ${action}. Try again in a moment.`,
+        recoverable: true,
+      }),
+    );
+  }
   const code =
     tagged._tag !== undefined && Object.hasOwn(codes, tagged._tag) ? codes[tagged._tag]! : "failed";
   const message =
-    typeof tagged.message === "string"
+    typeof tagged.message === "string" && tagged.message.trim()
       ? tagged.message
-      : typeof tagged.reason === "string"
+      : typeof tagged.reason === "string" && tagged.reason.trim()
         ? tagged.reason
         : unexpected;
   return Effect.fail(

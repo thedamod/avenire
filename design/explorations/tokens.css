@@ -1,0 +1,95 @@
+/* Avenire design system v1 — dark first.
+   Shared: colour + type. Landing and App differ only in corners, spacing and depth. */
+:root {
+  /* Ground and surfaces (anatomy dark plate greys) */
+  --color-bg: #0b0b0b;
+  --color-surface-1: #111111;
+  --color-surface-2: #161616;
+  --color-surface-3: #1c1c1c;
+  --color-surface-4: #242424;
+  --color-border: #222222;
+  --color-border-strong: #2e2e2e;
+
+  /* Text */
+  --color-text-strong: #ededed;
+  --color-text: #a3a3a3;
+  --color-text-muted: #6e6e6e;
+
+  /* Accent: amber lamp. One per view. */
+  --color-accent: #abc4ff;
+  --color-accent-text: #c2d4ff;
+  --color-accent-tint: #151b2b;
+  --color-accent-line: #2e3b5e;
+  --color-on-accent: #0b1020;
+
+  /* Signals (anatomy) */
+  --color-signal-red: #ff6b6b;
+  --color-signal-green: #6be0a0;
+  --color-signal-blue: #6b9bff;
+
+  /* Figure inks (anatomy iso.css, dark) */
+  --color-iso-paper: #131313;
+  --color-iso-top: #1c1c1c;
+  --color-iso-shade-0: #0f0f0f;
+  --color-iso-shade-1: #121212;
+  --color-iso-shade-2: #151515;
+  --color-iso-shade-3: #181818;
+  --color-iso-hi: #d4d4d4;
+  --color-iso-mid: #6a6a6a;
+  --color-iso-lo: #3e3e3e;
+  --color-iso-faint: #2a2a2a;
+  --color-iso-lit-top: #2a2112;
+
+  /* Notebook covers: the only saturated colour */
+  --color-cover-graphite: #2e2e33;
+  --color-cover-moss: #18803a;
+  --color-cover-orchid: #b526c9;
+  --color-cover-mustard: #d9a50d;
+  --color-cover-sky: #2b9bd8;
+  --color-cover-lime: #8bdf3c;
+  --color-cover-silver: #d3d3d8;
+  --color-cover-tangerine: #ee7b14;
+  --color-cover-rose: #ef4579;
+  --color-cover-lilac: #b48bf2;
+
+  /* Type */
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --tracking-display: -0.035em;
+  --tracking-heading: -0.02em;
+  --tracking-label: 0.08em;
+  --text-mono: 11px;
+
+  /* Landing scale */
+  --text-l-display: 60px; --leading-l-display: 64px;
+  --text-l-h2: 44px;      --leading-l-h2: 48px;
+  --text-l-h3: 28px;      --leading-l-h3: 34px;
+  --text-l-lead: 20px;    --leading-l-lead: 30px;
+  --text-l-body: 16px;    --leading-l-body: 26px;
+
+  /* App scale */
+  --text-a-title: 22px;   --leading-a-title: 28px;
+  --text-a-heading: 16px; --leading-a-heading: 22px;
+  --text-a-read: 15px;    --leading-a-read: 26px;
+  --text-a-body: 14px;    --leading-a-body: 22px;
+  --text-a-ui: 13px;      --leading-a-ui: 18px;
+  --text-a-small: 12px;   --leading-a-small: 16px;
+
+  /* Radius */
+  --radius-pill: 999px;
+  --radius-l-card: 2px;   /* landing cards, media, figure plates */
+  --radius-xs: 4px;       /* app chips, kbd, citations */
+  --radius-sm: 6px;       /* app rows */
+  --radius-md: 8px;       /* app controls */
+  --radius-lg: 10px;      /* app panels, composer — the maximum */
+
+  /* Elevation: app floating layers only (promptbox, menus, toasts). Never cards. */
+  --shadow-float: 0 16px 40px -20px rgba(0, 0, 0, 0.8);
+
+  /* Spacing (4px grid) */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px;
+  --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px; --space-16: 64px;
+  --space-20: 80px; --space-24: 96px; --space-30: 120px; --space-40: 160px;
+
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}

@@ -18,6 +18,10 @@ it.effect("Library's real read boundary filters the database by both file and ow
     const predicates: unknown[][] = [];
     const date = new Date("2026-10-17T00:00:00Z");
     const row = {
+      preview: null,
+      noteRevision: null,
+      archivedViaFolderId: null,
+      purgeRequestedAt: null,
       contentHash: null,
       dedupeKey: "fixture",
       documentKey: null,

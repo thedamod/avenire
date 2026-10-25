@@ -1,8 +1,9 @@
+import { defaultNotebookAppearance, markdownPreview } from "@avenire/shared/notebook";
 /** The ownership boundary for the application's library, capture receipts. */
 import {
+  type CreateFolderRequest,
+  type UpdateFolderRequest,
   type ApiError,
-  CanvasNodeId,
-  type CanvasNode,
   CaptureId,
   type CaptureSnapshot,
   Conflict,
@@ -10,7 +11,6 @@ import {
   FileId,
   FolderId,
   IngestionJobId,
-  InternalError,
   LibraryFile,
   NotFound,
   StorageKey,
@@ -26,8 +26,8 @@ import { lockCorpus } from "@avenire/database/corpus";
 import { isDeepStrictEqual } from "node:util";
 import { Database } from "@avenire/database/client";
 import {
-  canvasNode,
   capture,
+  chunk,
   file,
   fileEvent,
   fileFolder,
@@ -41,7 +41,7 @@ import { enqueueIngestionTx } from "@avenire/ingestion/worker";
 import { newId } from "@avenire/shared/id";
 import { fileSourceKey, newKeyVersion } from "@avenire/storage/keys";
 import { Storage } from "@avenire/storage/storage";
-import { and, asc, desc, eq, exists, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -49,14 +49,15 @@ import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { createHash } from "node:crypto";
+import { makeLibraryFeatures, purgeAt, type LibraryFeatures } from "./libraryFeatures.ts";
 import { toApiError } from "./apiErrors.ts";
 
-export interface LibraryOperations {
-  readonly getCanvas: (userId: UserId) => Effect.Effect<readonly CanvasNode[], ApiError>;
-  readonly saveCanvas: (
+export interface LibraryOperations extends LibraryFeatures {
+  readonly getFolder: (userId: UserId, id: FolderId) => Effect.Effect<Folder, ApiError>;
+  readonly updateFolder: (
     userId: UserId,
-    nodes: readonly CanvasNode[],
-  ) => Effect.Effect<void, ApiError>;
+    input: typeof UpdateFolderRequest.Type,
+  ) => Effect.Effect<Folder, ApiError>;
   readonly listFiles: (
     userId: UserId,
     filters?: {
@@ -75,7 +76,11 @@ export interface LibraryOperations {
     folderIds: readonly FolderId[],
   ) => Effect.Effect<LibraryFile, ApiError>;
   readonly listFolders: (userId: UserId) => Effect.Effect<readonly Folder[], ApiError>;
-  readonly createFolder: (userId: UserId, name: string) => Effect.Effect<Folder, ApiError>;
+  readonly createFolder: (
+    userId: UserId,
+    name: string,
+    options?: Omit<typeof CreateFolderRequest.Type, "name">,
+  ) => Effect.Effect<Folder, ApiError>;
   readonly renameFolder: (
     userId: UserId,
     id: FolderId,
@@ -108,6 +113,8 @@ export const fileToContract = (row: FileRow, folderIds: readonly FolderId[] = []
   captureId: row.captureId === null ? null : CaptureId.make(row.captureId),
   folderIds,
   mediaPositionSec: row.mediaPositionSec,
+  preview: row.preview,
+  purgeAt: purgeAt(row),
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
 });
@@ -233,7 +240,25 @@ export const LibraryLive = Layer.effect(
         values.push(FolderId.make(link.folderId));
         byFile.set(link.fileId, values);
       }
-      return rows.map((row) => fileToContract(row, byFile.get(row.id) ?? []));
+      const missing = rows
+        .filter((row) => row.kind === "note" && row.preview === null && row.storageKey !== null)
+        .map((row) => row.id);
+      const openings = missing.length
+        ? yield* database.use((db) =>
+            db
+              .selectDistinctOn([chunk.fileId], { fileId: chunk.fileId, content: chunk.content })
+              .from(chunk)
+              .where(and(eq(chunk.userId, userId), inArray(chunk.fileId, missing)))
+              .orderBy(asc(chunk.fileId), asc(chunk.ordinal)),
+          )
+        : [];
+      const previews = new Map(openings.map((row) => [row.fileId, markdownPreview(row.content)]));
+      return rows.map((row) =>
+        fileToContract(
+          { ...row, preview: row.preview ?? previews.get(row.id) ?? null },
+          byFile.get(row.id) ?? [],
+        ),
+      );
     });
     const getFile = Effect.fn("Library.getFile")(function* (userId: UserId, id: FileId) {
       const row = yield* database.use((db) =>
@@ -242,34 +267,82 @@ export const LibraryLive = Layer.effect(
       if (!row) return yield* new NotFound({ entity: "File", id });
       return (yield* wireFiles(userId, [row]))[0]!;
     });
-    const listFolders = Effect.fn("Library.listFolders")(function* (userId: UserId) {
+    const listFolders = Effect.fn("Library.listFolders")(function* (
+      userId: UserId,
+      archived = false,
+    ) {
       const rows = yield* database.use((db) =>
         db
-          .select({ folder, fileCount: sql<number>`count(${file.id})::int` })
+          .select()
           .from(folder)
-          .leftJoin(
-            fileFolder,
-            and(eq(fileFolder.folderId, folder.id), eq(fileFolder.userId, userId)),
+          .where(
+            and(
+              eq(folder.userId, userId),
+              archived ? isNotNull(folder.archivedAt) : isNull(folder.archivedAt),
+            ),
           )
-          .leftJoin(
+          .orderBy(asc(folder.name), asc(folder.id)),
+      );
+      const members = yield* database.use((db) =>
+        db
+          .select({ folderId: fileFolder.folderId, kind: file.kind, updatedAt: file.updatedAt })
+          .from(fileFolder)
+          .innerJoin(
             file,
             and(
               eq(file.id, fileFolder.fileId),
               eq(file.userId, userId),
-              sql`${file.placement} <> 'archived'`,
+              ne(file.placement, "archived"),
             ),
           )
-          .where(eq(folder.userId, userId))
-          .groupBy(folder.id)
-          .orderBy(asc(folder.name), asc(folder.id)),
+          .where(eq(fileFolder.userId, userId)),
       );
-      return rows.map(({ folder: row, fileCount }) => ({
-        id: FolderId.make(row.id),
-        name: row.name,
-        suggested: row.suggested,
-        fileCount,
-        createdAt: row.createdAt.toISOString(),
-      }));
+      return rows.map((row) => {
+        const files = members.filter((f) => f.folderId === row.id);
+        const noteCount = files.filter((f) => f.kind === "note").length;
+        return {
+          id: FolderId.make(row.id),
+          name: row.name,
+          suggested: row.suggested,
+          color: row.color,
+          cover: row.cover,
+          archivedAt: row.archivedAt?.toISOString() ?? null,
+          fileCount: files.length,
+          noteCount,
+          sourceCount: files.length - noteCount,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: new Date(
+            Math.max(row.updatedAt.getTime(), ...files.map((f) => f.updatedAt.getTime())),
+          ).toISOString(),
+        };
+      });
+    });
+    const getFolder = Effect.fn(function* (userId: UserId, id: FolderId) {
+      const row = (yield* listFolders(userId)).find((f) => f.id === id);
+      if (!row) return yield* new NotFound({ entity: "Folder", id });
+      return row;
+    });
+    const updateFolder = Effect.fn(function* (
+      userId: UserId,
+      input: typeof UpdateFolderRequest.Type,
+    ) {
+      yield* getFolder(userId, input.folderId);
+      const { folderId, ...patch } = input;
+      if (patch.name !== undefined && !validName(patch.name))
+        return yield* new Conflict({ reason: "Invalid folder name." });
+      yield* database.use((db) =>
+        db
+          .update(folder)
+          .set({
+            ...patch,
+            ...(patch.name === undefined ? {} : { name: patch.name.trim(), suggested: false }),
+            updatedAt: new Date(),
+          })
+          .where(
+            and(eq(folder.id, folderId), eq(folder.userId, userId), isNull(folder.archivedAt)),
+          ),
+      );
+      return yield* getFolder(userId, folderId);
     });
     const readJob = Effect.fn("Library.readJob")(function* (userId: UserId, id: FileId) {
       const [row] = yield* database.use((db) =>
@@ -284,57 +357,10 @@ export const LibraryLive = Layer.effect(
       return jobToContract(row.job);
     });
     return Library.of({
-      getCanvas: (userId) =>
-        database
-          .use((db) => db.select().from(canvasNode).where(eq(canvasNode.userId, userId)))
-          .pipe(
-            Effect.map((rows) =>
-              rows.map(({ id, ref, x, y, width, height }) => ({
-                id: CanvasNodeId.make(id),
-                ref,
-                x,
-                y,
-                width,
-                height,
-              })),
-            ),
-            Effect.mapError(toApiError),
-          ),
-      saveCanvas: (userId, nodes) =>
-        Effect.gen(function* () {
-          if (nodes.length > 1000 || new Set(nodes.map((node) => node.id)).size !== nodes.length)
-            return yield* new Conflict({ reason: "Invalid canvas node collection." });
-          const saved = yield* database.useTransaction(async (tx) => {
-            // Serialize a user's replacement writes without changing other owners' boards.
-            await tx.select({ id: user.id }).from(user).where(eq(user.id, userId)).for("update");
-            for (const node of nodes) {
-              if (![node.x, node.y, node.width, node.height].every(Number.isFinite)) return false;
-              if (node.ref._tag === "file") {
-                const [owned] = await tx
-                  .select({ id: file.id })
-                  .from(file)
-                  .where(and(eq(file.id, node.ref.fileId), eq(file.userId, userId)))
-                  .for("share");
-                if (!owned) return false;
-              } else if (node.ref._tag === "folder") {
-                const [owned] = await tx
-                  .select({ id: folder.id })
-                  .from(folder)
-                  .where(and(eq(folder.id, node.ref.folderId), eq(folder.userId, userId)))
-                  .for("share");
-                if (!owned) return false;
-              }
-            }
-            await tx.delete(canvasNode).where(eq(canvasNode.userId, userId));
-            if (nodes.length > 0)
-              await tx.insert(canvasNode).values(nodes.map((node) => ({ ...node, userId })));
-            return true;
-          });
-          if (!saved)
-            return yield* new Conflict({
-              reason: "Canvas references must belong to the current user.",
-            });
-        }).pipe(Effect.mapError(toApiError)),
+      ...makeLibraryFeatures(database, storage, crypto, getFile, listFolders, wireFiles),
+      getFolder: (userId, id) => getFolder(userId, id).pipe(Effect.mapError(toApiError)),
+      updateFolder: (userId, input) =>
+        updateFolder(userId, input).pipe(Effect.mapError(toApiError)),
       getFile: (userId, id) => getFile(userId, id).pipe(Effect.mapError(toApiError)),
       listFiles: (userId, filters = {}) =>
         Effect.gen(function* () {
@@ -346,7 +372,7 @@ export const LibraryLive = Layer.effect(
                 and(
                   eq(file.userId, userId),
                   filters.placement === undefined
-                    ? undefined
+                    ? ne(file.placement, "archived")
                     : eq(file.placement, filters.placement),
                   filters.folderId === undefined
                     ? undefined
@@ -388,39 +414,26 @@ export const LibraryLive = Layer.effect(
           return yield* getFile(userId, id);
         }).pipe(Effect.mapError(toApiError)),
       listFolders: (userId) => listFolders(userId).pipe(Effect.mapError(toApiError)),
-      createFolder: (userId, name) =>
+      createFolder: (userId, name, options = {}) =>
         Effect.gen(function* () {
           const value = validName(name);
           if (!value)
             return yield* new Conflict({ reason: "Folder names must contain 1–200 characters." });
           const id = yield* makeId(FolderId);
-          const [row] = yield* database.use((db) =>
-            db.insert(folder).values({ id, userId, name: value }).returning(),
+          const appearance = defaultNotebookAppearance(value);
+          yield* database.use((db) =>
+            db.insert(folder).values({
+              id,
+              userId,
+              name: value,
+              color: options.color ?? appearance.color,
+              cover: options.cover ?? appearance.cover,
+            }),
           );
-          if (!row) return yield* new InternalError({});
-          return {
-            id,
-            name: row.name,
-            suggested: false,
-            fileCount: 0,
-            createdAt: row.createdAt.toISOString(),
-          };
+          return yield* getFolder(userId, id);
         }).pipe(Effect.mapError(toApiError)),
-      renameFolder: (userId, id, name) =>
-        Effect.gen(function* () {
-          const value = validName(name);
-          if (!value)
-            return yield* new Conflict({ reason: "Folder names must contain 1–200 characters." });
-          const rows = yield* database.use((db) =>
-            db
-              .update(folder)
-              .set({ name: value, suggested: false, updatedAt: sql`now()` })
-              .where(and(eq(folder.id, id), eq(folder.userId, userId)))
-              .returning({ id: folder.id }),
-          );
-          if (!rows.length) return yield* new NotFound({ entity: "Folder", id });
-          return (yield* listFolders(userId)).find((row) => row.id === id)!;
-        }).pipe(Effect.mapError(toApiError)),
+      renameFolder: (userId, folderId, name) =>
+        updateFolder(userId, { folderId, name }).pipe(Effect.mapError(toApiError)),
       setIngestionPaused: (userId, id, paused) =>
         Effect.gen(function* () {
           const jobId = yield* makeId(IngestionJobId);

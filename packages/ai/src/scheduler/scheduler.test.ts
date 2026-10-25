@@ -91,6 +91,12 @@ describe("scheduler tick", () => {
       });
       expect(f.rows("cloud_task")[0]?.nextRunAt).toEqual(new Date("1970-01-01T03:00:00Z"));
       expect(f.started).toHaveLength(1);
+      const recovery = f.statements.find((statement) =>
+        statement.sql.includes("'-infinity'::timestamptz"),
+      );
+      expect(recovery).toBeDefined();
+      expect(recovery!.params).toContain("1970-01-01T00:00:00.000Z");
+      expect(recovery!.params.some((param) => param instanceof Date)).toBe(false);
       expect(
         f.statements.some(
           (statement) =>
@@ -156,7 +162,7 @@ describe("CloudTasks", () => {
         title: "Nightly study digest",
         timeZone: "Asia/Kolkata",
         enabled: true,
-        schedule: { _tag: "cron", expression: "0 3 * * *" },
+        schedule: { _tag: "cron", expression: "0 5 * * *" },
         preHydration: [{ selector: { time: { today: true } } }],
         delivery: { email: true },
       });

@@ -1,11 +1,35 @@
 appId: space.avenire.desktop
 productName: Avenire
+directories:
+  app: dist
+  output: release
+asar: true
+npmRebuild: false
+compression: normal
 files:
-  - dist/**
+  - "*.cjs"
+  - onboarding.js
+  - onboarding.html
+  - onboarding.css
+  - desktop-config.json
+  - "*.png"
+  - "*.svg"
+  - "*.woff2"
+  - Geist-LICENSE.txt
   - package.json
 mac:
+  icon: dist/icon.png
   target: dmg
+  category: public.app-category.education
+  hardenedRuntime: true
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  extendInfo:
+    NSAppleEventsUsageDescription: Avenire identifies your open study document when you use the capture shortcut.
 win:
+  icon: dist/icon.ico
   target: nsis
 linux:
+  icon: dist/icon.png
   target: AppImage
+  category: Education

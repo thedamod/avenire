@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Avenire — App DS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/*{{tokens}}*/
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+body { width: 1440px; padding: 0 32px 96px; }
+.fig { display: flex; align-items: center; justify-content: center; }
+.fig svg { width: 100%; height: 100%; display: block; }
+
+.mono { font-family: var(--font-mono); font-size: var(--text-mono); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-muted); }
+.sheet-head { display: flex; justify-content: space-between; align-items: flex-end; padding: 56px 0 40px; }
+.sheet-head h1 { font-weight: 500; font-size: 44px; line-height: 48px; letter-spacing: var(--tracking-display); color: var(--color-text-strong); }
+.sheet-head h1 .quiet { color: var(--color-text-muted); }
+.sheet-head p { width: 420px; font-size: 14px; line-height: 22px; color: var(--color-text); }
+
+/* ---------- app primitives ---------- */
+.ui { font-size: var(--text-a-ui); line-height: var(--leading-a-ui); }
+.small { font-size: var(--text-a-small); line-height: var(--leading-a-small); color: var(--color-text-muted); }
+.strong { color: var(--color-text-strong); }
+.kbd { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); font-family: var(--font-mono); font-size: 10.5px; color: var(--color-text-muted); }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--radius-md); font-size: var(--text-a-ui); font-weight: 500; white-space: nowrap; }
+.btn-sm { height: 26px; padding: 0 9px; font-size: 12px; }
+.btn-primary { background: var(--color-text-strong); color: var(--color-bg); }
+.btn-secondary { background: var(--color-surface-3); color: var(--color-text-strong); border: 1px solid var(--color-border-strong); }
+.btn-ghost { color: var(--color-text); }
+.btn-accent { background: var(--color-accent); color: var(--color-on-accent); }
+.icon-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-md); color: var(--color-text-muted); }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border: 1px solid var(--color-border); border-radius: var(--radius-xs); background: var(--color-surface-2); font-size: 12px; color: var(--color-text); white-space: nowrap; }
+.chip .loc { font-family: var(--font-mono); font-size: 10.5px; color: var(--color-text-muted); }
+.cite { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border-radius: var(--radius-xs); background: var(--color-surface-3); border: 1px solid var(--color-border-strong); font-family: var(--font-mono); font-size: 10.5px; color: var(--color-text); vertical-align: 1px; }
+.cite.on { background: var(--color-accent-tint); border-color: var(--color-accent-line); color: var(--color-accent-text); }
+.cov { display: inline-block; width: 9px; height: 12px; border-radius: 1px 2px 2px 1px; flex-shrink: 0; }
+svg.i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+/* ---------- shell ---------- */
+.shell { display: grid; grid-template-columns: 248px 1fr 480px; height: 860px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); overflow: hidden; background: var(--color-surface-1); }
+.side { background: var(--color-bg); border-right: 1px solid var(--color-border); display: flex; flex-direction: column; padding: 10px 8px; }
+.side-top { display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 6px 0 8px; margin-bottom: 8px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; letter-spacing: -0.01em; color: var(--color-text-strong); }
+.row { display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 8px; border-radius: var(--radius-sm); font-size: var(--text-a-ui); color: var(--color-text); }
+.row .end { margin-left: auto; font-size: 12px; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.row.active { background: var(--color-surface-4); color: var(--color-text-strong); }
+.row.hover { background: var(--color-surface-3); }
+.side-label { display: flex; justify-content: space-between; align-items: center; padding: 16px 8px 6px; font-size: 12px; color: var(--color-text-muted); }
+.side-foot { margin-top: auto; border-top: 1px solid var(--color-border); padding-top: 8px; }
+
+.main { display: flex; flex-direction: column; min-width: 0; }
+.topbar { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; border-bottom: 1px solid var(--color-border); font-size: var(--text-a-ui); color: var(--color-text-muted); }
+.topbar .here { color: var(--color-text-strong); }
+.thread { flex: 1; display: flex; flex-direction: column; gap: 22px; padding: 28px 40px 0; overflow: hidden; }
+.msg-user { align-self: flex-end; max-width: 460px; padding: 9px 13px; border-radius: var(--radius-lg); background: var(--color-surface-3); font-size: var(--text-a-body); line-height: var(--leading-a-body); color: var(--color-text-strong); }
+.work { display: flex; align-items: center; gap: 8px; font-size: var(--text-a-ui); color: var(--color-text-muted); }
+.prose { font-size: var(--text-a-body); line-height: 23px; color: var(--color-text-strong); display: flex; flex-direction: column; gap: 12px; }
+.prose h3 { font-size: var(--text-a-heading); font-weight: 500; }
+.prose ul { padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--color-text-strong); }
+.actions { display: flex; gap: 4px; }
+.composer-wrap { padding: 16px 40px 18px; }
+.composer { border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-2); padding: 12px 12px 10px 14px; display: flex; flex-direction: column; gap: 14px; }
+.composer .ph { font-size: var(--text-a-body); color: var(--color-text-muted); }
+.composer-bar { display: flex; align-items: center; gap: 4px; }
+.send { width: 28px; height: 28px; border-radius: var(--radius-md); background: var(--color-text-strong); color: var(--color-bg); display: inline-flex; align-items: center; justify-content: center; margin-left: auto; }
+
+.viewer { border-left: 1px solid var(--color-border); display: flex; flex-direction: column; background: var(--color-bg); }
+.viewer-bar { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--color-border); font-size: var(--text-a-ui); }
+.viewer-body { flex: 1; padding: 24px; display: flex; justify-content: center; overflow: hidden; }
+.page { width: 100%; background: var(--color-surface-2); border: 1px solid var(--color-border); border-radius: var(--radius-xs); padding: 28px 30px; display: flex; flex-direction: column; gap: 12px; }
+.page p { font-size: 12.5px; line-height: 20px; color: var(--color-text); }
+.page .hl { background: var(--color-accent-tint); box-shadow: inset 2px 0 0 var(--color-accent); color: var(--color-text-strong); padding: 6px 8px; margin: 0 -8px; border-radius: 2px; }
+
+/* ---------- specimens ---------- */
+.group { display: grid; grid-template-columns: 220px 1fr; gap: 32px; padding: 56px 0; border-top: 1px solid var(--color-border); }
+.group-label { display: flex; flex-direction: column; gap: 10px; }
+.group-label p { font-size: 13px; line-height: 20px; color: var(--color-text); }
+.specs { display: grid; gap: 16px; }
+.spec { border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface-1); padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.spec-h { display: flex; justify-content: space-between; }
+.cols-2 { grid-template-columns: 1fr 1fr; }
+.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+.tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--color-border); }
+.tab { padding-bottom: 10px; font-size: var(--text-a-ui); color: var(--color-text-muted); display: flex; gap: 6px; }
+.tab.on { color: var(--color-text-strong); box-shadow: inset 0 -1.5px 0 var(--color-text-strong); }
+.covers { display: flex; gap: 14px; }
+.cover { width: 112px; height: 148px; border-radius: 3px 8px 8px 3px; display: flex; overflow: hidden; position: relative; flex-shrink: 0; }
+.cover::before { content: ""; width: 8px; background: rgba(0,0,0,.2); }
+.cover .t { position: absolute; left: 16px; top: 11px; right: 8px; font-size: 12px; font-weight: 600; line-height: 15px; color: #fff; }
+.cover .n { position: absolute; left: 16px; bottom: 9px; font-family: var(--font-mono); font-size: 10px; color: rgba(255,255,255,.65); }
+.cover .fig { position: absolute; right: 6px; bottom: 18px; width: 60px; height: 60px; color: rgba(0,0,0,.55); }
+.cover.new { border: 1px dashed var(--color-border-strong); align-items: center; justify-content: center; color: var(--color-text-muted); font-size: 22px; font-weight: 300; }
+.cover.new::before { display: none; }
+
+.list { border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
+.li { display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; font-size: var(--text-a-ui); color: var(--color-text-strong); }
+.li + .li { border-top: 1px solid var(--color-border); }
+.li .type { width: 48px; flex-shrink: 0; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; color: var(--color-text-muted); }
+.li .meta { font-size: 12px; color: var(--color-text-muted); }
+.li .push { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+
+.float { border: 1px solid var(--color-border-strong); background: var(--color-surface-2); box-shadow: var(--shadow-float); }
+.pbox { width: 100%; border-radius: var(--radius-lg); overflow: hidden; }
+.pbox-in { display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 14px 0 16px; font-size: 15px; color: var(--color-text-strong); }
+.pbox-status { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border-top: 1px solid var(--color-border); font-size: 13px; color: var(--color-text); }
+.pbox-body { padding: 14px 16px 16px; border-top: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 12px; }
+.pbox-foot { display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 16px; border-top: 1px solid var(--color-border); background: var(--color-surface-1); }
+</style>
+</head>
+<body>
+
+<div class="sheet-head">
+  <div style="display:flex; flex-direction:column; gap:14px;"><span class="mono">Avenire · App DS · v1 · dark</span><h1><span class="quiet">Dense, soft, quiet.</span><br>Borders, not shadows.</h1></div>
+  <p>Chat in the middle like t3code, the source open beside it. Radius 4–10 and nothing rounder, depth from surface steps and 1 px borders, and amber only where Ruth is working or a passage is cited.</p>
+</div>
+
+<!-- ================= SHELL ================= -->
+<div class="shell">
+  <aside class="side">
+    <div class="side-top"><div class="brand">{{logo}}Avenire</div><div style="display:flex;"><span class="icon-btn" title="Search ⌘K"><svg class="i" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg></span><span class="icon-btn" title="New note"><svg class="i" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></span></div></div>
+    <div class="row"><svg class="i" viewBox="0 0 16 16"><path d="M2.5 7 8 2.5 13.5 7v6.5h-11Z"/></svg>Home</div>
+    <div class="row"><svg class="i" viewBox="0 0 16 16"><path d="M2.5 9.5h3l1 2h3l1-2h3M2.5 9.5l1.5-6h8l1.5 6v4h-11Z"/></svg>Inbox<span class="end">4</span></div>
+    <div class="row"><svg class="i" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>Morning report<span class="end" style="color:var(--color-accent-text)">Ready</span></div>
+    <div class="row"><svg class="i" viewBox="0 0 16 16"><path d="M2.5 4.5h4l1 1.5h6v7.5h-11Z"/></svg>Files</div>
+    <div class="side-label"><span>Notebooks</span><span class="icon-btn" style="width:20px;height:20px;"><svg class="i" viewBox="0 0 16 16" style="width:14px;height:14px"><path d="M8 3v10M3 8h10"/></svg></span></div>
+    <div class="row active"><span class="cov" style="background:var(--color-cover-sky)"></span>Physics 101<span class="end">42</span></div>
+    <div class="row"><span class="cov" style="background:var(--color-cover-mustard)"></span>Organic Chemistry<span class="end">18</span></div>
+    <div class="row"><span class="cov" style="background:var(--color-cover-moss)"></span>Algorithms<span class="end">67</span></div>
+    <div class="row"><span class="cov" style="background:var(--color-cover-graphite); outline:1px solid var(--color-border-strong)"></span>Building a Radio<span class="end">23</span></div>
+    <div class="row"><span class="cov" style="background:var(--color-cover-rose)"></span>Art History<span class="end">9</span></div>
+    <div class="side-label"><span>Recent notes</span></div>
+    <div class="row">MOSFET switching</div>
+    <div class="row">Gibbs free energy, by hand</div>
+    <div class="row">Dijkstra vs. A*</div>
+    <div class="side-foot"><div class="row"><span style="width:20px;height:20px;border-radius:5px;background:var(--color-surface-4);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--color-text-strong)">AD</span>Abhiram<span class="end"><span class="kbd">⌘,</span></span></div></div>
+  </aside>
+
+  <section class="main">
+    <div class="topbar"><span>Home</span><span>›</span><span>Physics 101</span><span>›</span><span class="here">MOSFET switching</span><span style="margin-left:auto; display:flex; gap:4px;"><span class="btn btn-sm btn-ghost">Expand to document</span><span class="btn btn-sm btn-secondary">Save</span></span></div>
+    <div class="thread">
+      <div class="msg-user">Why does a MOSFET need a threshold voltage? Use my lecture 6 slides.</div>
+      <div class="work"><svg class="i" viewBox="0 0 16 16" style="width:14px;height:14px"><path d="m6 4 4 4-4 4"/></svg>Read 4 sources in Physics 101 · 6 s</div>
+      <div class="prose">
+        <p>The gate and the channel form a small capacitor. Below the threshold, the gate's charge only pushes holes away from the surface, so there is no conducting path between source and drain <span class="cite on">1 · p.14</span></p>
+        <p>Past the threshold, enough electrons gather under the gate to form an inversion layer, and current can flow <span class="cite">2 · p.15</span></p>
+        <h3>Key points</h3>
+        <ul><li>V<sub>th</sub> is set by doping and oxide thickness <span class="cite">3</span></li><li>Below V<sub>th</sub> only a tiny leakage current flows</li><li>Lab 3 measured V<sub>th</sub> ≈ 0.7 V on the 2N7000 <span class="cite">4 · lab</span></li></ul>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;"><span class="chip"><span class="cov" style="background:var(--color-cover-sky); width:7px; height:9px"></span>Lecture 6 — Transistors.pdf<span class="loc">p.14–15</span></span><span class="chip"><span class="cov" style="background:var(--color-cover-sky); width:7px; height:9px"></span>Lab 3 write-up</span><span class="chip">+2</span></div>
+        <div class="actions"><span class="btn btn-sm btn-ghost">Save to notebook</span><span class="btn btn-sm btn-ghost">Copy</span><span class="btn btn-sm btn-ghost">Open sources</span></div>
+      </div>
+    </div>
+    <div class="composer-wrap"><div class="composer"><span class="ph">Ask about Physics 101…</span><div class="composer-bar"><span class="icon-btn"><svg class="i" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></span><span class="chip" style="height:22px;"><span class="cov" style="background:var(--color-cover-sky); width:7px; height:9px"></span>Physics 101</span><span class="send"><svg class="i" viewBox="0 0 16 16" style="width:14px;height:14px"><path d="M8 12.5v-9M4 7.5l4-4 4 4"/></svg></span></div></div></div>
+  </section>
+
+  <aside class="viewer">
+    <div class="viewer-bar"><span class="cov" style="background:var(--color-cover-sky)"></span><span class="strong">Lecture 6 — Transistors.pdf</span><span class="small" style="margin-left:auto">p.14 of 38</span><span class="icon-btn"><svg class="i" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8"/></svg></span></div>
+    <div class="viewer-body"><div class="page">
+      <span class="mono" style="letter-spacing:.04em">6.3 · The MOS capacitor</span>
+      <p style="font-size:15px; color:var(--color-text-strong); font-weight:500;">Inversion and the threshold voltage</p>
+      <p>Consider an n-channel device on a p-type substrate. With zero gate bias the surface holds majority holes and no channel exists between the n+ source and drain regions.</p>
+      <p class="hl">As V<sub>GS</sub> rises, holes are repelled and a depletion region forms. Only when V<sub>GS</sub> exceeds V<sub>th</sub> does the electron concentration at the surface exceed the hole concentration in the bulk: the surface is inverted and a conducting channel appears.</p>
+      <p>The threshold depends on the substrate doping N<sub>A</sub>, the oxide capacitance C<sub>ox</sub> and the flat-band voltage. Thinner oxides give a lower V<sub>th</sub> for the same doping.</p>
+      <div style="height:120px; border:1px solid var(--color-border); border-radius:2px; display:flex; align-items:center; justify-content:center;"><span class="mono" style="letter-spacing:.04em">Fig 6.7 · band diagram</span></div>
+      <p>In practice V<sub>th</sub> for discrete small-signal MOSFETs falls between 0.6 V and 2.5 V.</p>
+    </div></div>
+  </aside>
+</div>
+
+<!-- ================= PRIMITIVES ================= -->
+<div class="group" style="margin-top:56px;">
+  <div class="group-label"><span class="mono">01 · Primitives</span><p>Controls are 26–30 px tall, radius 8. Primary is light-on-dark; amber is reserved for Ruth.</p></div>
+  <div class="specs cols-3">
+    <div class="spec"><div class="spec-h"><span class="mono">Buttons</span><span class="small">r 8</span></div><div style="display:flex; gap:8px; flex-wrap:wrap;"><span class="btn btn-primary">Save to notebook</span><span class="btn btn-secondary">Copy</span><span class="btn btn-ghost">Cancel</span></div><div style="display:flex; gap:8px; align-items:center;"><span class="btn btn-sm btn-primary">Approve</span><span class="btn btn-sm btn-secondary">Deny</span><span class="btn btn-sm btn-accent">Ask Ruth</span><span class="small">accent: Ruth only</span></div></div>
+    <div class="spec"><div class="spec-h"><span class="mono">Fields</span><span class="small">r 8 · 32 h</span></div><div style="height:32px; border:1px solid var(--color-border-strong); border-radius:var(--radius-md); display:flex; align-items:center; padding:0 10px; font-size:13px; color:var(--color-text-muted);">Notebook name</div><div style="height:32px; border:1px solid var(--color-accent); border-radius:var(--radius-md); display:flex; align-items:center; padding:0 10px; font-size:13px; color:var(--color-text-strong);">Physics 101<span style="width:1px; height:14px; background:var(--color-accent); margin-left:1px;"></span></div></div>
+    <div class="spec"><div class="spec-h"><span class="mono">Markers</span><span class="small">r 4</span></div><div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;"><span class="chip"><span class="cov" style="background:var(--color-cover-sky); width:7px; height:9px"></span>Lecture 6<span class="loc">p.14</span></span><span class="cite">1 · p.14</span><span class="kbd">⌥ Space</span><span class="kbd">esc</span></div><div style="display:flex; gap:14px; font-size:12px;"><span style="color:var(--color-signal-green)">Accepted</span><span style="color:var(--color-text-muted)">Skipped</span><span style="color:var(--color-signal-red)">Failed</span><span style="color:var(--color-accent-text)">Working</span></div><span class="small">Status is a word, not a dot.</span></div>
+  </div>
+</div>
+
+<!-- ================= HOME ================= -->
+<div class="group">
+  <div class="group-label"><span class="mono">02 · Home</span><p>Tabs, then the covers. No special search row: search is ⌘K, asking is the promptbox.</p></div>
+  <div class="specs">
+    <div class="spec">
+      <div class="tabs"><span class="tab on">Notebooks <span class="small">6</span></span><span class="tab">Notes <span class="small">48</span></span><span class="tab">Media <span class="small">190</span></span><span class="tab">Inbox <span class="small" style="color:var(--color-accent-text)">4</span></span></div>
+      <div class="covers">
+        <div class="cover new">+</div>
+        <div class="cover" style="background:var(--color-cover-sky)"><span class="t">Physics 101</span>{{fig:doodle-physics}}<span class="n">42 FILES</span></div>
+        <div class="cover" style="background:var(--color-cover-mustard)"><span class="t" style="color:#1a1206">Organic Chemistry</span>{{fig:doodle-chemistry}}<span class="n" style="color:rgba(0,0,0,.55)">18 FILES</span></div>
+        <div class="cover" style="background:var(--color-cover-moss)"><span class="t">Algorithms</span>{{fig:doodle-computer-science}}<span class="n">67 FILES</span></div>
+        <div class="cover" style="background:var(--color-cover-graphite); border:1px solid var(--color-border-strong)"><span class="t">Building a Radio</span><div style="color:rgba(255,255,255,.35); position:absolute; right:6px; bottom:18px; width:60px; height:60px;">{{fig:doodle-radio}}</div><span class="n">23 FILES</span></div>
+        <div class="cover" style="background:var(--color-cover-rose)"><span class="t">Art History</span>{{fig:doodle-easel}}<span class="n">9 FILES</span></div>
+        <div class="cover" style="background:var(--color-cover-lilac)"><span class="t">Literature</span>{{fig:doodle-literature}}<span class="n">31 FILES</span></div>
+        <div class="cover" style="background:var(--color-cover-tangerine)"><span class="t">Geography</span>{{fig:doodle-geography}}<span class="n">14 FILES</span></div>
+              </div>
+    </div>
+    <div class="spec">
+      <div class="spec-h"><span class="mono">Inbox · captured, not filed</span><span class="small">Move or leave</span></div>
+      <div class="list">
+        <div class="li"><span class="type">PDF</span>Lecture 7 — Amplifiers.pdf<span class="meta">from Chrome · 21:04</span><span class="push"><span class="small">Ruth suggests</span><span class="chip" style="height:22px"><span class="cov" style="background:var(--color-cover-sky); width:7px; height:9px"></span>Physics 101</span><span class="btn btn-sm btn-secondary">Move</span><span class="btn btn-sm btn-ghost">Leave</span></span></div>
+        <div class="li"><span class="type">TAB</span>Common-source amplifier — Wikipedia<span class="meta">21:04</span><span class="push"><span class="btn btn-sm btn-secondary">Move to…</span><span class="btn btn-sm btn-ghost">Leave</span></span></div>
+        <div class="li"><span class="type">VIDEO</span>MIT 6.002 Lecture 12<span class="meta">at 18:42 · 21:05</span><span class="push"><span class="btn btn-sm btn-secondary">Move to…</span><span class="btn btn-sm btn-ghost">Leave</span></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= PROMPTBOX + CAPTURE ================= -->
+<div class="group">
+  <div class="group-label"><span class="mono">03 · Floating layers</span><p>The only things allowed a shadow: promptbox, menus, toasts. They float over other apps.</p></div>
+  <div class="specs cols-3">
+    <div style="display:flex; flex-direction:column; gap:10px;"><span class="mono">Promptbox · streaming</span>
+      <div class="pbox float"><div class="pbox-in">Why does a MOSFET need a threshold?</div><div class="pbox-status"><span style="color:var(--color-accent-text)">Reading your notes…</span><span class="small" style="margin-left:auto">4 sources</span></div><div class="pbox-body"><span style="font-size:14px; line-height:21px; color:var(--color-text-strong); opacity:.25;">The gate and channel form a small capacitor.</span><span style="font-size:17px; line-height:25px; letter-spacing:-0.01em; color:var(--color-text-strong);">Below the threshold the gate only pushes holes away, so no channel exists yet.</span></div></div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:10px;"><span class="mono">Promptbox · done</span>
+      <div class="pbox float"><div class="pbox-in">Why does a MOSFET need a threshold?</div><div class="pbox-body"><span style="font-size:14px; line-height:22px; color:var(--color-text-strong);">Below the threshold the gate only repels holes, so no channel forms. Past it an inversion layer appears and current flows <span class="cite">1 · p.14</span></span></div><div class="pbox-foot"><span class="btn btn-sm btn-primary">Save to notebook</span><span class="btn btn-sm btn-ghost">Copy</span><span class="kbd" style="margin-left:auto">esc</span></div></div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:10px;"><span class="mono">Promptbox · approval</span>
+      <div class="pbox float"><div class="pbox-in">Clean up the duplicate lecture PDFs</div><div class="pbox-body" style="gap:8px;"><span style="font-size:13px; color:var(--color-text-strong);">Ruth wants to change 3 files in Physics 101</span><div class="list"><div class="li" style="height:34px"><span class="type" style="color:var(--color-signal-red)">DELETE</span>Lecture 6 (1).pdf</div><div class="li" style="height:34px"><span class="type" style="color:var(--color-signal-red)">DELETE</span>Lecture 6 copy.pdf</div><div class="li" style="height:34px"><span class="type">RENAME</span>lab3.docx → Lab 3 write-up</div></div></div><div class="pbox-foot"><span class="small">Waiting for you</span><span style="margin-left:auto; display:flex; gap:6px;"><span class="btn btn-sm btn-secondary">Deny</span><span class="btn btn-sm btn-primary">Approve</span></span></div></div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:10px;"><span class="mono">Capture toast</span>
+      <div class="float" style="border-radius:var(--radius-lg); overflow:hidden;"><div style="display:flex; align-items:center; padding:10px 10px 8px 14px;"><span style="font-size:13px; font-weight:500; color:var(--color-text-strong);">Captured 3 items to Inbox</span><span class="btn btn-sm btn-secondary" style="margin-left:auto">Undo</span></div><div style="display:flex; flex-direction:column; gap:6px; padding:0 14px 12px;"><div class="ui" style="display:flex; gap:10px;"><span class="type" style="width:44px; font-family:var(--font-mono); font-size:10.5px; color:var(--color-text-muted)">PDF</span>Lecture 7 — Amplifiers.pdf</div><div class="ui" style="display:flex; gap:10px;"><span style="width:44px; font-family:var(--font-mono); font-size:10.5px; color:var(--color-text-muted)">TAB</span>Common-source amplifier</div><div class="ui" style="display:flex; gap:10px;"><span style="width:44px; font-family:var(--font-mono); font-size:10.5px; color:var(--color-text-muted)">VIDEO</span>MIT 6.002 Lecture 12</div></div><div style="height:2px; background:var(--color-border);"><div style="width:62%; height:2px; background:var(--color-text-muted);"></div></div></div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:10px;"><span class="mono">Save to notebook · menu</span>
+      <div class="float" style="border-radius:var(--radius-lg); padding:4px; width:260px;"><div style="height:32px; display:flex; align-items:center; padding:0 8px; font-size:13px; color:var(--color-text-muted); border-bottom:1px solid var(--color-border); margin-bottom:4px;">Find or create a notebook…</div><div class="row active"><span class="cov" style="background:var(--color-cover-sky)"></span>Physics 101<span class="end"><span class="kbd">↵</span></span></div><div class="row"><span class="cov" style="background:var(--color-cover-graphite); outline:1px solid var(--color-border-strong)"></span>Building a Radio</div><div class="row"><span class="cov" style="background:var(--color-cover-moss)"></span>Algorithms</div><div class="row" style="border-top:1px solid var(--color-border); border-radius:0 0 6px 6px; margin-top:4px;">+ New notebook</div></div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:10px;"><span class="mono">Work row · expanded</span>
+      <div class="spec" style="gap:8px;"><div class="work" style="color:var(--color-text)"><svg class="i" viewBox="0 0 16 16" style="width:14px;height:14px"><path d="m4 6 4 4 4-4"/></svg>Read 4 sources in Physics 101 · 6 s</div><div style="display:flex; flex-direction:column; gap:6px; padding-left:22px; border-left:1px solid var(--color-border); margin-left:6px;"><span class="ui">Lecture 6 — Transistors.pdf <span class="small">p.14–15</span></span><span class="ui">Lab 3 write-up</span><span class="ui">MOSFET — Wikipedia <span class="small">web</span></span><span class="ui">The Art of Electronics, ch. 3 <span class="small">p.121</span></span></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MORNING REPORT ================= -->
+<div class="group">
+  <div class="group-label"><span class="mono">04 · Morning report</span><p>One page, first thing in the day. Changes first, each with Accept or Skip. Nothing is applied until you accept.</p></div>
+  <div class="specs cols-2" style="grid-template-columns:1.4fr 1fr;">
+    <div class="spec" style="gap:16px;">
+      <div style="display:flex; flex-direction:column; gap:6px;"><span class="small">Tuesday 14 October · 07:00</span><span style="font-size:var(--text-a-title); line-height:var(--leading-a-title); font-weight:500; letter-spacing:var(--tracking-heading); color:var(--color-text-strong);">Ruth read 31 files overnight and sorted 11 new ones.</span><span class="ui">3 notes are ready, 4 file changes are waiting, and one recording was transcribed.</span></div>
+      <div style="display:flex; justify-content:space-between; align-items:center;"><span class="mono">File changes · 4</span><span class="btn btn-sm btn-primary">Accept all</span></div>
+      <div class="list">
+        <div class="li"><span class="type">MOVE</span>Lecture 7 — Amplifiers.pdf<span class="meta">Inbox → Physics 101</span><span class="push"><span class="btn btn-sm btn-ghost">Skip</span><span class="btn btn-sm btn-secondary">Accept</span></span></div>
+        <div class="li"><span class="type">RENAME</span>scan_0042.pdf → Problem set 4<span class="push"><span class="btn btn-sm btn-ghost">Skip</span><span class="btn btn-sm btn-secondary">Accept</span></span></div>
+        <div class="li"><span class="type">EDIT</span>MOSFET switching<span class="meta">+2 citations</span><span class="push"><span class="btn btn-sm btn-ghost">Skip</span><span class="btn btn-sm btn-secondary">Accept</span></span></div>
+        <div class="li" style="color:var(--color-text-muted)"><span class="type">ARCHIVE</span>Lecture 6 copy.pdf<span class="push" style="font-size:12px; color:var(--color-signal-green)">Accepted</span></div>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <span class="mono">Results</span>
+      <div class="spec" style="gap:6px;"><span class="small">Summary · Physics 101</span><span style="font-size:15px; font-weight:500; color:var(--color-text-strong);">Lecture 7 in five paragraphs</span><span class="ui">Common-source gain, the small-signal model, and why the load line matters <span class="cite">6</span></span></div>
+      <div class="spec" style="gap:6px;"><span class="small">Quiz · 8 questions</span><span style="font-size:15px; font-weight:500; color:var(--color-text-strong);">Transistors, before Thursday's lab</span><span class="ui">Built from lectures 6–7 and your lab notes.</span></div>
+      <div class="spec" style="gap:6px;"><span class="small">Recording · 52 min · transcribed</span><span style="font-size:15px; font-weight:500; color:var(--color-text-strong);">MIT 6.002 Lecture 12</span><span class="ui">Chapters and a transcript you can cite by timestamp.</span></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

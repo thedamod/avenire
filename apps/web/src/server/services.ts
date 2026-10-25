@@ -5,6 +5,7 @@ import { CloudRunEventsLive } from "@avenire/ai/cloud/events";
 import { CloudReviewLive } from "@avenire/ai/cloud/review";
 import { DaytonaClientLive } from "@avenire/cloud/daytona";
 import { DatabaseLive } from "@avenire/database/client";
+import { MailerLive } from "@avenire/emailer/mailer";
 import { EmbedderLive } from "@avenire/ingestion/embed";
 import { GraphSearchLive } from "@avenire/ingestion/graph/search";
 import { IngestionModelsLive } from "@avenire/ingestion/models";
@@ -27,6 +28,7 @@ import { CloudTasksLive } from "@avenire/ai/scheduler";
 export const InfrastructureLive = Layer.mergeAll(
   DatabaseLive,
   StorageLive,
+  MailerLive,
   NodeServices.layer,
   FetchHttpClient.layer,
   AnalyticsLive,

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
-import { DaytonaFileNotFoundError, DaytonaConnectionError, type Daytona } from "@daytonaio/sdk";
+import {
+  DaytonaFileNotFoundError,
+  DaytonaConnectionError,
+  DaytonaBadRequestError,
+  DaytonaServiceUnavailableError,
+  type Daytona,
+} from "@daytonaio/sdk";
 import * as Clock from "effect/Clock";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
@@ -42,11 +48,19 @@ const fake = () => {
   let hang = false;
   let deleteFailure = false;
   let folderFailures = 0;
+  const failures = new Map<string, { remaining: number; error: Error }>();
+  const attempts = new Map<string, number>();
+  const check = (operation: string) => {
+    attempts.set(operation, (attempts.get(operation) ?? 0) + 1);
+    const failure = failures.get(operation);
+    if (failure && failure.remaining-- > 0) throw failure.error;
+  };
   const makeBox = (labels: Record<string, string>, state = "started", createdAt?: string) => {
     const files = new Map<string, Buffer>();
     const sizes = new Map<string, number>();
     const commands: unknown[][] = [];
     const folders: string[] = [];
+    const sessions = new Map<string, { id: string; command: string }[]>();
     const sandbox = {
       id: `sandbox-${nextId++}`,
       labels,
@@ -65,14 +79,32 @@ const fake = () => {
         sandbox.state = "destroyed";
       },
       process: {
-        async executeCommand(...args: unknown[]) {
-          commands.push(args);
-          if (hang) return await new Promise<never>(() => {});
-          return { exitCode: 0, result: output };
+        async createSession(id: string) {
+          sessions.set(id, []);
+        },
+        async getSession(id: string) {
+          return { sessionId: id, commands: sessions.get(id) ?? [] };
+        },
+        async executeSessionCommand(id: string, request: { command: string }) {
+          commands.push([request.command]);
+          check("exec");
+          const command = { id: `command-${commands.length}`, command: request.command };
+          sessions.get(id)!.push(command);
+          return { cmdId: command.id };
+        },
+        async getSessionCommand(_sessionId: string, id: string) {
+          return { id, command: "", ...(hang ? {} : { exitCode: 0 }) };
+        },
+        async getSessionCommandLogs() {
+          return { output };
+        },
+        async deleteSession(id: string) {
+          sessions.delete(id);
         },
       },
       fs: {
         async createFolder(path: string) {
+          check("folder");
           if (folderFailures > 0) {
             folderFailures--;
             throw new DaytonaConnectionError("read ECONNRESET");
@@ -80,14 +112,17 @@ const fake = () => {
           folders.push(path);
         },
         async uploadFile(bytes: Buffer, path: string) {
+          check("upload");
           files.set(path, bytes);
         },
         async downloadFile(path: string) {
+          check("download");
           const bytes = files.get(path);
           if (!bytes) throw new DaytonaFileNotFoundError("missing");
           return bytes;
         },
         async getFileDetails(path: string) {
+          check("stat");
           const bytes = files.get(path);
           if (!bytes && !sizes.has(path)) throw new DaytonaFileNotFoundError("missing");
           return { size: sizes.get(path) ?? bytes!.length, isDir: false };
@@ -140,6 +175,10 @@ const fake = () => {
     layer,
     created,
     boxes,
+    attempts,
+    failNext: (operation: string, remaining: number, error: Error) => {
+      failures.set(operation, { remaining, error });
+    },
     records,
     box,
     setQuota: (value = true) => {
@@ -175,6 +214,61 @@ const exec = (service: ChatSandboxes["Service"], target = owner) =>
   service.exec(target, { command: "true" });
 
 describe("ChatSandboxes", () => {
+  it.effect(
+    "recovers transient file writes and preview artifact reads within a bounded retry budget",
+    () => {
+      const f = fake();
+      return provide(
+        f,
+        Effect.gen(function* () {
+          const s = yield* ChatSandboxes;
+          yield* exec(s);
+          f.failNext("folder", 1, new DaytonaConnectionError("reset"));
+          f.failNext("upload", 1, new DaytonaServiceUnavailableError("unavailable", 503));
+          const writing = yield* Effect.forkChild(
+            s.write(owner, { path: "nested/a.html", bytes: Buffer.from("hello") }),
+          );
+          yield* TestClock.adjust("2 seconds");
+          expect(yield* Fiber.join(writing)).toMatchObject({ size: 5 });
+          expect(f.attempts.get("upload")).toBe(2);
+          f.failNext("stat", 1, new DaytonaConnectionError("reset"));
+          f.failNext("download", 1, new DaytonaConnectionError("reset"));
+          const reading = yield* Effect.forkChild(s.readArtifact(owner, { path: "nested/a.html" }));
+          yield* TestClock.adjust("2 seconds");
+          expect(Buffer.from((yield* Fiber.join(reading)).bytes).toString()).toBe("hello");
+          expect(f.attempts.get("download")).toBe(2);
+          expect(f.created).toHaveLength(1);
+          f.failNext("upload", 10, new DaytonaConnectionError("still unavailable"));
+          const exhausted = yield* Effect.forkChild(
+            s.write(owner, { path: "a", bytes: Buffer.from("x") }).pipe(Effect.result),
+          );
+          yield* TestClock.adjust("2 seconds");
+          expect(yield* Fiber.join(exhausted)).toMatchObject({ failure: { _tag: "CloudError" } });
+          expect(f.attempts.get("upload")).toBe(5);
+        }),
+      );
+    },
+  );
+  it.effect("does not retry rejected file operations or uncertain commands", () => {
+    const f = fake();
+    return provide(
+      f,
+      Effect.gen(function* () {
+        const s = yield* ChatSandboxes;
+        yield* exec(s);
+        f.failNext("upload", 10, new DaytonaBadRequestError("invalid", 400));
+        expect(
+          yield* s.write(owner, { path: "a", bytes: Buffer.from("x") }).pipe(Effect.result),
+        ).toMatchObject({ failure: { _tag: "CloudError" } });
+        expect(f.attempts.get("upload")).toBe(1);
+        f.failNext("exec", 10, new DaytonaConnectionError("reset after command"));
+        expect(yield* exec(s).pipe(Effect.result)).toMatchObject({
+          failure: { _tag: "CloudError" },
+        });
+        expect(f.boxes[0]!.commands).toHaveLength(2);
+      }),
+    );
+  });
   it.effect("creates lazily once under concurrency, reuses, and separates threads", () => {
     const f = fake();
     return provide(
@@ -266,10 +360,12 @@ describe("ChatSandboxes", () => {
           "a\0b",
           "/tmp/../etc",
           "/home/daytonax/file",
+          "/mnt/afterburner.html",
+          "/mnt/data/afterburner.html",
         ]) {
-          expect((yield* Effect.flip(s.write(owner, { path, bytes: new Uint8Array() })))._tag).toBe(
-            "SandboxInputRejected",
-          );
+          const error = yield* Effect.flip(s.write(owner, { path, bytes: new Uint8Array() }));
+          expect(error._tag).toBe("SandboxInputRejected");
+          expect(error.message).toContain("Paths must stay under /home/daytona or /tmp");
         }
         expect(f.created).toHaveLength(0);
         expect(

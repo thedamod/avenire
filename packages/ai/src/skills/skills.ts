@@ -1065,11 +1065,15 @@ description: Use sandbox tools for real computation, data processing, matplotlib
 
 Use the Daytona thread sandbox for computation and shareable files. Python 3 scientific packages, matplotlib, pandas/openpyxl, manimgx, \`kicad-cli\`, Node and pnpm are available. Treat it as ephemeral; keep source and output paths explicit. Never claim a render, calculation or export succeeded until you inspect its command output and file.
 
+The working directory is \`/home/daytona/work\`. Prefer relative paths such as \`afterburner.html\`; absolute writes must stay under \`/home/daytona\` or \`/tmp\`. \`/mnt\`, \`/mnt/data\` and local host paths are unavailable. Keep the same sandbox path through write, build, preview and render. \`/opt/avenire/figures\` is a read-only source reference; copy sources into the working directory before editing or building.
+
 1. \`sandbox_write({ path: "work.py", content: "..." })\` writes code/data.
 2. \`sandbox_exec({ command: "python work.py" })\` computes; inspect exit status and concise stdout/stderr. Use the tool's supported timeout for long renders and stay within output caps. Break long jobs into inspect and final render stages.
 3. \`sandbox_read\` reads text or bounded file content; inspect files with scripts (\`file\`, image dimensions, CSV row count) before publishing. For charts, print JSON aggregates and embed them into widget HTML.
 4. \`publish_asset({ path: "figure.png", title: "..." })\` uploads PNG/SVG/GIF/MP4/PDF/HTML and returns a permanent \`{assetId,url}\` for chat. Explain what it shows and cite source data. Do not use the URL inside a widget under \`connect-src 'none'\`.
 5. Call \`sandbox_close\` after the work is complete, except while waiting for needed user input; close after that follow-up.
+
+For large visualizations, build an HTML file with \`sandbox_exec\` and pass the same file path to \`preview_widget({ path: "visualization.html" })\` and \`render_widget({ title: "...", path: "visualization.html" })\`. Inline HTML is capped at 512,000 bytes; a built widget supports 8 MiB. There is no 2 MiB widget cap. Write a concise generator or build script when the finished page is too large for one model/tool argument. Keep the finished HTML out of model context; inspect its byte size and preview report instead. Sandbox files go directly to preview and storage, so increasing UploadThing's source-upload limit is unnecessary.
 
 ## Matplotlib and spreadsheets
 
@@ -1711,7 +1715,7 @@ description: Explain concepts with crafted interactive figures: direct physical 
 
 # Interactive explainer
 
-Choose the representation that makes the causal relationship easiest to understand. Visual style guides the finish and behaviour, not a required code structure, part count, or long build process. Load \`style\` for tokens and \`kit-api\` only for signatures you need. Keep the explanation in chat and let the widget demonstrate it.
+Choose the representation that makes the causal relationship easiest to understand. Load \`style\` for tokens, \`mechanism\` for real machines and constructed assemblies, and \`kit-api\` for signatures you need. Keep the explanation in chat and let the widget demonstrate it. Preserve the physical construction and detail of a machine even when its controls and surrounding prose are minimal.
 
 ## Choose the explanation before drawing
 
@@ -1740,6 +1744,8 @@ Do not place a lesson, derivation, assumptions panel, instructions list, repeate
 Use \`--figure-*\` tokens, opaque faces, four facing shades, 0.6px non-scaling hairlines and calm motion. Ground the object on a base or pivot with a subtle contact shadow. Base/detail use lo/faint, structure mid, the explanatory subject hi, and one lit accent. Red/green/blue are meaningful signals, never a decorative rainbow.
 
 For mechanisms and analogies, borrow the finish of a small real instrument: feet, rails, carriage bushings, end stops, groove/ruler, screw heads, a knurled control, a dial and a probe. Each detail has a purpose and sits on another part. Keep simple physical models simple; a pivot, two rods and bobs can be the whole double pendulum.
+
+For an actual machine, follow \`mechanism\` and inspect a complete source example before building. A dimensional cutaway preserves the shell, curved housing, mounts, connected assemblies and working interior. Do not reduce it to an outline, labelled blocks or a few flat slabs merely because the interface is quiet. Inspect the subject at normal scale and 4× before delivery.
 
 - Solid parts have filled top and side faces, convincing volume and consistent lighting. Do not approximate a solid by translucent wireframes or a pile of disconnected polygons.
 - Paint back to front and bottom to top; split a part that wraps a moving component into back/front pieces. Moving pieces stay in their physical depth slot.
@@ -1780,7 +1786,7 @@ For gradient descent use \`next = x - learningRate * derivative(x)\`. The gauge 
 
 ## Runtime and delivery
 
-Use concise inline HTML/SVG/Canvas and optional bundled kit imports (\`/kits/math.js\`, \`/kits/iso.js\`, \`/kits/iso-gl.js\`). A Node example is an option, not the mandatory authoring pipeline. Aim for under 24 KiB of authored code. \`get_page_context\` provides the sandbox \`runtime.sourceRoot\`; when needed read a relevant source/reference there, in one batch rather than repeatedly browsing an entire example. Available source examples include dial-indicator, test-rig, arcade-cabinet, raptor-engine, ripple-tank, turning-dial, desk-computer and spot-plate. Craft, kit, motion and verify references are available under that root. Read only what improves this figure.
+Use HTML/SVG/Canvas and optional bundled kit imports (\`/kits/math.js\`, \`/kits/iso.js\`, \`/kits/iso-gl.js\`). Small direct models can be authored inline. For detailed assemblies, use reusable geometry components and a Node build when useful; preserve the required craft rather than shrinking the drawing to a code-size target. \`get_page_context\` provides the sandbox \`runtime.sourceRoot\`; read the closest complete source example and relevant construction references before a mechanical figure. Available source examples include dial-indicator, test-rig, arcade-cabinet, raptor-engine, ripple-tank, turning-dial, desk-computer and spot-plate. Craft, kit, motion and verify references are available under that root. Batch the relevant reads; there is no need to browse unrelated examples.
 
 Use ES modules or a private IIFE for live code. An inlined kit already declares its helpers: do not redeclare names such as \`lineOnTop\` in the same global scope. Pin kit imports to the page's bundled runtime; no network, external scripts/fonts or CDN libraries. Inline \`ISO_CSS\` if using the isometric kit. For sandbox builds copy sources to a writable directory and preserve relative imports; reference sources are read only.
 
@@ -1789,6 +1795,61 @@ Batch skill/context lookups, then build, preview and deliver. Do not announce a 
 After a clean preview call \`render_widget({title,html})\` or \`{title,path}\`, explain what to notice in chat, and close the sandbox when finished. A file in the sandbox is not delivery. Use \`path\` for large built pages; never read a multi-MB HTML file into model context. Full geometry audits and exhaustive theme/orbit checks are for explicitly requested deep verification.
 
 Native keyboard controls, visible focus, an accessible SVG/Canvas description and a discrete live readout are required. Reduced motion starts in a meaningful still state with manual stepping; pause while hidden/offscreen, cap frame work and reset the clock on resume. Read theme variables again on \`avenire:themechange\`; redraw Canvas/WebGL without resetting model state. Hint/readout must wrap or stack on phones.
+`,
+  },
+  "mechanism": {
+    id: "mechanism",
+    title: "Mechanical figures",
+    description: "Build detailed dimensional explanations of real machines and physical mechanisms, with recognizable assemblies, grounded parts, faithful cutaways, material shading and model-driven motion.",
+    section: "visual-guidelines",
+    path: "sections/visual-guidelines/mechanism.md",
+    content: `---
+name: mechanism
+description: Build detailed dimensional explanations of real machines and physical mechanisms, with recognizable assemblies, grounded parts, faithful cutaways, material shading and model-driven motion.
+---
+
+# Mechanical figures
+
+Use this with \`explainer\` and \`style\` when the subject is a real machine, engine, instrument, assembly or physical mechanism. The object is the explanation. A machine should read as something that could be built, with its mechanism exposed. Keep ordinary data charts and simple direct physics models in their own representation.
+
+## Flame and exhaust are part of the mechanism
+
+For engines with combustion, read the complete \`examples/raptor-engine/live.js\` as well as \`build.mjs\` and \`references/webgl.md\` under the source root. Reading only \`head\` of live.js misses the entire shader. Its density field, ray intersections, front-to-back integration and geometry occlusion are the reference, not just its controls. A compiling shader with diagonal sine-wave stripes is not a finished flame.
+
+The bundled \`/kits/iso-gl.js\` exports \`GLSL_COMBUSTION\`: a reusable four-octave, advected 3D value-noise flame field. Include the string in a real fragment shader and call \`combustionSample(vec3(axialFraction, radialY, radialZ), timeSeconds, fuelFraction)\`. Axial fraction runs from the flame holder (0) to plume tip (1); radialY/Z are offsets from the engine axis divided by the local radius. It returns RGB and extinction density. Integrate along the same camera rays as the assembly, with front-to-back transmittance: \`a=1.-exp(-sample.a*worldStep*extinction); sum.rgb+=(1.-sum.a)*sample.rgb*a; sum.a+=(1.-sum.a)*a;\`. glLayer expects premultiplied \`sum\`. Use the source reference for ray bounds, camera projection and masking; don't overlay a flat rectangular flame or stripe a cylinder.
+
+Use an opaque, shaded assembly with a visibly illuminated combustion cavity. Flame colour needs a warm body and bright core with a transparent turbulent boundary. Fuel zero extinguishes the flame, increased fuel expands it continuously, and nozzle area comes from the same model. Keep the effect behind foreground casing and petals; don't draw foreground occluders before the flame. Check an intermediate fuel level, maximum fuel, pause/step and zero fuel in actual screenshots at normal size and close up. Require \`preview_widget({path, requireWebGL:true})\` for every flame/exhaust figure. A WebGL draw count is runtime evidence; compare the visible flame to the full reference before delivery.
+
+## Establish the craft before drawing
+
+Read the closest complete source example and the relevant craft guidance under the \`runtime.sourceRoot\` returned by \`get_page_context\` (normally \`/opt/avenire/figures\`). For a mounted engine with round housings, flanges, pipes and an exhaust effect, start with \`examples/raptor-engine/\`, \`references/craft.md\`, and the needed lathe/tube/WebGL references. The dial-indicator is the smaller reference for an instrument. Use the source's construction methods and finish while designing the actual subject; do not substitute an unrelated machine.
+
+Write the causal sentence and a grouped parts list in working notes before geometry: what moves, what causes it, and what the reader can predict. Include the actual subject, its supports and connections, the moving mechanism and the control/readout. A complex assembly usually needs dozens of purposeful parts. Part count does not replace coherent geometry, and repeated decoration does not count as a mechanism.
+
+For an afterburner, show the actual cylindrical engine/augmentor on supports: casing and cutaway thickness, turbine exit, fuel manifold and spray bars, flame holders, liner segments, flanges and fasteners, variable nozzle petals and their linkage. Reheat changes combustion and the nozzle opening from the same model; a test-stand readout follows the computed thrust. A rectangular duct, a few leader lines and a red flame triangle are a schematic study, not a finished mechanical figure.
+
+## Volume and connection
+
+- Use a consistent oblique/isometric camera that reveals the mechanism. Round housings remain round in perspective; use lathes, cylinders, rings and smooth curved shading instead of flat polygon stand-ins.
+- Give solids thickness, opaque top/side faces, facing shades, visible rims and purposeful bevels. Ground the assembly with feet, saddles or real mounts and a soft contact shadow. Quiet styling still needs volume and material separation.
+- Details come from construction: seams, ribs, clamp bands, bolt circles, brackets, bushings, connectors and linked actuators. Every part rests on or attaches to another part. Lines end on an edge, mount, dot or outline.
+- The cutaway removes part of a real shell to expose the working interior; it does not flatten the whole object into a longitudinal diagram. Preserve front/back occlusion and a visible cut rim.
+- Reuse procedural component builders and a build script when that supports the assembly. Precompute static geometry; transform rigid moving parts and rebuild only changing shapes. Do not omit geometry to meet an arbitrary authored-code target.
+- Paint in true depth order. Split pieces that wrap another component into front/back parts. For dense round bodies, pipes, cables or moving assemblies, use the source recorder/settle/audit workflow with the true drawn shapes. Fix intersections in geometry rather than hiding them with painter-key offsets.
+
+## Physical effects and quiet chrome
+
+Use the shared figure tokens and thin structural lines. Four facing tones establish solids; curved bodies may shade smoothly. Contact shadows, localized reflections and volumetric flame/exhaust are physical effects and are allowed inside the drawing. Keep them attached to the object's perspective and occluded by its front geometry. A combustion-specific colour ramp can live in the flame without recolouring the frame, controls or background. Effects fade before their bounds, change continuously with the model, and have a truthful reduced-motion/non-WebGL state.
+
+For a flame, exhaust, liquid or lighting effect whose dimensional appearance is central to the requested figure, use the relevant real shader treatment from the source references. Overlapping translucent triangles or nested Canvas 2D shells are a simplified fallback, not a volumetric shader. Request \`preview_widget({path, requireWebGL:true})\` for shader verification, inspect \`rendering\` for a live WebGL context, linked programs and draw calls, and check the actual pixels. Compilation/link/context failures must be repaired; if WebGL is unavailable, label the fallback explicitly and report the limitation. A runtime-clean Canvas 2D preview cannot establish that a shader works.
+
+Keep the frame and controls restrained. Put explanations and detailed assumptions in chat; the visual's richness comes from the assembled object. One clear control can move many causally connected parts. A quiet interface is compatible with a detailed object.
+
+## Finish at two scales
+
+At normal size the assembly must be immediately recognizable and its causal motion legible. Inspect a close-up at 4× over the subject, cutaway, joins and moving interfaces: surfaces have construction detail, round bodies have smooth shading, seams terminate correctly, parts connect, and nothing intersects or floats. Compare against the closest complete source example's craft, not merely its framing.
+
+Run \`preview_widget\`, inspect its actual screenshots and interaction report, and repair errors before \`render_widget\`. Check a phone view and both themes for this kind of dimensional figure. Source geometry/line audits and model checks complement the pixel review; a passing runtime report alone does not establish visual fidelity. If a reference, audit or effect is unavailable, state that limitation instead of quietly replacing the requested mechanism with a flat icon.
 `,
   },
   "style": {
@@ -1805,6 +1866,8 @@ description: Shared figure tokens and figure framing for all Ruth widgets, chart
 # Figure style
 
 Every widget uses the shared two-theme token layer. The host injects it before first paint and on \`avenire:themechange\`; it updates \`.iso\` wrappers’ data-theme and values. Standalone kit \`--light\` pages retain their own theme outside the host. Read Canvas/WebGL tokens on its nearest \`.iso\` wrapper (and redraw/reconfigure on themechange). Use CSS variables for every colour and preserve the kit’s four facing shades; do not replace them with opacity approximations.
+
+The restraint applies to chrome, palette and line weight; it does not flatten the object. Mechanical figures retain solid thickness, facing shades, smooth curved shading and grounded contact shadows. Localized physical light, flame or exhaust may use the source kit's shader/material treatment inside the object; keep it in perspective and the surrounding UI stable. Avoid decorative page gradients and ambient UI glow, while preserving the physical shading that makes an assembly readable. See \`mechanism\` for construction and close-up fidelity.
 
 | Token | Purpose | Light | Dark |
 | --- | --- | --- | --- |
@@ -1866,12 +1929,12 @@ description: Choose a direct model, mechanism, analogy, data chart or published 
 
 # Visuals
 
-Start with the learning question and choose the simplest faithful representation. Load \`explainer\` for interactive concept figures and physical models, \`style\` for the common frame/tokens, and \`kit-api\` only when exact signatures are needed. The code can be concise SVG/Canvas, kit components or an optional Node build.
+Start with the learning question and choose the clearest faithful representation. Load \`explainer\` for interactive concept figures and physical models, \`mechanism\` as well for real machines and constructed assemblies, \`style\` for the common frame/tokens, and \`kit-api\` when exact signatures are needed. Choose SVG/Canvas, kit components or a Node build to support the required geometry.
 
 | Request | Representation |
 | --- | --- |
 | “Show a simple pendulum”; “play with a double pendulum” | Direct physical model: pivot, rods and bobs; real numerical state |
-| “Explain how an engine works” | The actual mechanism/cutaway: piston, crank, valves and four strokes |
+| “Explain how an engine works”; “interactive afterburner” | \`explainer\` + \`mechanism\`: a detailed dimensional assembly/cutaway of the actual machine, with connected parts and model-driven motion |
 | “Explain how gradient descent finds a minimum, with the help of an interactive visualization” | A follower on a loss profile with slope-controlled feed, or direct mathematical geometry if clearer |
 | “Why does a cache avoid repeated work?” | A faithful analogy/mechanism showing the matching state and avoided work |
 | “Compare v1 and v2 numbers”; “plot this spreadsheet”; “show the trend” | \`chart\` with actual data, units and shared scales |
@@ -1879,6 +1942,8 @@ Start with the learning question and choose the simplest faithful representation
 | A timed sequence that does not benefit from input | \`sandbox\` video, published with \`publish_asset\` |
 
 Do not invent an elaborate analogy for a physical system that already explains itself. Prefer a real mechanism for a real machine. Use analogy for abstract/complex concepts when its correspondences make the cause and effect easier to see. Never invent observations, numeric results or citations. Use prose or a small table if a visual adds no value.
+
+Simple controls, brief prose and thin lines do not require simplified geometry. For an actual machine, preserve its construction, volume and purposeful detail; a flat labelled schematic is appropriate when the user asks for a schematic, not a substitute for a crafted mechanical figure.
 
 Keep the widget quiet: one figure, a short title/hint, minimal labelled controls and 2–4 live values. A small legend and at most two short caption sentences can sit below the card. Explanations, derivations, examples and detailed assumptions belong in chat, not text panels inside the widget.
 
@@ -2105,7 +2170,9 @@ The \`lathe\` namespace is for axis-based solids. \`F\` is a frame from \`frameA
 
 For advanced material options, use \`src/iso/lathe.mjs\`, \`tube.mjs\`, and \`canvas-painter.mjs\` as the signature source.
 
-\`/kits/iso-gl.js\` exports \`GLSL_ISO\`, \`GLSL_TURN\`, \`glslPose(name,prefix?)\`, \`glCamera(P)\`, \`glLayer({canvas,fragment,view,camera,uniforms?,fixed?,extensions?,maxRatio?,untransformed?,onError?})\`, \`smooth(a,b,x)\`, \`burst(age,rise,fall)\`, and \`settle(state,target,dt,seconds,calm?)\`. The \`gl\` namespace includes the legacy WebGL variant. These helpers position and animate fragment shaders in the same isometric camera as SVG.
+\`/kits/iso-gl.js\` exports \`GLSL_COMBUSTION\`, \`GLSL_ISO\`, \`GLSL_TURN\`, \`glslPose(name,prefix?)\`, \`glCamera(P)\`, \`glLayer({canvas,fragment,view,camera,uniforms?,fixed?,extensions?,maxRatio?,untransformed?,onError?})\`, \`smooth(a,b,x)\`, \`burst(age,rise,fall)\`, and \`settle(state,target,dt,seconds,calm?)\`. The \`gl\` namespace includes the legacy WebGL variant. These helpers position and animate fragment shaders in the same isometric camera as SVG.
+
+\`GLSL_COMBUSTION\` is a reusable GLSL1 turbulent flame field. Insert it into a fragment shader and call \`combustionSample(vec3(axialFraction, radialY, radialZ), timeSeconds, fuelFraction)\`. Axial fraction is 0–1 from flame holder to plume tip; radial coordinates are divided by the local physical radius. It returns unpremultiplied RGB plus extinction density in alpha. Ray march in the assembly camera, clip against its cavity/nozzle, and integrate \`a=1.-exp(-sample.a*stepLength*extinction)\` front to back: \`sum.rgb+=(1.-sum.a)*sample.rgb*a; sum.a+=(1.-sum.a)*a\`. Return premultiplied \`sum\` with \`glLayer\`; do not multiply alpha twice. Choose extinction in the same world units as stepLength. This is a qualitative visual field, not CFD. It uses advected four-octave 3D value noise; a few sine waves create periodic diagonal stripes rather than turbulent flame.
 
 The complete isometric example below installs \`ISO_CSS\`; geometry alone has no face or stroke styling.
 
@@ -2355,8 +2422,8 @@ button:focus-visible,input:focus-visible{outline:1px solid var(--figure-hi);outl
 
 export type SkillId = keyof typeof SKILL_MAP;
 
-export const AVAILABLE_SKILLS = ["concept-explainer","flashcard-generator","quiz-creator","study-notes-creator","summary-generator","sandbox","chart-comparison","chart-from-spreadsheet","explainer-double-pendulum","chart","explainer","style","visuals","kit-api"] as const;
+export const AVAILABLE_SKILLS = ["concept-explainer","flashcard-generator","quiz-creator","study-notes-creator","summary-generator","sandbox","chart-comparison","chart-from-spreadsheet","explainer-double-pendulum","chart","explainer","mechanism","style","visuals","kit-api"] as const;
 export const STUDY_SKILLS = ["concept-explainer","flashcard-generator","quiz-creator","study-notes-creator","summary-generator"] as const;
-export const VISUAL_SKILLS = ["chart","explainer","style","visuals"] as const;
+export const VISUAL_SKILLS = ["chart","explainer","mechanism","style","visuals"] as const;
 export const VISUAL_EXAMPLE_SKILLS = ["chart-comparison","chart-from-spreadsheet","explainer-double-pendulum"] as const;
 export const TOOL_SKILLS = ["sandbox","kit-api"] as const;

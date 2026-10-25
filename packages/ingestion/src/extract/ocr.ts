@@ -1,5 +1,4 @@
 /** Optical character recognition for scanned PDF pages and images (Mistral OCR). */
-import { generateText, Output } from "ai";
 import * as Arr from "effect/Array";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -9,18 +8,18 @@ import * as Redacted from "effect/Redacted";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientError from "effect/http/HttpClientError";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { PDFDocument } from "pdf-lib";
 
-import { INGESTION_RETRY, IngestionModels } from "../models.ts";
-
 export class OcrError extends Schema.TaggedError<OcrError>()("OcrError", {
   pages: Schema.Number,
+  status: Schema.optionalKey(Schema.Number),
   cause: Schema.Defect(),
 }) {
   override get message(): string {
-    return `OCR of ${this.pages} page(s) failed`;
+    return `OCR of ${this.pages} page(s) failed${this.status ? ` (HTTP ${this.status})` : ""}`;
   }
 }
 
@@ -87,7 +86,7 @@ const annotationFormat = {
   },
 };
 
-/** Brief transient errors are retried; a persistent one moves on to the Gemini fallback. */
+/** Retry transient Mistral errors; the ingestion queue handles longer outages. */
 const RETRY = { schedule: Schedule.exponential("2 seconds"), times: 2 } as const;
 
 const dataUrl = (bytes: Uint8Array, mimeType: string) =>
@@ -104,22 +103,7 @@ const pageMarkdown = (page: (typeof OcrResponse.Type)["pages"][number]) =>
       : Effect.succeed(""),
   ).pipe(Effect.map((figures) => [page.markdown, ...figures].filter(Boolean).join("\n\n").trim()));
 
-/** Gemini reads PDFs inline up to this size. */
-const MAX_FALLBACK_BYTES = 20 * 1024 * 1024;
-
-const FallbackPages = Schema.Struct({
-  pages: Schema.Array(Schema.Struct({ page: Schema.Int, markdown: Schema.String })),
-});
-const fallbackOutput = Output.object({
-  schema: Schema.toStandardJSONSchemaV1(Schema.toStandardSchemaV1(FallbackPages)),
-});
-const FALLBACK_SYSTEM = [
-  "You are an OCR engine. Transcribe the requested PDF pages to Markdown, one entry per page, with 1-based page numbers.",
-  "Number pages by their order in the attached PDF, starting at 1; ignore printed page numbers.",
-  "Keep tables as Markdown tables and equations as LaTeX. For each figure or chart, add a line `Figure: <what it shows, its labels and data>`.",
-].join("\n");
-
-/** PDF page order becomes 1..N for Gemini; its answers are mapped to source pages below. */
+/** Send only the requested pages, with source page numbers restored after OCR. */
 export const subsetPdfPages = async (bytes: Uint8Array, pages: ReadonlyArray<number>) => {
   const source = await PDFDocument.load(bytes);
   const subset = await PDFDocument.create();
@@ -131,8 +115,8 @@ export const subsetPdfPages = async (bytes: Uint8Array, pages: ReadonlyArray<num
   return subset.save();
 };
 
-/** Maps Gemini's 1-based subset page numbers back to the source PDF. */
-export const remapFallbackPages = (
+/** Maps the OCR subset page numbers back to the source PDF. */
+export const remapOcrPages = (
   recognized: ReadonlyArray<OcrPage>,
   originals: ReadonlyArray<number> | undefined,
 ): ReadonlyArray<OcrPage> =>
@@ -141,8 +125,8 @@ export const remapFallbackPages = (
     return original === undefined ? [] : [{ page: original, markdown }];
   });
 
-/** Split an oversized fallback request while preserving source page order. */
-export const splitFallbackPages = (
+/** Split an oversized OCR request while preserving source page order. */
+export const splitOcrPages = (
   pages: ReadonlyArray<number>,
 ): readonly [ReadonlyArray<number>, ReadonlyArray<number>] | null => {
   if (pages.length < 2) return null;
@@ -150,14 +134,10 @@ export const splitFallbackPages = (
   return [pages.slice(0, middle), pages.slice(middle)];
 };
 
-/**
- * Mistral OCR, falling back to Gemini (which reads PDFs natively) when a request
- * still fails after retries, e.g. while the Mistral key is rate limited.
- */
+/** Mistral OCR for PDFs and images, with bounded page batches and no cross-provider fallback. */
 export const OcrLive = Layer.effect(
   Ocr,
   Effect.gen(function* () {
-    const models = yield* IngestionModels;
     const apiKey = yield* Config.Redacted("MISTRAL_API_KEY");
     const model = yield* Config.String("MISTRAL_OCR_MODEL").pipe(
       Config.withDefault("mistral-ocr-latest"),
@@ -168,13 +148,12 @@ export const OcrLive = Layer.effect(
     );
 
     /** One OCR request; `pages` are 1-based and at most `MAX_PAGES_PER_REQUEST`. */
-    const request = (document: object, pages: ReadonlyArray<number> | undefined) =>
+    const request = (document: object, pageCount: number) =>
       HttpClientRequest.post(ENDPOINT).pipe(
         HttpClientRequest.bearerToken(Redacted.value(apiKey)),
         HttpClientRequest.bodyJson({
           model,
           document,
-          ...(pages === undefined ? {} : { pages: pages.map((page) => page - 1) }),
           include_image_base64: false,
           bbox_annotation_format: annotationFormat,
         }),
@@ -186,53 +165,17 @@ export const OcrLive = Layer.effect(
             Effect.map(pageMarkdown(page), (markdown) => ({ page: page.index + 1, markdown })),
           ),
         ),
-        Effect.mapError((cause) => new OcrError({ pages: pages?.length ?? 1, cause })),
-      );
-
-    /** The given 1-based pages (all when omitted) of a PDF, transcribed by Gemini. */
-    const fallbackBatch: (
-      bytes: Uint8Array,
-      pages: ReadonlyArray<number> | undefined,
-    ) => Effect.Effect<ReadonlyArray<OcrPage>, unknown> = Effect.fn("Ocr.fallbackBatch")(function* (
-      bytes: Uint8Array,
-      pages: ReadonlyArray<number> | undefined,
-    ) {
-      const document =
-        pages === undefined ? bytes : yield* Effect.tryPromise(() => subsetPdfPages(bytes, pages));
-      if (document.byteLength > MAX_FALLBACK_BYTES) {
-        const sourcePages =
-          pages ??
-          (yield* Effect.tryPromise(() => PDFDocument.load(bytes)))
-            .getPages()
-            .map((_, index) => index + 1);
-        const halves = splitFallbackPages(sourcePages);
-        if (halves === null) return yield* Effect.fail("Too large for the fallback");
-        const results = yield* Effect.forEach(halves, (half) => fallbackBatch(bytes, half));
-        return results.flat();
-      }
-      const { output } = yield* Effect.tryPromise((abortSignal) =>
-        generateText({
-          model: models.languageModel("ingest-vision"),
-          output: fallbackOutput,
-          system: FALLBACK_SYSTEM,
-          messages: [
-            {
-              role: "user",
-              content: [
-                { type: "text", text: "Transcribe every page of this PDF." },
-                { type: "file", data: document, mediaType: "application/pdf" },
-              ],
-            },
-          ],
-          abortSignal,
-        }),
-      ).pipe(Effect.timeout("3 minutes"), Effect.retry(INGESTION_RETRY));
-      return remapFallbackPages(output.pages, pages);
-    });
-
-    const fallback = (bytes: Uint8Array, pages: ReadonlyArray<number> | undefined) =>
-      fallbackBatch(bytes, pages).pipe(
-        Effect.mapError((cause) => new OcrError({ pages: pages?.length ?? 1, cause })),
+        Effect.mapError(
+          (cause) =>
+            new OcrError({
+              pages: pageCount,
+              ...(HttpClientError.isHttpClientError(cause) &&
+              cause.reason._tag === "StatusCodeError"
+                ? { status: cause.reason.response.status }
+                : {}),
+              cause,
+            }),
+        ),
       );
 
     const tooLarge = (bytes: Uint8Array, pages: number) =>
@@ -240,30 +183,41 @@ export const OcrLive = Layer.effect(
         ? Effect.fail(new OcrError({ pages, cause: "Source exceeds 50 MiB" }))
         : Effect.void;
 
+    const pdfBatch = (
+      bytes: Uint8Array,
+      pages: ReadonlyArray<number> | undefined,
+    ): Effect.Effect<ReadonlyArray<OcrPage>, OcrError> =>
+      Effect.gen(function* () {
+        const document =
+          pages === undefined
+            ? bytes
+            : yield* Effect.tryPromise({
+                try: () => subsetPdfPages(bytes, pages),
+                catch: (cause) => new OcrError({ pages: pages.length, cause }),
+              });
+        if (document.byteLength > MAX_BYTES && pages && pages.length > 1) {
+          const halves = splitOcrPages(pages)!;
+          const results = yield* Effect.forEach(halves, (half) => pdfBatch(bytes, half));
+          return results.flat();
+        }
+        yield* tooLarge(document, pages?.length ?? 1);
+        const recognized = yield* request(
+          { type: "document_url", document_url: dataUrl(document, "application/pdf") },
+          pages?.length ?? 1,
+        );
+        return remapOcrPages(recognized, pages);
+      });
+
     const pdf = Effect.fn("Ocr.pdf")(function* (bytes: Uint8Array, pages?: ReadonlyArray<number>) {
-      yield* tooLarge(bytes, pages?.length ?? 1);
-      const document = { type: "document_url", document_url: dataUrl(bytes, "application/pdf") };
       const batches =
         pages === undefined ? [undefined] : Arr.chunksOf(pages, MAX_PAGES_PER_REQUEST);
-      const results = yield* Effect.forEach(batches, (batch) =>
-        request(document, batch).pipe(
-          Effect.catchTags({
-            OcrError: (error) =>
-              Effect.logWarning("Mistral OCR failed; falling back to Gemini", error).pipe(
-                Effect.andThen(fallback(bytes, batch)),
-              ),
-          }),
-        ),
-      );
+      const results = yield* Effect.forEach(batches, (batch) => pdfBatch(bytes, batch));
       return results.flat();
     });
 
     const image = Effect.fn("Ocr.image")(function* (bytes: Uint8Array, mimeType: string) {
       yield* tooLarge(bytes, 1);
-      const pages = yield* request(
-        { type: "image_url", image_url: dataUrl(bytes, mimeType) },
-        undefined,
-      );
+      const pages = yield* request({ type: "image_url", image_url: dataUrl(bytes, mimeType) }, 1);
       return pages.map((page) => page.markdown).join("\n\n");
     });
 

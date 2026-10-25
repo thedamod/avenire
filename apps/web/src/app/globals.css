@@ -1,26 +1,45 @@
 @import "@avenire/ui/globals.css";
-@import "@xyflow/react/dist/style.css";
 @source "../**/*.{ts,tsx}";
+
+/* Custom upload content must collapse with Sonner's outer toast when stacked. */
+[data-sonner-toast].source-upload-toast {
+  overflow: hidden;
+}
+
+[data-sonner-toast].source-upload-toast[data-expanded="false"][data-front="false"] > * {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Geist comes from next/font (the `geist` package), which exposes the families as variables. */
+:root,
+.dark {
+  --font-sans: var(--font-geist-sans), "Geist", system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), "Geist Mono", ui-monospace, monospace;
+}
 
 @layer base {
   html,
   body {
     min-height: 100%;
   }
+  body {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
-.react-flow__attribution {
-  display: none;
+/* Indeterminate progress sweep for sources that are still being read. */
+@keyframes avenire-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
 }
-.react-flow__controls {
-  border: 1px solid var(--border);
-  box-shadow: none;
-}
-.react-flow__controls-button {
-  background: var(--background);
-  fill: var(--foreground);
-  border-bottom-color: var(--border);
-}
-.react-flow__controls-button:hover {
-  background: var(--accent);
+
+@utility animate-sweep {
+  animation: avenire-sweep 1.6s var(--ease-in-out) infinite;
 }

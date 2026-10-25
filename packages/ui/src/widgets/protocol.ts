@@ -163,6 +163,19 @@ export interface WidgetDocumentOptions {
   kitsOrigin?: string;
 }
 
+/** Stored widgets must keep loading their kits after the configured host or port changes. */
+export function rebaseWidgetKitOrigin(html: string, kitsOrigin: string): string {
+  const meta = /<meta http-equiv="Content-Security-Policy" content="[^"]*">/i.exec(
+    markupOnly(html),
+  );
+  if (!meta) return html;
+  const source = /script-src &#39;unsafe-inline&#39; (https?:\/\/[^\s"&]+)\/kits\/;/.exec(meta[0]);
+  if (!source) return html;
+  const previous = safeOrigin(source[1]!);
+  const current = safeOrigin(kitsOrigin);
+  return html.replaceAll(`${previous}/kits/`, `${current}/kits/`);
+}
+
 export function buildWidgetDocument({
   html,
   title,

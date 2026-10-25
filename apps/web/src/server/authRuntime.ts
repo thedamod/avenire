@@ -1,14 +1,15 @@
 import { AuthError, AuthLive, AuthService } from "@avenire/auth/server";
 import { DatabaseLive } from "@avenire/database/client";
+import { MailerLive } from "@avenire/emailer/mailer";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import { boundedRequest } from "./http.ts";
 import { WidgetHost, WidgetHostLive, widgetHostDecision } from "./widgetHost.ts";
 
-/** Authentication boots only its database and host policy, without AI or sandbox credentials. */
+/** Authentication boots only its database, mailer and host policy, without AI or sandbox credentials. */
 export const AuthServicesLive = Layer.mergeAll(
-  AuthLive.pipe(Layer.provide(DatabaseLive)),
+  AuthLive.pipe(Layer.provide(Layer.mergeAll(DatabaseLive, MailerLive))),
   WidgetHostLive,
 );
 

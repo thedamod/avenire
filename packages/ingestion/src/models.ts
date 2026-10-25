@@ -1,13 +1,12 @@
 /**
  * Models the ingestion package calls during indexing and search. Call sites use
  * these names and never a provider or model id; ids (`<provider>:<model>`, provider
- * `groq` or `google`) change through `INGESTION_MODEL_<NAME>` without code changes:
+ * `groq`) change through `INGESTION_MODEL_<NAME>` without code changes:
  *
  * - `ingest-graph`: entity and relation extraction from chunks
  * - `ingest-planner`: splitting multi-part questions into aspects for deep search
  * - `ingest-vision`: searchable descriptions and visible text from images
  */
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
 import { defaultSettingsMiddleware, type LanguageModel, wrapLanguageModel } from "ai";
 import * as Config from "effect/Config";
@@ -22,20 +21,16 @@ export const INGESTION_MODEL_NAMES = ["ingest-graph", "ingest-planner", "ingest-
 export type IngestionModelName = (typeof INGESTION_MODEL_NAMES)[number];
 
 /**
- * Text work runs on Groq: measured 2026-10-08, gpt-oss-120b extracted richer graphs in
- * ~4.5 s per batch where gemini-3.5-flash-lite took 13-20 s, and gpt-oss-20b plans in
- * ~0.4 s against 8-15 s. Groq has no vision models, so vision stays on Gemini.
+ * Graph extraction and vision use Qwen on Groq. The smaller gpt-oss model handles
+ * search planning; its low reasoning setting is scoped to that model family.
  */
-const ModelId = Schema.Union([
-  Schema.TemplateLiteral(["groq:", Schema.String]),
-  Schema.TemplateLiteral(["google:", Schema.String]),
-]);
+const ModelId = Schema.TemplateLiteral(["groq:", Schema.String]);
 type ModelId = typeof ModelId.Type;
 
 export const INGESTION_MODEL_DEFAULTS: Record<IngestionModelName, ModelId> = {
-  "ingest-graph": "groq:openai/gpt-oss-120b",
+  "ingest-graph": "groq:qwen/qwen3.8-27b",
   "ingest-planner": "groq:openai/gpt-oss-20b",
-  "ingest-vision": "google:gemini-3.5-flash-lite",
+  "ingest-vision": "groq:qwen/qwen3.8-27b",
 };
 
 /**
@@ -58,18 +53,15 @@ const lowReasoning = defaultSettingsMiddleware({
   settings: { providerOptions: { groq: { reasoningEffort: "low" } } },
 });
 
-/** Reads `GROQ_API_KEY`, `GEMINI_API_KEY` and the `INGESTION_MODEL_*` overrides. */
+/** Reads `GROQ_API_KEY` and the `INGESTION_MODEL_*` overrides. */
 export const IngestionModelsLive = Layer.effect(
   IngestionModels,
   Effect.gen(function* () {
     const groq = createGroq({ apiKey: Redacted.value(yield* Config.Redacted("GROQ_API_KEY")) });
-    const google = createGoogleGenerativeAI({
-      apiKey: Redacted.value(yield* Config.Redacted("GEMINI_API_KEY")),
-    });
     const resolve = (id: ModelId): LanguageModel =>
-      id.startsWith("groq:")
+      id.includes("gpt-oss")
         ? wrapLanguageModel({ model: groq(id.slice("groq:".length)), middleware: lowReasoning })
-        : google(id.slice("google:".length));
+        : groq(id.slice("groq:".length));
     const models = yield* Effect.forEach(INGESTION_MODEL_NAMES, (name) =>
       Config.schema(ModelId, envName(name)).pipe(
         Config.withDefault(INGESTION_MODEL_DEFAULTS[name]),

@@ -5,7 +5,7 @@
  */
 import * as Schema from "effect/Schema";
 
-import { CloudRunId, CloudTaskId, FileId, PendingApprovalId } from "./ids.ts";
+import { CloudRunId, CloudTaskId, FileId, FolderId, MessageId, PendingApprovalId } from "./ids.ts";
 
 import { Asset } from "./assets.ts";
 import { HydrationRule } from "./hydration.ts";
@@ -29,6 +29,10 @@ export const CloudRun = Schema.Struct({
   scheduledFor: Schema.String,
   attempt: Schema.Int,
   summary: Schema.NullOr(Schema.String),
+  /** Notebook containing this run's published outputs. */
+  folderId: Schema.NullOr(FolderId),
+  reportMessageId: Schema.NullOr(MessageId),
+  startHere: Schema.NullOr(Schema.String),
   startedAt: Schema.NullOr(Schema.String),
   finishedAt: Schema.NullOr(Schema.String),
   error: Schema.NullOr(Schema.String),
@@ -116,3 +120,44 @@ export type PendingApproval = typeof PendingApproval.Type;
 
 export const ApprovalDecision = Schema.Literals(["accept", "skip"]);
 export type ApprovalDecision = typeof ApprovalDecision.Type;
+
+/** Stable JSON format for Cloud's multiple-choice study quizzes. */
+export const CloudQuizSource = Schema.Struct({
+  fileId: FileId,
+  page: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+  t: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))),
+}).check(
+  Schema.makeFilter((source) =>
+    source.page !== undefined && source.t !== undefined
+      ? "Use either page or t for a source, not both."
+      : undefined,
+  ),
+);
+export const CloudQuizQuestion = Schema.Struct({
+  id: Schema.NonEmptyString,
+  /** Short noun phrase suitable mid-sentence, e.g. "free expansion". */
+  topic: Schema.NonEmptyString,
+  question: Schema.NonEmptyString,
+  choices: Schema.Array(Schema.NonEmptyString).check(Schema.isMinLength(2), Schema.isMaxLength(6)),
+  answer: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  explanationTitle: Schema.NonEmptyString,
+  explanation: Schema.NonEmptyString,
+  sources: Schema.Array(CloudQuizSource),
+}).check(
+  Schema.makeFilter((question) =>
+    question.answer < question.choices.length
+      ? undefined
+      : { path: ["answer"], issue: "answer must be a 0-based index into choices" },
+  ),
+);
+export const CloudQuiz = Schema.Struct({
+  title: Schema.NonEmptyString,
+  questions: Schema.Array(CloudQuizQuestion).check(Schema.isMinLength(1)),
+}).check(
+  Schema.makeFilter((quiz) =>
+    new Set(quiz.questions.map((question) => question.id)).size === quiz.questions.length
+      ? undefined
+      : { path: ["questions"], issue: "Question ids must be unique" },
+  ),
+);
+export type CloudQuiz = typeof CloudQuiz.Type;

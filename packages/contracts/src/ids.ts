@@ -12,9 +12,6 @@ export type FileId = typeof FileId.Type;
 export const FolderId = Schema.NonEmptyString.pipe(Schema.brand("FolderId"));
 export type FolderId = typeof FolderId.Type;
 
-export const CanvasNodeId = Schema.NonEmptyString.pipe(Schema.brand("CanvasNodeId"));
-export type CanvasNodeId = typeof CanvasNodeId.Type;
-
 export const IngestionJobId = Schema.NonEmptyString.pipe(Schema.brand("IngestionJobId"));
 export type IngestionJobId = typeof IngestionJobId.Type;
 

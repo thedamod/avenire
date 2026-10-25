@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { StorageKey } from "@avenire/contracts";
 
@@ -22,6 +22,21 @@ describe("StorageMemory", () => {
       expect(missing).toBeInstanceOf(ObjectNotFound);
       expect(missing.key).toBe(key);
       expect(yield* storage.list(prefix)).toEqual([]);
+    }).pipe(Effect.provide(StorageMemory)),
+  );
+  it.effect("forwards multipart tuning to files-sdk without changing stored bytes", () =>
+    Effect.gen(function* () {
+      const storage = yield* Storage;
+      const upload = vi.spyOn(storage.files, "upload");
+      const body = new Blob(["multipart source"], { type: "text/plain" });
+      const options = {
+        contentType: "text/plain",
+        multipart: { partSize: 8 * 1024 * 1024, concurrency: 3 },
+      };
+      yield* storage.put(key, body, options);
+      expect(upload).toHaveBeenCalledWith(key, body, options);
+      expect(new TextDecoder().decode(yield* storage.get(key))).toBe("multipart source");
+      upload.mockRestore();
     }).pipe(Effect.provide(StorageMemory)),
   );
 });

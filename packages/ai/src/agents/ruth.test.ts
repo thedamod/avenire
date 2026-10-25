@@ -1,11 +1,14 @@
-import { ThreadId, UserId } from "@avenire/contracts";
+import { CloudRunId, ThreadId, UserId } from "@avenire/contracts";
 import { MockLanguageModelV4 } from "ai/test";
 import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import { Database } from "@avenire/database/client";
+import { cloudFixture, cloudCtx } from "../cloud/cloud-test-support.ts";
 import { RuthModels } from "../models/index.ts";
 import { ruthToolSpecs } from "../tools/index.ts";
 import type { RuthToolServices } from "../tools/ruth.ts";
 import { describe, expect, it } from "@effect/vitest";
-import { appendIncoming, createRuthAgent } from "./ruth.ts";
+import { appendIncoming, createRuthAgent, validateReportRun } from "./ruth.ts";
 import type { RuthUIMessage } from "../message-types.ts";
 import { findVisuals } from "../tools/page.ts";
 
@@ -102,3 +105,26 @@ for (const fullAccess of [false, true]) {
     expect(Object.keys(agent.tools).sort()).toEqual(Object.keys(ruthToolSpecs).sort());
   });
 }
+
+it.effect("validates report metadata ownership before saving a chat turn", () => {
+  const f = cloudFixture();
+  return Effect.gen(function* () {
+    yield* validateReportRun(cloudCtx.userId, cloudCtx.runId!);
+    for (const [userId, runId] of [
+      [UserId.make("other"), cloudCtx.runId!],
+      [cloudCtx.userId, CloudRunId.make("missing")],
+    ] as const) {
+      expect(yield* Effect.flip(validateReportRun(userId, runId))).toMatchObject({
+        _tag: "NotFound",
+        entity: "CloudRun",
+      });
+    }
+    const incoming: RuthUIMessage = {
+      ...message("u2", "user", "Explain"),
+      metadata: { createdAt: "client", runId: cloudCtx.runId! },
+    };
+    expect(
+      appendIncoming([], incoming, { freshId: "new", createdAt: "server" })[0]?.metadata,
+    ).toEqual({ createdAt: "server", runId: "run" });
+  }).pipe(Effect.provideService(Database, f.database));
+});

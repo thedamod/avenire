@@ -1,0 +1,70 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Avenire — landing v2</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/*{{tokens}}*/
+/*{{base}}*/
+/* readable secondary text on the landing */
+:root { --lead: #b8b8b8; --second: #8f8f8f; }
+.display .second, .h2 .second { color: var(--second); }
+.hero { padding: 128px 48px 0; display: flex; flex-direction: column; gap: 28px; }
+.hero p { font-size: 20px; line-height: 30px; color: var(--lead); max-width: 680px; }
+.cta { display: flex; gap: 12px; }
+.stage { margin: 72px 48px 0; height: 620px; border: 1px solid var(--color-border); border-radius: var(--radius-l-card); background: var(--color-iso-paper); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.stage .fig { width: 1500px; height: 764px; flex-shrink: 0; transform: translate(50px, 30px); }
+.section { border-top: 1px solid var(--color-border); margin-top: 128px; padding: 128px 48px; }
+.section .h2 { max-width: 760px; }
+.finder { margin-top: 56px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-1); overflow: hidden; }
+.qrow { display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 22px; border-bottom: 1px solid var(--color-border); font-size: 19px; color: var(--color-text-strong); }
+.caret { width: 1.5px; height: 22px; background: var(--color-text-strong); }
+.res { display: grid; grid-template-columns: 1fr 200px; gap: 24px; padding: 18px 22px; }
+.res + .res { border-top: 1px solid var(--color-border); }
+.res .ti { font-size: 15px; color: var(--color-text-strong); }
+.res .sn { margin-top: 4px; font-size: 14px; line-height: 21px; color: var(--lead); }
+.res .or { font-size: 13px; line-height: 19px; color: var(--color-text); text-align: right; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); margin: 64px -48px 0; border-top: 1px solid var(--color-border); }
+.step { padding: 32px 32px 56px; display: flex; flex-direction: column; }
+.step + .step { border-left: 1px solid var(--color-border); }
+.step .fig { height: 220px; margin-bottom: 20px; }
+.step h4 { font-size: 20px; font-weight: 500; letter-spacing: -0.015em; color: var(--color-text-strong); margin-bottom: 8px; }
+.step p { font-size: 16px; line-height: 25px; color: var(--lead); max-width: 320px; }
+.close { border-top: 1px solid var(--color-border); padding: 160px 48px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 32px; }
+.foot { border-top: 1px solid var(--color-border); padding: 28px 32px; display: flex; justify-content: space-between; font-size: 13px; color: var(--color-text); }
+</style></head><body>
+<div class="rails">
+  <nav class="nav"><div class="brand">{{logo}}Avenire</div><div style="display:flex; gap:10px;"><span class="btn btn-sm btn-ghost">Log in</span><span class="btn btn-sm btn-primary">Get started</span></div></nav>
+
+  <header class="hero">
+    <h1 class="display">Your course is in eight apps.<br><span class="second">Keep it in one.</span></h1>
+    <p>Press one key to save whatever's open. Ask when you need it back.</p>
+    <div class="cta"><span class="btn btn-primary">Download for Mac</span><span class="btn btn-ghost">Open in browser</span></div>
+  </header>
+
+  <div class="stage">{{fig:hero3}}</div>
+
+  <section class="section">
+    <h2 class="h2">Ask the way you remember it.<br><span class="second">Get the exact page or second.</span></h2>
+    <div class="finder">
+      <div class="qrow">the bit where he drew the band diagram<span class="caret"></span></div>
+      <div class="res"><div><div class="ti">MIT 6.002 Lecture 12, at 18:42</div><div class="sn">"…so if I draw the band diagram for the MOS capacitor, the conduction band bends down toward the surface…"</div></div><span class="or">YouTube</span></div>
+      <div class="res"><div><div class="ti">Lecture 6 — Transistors.pdf, page 17</div><div class="sn">Fig 6.7: band diagram of the MOS structure at inversion.</div></div><span class="or">Course site</span></div>
+      <div class="res"><div><div class="ti">Whiteboard photo</div><div class="sn">The band diagram from Tuesday's study group.</div></div><span class="or">WhatsApp</span></div>
+    </div>
+  </section>
+
+  <section class="section" style="padding-bottom:0;">
+    <h2 class="h2">Two keys.<br><span class="second">Nothing to organize.</span></h2>
+    <div class="steps">
+      <div class="step">{{fig:capture}}<h4>Capture</h4><p>One key saves the slides, tabs and videos you have open.</p></div>
+      <div class="step">{{fig:cite}}<h4>Find</h4><p>Ask a question. The answer opens on the right page.</p></div>
+      <div class="step">{{fig:overnight}}<h4>Tidy, if you like</h4><p>Overnight, Ruth sorts it into notebooks. Nothing moves until you say so.</p></div>
+    </div>
+  </section>
+
+  <section class="close" style="margin-top:0;">
+    <h2 class="display" style="font-size:52px; line-height:56px;">Stop organizing.<br><span class="second">Start finding.</span></h2>
+    <div class="cta"><span class="btn btn-primary">Download for Mac</span><span class="btn btn-ghost">Open in browser</span></div>
+  </section>
+
+  <footer class="foot"><span>Avenire</span><span>Privacy · Terms · Changelog</span></footer>
+</div>
+</body></html>

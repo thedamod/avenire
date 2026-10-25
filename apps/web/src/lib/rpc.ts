@@ -1,10 +1,17 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import {
   call,
   subscribeLibraryProjection,
-  QueryRequest,
   stream,
   type AvenireRpcClient,
   type ClientRuntime,
@@ -12,6 +19,33 @@ import {
 import * as Cause from "effect/Cause";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
+
+import { QueryCache } from "./query-cache";
+
+const caches = new WeakMap<ClientRuntime, QueryCache>();
+
+function cachedQuery<T, E>(
+  runtime: ClientRuntime,
+  queryKey: string,
+  fn: (client: AvenireRpcClient) => Effect.Effect<T, E>,
+) {
+  let cache = caches.get(runtime);
+  if (!cache) caches.set(runtime, (cache = new QueryCache()));
+  return cache.get(
+    queryKey,
+    (signal) => call(runtime, fn, { signal }),
+    (query) => subscribeLibraryProjection(runtime, queryKey, query.invalidate),
+  );
+}
+
+/** Warm the same entry the page will read, with request deduplication and a freshness window. */
+export function prefetchQuery<T, E>(
+  runtime: ClientRuntime,
+  fn: (client: AvenireRpcClient) => Effect.Effect<T, E>,
+  queryKey: string,
+) {
+  return cachedQuery(runtime, queryKey, fn).fetch();
+}
 
 export const ApiContext = createContext<ClientRuntime | undefined>(undefined);
 
@@ -26,42 +60,32 @@ export function useQuery<T, E>(
   queryKey: string,
 ) {
   const runtime = useApi();
-  const fnRef = useRef(fn);
-  fnRef.current = fn;
-  const [data, setData] = useState<T>();
-  const [error, setError] = useState<unknown>();
-  const [loading, setLoading] = useState(true);
-  const request = useRef(new QueryRequest());
-
-  const refetch = useCallback(
-    () =>
-      request.current.run(
-        (signal) => call(runtime, (client) => fnRef.current(client), { signal }),
-        {
-          start: () => {
-            setLoading(true);
-            setError(undefined);
-          },
-          success: setData,
-          error: setError,
-          finish: () => setLoading(false),
-        },
-      ),
-    [runtime, queryKey],
-  );
+  // The key defines resource identity; inline loaders change on every render.
+  // eslint-disable-next-line react/memo-dependencies
+  const query = useMemo(() => cachedQuery(runtime, queryKey, fn), [runtime, queryKey]);
+  // Capture this render's loader so changing keys cannot redirect an older cached request.
+  useEffect(() => {
+    query.setLoader((signal) => call(runtime, fn, { signal }));
+  });
+  const snapshot = useSyncExternalStore(query.subscribe, query.getSnapshot, query.getSnapshot);
+  const refetch = useCallback(() => query.fetch(true), [query]);
 
   useEffect(() => {
-    void refetch();
-    const unsubscribe = subscribeLibraryProjection(runtime, queryKey, () => {
-      void refetch();
-    });
-    return () => {
-      request.current.cancel();
-      unsubscribe();
+    void query.fetch();
+    const refresh = () => {
+      if (document.visibilityState === "visible") void query.fetch();
     };
-  }, [refetch, runtime, queryKey]);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [query]);
 
-  return { data, error, loading, refetch, setData };
+  return { ...snapshot, refetch, setData: query.setData };
 }
 
 export function useStream<T, E>(
@@ -99,4 +123,9 @@ export function useStream<T, E>(
 
 export function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : "Something went wrong. Please try again.";
+}
+
+/** Refresh cached resource families, including inactive pages on their next visit. */
+export function invalidateQueries(runtime: ClientRuntime, matches: (key: string) => boolean) {
+  caches.get(runtime)?.invalidateWhere(matches);
 }

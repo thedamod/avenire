@@ -382,7 +382,8 @@ export const FileIndexerLive = Layer.effect(
             await tx
               .update(ingestionJob)
               .set({
-                status: input.retryAfterMinutes === undefined ? "indexed" : "queued",
+                // Searchable publication is complete even when OCR needs a later retry.
+                status: "indexed",
                 error:
                   input.retryAfterMinutes === undefined
                     ? null

@@ -1,5 +1,6 @@
 import * as Crypto from "node:crypto";
 import * as OS from "node:os";
+import { fileURLToPath } from "node:url";
 import { CaptureId } from "@avenire/contracts";
 import type {
   CaptureSnapshot,
@@ -20,13 +21,13 @@ type Collected = {
 };
 type Collector = () => Promise<Collected>;
 
-async function withTimeout(collector: Collector): Promise<Collected> {
+async function withTimeout(collector: Collector, timeoutMs = 1500): Promise<Collected> {
   let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
       collector(),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("timed out after 1500ms")), 1_500);
+        timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs);
       }),
     ]);
   } finally {
@@ -36,14 +37,23 @@ async function withTimeout(collector: Collector): Promise<Collected> {
 
 export async function collectSnapshot(
   capturedAt = new Date().toISOString(),
+  options: { readonly foreground: boolean } = { foreground: false },
 ): Promise<CaptureSnapshot> {
   const collectors: readonly [string, Collector][] = [
-    ["foreground", collectForeground],
+    [
+      "foreground",
+      options.foreground
+        ? collectForeground
+        : async () => ({ notes: ["Foreground capture disabled in desktop setup."] }),
+    ],
     ["tabs", async () => ({ tabs: latestTabs() })],
     ["selection", collectSelection],
   ];
   const results = await Promise.allSettled(
-    collectors.map(([, collector]) => withTimeout(collector)),
+    // The research path collectors include a bounded Windows handle scan.
+    collectors.map(([name, collector]) =>
+      withTimeout(collector, name === "foreground" ? 25_000 : 1500),
+    ),
   );
   const values: Collected[] = [];
   const notes: string[] = [];
@@ -61,6 +71,23 @@ export async function collectSnapshot(
     }
   }
   const selectionText = values.find((value) => value.selectionText !== undefined)?.selectionText;
+  const tabs = values.flatMap((value) => value.tabs ?? []);
+  const browserFiles: CapturedWindow[] = [];
+  // Browser file URLs are device paths, not URLs the server can fetch.
+  // Preserve them as native upload candidates; private tabs never become candidates.
+  for (const tab of tabs) {
+    if (tab.incognito || !tab.url.startsWith("file:")) continue;
+    try {
+      browserFiles.push({
+        appName: "Browser",
+        title: tab.title,
+        filePath: fileURLToPath(tab.url),
+        foreground: tab.activeInWindow,
+      });
+    } catch {
+      notes.push("A browser file URL could not be resolved on this device.");
+    }
+  }
   const platform =
     process.platform === "darwin" || process.platform === "win32" || process.platform === "linux"
       ? process.platform
@@ -73,8 +100,8 @@ export async function collectSnapshot(
       .digest("hex")
       .slice(0, 32),
     platform,
-    windows: values.flatMap((value) => value.windows ?? []),
-    tabs: values.flatMap((value) => value.tabs ?? []),
+    windows: [...values.flatMap((value) => value.windows ?? []), ...browserFiles],
+    tabs,
     media: values.flatMap((value) => value.media ?? []),
     ...(selectionText === undefined ? {} : { selectionText }),
     collectorNotes: notes,

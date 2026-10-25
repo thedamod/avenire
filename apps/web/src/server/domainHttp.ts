@@ -176,9 +176,17 @@ export const cancelRunResponse = (request: Request, id: string) =>
 export const approvalsResponse = (request: Request) =>
   domainResponse(
     request,
-    decodeRequest(ListCloudApprovalsRequest, query(request)).pipe(
-      Effect.flatMap(CloudHandlers["cloud.listPendingApprovals"]),
-    ),
+    Effect.suspend(() => {
+      const values = query(request);
+      return decodeRequest(ListCloudApprovalsRequest, {
+        ...values,
+        ...(values.includeResolved === "true"
+          ? { includeResolved: true }
+          : values.includeResolved === "false"
+            ? { includeResolved: false }
+            : {}),
+      }).pipe(Effect.flatMap(CloudHandlers["cloud.listPendingApprovals"]));
+    }),
   );
 export const approvalDecisionResponse = (request: Request, id: string) =>
   domainResponse(

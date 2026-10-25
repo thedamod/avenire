@@ -5,7 +5,6 @@
 import {
   type ExtractionCoverage,
   type IngestionStatus,
-  type FileId,
   NotFound,
   StorageKey,
 } from "@avenire/contracts";
@@ -41,7 +40,12 @@ export class IngestionError extends Schema.TaggedError<IngestionError>()("Ingest
   cause: Schema.Defect(),
 }) {
   override get message(): string {
-    const instruction = this.cause instanceof UnsupportedSource ? `: ${this.cause.reason}` : "";
+    const instruction =
+      this.cause instanceof UnsupportedSource
+        ? `: ${this.cause.reason}`
+        : typeof this.cause === "string"
+          ? `: ${this.cause}`
+          : "";
     return `Ingestion failed while ${this.stage}${instruction}`;
   }
 }
@@ -49,6 +53,7 @@ export class IngestionError extends Schema.TaggedError<IngestionError>()("Ingest
 /** The job a pipeline run works on, as claimed from the queue. */
 export interface IngestionTask extends IngestionClaim {
   readonly attempts: number;
+  readonly background?: boolean | undefined;
 }
 
 export class IngestionPipeline extends Context.Service<
@@ -88,10 +93,12 @@ export const IngestionPipelineLive = Layer.effect(
           ),
         );
     const setStatus = (job: IngestionTask, status: IngestionStatus) =>
-      updateJob(job, {
-        status,
-        ...(status === "indexed" ? { error: null, lockedUntil: null, claimToken: null } : {}),
-      });
+      job.background
+        ? Effect.void
+        : updateJob(job, {
+            status,
+            ...(status === "indexed" ? { error: null, lockedUntil: null, claimToken: null } : {}),
+          });
     const loadFile = (job: IngestionTask) =>
       database
         .use((db) =>
@@ -170,16 +177,19 @@ export const IngestionPipelineLive = Layer.effect(
       const { document, publication } = yield* documentFor(job, found, bytes).pipe(
         stage("extracting"),
       );
+      yield* recordCoverage(job, document.coverage).pipe(stage("extracting"));
 
       if (document.sections.length === 0) {
         return yield* new IngestionError({
           stage: "extracting",
-          cause: "Nothing searchable was extracted",
+          cause: [
+            "Nothing searchable was extracted",
+            ...document.coverage.parts.flatMap((part) => (part.detail ? [part.detail] : [])),
+          ].join(". "),
         });
       }
 
       const index = Effect.gen(function* () {
-        yield* recordCoverage(job, document.coverage).pipe(stage("extracting"));
         yield* setStatus(job, "chunking").pipe(stage("chunking"));
         // Library metadata is authoritative even when the source extraction is reused.
         const title = found.title;

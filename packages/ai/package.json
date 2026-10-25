@@ -126,15 +126,17 @@
     "preview:check": "node --experimental-strip-types src/tools/preview/check.ts"
   },
   "dependencies": {
+    "@ai-sdk/fireworks": "catalog:",
+    "@ai-sdk/groq": "catalog:",
     "@avenire/cloud": "workspace:*",
     "@avenire/contracts": "workspace:*",
     "@avenire/database": "workspace:*",
+    "@avenire/emailer": "workspace:*",
     "@avenire/ingestion": "workspace:*",
     "@avenire/shared": "workspace:*",
     "@avenire/storage": "workspace:*",
     "@avenire/ui": "workspace:*",
     "@avenire/widget-kit": "workspace:*",
-    "@ai-sdk/fireworks": "catalog:",
     "@openrouter/ai-sdk-provider": "3.1.0",
     "agent-browser": "0.33.1",
     "ai": "catalog:",

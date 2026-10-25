@@ -93,8 +93,8 @@ export const foldersResponse = (request: Request) =>
       const library = yield* Library;
       const viewer = yield* CurrentUser;
       if (request.method === "POST") {
-        const { name } = yield* body(request, CreateFolderRequest);
-        return yield* library.createFolder(viewer.id, name);
+        const { name, ...options } = yield* body(request, CreateFolderRequest);
+        return yield* library.createFolder(viewer.id, name, options);
       }
       return yield* library.listFolders(viewer.id);
     }),

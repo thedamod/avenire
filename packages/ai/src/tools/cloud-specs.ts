@@ -30,7 +30,7 @@ export const hydrateFilesSpec = {
 export const publishOutputSpec = {
   name: "publish_output",
   description:
-    "Publish a workspace file up to 100 MB as a new library file in this run's folder. With replaces, propose a sync of a hydrated file for morning review; the original is only updated after the user accepts. Paths must stay inside the workspace and outside .avenire.",
+    "Publish a workspace file up to 100 MB as a new library file in this run's folder. With replaces, propose a sync of a hydrated file for morning review; the original is only updated after the user accepts. Name quizzes quiz.json (or *quiz*.json); they must follow the CloudQuiz shape from the prompt and invalid JSON is rejected with validation details. HTML outputs are also published as widgets. Paths must stay inside the workspace and outside .avenire.",
   inputSchema: standardSchema(
     Schema.Struct({
       sandboxPath: Schema.NonEmptyString,
@@ -57,6 +57,12 @@ export const publishReportSpec = {
     Schema.Struct({
       status: Schema.optionalKey(Schema.Literals(["succeeded", "failed"])),
       markdown: Schema.String.check(Schema.isMaxLength(100_000)),
+      startHere: Schema.optionalKey(
+        Schema.NonEmptyString.check(
+          Schema.isMaxLength(500),
+          Schema.makeFilter((value) => (/[\r\n]/.test(value) ? "Use a single line." : undefined)),
+        ),
+      ),
       assets: Schema.optionalKey(Schema.Array(Schema.String).check(Schema.isMaxLength(20))),
     }),
   ),

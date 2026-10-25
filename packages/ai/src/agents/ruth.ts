@@ -7,6 +7,8 @@
  * Full access.
  */
 import {
+  FolderId,
+  type CloudRunId,
   MessageId,
   NotFound,
   type PageContext,
@@ -16,7 +18,7 @@ import {
   type UserId,
 } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import { ruthMessage, ruthThread } from "@avenire/database/schema";
+import { cloudRun, ruthMessage, ruthThread } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
 import {
   convertToModelMessages,
@@ -45,15 +47,17 @@ import {
   RUTH_FAST_MODEL,
   RuthModels,
   RuthModelsLive,
+  RuthTitleModel,
+  RuthTitleModelLive,
 } from "../models/index.ts";
 import { createAgent } from "./factory.ts";
 import { ruthToolSpecs } from "../tools/index.ts";
 import { findVisuals } from "../tools/page.ts";
 import { createRuthTools, type RuthToolServices, type RuthTurn } from "../tools/ruth.ts";
 import { ThreadStore, ThreadStoreLive } from "./threads.ts";
+import { titleThread } from "./thread-title.ts";
+import { ruthStreamError } from "./stream-error.ts";
 export { ThreadStore, ThreadStoreLive, ThreadStoreError } from "./threads.ts";
-
-const STREAM_ERROR = "Ruth ran into a problem. Please try again.";
 
 export class RuthError extends Schema.TaggedError<RuthError>()("RuthError", {
   operation: Schema.String,
@@ -67,6 +71,7 @@ export class RuthError extends Schema.TaggedError<RuthError>()("RuthError", {
 
 export interface ChatInput {
   readonly userId: UserId;
+  readonly scope?: import("@avenire/contracts").ChatScope | undefined;
   readonly threadId: ThreadId;
   /** The client's latest `RuthUIMessage`, still unvalidated JSON. */
   readonly message: unknown;
@@ -132,10 +137,25 @@ export const appendIncoming = (
       metadata: {
         createdAt: options.createdAt,
         ...(references === undefined ? {} : { references }),
+        ...(incoming.metadata?.runId === undefined ? {} : { runId: incoming.metadata.runId }),
       },
     },
   ];
 };
+
+/** Ownership guard shared by every chat transport, before messages or model calls. */
+export const validateReportRun = Effect.fn("Ruth.validateReportRun")(function* (
+  userId: UserId,
+  runId: CloudRunId,
+) {
+  const database = yield* Database;
+  const run = yield* database.use((db) =>
+    db.query.cloudRun.findFirst({
+      where: and(eq(cloudRun.id, runId), eq(cloudRun.userId, userId)),
+    }),
+  );
+  if (!run) return yield* new NotFound({ entity: "CloudRun", id: runId });
+});
 
 /**
  * The Ruth agent for one turn: model, system prompt, tools and approval policy.
@@ -175,6 +195,7 @@ const makeRuth = Effect.gen(function* () {
   const database = yield* Database;
   const threads = yield* ThreadStore;
   const models = yield* RuthModels;
+  const titleModel = (yield* RuthTitleModel).model;
   const approvalSecret = yield* Config.Redacted("RUTH_APPROVAL_SECRET");
   // Tools and stream callbacks run outside Effect; they run their programs with these.
   const services = yield* Effect.context<RuthToolServices>();
@@ -291,6 +312,15 @@ const makeRuth = Effect.gen(function* () {
       return yield* new RuthError({ operation: "read the message", cause: "it is missing" });
     }
 
+    if (incoming.metadata?.runId !== undefined) {
+      yield* validateReportRun(input.userId, incoming.metadata.runId).pipe(
+        Effect.provideService(Database, database),
+        Effect.catchTag("DatabaseError", (cause) =>
+          Effect.fail(fail("validate the report run")(cause)),
+        ),
+      );
+    }
+
     const createdAt = DateTime.formatIso(yield* DateTime.now);
     const freshId = yield* makeId(MessageId);
     const conversation = appendIncoming(history, incoming, { freshId, createdAt });
@@ -303,6 +333,9 @@ const makeRuth = Effect.gen(function* () {
       fast: input.fast,
       turn: {
         userId: input.userId,
+        scope:
+          input.scope ??
+          (thread.folderId ? { folderIds: [FolderId.make(thread.folderId)] } : undefined),
         threadId: input.threadId,
         page: input.page,
         fullAccess: thread.fullAccess,
@@ -318,7 +351,9 @@ const makeRuth = Effect.gen(function* () {
     // A continued reply keeps its original timestamp.
     const last = conversation.at(-1);
     const replyMetadata =
-      last?.role === "assistant" && last.metadata ? last.metadata : { createdAt };
+      last?.role === "assistant" && last.metadata
+        ? last.metadata
+        : { createdAt, ...(last?.metadata?.runId ? { runId: last.metadata.runId } : {}) };
 
     const result = streamText({
       ...agent,
@@ -331,17 +366,40 @@ const makeRuth = Effect.gen(function* () {
       tools: agent.tools,
       originalMessages: conversation,
       generateMessageId: () => responseId,
-      messageMetadata: ({ part }) => (part.type === "start" ? replyMetadata : undefined),
+      messageMetadata: ({ part }) =>
+        part.type === "start"
+          ? replyMetadata
+          : part.type === "finish"
+            ? { ...replyMetadata, finishedAt: new Date().toISOString() }
+            : undefined,
       onError: (error) => {
         Effect.runForkWith(services)(Effect.logError("Ruth chat stream failed", { error }));
-        return STREAM_ERROR;
+        return ruthStreamError(error);
       },
-      onEnd: ({ responseMessage }) =>
-        Effect.runPromiseWith(services)(
-          saveMessages(input.userId, input.threadId, [responseMessage]).pipe(
-            Effect.catchCause((cause) => Effect.logError("Could not save Ruth's reply", cause)),
-          ),
-        ),
+      onEnd: ({ responseMessage, messages, isAborted, isCancelled }) =>
+        // A turn that failed before producing anything leaves no reply; the client offers Retry.
+        !responseMessage.parts.some((part) => part.type !== "step-start")
+          ? undefined
+          : Effect.runPromiseWith(services)(
+              saveMessages(input.userId, input.threadId, [responseMessage]).pipe(
+                // Finish persistence before the clients invalidate their thread lists.
+                Effect.andThen(
+                  thread.kind === "chat" &&
+                    !history.some((message) => message.role === "assistant") &&
+                    !isAborted &&
+                    !isCancelled
+                    ? titleThread({
+                        model: titleModel,
+                        userId: input.userId,
+                        threadId: input.threadId,
+                        previousTitle: thread.title,
+                        messages,
+                      })
+                    : Effect.void,
+                ),
+                Effect.catchCause((cause) => Effect.logError("Could not save Ruth's reply", cause)),
+              ),
+            ),
     });
     return stream;
   });
@@ -374,5 +432,6 @@ const makeRuth = Effect.gen(function* () {
 
 export const RuthLive = Layer.effect(Ruth, makeRuth).pipe(
   Layer.provide(RuthModelsLive),
+  Layer.provide(RuthTitleModelLive),
   Layer.provide(ThreadStoreLive),
 );

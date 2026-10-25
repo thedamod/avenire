@@ -26,7 +26,7 @@ import { markContentChanged } from "@avenire/ingestion/events";
 import { enqueueIngestion } from "@avenire/ingestion/worker";
 import { fileSourceKey, keyFilename, newKeyVersion } from "@avenire/storage/keys";
 import { Storage, type ObjectNotFound, type StorageError } from "@avenire/storage/storage";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -48,6 +48,7 @@ export class CloudReview extends Context.Service<
     readonly list: (
       userId: UserId,
       runId?: CloudRunId,
+      includeResolved?: boolean,
     ) => Effect.Effect<readonly PendingApproval[], DatabaseError>;
     readonly resolve: (
       userId: UserId,
@@ -94,7 +95,11 @@ export const CloudReviewLive = Layer.effect(
     const database = yield* Database;
     const storage = yield* Storage;
     const crypto = yield* Crypto.Crypto;
-    const list = Effect.fn("CloudReview.list")(function* (userId: UserId, runId?: CloudRunId) {
+    const list = Effect.fn("CloudReview.list")(function* (
+      userId: UserId,
+      runId?: CloudRunId,
+      includeResolved = false,
+    ) {
       const rows = yield* database.use((db) =>
         db
           .select({ approval: pendingApproval, fileTitle: file.title })
@@ -103,11 +108,16 @@ export const CloudReviewLive = Layer.effect(
           .where(
             and(
               eq(pendingApproval.userId, userId),
-              inArray(pendingApproval.status, ["pending", "conflict"]),
+              includeResolved
+                ? undefined
+                : inArray(pendingApproval.status, ["pending", "conflict"]),
               ...(runId === undefined ? [] : [eq(pendingApproval.runId, runId)]),
             ),
           )
-          .orderBy(desc(pendingApproval.createdAt), desc(pendingApproval.id)),
+          .orderBy(
+            includeResolved ? asc(pendingApproval.createdAt) : desc(pendingApproval.createdAt),
+            includeResolved ? asc(pendingApproval.id) : desc(pendingApproval.id),
+          ),
       );
       return rows.map(({ approval, fileTitle }) => wireApproval({ ...approval, fileTitle }));
     });

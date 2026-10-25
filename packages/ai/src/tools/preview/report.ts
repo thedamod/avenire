@@ -22,11 +22,22 @@ export const PreviewError = Schema.Struct({
   afterAction: Schema.optionalKey(Schema.String),
 });
 export const PreviewResult = Schema.Struct({
+  activity: Schema.optionalKey(Schema.String),
   ok: Schema.Boolean,
   width: Schema.Int,
   appearance: Schema.Literals(["light", "dark"]),
   contentHeight: Schema.Int,
   overflowX: Schema.Boolean,
+  rendering: Schema.optionalKey(
+    Schema.Struct({
+      canvas2d: Schema.Int,
+      webgl: Schema.Int,
+      webgl2: Schema.Int,
+      programsLinked: Schema.Int,
+      drawCalls: Schema.Int,
+      contextsLost: Schema.Int,
+    }),
+  ),
   screenshots: Schema.Array(
     Schema.Struct({
       label: Schema.String,

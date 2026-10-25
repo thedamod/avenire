@@ -1,0 +1,86 @@
+<!doctype html><html><head><meta charset="utf-8"><title>A · Product-first</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/*{{tokens}}*/
+/*{{base}}*/
+.hero { padding: 112px 48px 64px; display: flex; flex-direction: column; gap: 24px; }
+.stage { margin: 0 48px; height: 640px; position: relative; border: 1px solid var(--color-border); border-radius: var(--radius-l-card); overflow: hidden;
+  background-color: var(--color-surface-1);
+  background-image: radial-gradient(var(--color-border-strong) 1px, transparent 1px); background-size: 16px 16px; }
+.appwin { position: absolute; left: 48px; top: 48px; width: 820px; height: 560px; display: grid; grid-template-columns: 200px 1fr; }
+.side { background: var(--color-bg); border-right: 1px solid var(--color-border); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+.row { display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: var(--radius-sm); font-size: 12.5px; color: var(--color-text); }
+.row.on { background: var(--color-surface-4); color: var(--color-text-strong); }
+.row .end { margin-left: auto; font-size: 11px; color: var(--color-text-muted); }
+.lbl { padding: 12px 8px 4px; font-size: 11px; color: var(--color-text-muted); }
+.note { padding: 28px 36px; display: flex; flex-direction: column; gap: 14px; }
+.note h4 { font-size: 22px; font-weight: 500; letter-spacing: -0.02em; color: var(--color-text-strong); }
+.note p { font-size: 14px; line-height: 23px; color: var(--color-text-strong); }
+.pbox { position: absolute; right: 56px; top: 150px; width: 470px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-2); box-shadow: var(--shadow-float); overflow: hidden; }
+.pbox-in { height: 50px; display: flex; align-items: center; padding: 0 16px; font-size: 15px; color: var(--color-text-strong); }
+.pbox-st { height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-top: 1px solid var(--color-border); font-size: 12.5px; color: var(--color-text); }
+.pbox-body { padding: 14px 16px 18px; border-top: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 10px; }
+.toast { position: absolute; right: 56px; bottom: 40px; width: 330px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-2); box-shadow: var(--shadow-float); padding: 10px 12px 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.t-row { display: flex; gap: 10px; font-size: 12.5px; color: var(--color-text-strong); }
+.t-row span:first-child { width: 40px; font-family: var(--font-mono); font-size: 10px; color: var(--color-text-muted); padding-top: 2px; }
+.section { border-top: 1px solid var(--color-border); padding: 112px 48px 120px; }
+.three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 64px; }
+.shot { height: 300px; border: 1px solid var(--color-border); border-radius: var(--radius-l-card); background: var(--color-surface-1); background-image: radial-gradient(var(--color-border) 1px, transparent 1px); background-size: 16px 16px; position: relative; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.three h4 { margin-top: 24px; font-size: 20px; font-weight: 500; letter-spacing: -0.015em; color: var(--color-text-strong); }
+.three p { margin-top: 8px; font-size: 15px; line-height: 24px; color: var(--color-text-muted); }
+.mini { width: 100%; border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-2); overflow: hidden; }
+.li { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; font-size: 12.5px; color: var(--color-text-strong); }
+.li + .li { border-top: 1px solid var(--color-border); }
+.li .ty { width: 46px; font-family: var(--font-mono); font-size: 10px; color: var(--color-text-muted); }
+.b { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: var(--radius-md); font-size: 11.5px; font-weight: 500; }
+.b1 { background: var(--color-text-strong); color: var(--color-bg); } .b2 { background: var(--color-surface-4); color: var(--color-text-strong); }
+</style></head><body>
+<div class="tag">A · Product-first</div>
+<div class="rails">
+  <nav class="nav"><div class="brand">{{logo}}Avenire</div><div class="nav-links"><span>Product</span><span>Ruth Cloud</span><span>Pricing</span><span>Changelog</span></div><div style="display:flex; gap:10px;"><span class="btn btn-sm btn-ghost">Log in</span><span class="btn btn-sm btn-primary">Get started</span></div></nav>
+  <header class="hero">
+    <h1 class="display" style="max-width:1100px;">Your notes, answered.<br><span class="quiet">Your library, sorted while you sleep.</span></h1>
+    <p class="lead" style="max-width:600px;">Press ⌥ Space anywhere and ask. Ruth answers from your own lecture PDFs, notes and recordings, and cites the page.</p>
+    <div style="display:flex; gap:12px; margin-top:8px;"><span class="btn btn-primary">Download for Mac</span><span class="btn btn-ghost">Open in browser</span></div>
+  </header>
+
+  <div class="stage">
+    <div class="appwin win">
+      <aside class="side">
+        <div class="row" style="color:var(--color-text-strong); font-weight:600;">Avenire</div>
+        <div class="row">Home</div><div class="row">Inbox<span class="end">4</span></div><div class="row">Morning report<span class="end">Ready</span></div>
+        <div class="lbl">Notebooks</div>
+        <div class="row on"><span class="cov" style="background:var(--color-cover-sky)"></span>Physics 101</div>
+        <div class="row"><span class="cov" style="background:var(--color-cover-mustard)"></span>Organic Chemistry</div>
+        <div class="row"><span class="cov" style="background:var(--color-cover-moss)"></span>Algorithms</div>
+        <div class="row"><span class="cov" style="background:var(--color-cover-rose)"></span>Art History</div>
+        <div class="row"><span class="cov" style="background:var(--color-cover-lilac)"></span>Literature</div>
+      </aside>
+      <div style="display:flex; flex-direction:column;">
+        <div class="win-bar">Physics 101 › <span style="color:var(--color-text-strong)">MOSFET switching</span></div>
+        <div class="note">
+          <h4>MOSFET switching</h4>
+          <p>The gate and the channel form a small capacitor. Below the threshold voltage the gate only repels holes, so no channel forms <span class="cite">1 · p.14</span></p>
+          <p>Past it, electrons gather under the gate into an inversion layer and current flows from source to drain <span class="cite">2 · p.15</span></p>
+          <div style="display:flex; gap:6px;"><span class="chip"><span class="cov" style="background:var(--color-cover-sky); width:7px; height:9px"></span>Lecture 6 — Transistors</span><span class="chip">Lab 3 write-up</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="pbox">
+      <div class="pbox-in">What does the 2N7000's V<sub>th</sub>&nbsp;mean for lab 4?</div>
+      <div class="pbox-st"><span style="color:var(--color-text-strong)">Reading your notes in Physics 101…</span><span style="margin-left:auto; color:var(--color-text-muted)">4 sources</span></div>
+      <div class="pbox-body"><span style="font-size:13.5px; line-height:20px; color:var(--color-text-strong); opacity:.25;">Your lab 3 notes measured it at about 0.7 V.</span><span style="font-size:17px; line-height:25px; letter-spacing:-0.01em; color:var(--color-text-strong);">So with the 5 V logic in lab 4, the gate is driven well past threshold and the switch fully turns on.</span></div>
+    </div>
+    <div class="toast"><div style="display:flex; align-items:center;"><span style="font-size:12.5px; font-weight:500; color:var(--color-text-strong);">Captured 3 items to Inbox</span><span class="b b2" style="margin-left:auto">Undo</span></div><div class="t-row"><span>PDF</span>Lecture 7 — Amplifiers.pdf</div><div class="t-row"><span>VIDEO</span>MIT 6.002 Lecture 12</div></div>
+  </div>
+
+  <section class="section" style="margin-top:96px;">
+    <h2 class="h2"><span class="quiet">Three things happen.</span><br>You only do the first.</h2>
+    <div class="three">
+      <div><div class="shot"><div class="mini"><div class="li" style="font-weight:500">Captured 3 items to Inbox<span class="b b2" style="margin-left:auto">Undo</span></div><div class="li"><span class="ty">PDF</span>Lecture 7 — Amplifiers.pdf</div><div class="li"><span class="ty">TAB</span>Common-source amplifier</div><div class="li"><span class="ty">VIDEO</span>MIT 6.002 Lecture 12</div></div></div><h4>You capture</h4><p>One hotkey from any app grabs the PDFs, tabs and videos you have open.</p></div>
+      <div><div class="shot"><div class="mini"><div class="li"><span class="ty">MOVE</span>Lecture 7 → <span class="cov" style="background:var(--color-cover-sky)"></span>Physics 101</div><div class="li"><span class="ty">RENAME</span>scan_0042 → Problem set 4</div><div class="li"><span class="ty">NOTE</span>Lecture 7 in five paragraphs</div><div class="li"><span class="ty">QUIZ</span>Transistors · 8 questions</div></div></div><h4>Ruth works overnight</h4><p>She reads everything new, files it, and writes the notes you'd have written.</p></div>
+      <div><div class="shot"><div class="mini"><div class="li" style="font-weight:500">4 changes waiting<span class="b b1" style="margin-left:auto">Accept all</span></div><div class="li"><span class="ty">MOVE</span>Lecture 7 — Amplifiers<span style="margin-left:auto; display:flex; gap:4px;"><span class="b b2">Skip</span><span class="b b2">Accept</span></span></div><div class="li"><span class="ty">EDIT</span>MOSFET switching<span style="margin-left:auto; display:flex; gap:4px;"><span class="b b2">Skip</span><span class="b b2">Accept</span></span></div><div class="li" style="color:var(--color-text-muted)"><span class="ty">ARCHIVE</span>Lecture 6 copy<span style="margin-left:auto; color:var(--color-signal-green); font-size:11.5px">Accepted</span></div></div></div><h4>You review at breakfast</h4><p>One page each morning. Nothing touches your files until you accept it.</p></div>
+    </div>
+  </section>
+</div>
+</body></html>

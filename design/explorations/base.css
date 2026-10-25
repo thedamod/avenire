@@ -1,0 +1,30 @@
+/* Shared base for landing explorations */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+body { width: 1440px; }
+.fig { display: flex; align-items: center; justify-content: center; }
+.fig svg { width: 100%; height: 100%; display: block; }
+.mono { font-family: var(--font-mono); font-size: var(--text-mono); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-muted); }
+.display { font-weight: 500; font-size: var(--text-l-display); line-height: var(--leading-l-display); letter-spacing: var(--tracking-display); color: var(--color-text-strong); }
+.h2 { font-weight: 500; font-size: var(--text-l-h2); line-height: var(--leading-l-h2); letter-spacing: var(--tracking-display); color: var(--color-text-strong); }
+.h3 { font-weight: 500; font-size: var(--text-l-h3); line-height: var(--leading-l-h3); letter-spacing: var(--tracking-heading); color: var(--color-text-strong); }
+.quiet { color: var(--color-text-muted); }
+.lead { font-size: var(--text-l-lead); line-height: var(--leading-l-lead); color: var(--color-text-muted); }
+.body { font-size: var(--text-l-body); line-height: var(--leading-l-body); color: var(--color-text); }
+.btn { display: inline-flex; align-items: center; height: 44px; padding: 0 22px; border-radius: var(--radius-pill); font-size: 15px; font-weight: 500; white-space: nowrap; }
+.btn-sm { height: 34px; padding: 0 16px; font-size: 14px; }
+.btn-primary { background: var(--color-text-strong); color: var(--color-bg); }
+.btn-ghost { border: 1px solid var(--color-border-strong); color: var(--color-text-strong); }
+.nav { display: flex; align-items: center; justify-content: space-between; height: 72px; padding: 0 32px; }
+.nav-links { display: flex; gap: 32px; font-size: 14px; color: var(--color-text); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: -0.02em; color: var(--color-text-strong); }
+.rails { margin: 0 112px; border-left: 1px solid var(--color-border); border-right: 1px solid var(--color-border); }
+.tag { position: fixed; top: 0; left: 0; z-index: 9; padding: 6px 10px; background: var(--color-text-strong); color: var(--color-bg); font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+
+/* app bits reused inside landing shots */
+.win { border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-1); overflow: hidden; }
+.win-bar { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--color-border); font-size: 12px; color: var(--color-text-muted); }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 7px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); font-size: 12px; color: var(--color-text); white-space: nowrap; }
+.cite { display: inline-flex; align-items: center; height: 17px; padding: 0 5px; border-radius: var(--radius-xs); background: var(--color-surface-3); border: 1px solid var(--color-border-strong); font-family: var(--font-mono); font-size: 10px; color: var(--color-text); vertical-align: 1px; }
+.cov { display: inline-block; width: 9px; height: 12px; border-radius: 1px 2px 2px 1px; flex-shrink: 0; }
+.kbd { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); font-family: var(--font-mono); font-size: 10.5px; color: var(--color-text-muted); }

@@ -6,6 +6,7 @@ import {
   type DatabaseClient,
 } from "@avenire/database/client";
 import { user as userTable, ruthThread } from "@avenire/database/schema";
+import { CloudReview } from "@avenire/ai/cloud/review";
 import { ThreadStoreLive } from "@avenire/ai/ruth";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { eq, inArray } from "drizzle-orm";
@@ -18,6 +19,7 @@ import * as Effect from "effect/Effect";
 import {
   accessResponse,
   approvalDecisionResponse,
+  approvalsResponse,
   assetResponse,
   assetsResponse,
   cancelRunResponse,
@@ -44,6 +46,7 @@ const fixture = Effect.gen(function* () {
   const auth = createAuth(
     {
       db: {} as DatabaseClient,
+      sendEmail: () => undefined,
       baseURL: "https://app.test",
       secret: "domain-route-test-secret-with-at-least-32-characters",
       trustedOrigins: ["https://app.test"],
@@ -283,4 +286,37 @@ it.effect(
         ),
       );
     }),
+);
+
+it.effect("approval HTTP accepts optional resolved boolean and rejects invalid values", () =>
+  Effect.gen(function* () {
+    const { service, cookie } = yield* fixture;
+    const seen: (boolean | undefined)[] = [];
+    const review = CloudReview.of({
+      list: (_userId, _runId, includeResolved) =>
+        Effect.sync(() => {
+          seen.push(includeResolved);
+          return [];
+        }),
+      resolve: () => Effect.die("Not used"),
+      resolveRun: () => Effect.die("Not used"),
+    });
+    for (const value of [
+      "",
+      "&includeResolved=true",
+      "&includeResolved=false",
+      "&includeResolved=invalid",
+    ]) {
+      const response = yield* approvalsResponse(
+        new Request(`https://app.test/api/cloud/approvals?runId=run${value}`, {
+          headers: { cookie },
+        }),
+      ).pipe(
+        Effect.provideService(AuthService, service),
+        Effect.provideService(CloudReview, review),
+      );
+      expect(response.status).toBe(value.endsWith("invalid") ? 400 : 200);
+    }
+    expect(seen).toEqual([undefined, true, false]);
+  }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)),
 );

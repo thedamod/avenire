@@ -136,7 +136,7 @@ function FrameAttempt({
       role="figure"
       aria-label={title}
       data-slot="widget-frame"
-      className={cn("overflow-hidden rounded-md border border-border bg-card", className)}
+      className={cn("overflow-hidden", className)}
       style={{ height }}
     >
       {error !== null ? (

@@ -266,7 +266,7 @@ it.effect("publishes partial searchable content and its retry backoff atomically
     const completion = state.committed.find((query) =>
       query.sql.startsWith('update "ingestion_job"'),
     )!;
-    expect(completion.params).toContain("queued");
+    expect(completion.params).toContain("indexed");
     expect(completion.params).toContain(4);
     expect(completion.params).toContain("Partial extraction; retry scheduled.");
     expect(completion.sql).toContain("interval '1 minute'");
