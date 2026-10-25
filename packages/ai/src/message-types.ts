@@ -2,6 +2,7 @@
  * Ruth's chat message type: an AI SDK `UIMessage` with Ruth's metadata, data
  * parts and tools. Web and mobile import this type-only.
  */
+import { CloudRunId } from "@avenire/contracts";
 import type { InferUITools, UIMessage } from "ai";
 import * as Schema from "effect/Schema";
 
@@ -12,11 +13,15 @@ export type { PageContextResult, RuthTools } from "./tools/index.ts";
 
 export const RuthMessageMetadata = Schema.Struct({
   createdAt: Schema.String,
+  /** Report follow-up grouping; ownership is checked before persistence. */
+  runId: Schema.optionalKey(CloudRunId),
+  /** When the reply finished streaming; with createdAt it gives "Worked for Xm Ys". */
+  finishedAt: Schema.optionalKey(Schema.String),
   /** Library objects the user referenced in the composer. */
   references: Schema.optionalKey(
     Schema.Array(
       Schema.Struct({
-        kind: Schema.Literals(["file", "folder", "canvasNode"]),
+        kind: Schema.Literals(["file", "folder"]),
         id: Schema.String,
       }),
     ),
@@ -57,6 +62,7 @@ export const incomingMessageSchemas = {
     Schema.UndefinedOr(
       Schema.Struct({
         createdAt: Schema.optionalKey(Schema.String),
+        runId: RuthMessageMetadata.fields.runId,
         references: RuthMessageMetadata.fields.references,
       }),
     ),

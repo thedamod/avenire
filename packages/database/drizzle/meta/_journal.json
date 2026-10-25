@@ -50,6 +50,34 @@
       "when": 1792303569464,
       "tag": "0006_device_sources_remove_canvas",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792431340134,
+      "tag": "0007_lucky_tyrannus",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792576503109,
+      "tag": "0008_shallow_golden_guardian",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792593369829,
+      "tag": "0009_happy_golden_guardian",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792612864603,
+      "tag": "0010_sad_ego",
+      "breakpoints": true
     }
   ]
 }

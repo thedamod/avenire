@@ -12,6 +12,8 @@ import {
   CurrentUser,
   RuthRpcs,
   SearchRpcs,
+  type ThreadIdRequest,
+  type RenameThreadRequest,
   type CloudRunIdRequest,
   type CloudTaskIdRequest,
   type CloudTaskInput,
@@ -40,6 +42,18 @@ export const SearchHandlers = {
   }),
 };
 export const RuthHandlers = {
+  "ruth.getThread": ({ threadId }: typeof ThreadIdRequest.Type) =>
+    Effect.gen(function* () {
+      return yield* (yield* ThreadStore).getThread((yield* CurrentUser).id, threadId);
+    }).pipe(Effect.mapError(toApiError), sanitizeApiDefects),
+  "ruth.renameThread": ({ threadId, title }: typeof RenameThreadRequest.Type) =>
+    Effect.gen(function* () {
+      return yield* (yield* ThreadStore).renameThread((yield* CurrentUser).id, threadId, title);
+    }).pipe(Effect.mapError(toApiError), sanitizeApiDefects),
+  "ruth.deleteThread": ({ threadId }: typeof ThreadIdRequest.Type) =>
+    Effect.gen(function* () {
+      return yield* (yield* ThreadStore).deleteThread((yield* CurrentUser).id, threadId);
+    }).pipe(Effect.mapError(toApiError), sanitizeApiDefects),
   "ruth.listThreads": Effect.fn("RuthRpc.listThreads")(function* () {
     const viewer = yield* CurrentUser;
     const threads = yield* ThreadStore;
@@ -53,7 +67,7 @@ export const RuthHandlers = {
     const viewer = yield* CurrentUser;
     const threads = yield* ThreadStore;
     return yield* threads
-      .createThread(viewer.id, input.title)
+      .createThread(viewer.id, input.title, input.folderId)
       .pipe(Effect.mapError(toApiError), sanitizeApiDefects);
   }),
   "ruth.listMessages": Effect.fn("RuthRpc.listMessages")(function* ({
@@ -77,6 +91,10 @@ export const RuthHandlers = {
   }),
 };
 export const CloudHandlers = {
+  "cloud.getRun": ({ runId }: typeof CloudRunIdRequest.Type) =>
+    Effect.gen(function* () {
+      return yield* (yield* CloudTasks).getRun((yield* CurrentUser).id, runId);
+    }).pipe(Effect.mapError(toApiError), sanitizeApiDefects),
   "cloud.listTasks": Effect.fn("CloudRpc.listTasks")(function* () {
     const viewer = yield* CurrentUser;
     const tasks = yield* CloudTasks;
@@ -119,11 +137,12 @@ export const CloudHandlers = {
   }),
   "cloud.listRuns": Effect.fn("CloudRpc.listRuns")(function* ({
     limit,
+    taskId,
   }: typeof ListCloudRunsRequest.Type) {
     const viewer = yield* CurrentUser;
     const tasks = yield* CloudTasks;
     return yield* tasks
-      .listRuns(viewer.id, limit)
+      .listRuns(viewer.id, limit, taskId)
       .pipe(Effect.mapError(toApiError), sanitizeApiDefects);
   }),
   "cloud.cancelRun": Effect.fn("CloudRpc.cancelRun")(function* ({
@@ -137,11 +156,12 @@ export const CloudHandlers = {
   }),
   "cloud.listPendingApprovals": Effect.fn("CloudRpc.listPendingApprovals")(function* ({
     runId,
+    includeResolved,
   }: typeof ListCloudApprovalsRequest.Type) {
     const viewer = yield* CurrentUser;
     const review = yield* CloudReview;
     return yield* review
-      .list(viewer.id, runId)
+      .list(viewer.id, runId, includeResolved)
       .pipe(Effect.mapError(toApiError), sanitizeApiDefects);
   }),
   "cloud.resolveApproval": Effect.fn("CloudRpc.resolveApproval")(function* ({

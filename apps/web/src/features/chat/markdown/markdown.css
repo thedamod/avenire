@@ -1,0 +1,231 @@
+/* Ruth's prose. Values follow the chat designs (12, M21): 15/26 on desktop, 16/24 on phone. */
+.ruth-md {
+  color: var(--foreground);
+  font-size: 15px;
+  line-height: 26px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 767.98px) {
+  .ruth-md {
+    font-size: 16px;
+    line-height: 24px;
+  }
+}
+.ruth-md > * + * {
+  margin-top: 12px;
+}
+.ruth-md p,
+.ruth-md ul,
+.ruth-md ol,
+.ruth-md blockquote {
+  margin: 0;
+}
+.ruth-md p + p,
+.ruth-md p + ul,
+.ruth-md p + ol,
+.ruth-md ul + p,
+.ruth-md ol + p {
+  margin-top: 12px;
+}
+.ruth-md h1,
+.ruth-md h2,
+.ruth-md h3,
+.ruth-md h4 {
+  margin: 20px 0 6px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.ruth-md h1 {
+  font-size: 20px;
+}
+.ruth-md h2 {
+  font-size: 17px;
+}
+.ruth-md h3,
+.ruth-md h4 {
+  font-size: 15px;
+}
+.ruth-md > :first-child,
+.ruth-md > :first-child > :first-child {
+  margin-top: 0;
+}
+.ruth-md ul,
+.ruth-md ol {
+  padding-left: 1.25em;
+}
+.ruth-md ul {
+  list-style: disc;
+}
+.ruth-md ol {
+  list-style: decimal;
+}
+.ruth-md li + li {
+  margin-top: 4px;
+}
+.ruth-md li::marker {
+  color: var(--muted-foreground);
+}
+.ruth-md strong {
+  font-weight: 600;
+}
+.ruth-md a:not(.ruth-cite) {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-decoration-color: var(--control-strong);
+  text-underline-offset: 3px;
+}
+.ruth-md a:not(.ruth-cite):hover {
+  text-decoration-color: var(--foreground-soft);
+}
+.ruth-md blockquote {
+  border-left: 2px solid var(--input);
+  padding-left: 12px;
+  color: var(--foreground-soft);
+}
+.ruth-md hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
+}
+.ruth-md :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+}
+.ruth-md img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+.ruth-md .katex-display {
+  margin: 12px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+}
+.ruth-md-table {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ruth-md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  line-height: 20px;
+}
+.ruth-md th,
+.ruth-md td {
+  padding: 7px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.ruth-md tr:last-child td {
+  border-bottom: 0;
+}
+.ruth-md th {
+  font-weight: 500;
+  color: var(--foreground-soft);
+}
+
+.ruth-cite {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  margin: 0 1px;
+  border-radius: 6px;
+  border: 1px solid var(--input);
+  background: var(--secondary);
+  color: var(--foreground-soft);
+  font-size: 12px;
+  line-height: 18px;
+  vertical-align: 1px;
+  white-space: nowrap;
+  text-decoration: none;
+  transition:
+    color 120ms,
+    border-color 120ms;
+}
+.ruth-cite:hover {
+  color: var(--foreground);
+  border-color: var(--control-strong);
+}
+
+.ruth-code {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #0e0e0e;
+  overflow: hidden;
+}
+.ruth-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  padding: 0 8px 0 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+  border-bottom: 1px solid var(--border);
+}
+.ruth-code-bar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+}
+.ruth-code-bar button:hover {
+  color: var(--foreground);
+  background: var(--hover);
+}
+.ruth-code-body,
+.ruth-code-body pre {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 20px;
+  background: transparent !important;
+}
+.ruth-code-body:has(pre) {
+  padding: 0;
+}
+
+/* "Thinking" / "Building…" text shimmer; still when the user prefers reduced motion. */
+.ruth-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--foreground-soft) 0%,
+    var(--foreground-soft) 40%,
+    var(--foreground) 50%,
+    var(--foreground-soft) 60%,
+    var(--foreground-soft) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ruth-shimmer 1.8s linear infinite;
+}
+@keyframes ruth-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ruth-shimmer {
+    animation: none;
+    color: var(--foreground-soft);
+    background: none;
+  }
+}

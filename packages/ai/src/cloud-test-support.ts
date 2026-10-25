@@ -97,15 +97,19 @@ export const recordingDatabase = (events: string[] = []) => {
     }
     return true;
   };
-  const chain = <A>(run: () => A) => {
+  const chain = <A>(run: (conflictUpdate?: Row) => A) => {
+    let conflictUpdate: Row | undefined;
     let promise: Promise<A> | undefined;
-    const resolve = () => (promise ??= Promise.resolve().then(run));
+    const resolve = () => (promise ??= Promise.resolve().then(() => run(conflictUpdate)));
     const builder = {
       // eslint-disable-next-line unicorn/no-thenable -- Drizzle builders are deliberately lazy PromiseLike values.
       then: <B>(yes: (value: A) => B, no?: (error: unknown) => B) => resolve().then(yes, no),
       returning: () => resolve(),
       onConflictDoNothing: () => builder,
-      onConflictDoUpdate: () => builder,
+      onConflictDoUpdate: ({ set }: { set: Row }) => {
+        conflictUpdate = set;
+        return builder;
+      },
     };
     return builder;
   };
@@ -254,7 +258,7 @@ export const recordingDatabase = (events: string[] = []) => {
     insert: (table: Parameters<typeof getTableName>[0]) => ({
       values: (input: Row | Row[]) => {
         const name = getTableName(table);
-        return chain(() =>
+        return chain((conflictUpdate) =>
           (Array.isArray(input) ? input : [input]).flatMap((one) => {
             const values = evaluate(one);
             let existing: Row | undefined;
@@ -290,12 +294,19 @@ export const recordingDatabase = (events: string[] = []) => {
               if (existing)
                 existing.cloudSeconds = Number(existing.cloudSeconds) + Number(values.cloudSeconds);
             }
+            if (name === "user_settings") {
+              existing = rows(name).find((row) => row.userId === values.userId);
+              if (existing && conflictUpdate) {
+                Object.assign(existing, evaluate(conflictUpdate, existing));
+                writes.push({ table: name, values: { ...conflictUpdate } });
+                return [{ ...existing }];
+              }
+            }
             if (existing) return [];
             const saved = defaults(name, values);
             writes.push({ table: name, values: { ...values } });
             rows(name).push(saved);
             if (name === "ruth_message") events.push("report-posted");
-            if (name === "email_outbox") events.push("email-enqueued");
             return [{ ...saved }];
           }),
         );

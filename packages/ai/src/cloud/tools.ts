@@ -1,5 +1,7 @@
+import { defaultNotebookAppearance } from "@avenire/shared/notebook";
 import {
   CloudRunId,
+  CloudQuiz,
   AssetId,
   FolderId,
   HydrationId,
@@ -39,9 +41,12 @@ import { and, eq, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import type * as Crypto from "effect/Crypto";
+import * as Config from "effect/Config";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import { wrapWidget } from "../outputs/widgets.ts";
 import { AssetStore, assetMediaType } from "../outputs/assets.ts";
 import { CLOUD_TOOL_POLICY, CLOUD_TOOL_SPECS } from "../tools/cloud-specs.ts";
 import { type AgentContext, RuthToolError, type ToolImpl, toToolError } from "../tools/core.ts";
@@ -501,6 +506,56 @@ export const publishPath = (path: string): string | null => {
     ? resolved
     : null;
 };
+const isHtml = (name: string) => /\.html?$/i.test(name);
+const isQuiz = (name: string) =>
+  /\.json$/i.test(name) && /quiz|questions|test yourself/i.test(name);
+const validateQuiz = (name: string, bytes: Uint8Array) =>
+  isQuiz(name)
+    ? Effect.try({
+        try: () =>
+          Schema.decodeUnknownSync(CloudQuiz)(
+            JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
+          ),
+        catch: (cause) => fail("publish_output", `Invalid CloudQuiz JSON: ${String(cause)}`),
+      }).pipe(Effect.asVoid)
+    : Effect.void;
+
+const widgetBytes = Effect.fn("RuthCloud.widgetBytes")(function* (
+  ctx: AgentContext,
+  bytes: Uint8Array,
+  title: string,
+) {
+  const html = yield* Effect.try({
+    try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+    catch: () => fail("publish_output", "Widget HTML must be UTF-8."),
+  });
+  const origin = yield* Config.String("WIDGET_ORIGIN").pipe(
+    Config.withDefault("https://widgets.avenire.space"),
+  );
+  const document = yield* wrapWidget(ctx, { html, title }, origin);
+  return new TextEncoder().encode(document);
+});
+
+/** An HTML library output also needs a widget asset for the report and isolated host. */
+const publishOutputWidget = Effect.fn("RuthCloud.publishOutputWidget")(function* (
+  ctx: AgentContext,
+  path: string,
+  bytes: Uint8Array,
+  title: string,
+) {
+  if (!isHtml(path)) return;
+  const store = yield* AssetStore;
+  yield* store.put(ctx.userId, {
+    name: posix.basename(path),
+    title,
+    bytes: yield* widgetBytes(ctx, bytes, title),
+    mediaType: "text/html",
+    kind: "widget",
+    ...(ctx.runId ? { runId: ctx.runId } : {}),
+    ...(ctx.threadId ? { threadId: ctx.threadId } : {}),
+    ...(ctx.toolCallId ? { idempotencyId: AssetId.make(stableToolId(ctx, "output-widget")) } : {}),
+  });
+});
 const outputKind = (mime: string): FileKind =>
   mime === "text/markdown" || mime === "text/plain"
     ? "note"
@@ -516,7 +571,7 @@ const outputKind = (mime: string): FileKind =>
 const outputMime = (name: string) =>
   ({ mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4" })[
     posix.extname(name).slice(1).toLowerCase()
-  ] ?? assetMediaType(name);
+  ] ?? (isHtml(name) ? "text/html" : assetMediaType(name));
 /** Complete downstream publication work even when a crash followed the file commit. */
 const finishPublication = Effect.fn("RuthCloud.finishPublication")(function* (
   ctx: AgentContext,
@@ -604,6 +659,10 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
         }),
       );
       if (prior) {
+        if (isHtml(name) && prior.storageKey) {
+          const publishedBytes = yield* storage.get(StorageKey.make(prior.storageKey));
+          yield* publishOutputWidget(ctx, path, publishedBytes, prior.title);
+        }
         yield* finishPublication(ctx, FileId.make(prior.id));
         const folders = run.folderId
           ? yield* database.use((db) =>
@@ -624,6 +683,9 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
   const bytes = yield* box.readFile(path);
   if (bytes.byteLength > 100 * 1024 * 1024)
     return yield* fail("publish_output", "Publish a file no larger than 100 MB.");
+  if (isHtml(name)) yield* widgetBytes(ctx, bytes, input.title?.trim() || name);
+  yield* validateQuiz(name, bytes);
+  if (input.title && isQuiz(input.title) && !isQuiz(name)) yield* validateQuiz(input.title, bytes);
   const hash = hashBytes(bytes);
   const now = DateTime.toDateUtc(yield* DateTime.now);
   if (original && workspace) {
@@ -684,7 +746,12 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
     if (!current) return undefined;
     const folderId = current.folderId ?? proposedFolderId;
     if (!current.folderId) {
-      await tx.insert(folder).values({ id: folderId, userId: ctx.userId, name: folderName });
+      await tx.insert(folder).values({
+        id: folderId,
+        userId: ctx.userId,
+        name: folderName,
+        ...defaultNotebookAppearance(folderName),
+      });
       await tx
         .update(cloudRun)
         .set({ folderId })
@@ -713,6 +780,7 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
   });
   if (publishedFolderName === undefined)
     return yield* fail("publish_output", "This run was not found.", "not_found");
+  yield* publishOutputWidget(ctx, path, bytes, title);
   yield* finishPublication(ctx, fileId);
   return { kind: "file" as const, fileId, drivePath: `${publishedFolderName}/${title}` };
 });
@@ -744,8 +812,9 @@ export const cloudTools: CloudImpls = {
       const name = posix.basename(path);
       const stored = yield* store.put(ctx.userId, {
         name,
-        bytes,
+        bytes: isHtml(name) ? yield* widgetBytes(ctx, bytes, name) : bytes,
         mediaType: outputMime(name),
+        ...(isHtml(name) ? { kind: "widget" as const } : {}),
         runId: CloudRunId.make(run.id),
         ...(ctx.toolCallId
           ? { idempotencyId: AssetId.make(stableToolId(ctx, `report-asset:${path}`)) }
@@ -760,6 +829,7 @@ export const cloudTools: CloudImpls = {
         .update(cloudRun)
         .set({
           summary: input.markdown,
+          ...(input.startHere === undefined ? {} : { startHere: input.startHere }),
           error: input.status === "failed" ? "The agent reported failure." : null,
         })
         .where(and(eq(cloudRun.id, run.id), eq(cloudRun.userId, ctx.userId))),

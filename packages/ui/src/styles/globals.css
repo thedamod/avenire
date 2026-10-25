@@ -75,14 +75,21 @@
   --figure-frame: var(--border);
   --figure-label-size: var(--text-xs);
 
-  /* Motion — strong curves for UI (enter/exit = ease-out; on-screen morph = ease-in-out) */
+  /* Motion (Emil Kowalski's values; see apps/web/motion-audit.md).
+     Curves: enter/exit = ease-out; on-screen morph = ease-in-out; sheets = drawer; hover/colour = ease.
+     Durations: UI stays under 300ms; exits are faster than enters. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  --duration-fast: 100ms;
-  --duration-normal: 160ms;
-  --duration-moderate: 200ms;
+  --duration-fast: 100ms; /* exits, hover reveals */
+  --duration-tooltip: 125ms;
+  --duration-popover: 150ms; /* menus, selects, popovers, tab panels, fades */
+  --duration-normal: 160ms; /* press feedback, colour */
+  --duration-moderate: 200ms; /* dialogs, trays, list rows */
   --duration-slow: 300ms;
+  --duration-drawer: 400ms; /* sheets in */
+  --duration-drawer-exit: 250ms; /* sheets out */
+  --edge-fade-size: 24px;
 
   /* Glass — blurred surfaces, matched to the desktop app's default scheme */
   --glass-blur: 12px;
@@ -98,30 +105,45 @@
   /* Core surfaces */
   --background: #fcfcfc;
   --foreground: #141414f0;
+  --foreground-soft: #1414148a;
   --card: #fcfcfc;
   --card-foreground: #141414f0;
-  --popover: #fcfcfc;
+  --popover: #ffffff;
   --popover-foreground: #141414f0;
+  --sheet: #fcfcfc;
+  --sheet-border: #14141424;
+  --tray: #f8f8f8;
 
-  /* Branding accent */
-  --primary: #abc4ff;
-  --primary-foreground: #141414f0;
+  /* Primary action: near-black on light, near-white on dark. Periwinkle is Ruth + focus only. */
+  --primary: #141414;
+  --primary-foreground: #fcfcfc;
 
   /* Neutrals */
-  --secondary: #f8f8f8;
-  --secondary-foreground: #141414bd;
+  --secondary: #f3f3f3;
+  --secondary-foreground: #141414f0;
   --muted: #f8f8f8;
-  --muted-foreground: #1414148a;
+  --muted-foreground: #14141480;
   --accent: #14141414;
   --accent-foreground: #141414f0;
+
+  /* Ruth (the agent) accent, reserved for Ruth and focus */
+  --ruth: #abc4ff;
+  --ruth-foreground: #0b1020;
+  --ruth-text: #3a5bb0;
+  --ruth-tint: #eef3ff;
+  --ruth-line: #b8c9f0;
 
   /* Semantic */
   --destructive: #cf2d56;
   --destructive-foreground: #fcfcfc;
+  --destructive-tint: #fdecee;
+  --destructive-line: #f1c2cb;
 
   /* Borders */
   --border: #14141414;
-  --input: #1414141f;
+  --input: #14141424;
+  --control-strong: #14141433;
+  --switch-off: #14141429;
   --ring: #abc4ff;
   --hover: #1414140a;
   --active: #14141414;
@@ -139,8 +161,8 @@
   --info-foreground: #0b6e99;
   --success: #0f7b6c;
   --success-foreground: #0f7b6c;
-  --warning: #dfab01;
-  --warning-foreground: #dfab01;
+  --warning: #b8860b;
+  --warning-foreground: #b8860b;
 
   /* Charts */
   --chart-1: #e89a62;
@@ -152,19 +174,20 @@
   /* Sidebar */
   --sidebar: #f3f3f3;
   --sidebar-foreground: #141414bd;
-  --sidebar-primary: #abc4ff;
-  --sidebar-primary-foreground: #141414f0;
+  --sidebar-primary: #141414;
+  --sidebar-primary-foreground: #fcfcfc;
   --sidebar-accent: #1414140f;
   --sidebar-accent-foreground: #141414f0;
   --sidebar-border: #14141414;
   --sidebar-ring: #abc4ff;
 
   /* Typography */
-  --font-sans: "Inter", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Geist", system-ui, sans-serif;
   --font-serif: "Lora", Georgia, serif;
-  --font-mono: "SFMono-Regular", "Menlo", "Consolas", monospace;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
 
-  --radius: 0.375rem;
+  /* App UI radius scale: sm 4 / md 6 / lg 8 / xl 10 (see @theme) */
+  --radius: 0.5rem;
 
   --tracking-normal: 0em;
   --spacing: 0.25rem;
@@ -263,49 +286,64 @@
     0 1px 1px -0.5px #00000014, 0 3px 3px -1.5px #00000014, 0 6px 6px -3px #00000014,
     0 12px 12px -6px #00000014;
 
-  --background: #141414;
-  --foreground: #e4e4e4eb;
-  --card: #181818;
-  --card-foreground: #e4e4e4eb;
-  --popover: #181818;
-  --popover-foreground: #e4e4e4eb;
+  --background: #0b0b0b;
+  --foreground: #ededed;
+  --foreground-soft: #a3a3a3;
+  --card: #111111;
+  --card-foreground: #ededed;
+  --popover: #161616;
+  --popover-foreground: #ededed;
+  --sheet: #131313;
+  --sheet-border: #2a2a2a;
+  --tray: #141414;
 
   --glass-blur: 16px;
   --glass-saturation: 1.08;
 
-  --primary: #abc4ff;
-  --primary-foreground: #191919;
+  /* Near-white primary; periwinkle is reserved for Ruth and focus. */
+  --primary: #ededed;
+  --primary-foreground: #0a0a0a;
 
-  --secondary: #181818;
-  --secondary-foreground: #e4e4e48d;
-  --muted: #181818;
-  --muted-foreground: #e4e4e45e;
-  --accent: #e4e4e411;
-  --accent-foreground: #e4e4e4eb;
+  --secondary: #1c1c1c;
+  --secondary-foreground: #ededed;
+  --muted: #161616;
+  --muted-foreground: #6e6e6e;
+  --accent: #242424;
+  --accent-foreground: #ededed;
 
-  --destructive: #fc6b83;
-  --destructive-foreground: #191919;
+  --ruth: #abc4ff;
+  --ruth-foreground: #0b1020;
+  --ruth-text: #c2d4ff;
+  --ruth-tint: #151b2b;
+  --ruth-line: #2e3b5e;
 
-  --border: #e4e4e414;
-  --input: #e4e4e41f;
+  --destructive: #ff6b6b;
+  --destructive-foreground: #0b0b0b;
+  --destructive-tint: #2a1416;
+  --destructive-line: #4a2226;
+
+  --border: #222222;
+  --input: #2e2e2e;
+  --control-strong: #3a3a3a;
+  --switch-off: #39393d;
   --ring: #abc4ff;
-  --hover: #e4e4e40a;
-  --active: #e4e4e414;
-  --surface-1: #141414;
-  --surface-2: #181818;
-  --surface-3: #1d1d1d;
-  --surface-4: #222222;
-  --surface-5: #272727;
-  --surface-6: #2c2c2c;
-  --surface-7: #313131;
-  --surface-8: #363636;
+  --hover: #ffffff0a;
+  --active: #ffffff14;
+  --surface-1: #0b0b0b;
+  --surface-2: #111111;
+  --surface-3: #161616;
+  --surface-4: #1c1c1c;
+  --surface-5: #242424;
+  --surface-6: #2e2e2e;
+  --surface-7: #3a3a3a;
+  --surface-8: #4a4a4a;
 
-  --info: #529cca;
-  --info-foreground: #529cca;
-  --success: #4dab9a;
-  --success-foreground: #4dab9a;
-  --warning: #ffdc49;
-  --warning-foreground: #ffdc49;
+  --info: #6b9bff;
+  --info-foreground: #6b9bff;
+  --success: #6be0a0;
+  --success-foreground: #6be0a0;
+  --warning: #f2c46d;
+  --warning-foreground: #f2c46d;
 
   --chart-1: #f0a873;
   --chart-2: #78c4d5;
@@ -313,18 +351,18 @@
   --chart-4: #c39a82;
   --chart-5: #a99ad1;
 
-  --sidebar: #141414;
-  --sidebar-foreground: #e4e4e48d;
-  --sidebar-primary: #abc4ff;
-  --sidebar-primary-foreground: #191919;
-  --sidebar-accent: #e4e4e40a;
-  --sidebar-accent-foreground: #e4e4e4eb;
-  --sidebar-border: #e4e4e414;
+  --sidebar: #0b0b0b;
+  --sidebar-foreground: #a3a3a3;
+  --sidebar-primary: #ededed;
+  --sidebar-primary-foreground: #0a0a0a;
+  --sidebar-accent: #1c1c1c;
+  --sidebar-accent-foreground: #ededed;
+  --sidebar-border: #222222;
   --sidebar-ring: #abc4ff;
 
-  --font-sans: "Inter", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Geist", system-ui, sans-serif;
   --font-serif: "Lora", Georgia, serif;
-  --font-mono: "SFMono-Regular", "Menlo", "Consolas", monospace;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
 
   --radius: 0.5rem;
 
@@ -382,19 +420,32 @@
   --color-bg-red: #594141;
   --color-pill-red: rgba(255, 115, 105, 0.5);
 
-  --canvas: #181818;
-  --canvas-grid: #e4e4e41a;
+  --canvas: #111111;
+  --canvas-grid: #ffffff14;
 }
 
 @theme inline {
+  /* `ease-out` / `ease-in-out` / `ease-drawer` utilities use the strong curves above. */
   --ease-out: var(--ease-out);
   --ease-in-out: var(--ease-in-out);
   --ease-drawer: var(--ease-drawer);
-  --duration-fast: var(--duration-fast);
-  --duration-normal: var(--duration-normal);
-  --duration-moderate: var(--duration-moderate);
-  --duration-slow: var(--duration-slow);
+  /* Bare `transition-*` classes: colour/hover changes, so `ease` at the press/colour duration. */
+  --default-transition-duration: var(--duration-normal);
+  --default-transition-timing-function: ease;
 
+  --color-ruth: var(--ruth);
+  --color-ruth-foreground: var(--ruth-foreground);
+  --color-ruth-text: var(--ruth-text);
+  --color-ruth-tint: var(--ruth-tint);
+  --color-ruth-line: var(--ruth-line);
+  --color-sheet: var(--sheet);
+  --color-sheet-border: var(--sheet-border);
+  --color-tray: var(--tray);
+  --color-foreground-soft: var(--foreground-soft);
+  --color-destructive-tint: var(--destructive-tint);
+  --color-destructive-line: var(--destructive-line);
+  --color-control-strong: var(--control-strong);
+  --color-switch-off: var(--switch-off);
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-success-foreground: var(--success-foreground);
@@ -475,12 +526,12 @@
   --spacing-16: 4rem;
   --spacing-20: 5rem;
 
-  /* Border radius - cursor scale */
+  /* Border radius: app UI tops out at xl (10px); 2xl/3xl are for sheets and trays only */
   --radius-sm: 0.25rem;
   --radius-md: 0.375rem;
   --radius-lg: 0.5rem;
-  --radius-xl: 0.75rem;
-  --radius-2xl: 0.875rem;
+  --radius-xl: 0.625rem;
+  --radius-2xl: 0.75rem;
   --radius-3xl: 1rem;
   --radius-full: 9999px;
   --shadow-surface-1: 0 1px 1px -0.5px rgba(0, 0, 0, 0.08);
@@ -521,19 +572,11 @@
 
 /* Glass — token-driven blurred surfaces from the T3 Code desktop scheme */
 @utility surface-glass {
-  background: color-mix(
-    in srgb,
-    var(--background) var(--glass-opacity),
-    transparent
-  );
-  -webkit-backdrop-filter: blur(var(--glass-blur))
-    saturate(var(--glass-saturation));
+  background: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
 
-  @supports not (
-      (-webkit-backdrop-filter: blur(1px)) or
-      (backdrop-filter: blur(1px))
-    ) {
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     background: var(--background) !important;
   }
 }
@@ -546,8 +589,7 @@
       color-mix(in srgb, var(--alert-glass-tint) 4%, transparent)
     ),
     color-mix(in srgb, var(--background) var(--glass-opacity), transparent) !important;
-  -webkit-backdrop-filter: blur(var(--glass-blur))
-    saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
 
   &[data-variant="error"] {
@@ -566,24 +608,16 @@
     --alert-glass-tint: var(--warning);
   }
 
-  @supports not (
-      (-webkit-backdrop-filter: blur(1px)) or
-      (backdrop-filter: blur(1px))
-    ) {
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     background: var(--background) !important;
   }
 }
 
 @utility dialog-glass {
-  background: color-mix(
-    in srgb,
-    var(--background) var(--glass-opacity),
-    transparent
-  );
+  background: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
   border-color: color-mix(in srgb, var(--foreground) 10%, transparent);
   box-shadow: 0 24px 64px -24px rgb(0 0 0 / 65%);
-  -webkit-backdrop-filter: blur(var(--glass-blur))
-    saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
 
   @variant dark {
@@ -593,10 +627,7 @@
       0 24px 72px -20px rgb(0 0 0 / 90%);
   }
 
-  @supports not (
-      (-webkit-backdrop-filter: blur(1px)) or
-      (backdrop-filter: blur(1px))
-    ) {
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     background: var(--popover) !important;
   }
 }
@@ -618,14 +649,10 @@
     color-mix(in srgb, var(--popover) var(--glass-opacity), transparent)
   );
   border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
-  -webkit-backdrop-filter: blur(var(--glass-blur))
-    saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
 
-  @supports not (
-      (-webkit-backdrop-filter: blur(1px)) or
-      (backdrop-filter: blur(1px))
-    ) {
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     background: var(--popover) !important;
   }
 }
@@ -750,5 +777,236 @@ html[data-scrollbars-active="true"] ::-webkit-scrollbar-thumb:hover {
     background: var(--muted-foreground);
     border-radius: var(--radius-full);
     opacity: 0.22;
+  }
+}
+
+/* ───────────────────────── Motion ─────────────────────────
+   Tokens live in :root above. Everything here is transform/opacity (plus grid rows for list
+   rows and the mask stops for scroll fades) and honours prefers-reduced-motion.
+   Audit + rationale: apps/web/motion-audit.md. */
+
+/* `duration-<token>` for transitions and tw-animate keyframes (which read --tw-duration). */
+@utility duration-fast {
+  --tw-duration: var(--duration-fast);
+  transition-duration: var(--duration-fast);
+}
+@utility duration-tooltip {
+  --tw-duration: var(--duration-tooltip);
+  transition-duration: var(--duration-tooltip);
+}
+@utility duration-popover {
+  --tw-duration: var(--duration-popover);
+  transition-duration: var(--duration-popover);
+}
+@utility duration-normal {
+  --tw-duration: var(--duration-normal);
+  transition-duration: var(--duration-normal);
+}
+@utility duration-moderate {
+  --tw-duration: var(--duration-moderate);
+  transition-duration: var(--duration-moderate);
+}
+@utility duration-slow {
+  --tw-duration: var(--duration-slow);
+  transition-duration: var(--duration-slow);
+}
+@utility duration-drawer {
+  --tw-duration: var(--duration-drawer);
+  transition-duration: var(--duration-drawer);
+}
+@utility duration-drawer-exit {
+  --tw-duration: var(--duration-drawer-exit);
+  transition-duration: var(--duration-drawer-exit);
+}
+
+/* Press feedback for anything clickable: colour on hover, a subtle 0.97 scale on press. */
+@utility motion-press {
+  transition-property:
+    color, background-color, border-color, outline-color, text-decoration-color, fill, stroke,
+    opacity, box-shadow, scale;
+  transition-duration: var(--duration-normal);
+  transition-timing-function: var(--ease-out);
+  &:active:not(:disabled, [aria-disabled="true"]) {
+    scale: 0.97;
+  }
+}
+
+/* Content that replaces a skeleton, a new page, a label that changes: opacity only. */
+@utility enter-fade {
+  transition: opacity var(--duration-popover) var(--ease-out);
+  @starting-style {
+    opacity: 0;
+  }
+}
+/* Route content: opacity only, so `position: fixed` docks and headers never re-parent. */
+@utility page-enter {
+  transition: opacity var(--duration-popover) var(--ease-out);
+  @starting-style {
+    opacity: 0;
+  }
+}
+/* Something new arriving in place (a chat message, a tray): fade + 6px rise. */
+@utility enter-rise {
+  transition:
+    opacity var(--duration-moderate) var(--ease-out),
+    translate var(--duration-moderate) var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+/* List rows that enter/leave (usePresenceList): height via grid rows, never measured. */
+@utility presence-item {
+  display: grid;
+  grid-template-rows: 1fr;
+  overflow: clip;
+  overflow-clip-margin: 2px;
+  transition:
+    grid-template-rows var(--duration-moderate) var(--ease-out),
+    opacity var(--duration-moderate) var(--ease-out);
+  & > * {
+    min-height: 0;
+  }
+  &[data-presence="enter"] {
+    @starting-style {
+      grid-template-rows: 0fr;
+      opacity: 0;
+    }
+  }
+  &[data-presence="exit"] {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    pointer-events: none;
+    transition-duration: 180ms, var(--duration-popover);
+  }
+}
+
+/* Scroll fades: the mask only appears at an edge with content beyond it. `attachScrollFade` /
+   `useScrollFade` / `<ScrollFade>` (components/scroll-fade.tsx) set data-scroll-fade from a
+   rAF-throttled scroll listener; the stops are registered, non-inheriting properties, so a
+   change never restyles the subtree. Put the class on the scroller itself, never on a surface
+   with a border or shadow (masks clip box-shadow). */
+@property --edge-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --edge-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+/* Edge the fade ends at, e.g. the top of a composer floating over the list. */
+@property --edge-fade-inset-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@utility edge-fade-y {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--edge-fade-start),
+    #000 calc(100% - var(--edge-fade-inset-end) - var(--edge-fade-end)),
+    transparent calc(100% - var(--edge-fade-inset-end))
+  );
+  transition:
+    --edge-fade-start var(--duration-popover) var(--ease-out),
+    --edge-fade-end var(--duration-popover) var(--ease-out);
+  &[data-scroll-fade~="start"] {
+    --edge-fade-start: var(--edge-fade-size);
+  }
+  &[data-scroll-fade~="end"] {
+    --edge-fade-end: var(--edge-fade-size);
+  }
+}
+@utility edge-fade-x {
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--edge-fade-start),
+    #000 calc(100% - var(--edge-fade-end)),
+    transparent 100%
+  );
+  transition:
+    --edge-fade-start var(--duration-popover) var(--ease-out),
+    --edge-fade-end var(--duration-popover) var(--ease-out);
+  &[data-scroll-fade~="start"] {
+    --edge-fade-start: var(--edge-fade-size);
+  }
+  &[data-scroll-fade~="end"] {
+    --edge-fade-end: var(--edge-fade-size);
+  }
+}
+
+@layer components {
+  /* Tab panels fade in on pointer switches; arrow-key navigation (a focus-visible trigger)
+     swaps instantly. The old panel unmounts at once, so there is never a double exposure. */
+  [data-slot="tabs-content"] {
+    transition: opacity var(--duration-popover) var(--ease-out);
+    @starting-style {
+      opacity: 0;
+    }
+  }
+  [data-slot="tabs"]:has(> [data-slot="tabs-list"] [data-slot="tabs-trigger"]:focus-visible)
+    > [data-slot="tabs-content"] {
+    transition: none;
+  }
+
+  /* Composer tray: rises from behind the composer; leaves (data-closing on an ancestor) faster. */
+  [data-slot="composer-tray"] {
+    transition:
+      opacity var(--duration-moderate) var(--ease-out),
+      translate var(--duration-moderate) var(--ease-out);
+    @starting-style {
+      opacity: 0;
+      translate: 0 12px;
+    }
+  }
+  [data-closing] [data-slot="composer-tray"] {
+    opacity: 0;
+    translate: 0 8px;
+    transition-duration: var(--duration-popover);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Fewer, gentler: overlays and rows keep their fades, nothing moves or scales. */
+  *,
+  ::before,
+  ::after {
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-enter-scale: 1 !important;
+    --tw-enter-rotate: 0 !important;
+    --tw-enter-blur: 0 !important;
+    --tw-exit-translate-x: 0 !important;
+    --tw-exit-translate-y: 0 !important;
+    --tw-exit-scale: 1 !important;
+    --tw-exit-rotate: 0 !important;
+    --tw-exit-blur: 0 !important;
+  }
+  .motion-press:active {
+    scale: none !important;
+  }
+  .enter-rise {
+    @starting-style {
+      translate: none;
+    }
+  }
+  .presence-item {
+    transition: opacity var(--duration-popover) var(--ease-out);
+  }
+  [data-slot="composer-tray"],
+  [data-closing] [data-slot="composer-tray"] {
+    translate: none;
+    @starting-style {
+      translate: none;
+    }
+  }
+  .animate-pulse,
+  .animate-sweep {
+    animation-duration: 3s;
   }
 }

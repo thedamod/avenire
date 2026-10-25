@@ -1,0 +1,250 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Avenire — landing v3</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/*{{tokens}}*/
+/*{{base}}*/
+/* Landing contrast: the grey line is the setup, the white line is the payoff. */
+:root { --setup: #9a9a9a; --lead: #c9c9c9; --desc: #bdbdbd; --meta: #a8a8a8; }
+.setup { color: var(--setup); }
+.wrap { padding: 0 48px; }
+.nav-links span { color: var(--desc); }
+
+.hero { padding: 120px 48px 0; display: flex; flex-direction: column; gap: 28px; }
+.hero h1 { font-size: 64px; line-height: 68px; }
+.hero p { font-size: 20px; line-height: 30px; color: var(--lead); max-width: 640px; }
+.cta { display: flex; align-items: center; gap: 12px; }
+.platforms { font-size: 14px; color: var(--meta); }
+.price { margin-left: 8px; font-size: 15px; color: var(--color-text-strong); } .price::before { content: "●"; color: var(--color-signal-green); font-size: 9px; margin-right: 8px; vertical-align: 2px; }
+.why { margin: 0 48px; padding: 28px 0 0; display: grid; grid-template-columns: 220px 1fr; gap: 24px; font-size: 18px; line-height: 28px; color: var(--lead); }
+.why b { font-weight: 500; color: var(--color-text-strong); }
+.platforms a { color: var(--color-text-strong); text-decoration: underline; text-decoration-color: var(--color-border-strong); text-underline-offset: 4px; }
+
+.stage { position: relative; margin: 56px 48px 0; border: 1px solid var(--color-border); border-radius: var(--radius-l-card); overflow: hidden;
+  /* brighter figure inks for the hero */
+  --color-iso-paper: #161616; --color-iso-top: #2b2b2b; --color-iso-shade-0: #1c1c1c; --color-iso-shade-1: #202020; --color-iso-shade-2: #242424; --color-iso-shade-3: #282828;
+  --color-iso-hi: #f2f2f2; --color-iso-mid: #a0a0a0; --color-iso-lo: #5c5c5c; --color-iso-faint: #3e3e3e; background: var(--color-iso-paper); }
+.stage-inner { position: relative; width: 100%; aspect-ratio: 980 / 500; }
+.stage-inner > .fig { position: absolute; inset: 0; }
+.pill { position: absolute; transform: translate(-50%, calc(-100% - 14px)); white-space: nowrap; height: 28px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: var(--radius-pill); background: rgba(22,22,22,.85); border: 1px solid #3a3a3a; font-size: 14px; font-weight: 500; color: #d6d6d6; }
+.pill-below { transform: translate(-50%, 14px); }
+.pill-left { transform: translate(calc(-100% - 10px), -50%); }
+.pill-right { transform: translate(10px, -50%); }
+
+.section { border-top: 1px solid var(--color-border); margin-top: 72px; padding: 80px 48px 0; }
+.section h2 { font-weight: 500; font-size: 44px; line-height: 48px; letter-spacing: var(--tracking-display); color: var(--color-text-strong); }
+
+/* ask → opens */
+.demo { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 48px; }
+.frame-label { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 15px; color: var(--desc); }
+.frame-label b { display: inline-flex; width: 24px; height: 24px; border-radius: 12px; align-items: center; justify-content: center; background: var(--color-surface-4); font-size: 12px; font-weight: 500; color: var(--color-text-strong); }
+.panel { border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-1); overflow: hidden; }
+.qrow { display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 18px; border-bottom: 1px solid var(--color-border); font-size: 17px; color: var(--color-text-strong); }
+.qrow .k { font-family: var(--font-mono); font-size: 12px; color: var(--meta); border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); padding: 2px 6px; }
+.res { display: grid; grid-template-columns: 44px 1fr; gap: 14px; padding: 14px 18px; align-items: center; }
+.res + .res { border-top: 1px solid var(--color-border); }
+.res.on { background: var(--color-surface-3); }
+.res .ti { font-size: 15px; color: var(--color-text-strong); }
+.res .sn { margin-top: 3px; font-size: 14px; line-height: 20px; color: var(--desc); }
+.res .src { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 13px; font-weight: 500; color: var(--color-text-strong); }
+.tile { width: 44px; height: 44px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; }
+.dotsrc { width: 8px; height: 8px; border-radius: 2px; }
+.player { background: #050505; aspect-ratio: 16/9; position: relative; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid var(--color-border); }
+.scrub { position: absolute; left: 16px; right: 16px; bottom: 14px; height: 3px; background: #2a2a2a; border-radius: 2px; }
+.scrub i { position: absolute; left: 0; top: 0; bottom: 0; width: 36%; background: var(--color-text-strong); border-radius: 2px; }
+.scrub b { position: absolute; left: 36%; top: -5px; width: 13px; height: 13px; margin-left: -6px; border-radius: 7px; background: var(--color-text-strong); }
+.ts { position: absolute; left: calc(36% + 16px); bottom: 26px; transform: translateX(-50%); font-family: var(--font-mono); font-size: 12px; color: var(--color-bg); background: var(--color-text-strong); padding: 2px 6px; border-radius: var(--radius-xs); }
+.transcript { padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 8px; }
+.transcript div { display: grid; grid-template-columns: 52px 1fr; gap: 10px; font-size: 14px; line-height: 21px; color: var(--meta); }
+.transcript div span:first-child { font-family: var(--font-mono); font-size: 12px; padding-top: 1px; }
+.transcript .now { color: var(--color-text-strong); }
+.transcript .now span:last-child { background: var(--color-accent-tint); box-shadow: inset 2px 0 0 var(--color-accent); padding: 2px 8px; margin-left: -8px; border-radius: 2px; }
+
+/* two keys */
+.keys2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 48px; }
+.kcard { border: 1px solid var(--color-border); border-radius: var(--radius-l-card); background: var(--color-surface-1); padding: 32px; display: grid; grid-template-columns: 260px 1fr; gap: 24px; align-items: center; }
+.caps { display: flex; align-items: center; gap: 10px; }
+.cap { min-width: 72px; height: 72px; padding: 0 16px; border: 1px solid var(--color-border-strong); border-bottom-width: 4px; border-radius: 12px; background: var(--color-surface-3); display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 22px; color: var(--color-text-strong); }
+.plus { font-size: 20px; color: var(--meta); }
+.kcard h3 { font-size: 22px; font-weight: 500; letter-spacing: -0.015em; color: var(--color-text-strong); margin-bottom: 8px; }
+.kcard p { font-size: 16px; line-height: 25px; color: var(--desc); }
+.kcard .where { margin-top: 12px; font-size: 13px; color: var(--meta); }
+
+/* trust */
+.trust { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-top: 48px; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
+.trust div { padding: 28px 24px 32px 0; }
+.trust div + div { padding-left: 24px; border-left: 1px solid var(--color-border); }
+.trust h4 { font-size: 17px; font-weight: 500; color: var(--color-text-strong); margin-bottom: 8px; }
+.trust p { font-size: 15px; line-height: 23px; color: var(--desc); }
+
+/* proof */
+.quotes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 48px; }
+.quote { border: 1px solid var(--color-border); border-radius: var(--radius-l-card); padding: 28px; display: flex; flex-direction: column; justify-content: space-between; gap: 24px; }
+.quote p { font-size: 18px; line-height: 27px; letter-spacing: -0.01em; color: var(--color-text-strong); }
+.quote span { font-size: 14px; color: var(--meta); }
+
+.close { border-top: 1px solid var(--color-border); margin-top: 72px; padding: 112px 48px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 28px; }
+.foot { border-top: 1px solid var(--color-border); padding: 28px 48px; display: flex; justify-content: space-between; font-size: 14px; color: var(--meta); }
+
+.flow { display: grid; grid-template-columns: 420px 1fr; gap: 0; margin-top: 48px; border: 1px solid var(--color-border); border-radius: var(--radius-l-card); overflow: hidden; }
+.flow-steps { display: flex; flex-direction: column; border-right: 1px solid var(--color-border); }
+.fstep { padding: 24px 28px; border-bottom: 1px solid var(--color-border); }
+.fstep:last-child { border-bottom: none; }
+.fstep h4 { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 500; color: var(--color-text-strong); margin-bottom: 6px; }
+.fstep p { font-size: 15px; line-height: 23px; color: var(--desc); }
+.fstep.on { background: var(--color-surface-2); box-shadow: inset 2px 0 0 var(--color-text-strong); }
+.flow-art { position: relative; background: var(--color-surface-1); background-image: radial-gradient(var(--color-border) 1px, transparent 1px); background-size: 18px 18px; min-height: 360px; }
+.fcard { position: absolute; width: 260px; border: 1px solid var(--color-border-strong); border-radius: 10px; background: var(--color-surface-2); overflow: hidden; }
+.fcard .hd { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-bottom: 1px solid var(--color-border); font-size: 13px; color: var(--color-text-strong); }
+.fcard .bd { padding: 12px; font-size: 13px; line-height: 20px; color: var(--desc); display: flex; flex-direction: column; gap: 8px; }
+.tagc { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 5px; font-size: 11.5px; font-weight: 500; }
+.figrow { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 48px; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
+.figcell { padding: 24px 28px 32px; }
+.figcell + .figcell { border-left: 1px solid var(--color-border); }
+.figcell .fig { height: 240px; margin: 8px 0 20px; }
+.figcell h4 { font-size: 17px; font-weight: 500; color: var(--color-text-strong); margin-bottom: 6px; }
+.figcell p { font-size: 15px; line-height: 23px; color: var(--desc); }
+.bento { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 16px; margin-top: 48px; }
+.bcol { display: flex; flex-direction: column; gap: 16px; }
+.bcard { border: 1px solid var(--color-border); border-radius: var(--radius-l-card); background: var(--color-surface-1); padding: 22px; }
+.bcard h4 { margin: 12px 0 6px; font-size: 16px; font-weight: 500; color: var(--color-text-strong); }
+.bcard p { font-size: 14.5px; line-height: 22px; color: var(--desc); }
+.bmid { position: relative; min-height: 400px; border: 1px solid var(--color-border); border-radius: var(--radius-l-card); background: var(--color-surface-1); background-image: radial-gradient(var(--color-border) 1px, transparent 1px); background-size: 18px 18px; overflow: hidden; }
+.prices { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 48px; border: 1px solid var(--color-border); border-radius: var(--radius-l-card); }
+.tier { padding: 28px; display: flex; flex-direction: column; gap: 14px; }
+.tier + .tier { border-left: 1px solid var(--color-border); }
+.tier .nm { font-size: 17px; font-weight: 500; color: var(--color-text-strong); }
+.tier .amt { font-size: 40px; font-weight: 500; letter-spacing: -0.03em; color: var(--color-text-strong); }
+.tier .amt small { font-size: 15px; font-weight: 400; color: var(--meta); letter-spacing: 0; }
+.tier ul { list-style: none; display: flex; flex-direction: column; gap: 9px; font-size: 14.5px; color: var(--desc); }
+.tier li::before { content: "✓"; margin-right: 10px; color: var(--color-signal-green); }
+.tier .btn { justify-content: center; }
+</style></head><body>
+<div class="rails">
+  <nav class="nav" style="padding:0 48px;"><div class="brand">{{logo}}Avenire</div><div class="nav-links"><span>How it works</span><span>Privacy</span><span>Pricing</span></div><div style="display:flex; gap:10px;"><span class="btn btn-sm btn-ghost">Log in</span><span class="btn btn-sm btn-primary">Download</span></div></nav>
+
+  <header class="hero">
+    <h1 class="display"><span class="setup">Your course is in six apps.</span><br>Keep it in one.</h1>
+    <p>Press one key to save what you're studying. Ask a question, and it opens on the right page.</p>
+    <div class="cta"><span class="btn btn-primary">Download for Mac</span><span class="btn btn-ghost">Download for Windows</span><span class="price">Free for students</span></div>
+    <span class="platforms">Or <a>use Avenire in your browser</a>. Asking works everywhere; the capture key needs the desktop app.</span>
+  </header>
+
+  <div class="stage"><div class="stage-inner">{{fig:hero4@40,10,980,500}}{{labels:hero4@40,10,980,500}}</div></div>
+  <p class="why"><b>Why not Drive search?</b><span>Drive searches Drive, Notion searches Notion, NotebookLM knows what you upload to it. <b>Avenire captures from all six with one key, and opens the exact page or second.</b></span></p>
+
+  <section class="section">
+    <h2><span class="setup">Ask the way you remember it.</span><br>It opens on the exact page or second.</h2>
+    <div class="demo">
+      <div>
+        <div class="frame-label"><b>1</b>You ask</div>
+        <div class="panel">
+          <div class="qrow"><span class="k">⌥ Space</span>the bit where he drew the band diagram</div>
+          <div class="res on"><div class="tile" style="background:#3a1517;"><svg width="22" height="16" viewBox="0 0 22 16"><rect x="0.5" y="0.5" width="21" height="15" rx="4" fill="#ff5c5c"/><path d="M9 5v6l5-3z" fill="#fff"/></svg></div><div><div class="ti">MIT 6.002 Lecture 12, at 18:42</div><div class="sn">"…if I draw the band diagram for the MOS capacitor, the conduction band bends down…"</div><div class="src"><span class="dotsrc" style="background:#ff5c5c"></span>YouTube</div></div></div>
+          <div class="res"><div class="tile" style="background:#2b1d0f;"><svg width="18" height="22" viewBox="0 0 18 22"><path d="M1 1h11l5 5v15H1z" fill="#1c1c1c" stroke="#f0a35e"/><path d="M12 1v5h5" fill="none" stroke="#f0a35e"/><path d="M4 11h10M4 14h10M4 17h6" stroke="#f0a35e" stroke-width="1"/></svg></div><div><div class="ti">Lecture 6 — Transistors.pdf, page 17</div><div class="sn">Fig 6.7: band diagram of the MOS structure at inversion.</div><div class="src"><span class="dotsrc" style="background:#6fa8ff"></span>Course site</div></div></div>
+          <div class="res"><div class="tile" style="background:#2d1422;"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="#f27aa8" stroke-width="1.5"><rect x="1" y="1" width="20" height="16" rx="2"/><path d="M4 13l5-5 3 3 3-2 3 4"/></svg></div><div><div class="ti">Screenshot of the board, Tuesday</div><div class="sn">The band diagram he drew at the end of the lecture.</div><div class="src"><span class="dotsrc" style="background:#f27aa8"></span>Screenshot</div></div></div>
+        </div>
+      </div>
+      <div>
+        <div class="frame-label"><b>2</b>It opens there</div>
+        <div class="panel">
+          <div class="player">
+            <svg width="300" height="150" viewBox="0 0 300 150" fill="none" stroke="#cfcfcf" stroke-width="1.5"><path d="M20 20v110M20 130h260"/><path d="M40 40 C 110 40, 140 40, 160 70 S 220 100, 270 100" /><path d="M40 90 C 110 90, 140 90, 160 120 S 220 150, 270 150" opacity=".5"/><path d="M160 20v110" stroke-dasharray="4 4" opacity=".6"/><text x="44" y="34" fill="#cfcfcf" stroke="none" font-family="Geist Mono" font-size="11">Ec</text><text x="44" y="84" fill="#cfcfcf" stroke="none" font-family="Geist Mono" font-size="11">Ev</text></svg>
+            <div class="scrub"><i></i><b></b></div><span class="ts">18:42</span>
+          </div>
+          <div class="transcript">
+            <div><span>18:31</span><span>Now look at what happens at the surface as we raise the gate voltage.</span></div>
+            <div class="now"><span>18:42</span><span>So if I draw the band diagram for the MOS capacitor, the conduction band bends down toward the surface.</span></div>
+            <div><span>18:55</span><span>Past threshold, that's your inversion layer.</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="setup">From a pile of tabs,</span><br>to the page you needed.</h2>
+
+<div class="flow">
+  <div class="flow-steps">
+    <div class="fstep on"><h4><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffb547" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:#ffb547"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h1M10 10h1M14 10h1M18 10h1M7 14h10"/></svg>Capture</h4><p>⌥ C saves what's open. Lecture 6 lands in your library.</p></div>
+    <div class="fstep"><h4><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6be0a0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:#6be0a0"><path d="M5 3h10l4 4v14H5z"/><path d="M8 12h8" stroke-width="3" opacity=".45"/><path d="M8 16h6"/></svg>Find</h4><p>Ask for "the slide on threshold voltage". It opens on page 14.</p></div>
+    <div class="fstep"><h4><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b48bf2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:#b48bf2"><path d="M5 3h12a2 2 0 0 1 2 2v16H7a2 2 0 0 1-2-2z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>Save to a notebook</h4><p>Keep the answer as a note, with its sources attached.</p></div>
+  </div>
+  <div class="flow-art">
+    <svg style="position:absolute; inset:0; width:100%; height:100%;" viewBox="0 0 700 360" fill="none" stroke="#5c5c5c" stroke-width="1.2"><path d="M300 120 L 340 120 L 340 180 L 372 180"/><path d="M448 180 L 470 180 L 470 240 L 496 240" stroke="#6be0a0" stroke-opacity=".6"/><circle cx="300" cy="120" r="3" fill="#5c5c5c"/><circle cx="496" cy="240" r="3" fill="#6be0a0"/></svg>
+    <div class="fcard" style="left:40px; top:56px;"><div class="hd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f0a35e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:#f0a35e"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5M9 13h8M9 17h6"/></svg>Lecture 6 — Transistors.pdf</div><div class="bd"><span>38 pages · captured from Course site</span><span><span class="tagc" style="background:#6fa8ff1f; color:#6fa8ff">Course site</span></span></div></div>
+    <div style="position:absolute; left:372px; top:144px; width:76px; height:72px; border:1px solid #4a4a4a; border-radius:12px; background:var(--color-surface-3); display:flex; align-items:center; justify-content:center; color:var(--color-text-strong);">{{logo}}</div>
+    <div class="fcard" style="left:496px; top:190px; width:200px;"><div class="hd"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6be0a0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:#6be0a0"><path d="M5 3h10l4 4v14H5z"/><path d="M8 12h8" stroke-width="3" opacity=".45"/><path d="M8 16h6"/></svg>Opened at page 14</div><div class="bd"><span>"…only when V<sub>GS</sub> exceeds V<sub>th</sub> does a channel appear."</span><span><span class="tagc" style="background:#6be0a01f; color:#6be0a0">Cited</span></span></div></div>
+  </div>
+</div>
+
+<div class="figrow">
+  <div class="figcell"><span class="mono">Fig 0.1</span>{{fig:card-collect}}<h4>Capture anything</h4><p>One key grabs the PDFs, tabs and videos you have open.</p></div>
+  <div class="figcell"><span class="mono">Fig 0.2</span>{{fig:card-organize}}<h4>Filed for you</h4><p>Everything lands in one library. Notebooks are optional.</p></div>
+  <div class="figcell"><span class="mono">Fig 0.3</span>{{fig:card-ask}}<h4>Answers with pages</h4><p>Every answer cites the page or second it came from.</p></div>
+</div>
+  </section>
+
+  <section class="section">
+    <h2><span class="setup">Built around how you actually study.</span><br>Not around folders.</h2>
+
+<div class="bento">
+  <div class="bcol"><div class="bcard"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff6b6b" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:#ff6b6b"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="M10 9v6l5-3z" fill="currentColor"/></svg><h4>Search inside videos</h4><p>Find the minute, not just the video.</p></div><div class="bcard"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f27aa8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:#f27aa8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 16l5-5 4 4 3-3 6 6"/></svg><h4>Read your screenshots</h4><p>Diagrams and handwriting become text you can search.</p></div></div>
+  <div class="bmid">
+    <svg style="position:absolute; inset:0; width:100%; height:100%;" viewBox="0 0 440 420" fill="none" stroke-width="1.2"><path d="M80 90 L 190 150" stroke="#ff6b6b" stroke-opacity=".5"/><path d="M220 60 L 220 140" stroke="#f0a35e" stroke-opacity=".5"/><path d="M360 90 L 250 150" stroke="#6fa8ff" stroke-opacity=".5"/><path d="M220 210 L 220 268" stroke="#5c5c5c"/></svg>
+    <div style="position:absolute; left:52px; top:68px;" class="srow-tl"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ff6b6b" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:#ff6b6b"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="M10 9v6l5-3z" fill="currentColor"/></svg></div>
+    <div style="position:absolute; left:207px; top:30px;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#f0a35e" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:#f0a35e"><path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5M9 13h8M9 17h6"/></svg></div>
+    <div style="position:absolute; left:362px; top:68px;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#6fa8ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:#6fa8ff"><path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c3 2 9 2 12 0v-5"/></svg></div>
+    <div style="position:absolute; left:182px; top:140px; width:76px; height:70px; border:1px solid #4a4a4a; border-radius:12px; background:var(--color-surface-3); display:flex; align-items:center; justify-content:center; color:var(--color-text-strong);">{{logo}}</div>
+    <div class="fcard" style="left:70px; top:268px; width:300px;"><div class="hd">the bit where he drew the band diagram</div><div class="bd"><span style="color:var(--color-text-strong)">MIT 6.002 Lecture 12 · <span style="color:#ff6b6b">18:42</span></span><span>Lecture 6 — Transistors.pdf · <span style="color:#f0a35e">p.17</span></span></div></div>
+  </div>
+  <div class="bcol"><div class="bcard"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e5c04a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:#e5c04a"><path d="M8 3h8l6 11-4 7H6l-4-7z"/><path d="M2 14h20M8 3l10 18M16 3 6 21"/></svg><h4>Next to your Drive</h4><p>Lab notes and shared docs in the same search.</p></div><div class="bcard"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6be0a0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:#6be0a0"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><h4>Private by default</h4><p>Only what you capture, visible to you alone.</p></div></div>
+</div>
+  </section>
+
+  <section class="section">
+    <h2><span class="setup">Two keys.</span><br>Nothing to organize.</h2>
+    <div class="keys2">
+      <div class="kcard"><div class="caps"><span class="cap">⌥</span><span class="plus">+</span><span class="cap">C</span></div><div><h3>Capture</h3><p>Saves the files, tabs and videos open in front of you. A list shows exactly what was saved, with Undo.</p><div class="where">Desktop app · Mac and Windows</div></div></div>
+      <div class="kcard"><div class="caps"><span class="cap">⌥</span><span class="plus">+</span><span class="cap" style="min-width:120px; font-size:18px;">Space</span></div><div><h3>Ask</h3><p>A small box opens over whatever you're doing. Type a question; the answer cites the page.</p><div class="where">Desktop app and browser</div></div></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="setup">Your notes are yours.</span><br>Private by default.</h2>
+    <div class="trust">
+      <div><h4>Only when you press the key</h4><p>Nothing is saved in the background. Capture runs once, when you ask it to.</p></div>
+      <div><h4>You see every item</h4><p>Each capture lists what it took. Undo it, or delete anything later.</p></div>
+      <div><h4>Visible to you alone</h4><p>Your library is tied to your account and stored encrypted. No one else can browse it.</p></div>
+      <div><h4>Not used for training</h4><p>Your files are never used to train AI models.</p></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="setup">Students use it the night before the exam.</span><br>And the morning after the lecture.</h2>
+    <div class="quotes">
+      <div class="quote"><p>"I stopped renaming lecture PDFs. I just ask for the slide I half remember."</p><span>Priya · 2nd year, Electrical Engineering</span></div>
+      <div class="quote"><p>"The video answer jumping to the exact minute is the whole thing for me."</p><span>Daniel · 1st year, Physics</span></div>
+      <div class="quote"><p>"My screenshots of the board finally live next to the slides they're about."</p><span>Aisha · 3rd year, Biochemistry</span></div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2><span class="setup">Free for students.</span><br>Pay only if you want more.</h2>
+
+<div class="prices">
+  <div class="tier"><span class="nm">Student</span><span class="amt">₹0 <small>forever</small></span><span class="btn btn-primary">Download</span><ul><li>Capture and search</li><li>2 GB library</li><li>Answers with pages</li></ul></div>
+  <div class="tier"><span class="nm">Core</span><span class="amt">₹450 <small>/ month</small></span><span class="btn btn-ghost">Start Core</span><ul><li>Everything in Student</li><li>15 GB library</li><li>Ruth sorts it overnight</li></ul></div>
+  <div class="tier"><span class="nm">Scholar</span><span class="amt">₹1,350 <small>/ month</small></span><span class="btn btn-ghost">Start Scholar</span><ul><li>Everything in Core</li><li>50 GB library</li><li>Priority answers</li></ul></div>
+</div>
+  </section>
+
+  <section class="close">
+    <h2 class="display" style="font-size:56px; line-height:60px;"><span class="setup">Stop organizing.</span><br>Start finding.</h2>
+    <div class="cta"><span class="btn btn-primary">Download for Mac</span><span class="btn btn-ghost">Download for Windows</span></div>
+    <span class="platforms">Or <a>use Avenire in your browser</a></span>
+  </section>
+
+  <footer class="foot"><span>Avenire</span><span>Privacy · Terms · Pricing · Changelog</span></footer>
+</div>
+</body></html>

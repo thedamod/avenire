@@ -1,6 +1,7 @@
 /** Conversation persistence has no model, sandbox, or provider configuration dependency. */
 import {
   Conflict,
+  FolderId,
   MessageId,
   NotFound,
   ThreadId,
@@ -9,9 +10,9 @@ import {
   type UserId,
 } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import { ruthMessage, ruthThread, type RuthThreadRow } from "@avenire/database/schema";
+import { folder, ruthMessage, ruthThread, type RuthThreadRow } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -32,7 +33,21 @@ export class ThreadStore extends Context.Service<
     readonly createThread: (
       userId: UserId,
       title?: string,
-    ) => Effect.Effect<RuthThread, ThreadStoreError | Conflict>;
+      folderId?: FolderId,
+    ) => Effect.Effect<RuthThread, ThreadStoreError | Conflict | NotFound>;
+    readonly getThread: (
+      userId: UserId,
+      threadId: ThreadId,
+    ) => Effect.Effect<RuthThread, ThreadStoreError | NotFound>;
+    readonly renameThread: (
+      userId: UserId,
+      threadId: ThreadId,
+      title: string,
+    ) => Effect.Effect<RuthThread, ThreadStoreError | NotFound | Conflict>;
+    readonly deleteThread: (
+      userId: UserId,
+      threadId: ThreadId,
+    ) => Effect.Effect<void, ThreadStoreError | NotFound>;
     readonly listMessages: (
       userId: UserId,
       threadId: ThreadId,
@@ -50,6 +65,9 @@ const toThread = (row: RuthThreadRow): RuthThread => ({
   kind: row.kind,
   title: row.title,
   fullAccess: row.fullAccess,
+  folderId: row.folderId ? FolderId.make(row.folderId) : null,
+  preview: null,
+  lastMessageAt: null,
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
 });
@@ -61,7 +79,99 @@ export const ThreadStoreLive = Layer.effect(
     const crypto = yield* Crypto.Crypto;
     const fail = (operation: string) => (cause: unknown) =>
       new ThreadStoreError({ operation, cause });
+    const wire = Effect.fn(function* (rows: readonly RuthThreadRow[]) {
+      if (!rows.length) return [];
+      const ids = rows.map((row) => row.id);
+      const latest = yield* database
+        .use((db) =>
+          db
+            .selectDistinctOn([ruthMessage.threadId], {
+              threadId: ruthMessage.threadId,
+              createdAt: ruthMessage.createdAt,
+            })
+            .from(ruthMessage)
+            .where(and(eq(ruthMessage.userId, rows[0]!.userId), inArray(ruthMessage.threadId, ids)))
+            .orderBy(asc(ruthMessage.threadId), desc(ruthMessage.createdAt), desc(ruthMessage.id)),
+        )
+        .pipe(Effect.mapError(fail("read thread timestamps")));
+      const replies = yield* database
+        .use((db) =>
+          db
+            .selectDistinctOn([ruthMessage.threadId], {
+              threadId: ruthMessage.threadId,
+              parts: ruthMessage.parts,
+            })
+            .from(ruthMessage)
+            .where(
+              and(
+                eq(ruthMessage.userId, rows[0]!.userId),
+                inArray(ruthMessage.threadId, ids),
+                eq(ruthMessage.role, "assistant"),
+              ),
+            )
+            .orderBy(asc(ruthMessage.threadId), desc(ruthMessage.createdAt), desc(ruthMessage.id)),
+        )
+        .pipe(Effect.mapError(fail("read thread previews")));
+      const lastByThread = new Map(latest.map((m) => [m.threadId, m]));
+      const replyByThread = new Map(replies.map((m) => [m.threadId, m]));
+      return rows.map((row) => {
+        const last = lastByThread.get(row.id);
+        const assistant = replyByThread.get(row.id);
+        const text = assistant?.parts.find(
+          (p): p is { type: "text"; text: string } =>
+            typeof p === "object" &&
+            p !== null &&
+            "type" in p &&
+            p.type === "text" &&
+            "text" in p &&
+            typeof p.text === "string",
+        );
+        return {
+          ...toThread(row),
+          preview: text?.text.slice(0, 140) ?? null,
+          lastMessageAt: last?.createdAt.toISOString() ?? null,
+        };
+      });
+    });
+    const getThread = Effect.fn(function* (userId: UserId, threadId: ThreadId) {
+      const [row] = yield* database
+        .use((db) =>
+          db
+            .select()
+            .from(ruthThread)
+            .where(and(eq(ruthThread.id, threadId), eq(ruthThread.userId, userId))),
+        )
+        .pipe(Effect.mapError(fail("get thread")));
+      if (!row) return yield* new NotFound({ entity: "Thread", id: threadId });
+      return (yield* wire([row]))[0]!;
+    });
     return ThreadStore.of({
+      getThread,
+      renameThread: Effect.fn(function* (userId, threadId, title) {
+        if (!title.trim() || title.trim().length > 200)
+          return yield* new Conflict({ reason: "Invalid thread title." });
+        yield* getThread(userId, threadId);
+        yield* database
+          .use((db) =>
+            db
+              .update(ruthThread)
+              .set({ title: title.trim(), updatedAt: new Date() })
+              .where(and(eq(ruthThread.id, threadId), eq(ruthThread.userId, userId))),
+          )
+          .pipe(Effect.mapError(fail("rename thread")));
+        return yield* getThread(userId, threadId);
+      }),
+      deleteThread: Effect.fn(function* (userId, threadId) {
+        const rows = yield* database
+          .use((db) =>
+            db
+              .delete(ruthThread)
+              .where(and(eq(ruthThread.id, threadId), eq(ruthThread.userId, userId)))
+              .returning({ id: ruthThread.id }),
+          )
+          .pipe(Effect.mapError(fail("delete thread")));
+        if (!rows.length) return yield* new NotFound({ entity: "Thread", id: threadId });
+      }),
       listThreads: Effect.fn("ThreadStore.listThreads")(function* (userId) {
         const rows = yield* database
           .use((db) =>
@@ -71,9 +181,9 @@ export const ThreadStoreLive = Layer.effect(
             }),
           )
           .pipe(Effect.mapError(fail("list threads")));
-        return rows.map(toThread);
+        return yield* wire(rows);
       }),
-      createThread: Effect.fn("ThreadStore.createThread")(function* (userId, title) {
+      createThread: Effect.fn("ThreadStore.createThread")(function* (userId, title, folderId) {
         const normalized = title?.trim() || "New thread";
         if (normalized.length > 200)
           return yield* new Conflict({
@@ -83,15 +193,34 @@ export const ThreadStoreLive = Layer.effect(
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError(fail("create an id")),
         );
+        if (folderId) {
+          const [owned] = yield* database
+            .use((db) =>
+              db
+                .select({ id: folder.id })
+                .from(folder)
+                .where(
+                  and(
+                    eq(folder.id, folderId),
+                    eq(folder.userId, userId),
+                    isNull(folder.archivedAt),
+                  ),
+                ),
+            )
+            .pipe(Effect.mapError(fail("get folder")));
+          if (!owned) return yield* new NotFound({ entity: "Folder", id: folderId });
+        }
         const [row] = yield* database
-          .use((db) => db.insert(ruthThread).values({ id, userId, title: normalized }).returning())
+          .use((db) =>
+            db.insert(ruthThread).values({ id, userId, title: normalized, folderId }).returning(),
+          )
           .pipe(Effect.mapError(fail("create the thread")));
         if (!row)
           return yield* new ThreadStoreError({
             operation: "create the thread",
             cause: "no row returned",
           });
-        return toThread(row);
+        return (yield* wire([row]))[0]!;
       }),
       listMessages: Effect.fn("ThreadStore.listMessages")(function* (userId, threadId) {
         const owned = yield* database
@@ -129,7 +258,7 @@ export const ThreadStoreLive = Layer.effect(
           )
           .pipe(Effect.mapError(fail("update the thread")));
         if (!row) return yield* new NotFound({ entity: "Thread", id: threadId });
-        return toThread(row);
+        return (yield* wire([row]))[0]!;
       }),
     });
   }),

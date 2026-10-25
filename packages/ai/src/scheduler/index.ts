@@ -1,5 +1,6 @@
 /** Task occurrences and atomic claims are persisted; only the worker executes runs. */
 import { CloudRunId } from "@avenire/contracts";
+import { prettyWorkerCause } from "@avenire/shared/error-cause";
 import { Database } from "@avenire/database/client";
 import { cloudRun, cloudTask, user } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
@@ -210,7 +211,8 @@ export const schedulerTick = Effect.fn("CloudScheduler.tick")(function* () {
         .where(eq(cloudTask.id, current.id));
     });
   }
-  const expiredLease = sql`coalesce(${cloudRun.leaseExpiresAt}, '-infinity'::timestamptz) <= ${date}`;
+  // Raw SQL parameters bypass the timestamp column encoder; postgres.js requires a string.
+  const expiredLease = sql`coalesce(${cloudRun.leaseExpiresAt}, '-infinity'::timestamptz) <= ${date.toISOString()}`;
   const recovery = yield* database.use((db) =>
     db
       .select({ id: cloudRun.id, userId: cloudRun.userId })
@@ -259,7 +261,9 @@ export const CloudSchedulerLive = Layer.effectDiscard(
     const serial = yield* Semaphore.make(1);
     const tick = schedulerTick().pipe(
       Effect.provideContext(services),
-      Effect.catchCause((cause) => Effect.logError("Ruth Cloud scheduler tick failed", { cause })),
+      Effect.catchCause((cause) =>
+        Effect.logError("Ruth Cloud scheduler tick failed", prettyWorkerCause(cause)),
+      ),
       serial.withPermits(1),
     );
     // The minute tick is the safety net (due tasks, expired leases); this cheap poll starts a
@@ -268,7 +272,9 @@ export const CloudSchedulerLive = Layer.effectDiscard(
       .use((db) => db.select({ id: cloudRun.id }).from(cloudRun).where(claimableQueued).limit(1))
       .pipe(
         Effect.flatMap((rows) => (rows.length ? tick : Effect.void)),
-        Effect.catchCause((cause) => Effect.logWarning("Ruth Cloud queue poll failed", { cause })),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Ruth Cloud queue poll failed", prettyWorkerCause(cause)),
+        ),
       );
     yield* Effect.repeat(tick, Schedule.spaced("1 minute")).pipe(Effect.forkScoped);
     yield* Effect.repeat(wake, Schedule.spaced(WAKE_INTERVAL)).pipe(Effect.forkScoped);

@@ -203,7 +203,9 @@ The `lathe` namespace is for axis-based solids. `F` is a frame from `frameAlong(
 
 For advanced material options, use `src/iso/lathe.mjs`, `tube.mjs`, and `canvas-painter.mjs` as the signature source.
 
-`/kits/iso-gl.js` exports `GLSL_ISO`, `GLSL_TURN`, `glslPose(name,prefix?)`, `glCamera(P)`, `glLayer({canvas,fragment,view,camera,uniforms?,fixed?,extensions?,maxRatio?,untransformed?,onError?})`, `smooth(a,b,x)`, `burst(age,rise,fall)`, and `settle(state,target,dt,seconds,calm?)`. The `gl` namespace includes the legacy WebGL variant. These helpers position and animate fragment shaders in the same isometric camera as SVG.
+`/kits/iso-gl.js` exports `GLSL_COMBUSTION`, `GLSL_ISO`, `GLSL_TURN`, `glslPose(name,prefix?)`, `glCamera(P)`, `glLayer({canvas,fragment,view,camera,uniforms?,fixed?,extensions?,maxRatio?,untransformed?,onError?})`, `smooth(a,b,x)`, `burst(age,rise,fall)`, and `settle(state,target,dt,seconds,calm?)`. The `gl` namespace includes the legacy WebGL variant. These helpers position and animate fragment shaders in the same isometric camera as SVG.
+
+`GLSL_COMBUSTION` is a reusable GLSL1 turbulent flame field. Insert it into a fragment shader and call `combustionSample(vec3(axialFraction, radialY, radialZ), timeSeconds, fuelFraction)`. Axial fraction is 0–1 from flame holder to plume tip; radial coordinates are divided by the local physical radius. It returns unpremultiplied RGB plus extinction density in alpha. Ray march in the assembly camera, clip against its cavity/nozzle, and integrate `a=1.-exp(-sample.a*stepLength*extinction)` front to back: `sum.rgb+=(1.-sum.a)*sample.rgb*a; sum.a+=(1.-sum.a)*a`. Return premultiplied `sum` with `glLayer`; do not multiply alpha twice. Choose extinction in the same world units as stepLength. This is a qualitative visual field, not CFD. It uses advected four-octave 3D value noise; a few sine waves create periodic diagonal stripes rather than turbulent flame.
 
 The complete isometric example below installs `ISO_CSS`; geometry alone has no face or stroke styling.
 

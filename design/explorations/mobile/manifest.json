@@ -1,0 +1,548 @@
+[
+  {
+    "id": "M00",
+    "name": "M00 Mobile · how it maps from desktop",
+    "file": "screens/M00.html",
+    "column": "Read me",
+    "styles": {
+      "width": "480px",
+      "height": "1180px",
+      "left": "0px",
+      "top": "0px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M01",
+    "name": "M01 Home · morning toast",
+    "file": "screens/M01.html",
+    "column": "Home",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "560px",
+      "top": "0px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M02",
+    "name": "M02 Home · failed overnight run",
+    "file": "screens/M02.html",
+    "column": "Home",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "560px",
+      "top": "944px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M03",
+    "name": "M03 Home · Notes tab (quiet day, no toast)",
+    "file": "screens/M03.html",
+    "column": "Home",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "560px",
+      "top": "1888px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M04",
+    "name": "M04 Home · Sources › Unfiled (synced from computer)",
+    "file": "screens/M04.html",
+    "column": "Home",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "560px",
+      "top": "2832px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M05",
+    "name": "M05 Home · Sources › processing and needs you",
+    "file": "screens/M05.html",
+    "column": "Home",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "560px",
+      "top": "3776px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M06",
+    "name": "M06 Home · empty (first run, capture lives on the computer)",
+    "file": "screens/M06.html",
+    "column": "Home",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "560px",
+      "top": "4720px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M07",
+    "name": "M07 Search results vs Ask Ruth (composer focused)",
+    "file": "screens/M07.html",
+    "column": "Search and Ask",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "1030px",
+      "top": "0px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M08",
+    "name": "M08 Ask Ruth from home · streaming (replaces ⌥ Space)",
+    "file": "screens/M08.html",
+    "column": "Search and Ask",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "1030px",
+      "top": "944px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M08b",
+    "name": "M08b Ask Ruth from home · answer, save to notebook",
+    "file": "screens/M08b.html",
+    "column": "Search and Ask",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "1030px",
+      "top": "1888px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M09",
+    "name": "M09 Notebook · Thermodynamics",
+    "file": "screens/M09.html",
+    "column": "Notebook",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "1500px",
+      "top": "0px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M10",
+    "name": "M10 Note · Entropy and the second law",
+    "file": "screens/M10.html",
+    "column": "Notebook",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "1500px",
+      "top": "944px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M11",
+    "name": "M11 New notebook (sheet)",
+    "file": "screens/M11.html",
+    "column": "Notebook",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "1500px",
+      "top": "1888px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M12",
+    "name": "M12 Morning report · chat",
+    "file": "screens/M12.html",
+    "column": "Morning report",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "1970px",
+      "top": "0px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M13",
+    "name": "M13 Morning report · Summary sheet",
+    "file": "screens/M13.html",
+    "column": "Morning report",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "1970px",
+      "top": "944px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M14",
+    "name": "M14 Morning report · Quiz, answered with feedback",
+    "file": "screens/M14.html",
+    "column": "Morning report",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "1970px",
+      "top": "1888px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M15",
+    "name": "M15 Morning report · Quiz score",
+    "file": "screens/M15.html",
+    "column": "Morning report",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "1970px",
+      "top": "2832px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M16",
+    "name": "M16 Morning report · Widget (Raptor 2), full height",
+    "file": "screens/M16.html",
+    "column": "Morning report",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "1970px",
+      "top": "3776px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M17",
+    "name": "M17 Morning report · file changes expanded",
+    "file": "screens/M17.html",
+    "column": "Morning report",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "1970px",
+      "top": "4720px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M18",
+    "name": "M18 Citation → PDF opens at p.11 (half sheet)",
+    "file": "screens/M18.html",
+    "column": "Citations",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "2440px",
+      "top": "0px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M19",
+    "name": "M19 Citation → video opens at 18:40 (half sheet)",
+    "file": "screens/M19.html",
+    "column": "Citations",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "2440px",
+      "top": "944px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M20",
+    "name": "M20 Citation → image opens on the region",
+    "file": "screens/M20.html",
+    "column": "Citations",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "2440px",
+      "top": "1888px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M21",
+    "name": "M21 Chat · generated figure + video",
+    "file": "screens/M21.html",
+    "column": "Chat",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "2910px",
+      "top": "0px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M22",
+    "name": "M22 Mid-chat approval (composer tray)",
+    "file": "screens/M22.html",
+    "column": "Chat",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "2910px",
+      "top": "944px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M23",
+    "name": "M23 Mid-chat question from Ruth (composer tray)",
+    "file": "screens/M23.html",
+    "column": "Chat",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "2910px",
+      "top": "1888px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M24",
+    "name": "M24 Chats and Tasks · see all (swipe for task actions)",
+    "file": "screens/M24.html",
+    "column": "Chats and Tasks",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "3380px",
+      "top": "0px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M25",
+    "name": "M25 Task detail · failed overnight run",
+    "file": "screens/M25.html",
+    "column": "Chats and Tasks",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "3380px",
+      "top": "944px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M26",
+    "name": "M26 Ruth Cloud · schedule an overnight task (sheet)",
+    "file": "screens/M26.html",
+    "column": "Chats and Tasks",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "3380px",
+      "top": "1888px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M27",
+    "name": "M27 Filing · select sources (long-press), icon dock",
+    "file": "screens/M27.html",
+    "column": "Filing",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "3850px",
+      "top": "0px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M28",
+    "name": "M28 Filing · move 2 sources to a notebook (sheet)",
+    "file": "screens/M28.html",
+    "column": "Filing",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "3850px",
+      "top": "944px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M29",
+    "name": "M29 Filing · review Ruth's clusters",
+    "file": "screens/M29.html",
+    "column": "Filing",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "3850px",
+      "top": "1888px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M30",
+    "name": "M30 Settings",
+    "file": "screens/M30.html",
+    "column": "Settings and Trash",
+    "styles": {
+      "width": "390px",
+      "height": "1660px",
+      "left": "4320px",
+      "top": "0px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M31",
+    "name": "M31 Trash · two selected, icon dock",
+    "file": "screens/M31.html",
+    "column": "Settings and Trash",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "4320px",
+      "top": "1888px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M32",
+    "name": "M32 Onboarding · Welcome",
+    "file": "screens/M32.html",
+    "column": "Onboarding",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "4790px",
+      "top": "0px",
+      "backgroundColor": "#06111F",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M33",
+    "name": "M33 Onboarding · About you",
+    "file": "screens/M33.html",
+    "column": "Onboarding",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "4790px",
+      "top": "944px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M34",
+    "name": "M34 Onboarding · Your morning",
+    "file": "screens/M34.html",
+    "column": "Onboarding",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "4790px",
+      "top": "1888px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M35",
+    "name": "M35 Onboarding · Notifications (mobile only)",
+    "file": "screens/M35.html",
+    "column": "Onboarding",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "4790px",
+      "top": "2832px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M36",
+    "name": "M36 Onboarding · Capture is on your computer (replaces 23d–23i)",
+    "file": "screens/M36.html",
+    "column": "Onboarding",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "4790px",
+      "top": "3776px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  },
+  {
+    "id": "M37",
+    "name": "M37 Onboarding · You're set",
+    "file": "screens/M37.html",
+    "column": "Onboarding",
+    "styles": {
+      "width": "390px",
+      "height": "844px",
+      "left": "4790px",
+      "top": "4720px",
+      "backgroundColor": "#0B0B0B",
+      "overflow": "clip"
+    }
+  }
+]

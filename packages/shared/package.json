@@ -14,6 +14,14 @@
     "./observability-browser": {
       "types": "./src/observabilityBrowser.ts",
       "import": "./src/observabilityBrowser.ts"
+    },
+    "./notebook": {
+      "types": "./src/notebook.ts",
+      "import": "./src/notebook.ts"
+    },
+    "./error-cause": {
+      "types": "./src/error-cause.ts",
+      "import": "./src/error-cause.ts"
     }
   },
   "scripts": {

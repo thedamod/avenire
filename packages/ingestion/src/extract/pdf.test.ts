@@ -1,18 +1,18 @@
 import { describe, expect, it } from "@effect/vitest";
 import { PDFDocument } from "pdf-lib";
 
-import { remapFallbackPages, splitFallbackPages, subsetPdfPages } from "./ocr.ts";
+import { remapOcrPages, splitOcrPages, subsetPdfPages } from "./ocr.ts";
 import { assemblePdfDocument, mergePageText, pageNeedsOcr } from "./pdf.ts";
 
 describe("PDF extraction decisions", () => {
-  it("halves oversized fallback batches down to a single page", () => {
+  it("halves oversized OCR batches down to a single page", () => {
     const pages = [1, 2, 6, 8, 20];
-    expect(splitFallbackPages(pages)).toEqual([
+    expect(splitOcrPages(pages)).toEqual([
       [1, 2],
       [6, 8, 20],
     ]);
-    expect(splitFallbackPages([405])).toBeNull();
-    expect(splitFallbackPages([])).toBeNull();
+    expect(splitOcrPages([405])).toBeNull();
+    expect(splitOcrPages([])).toBeNull();
   });
 
   it("sends only selected PDF pages and preserves their source numbers", async () => {
@@ -25,7 +25,7 @@ describe("PDF extraction decisions", () => {
     expect(selected.getPage(0).getWidth()).toBe(320);
     expect(selected.getPage(1).getWidth()).toBe(300);
     expect(
-      remapFallbackPages(
+      remapOcrPages(
         [
           { page: 1, markdown: "third" },
           { page: 2, markdown: "first" },

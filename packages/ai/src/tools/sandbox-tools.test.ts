@@ -241,3 +241,24 @@ it.effect("rejects invalid base64 without writing a file", () => {
     state.sandboxes,
   );
 });
+
+for (const exitCode of [0, 2])
+  it.effect(`emits an activity phrase only for a successful command (exit ${exitCode})`, () => {
+    const f = fake();
+    return Effect.gen(function* () {
+      const result = yield* provide(
+        sandboxTools.sandbox_exec(
+          { command: "test", activity: "Checked the flame controls" },
+          turn,
+        ),
+        {
+          ...f.sandboxes,
+          exec: () =>
+            Effect.succeed({ exitCode, output: "internal", truncated: false, durationMs: 1 }),
+        },
+      );
+      expect(result).toMatchObject({ exitCode });
+      if (exitCode === 0) expect(result.activity).toBe("Checked the flame controls");
+      else expect(result.activity).toBeUndefined();
+    });
+  });

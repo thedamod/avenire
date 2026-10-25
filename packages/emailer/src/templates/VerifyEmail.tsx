@@ -1,27 +1,21 @@
+/** @jsxRuntime automatic @jsxImportSource react */
 import { Button, Text } from "@react-email/components";
 import type { TemplateProps } from "./index.ts";
-import { Layout, copyStyle, linkStyle, titleStyle } from "./Layout.tsx";
+import { Layout, buttonStyle, copyStyle, metaStyle, titleStyle } from "./Layout.tsx";
 
 type Props = TemplateProps<"verify-email">;
 export const VerifyEmail = ({ name, url }: Props) => (
-  <Layout preview="Verify your Avenire email address">
-    <Text style={titleStyle}>A more thoughtful morning starts here.</Text>
+  <Layout preview="Confirm your email to finish setting up Avenire">
+    <Text style={titleStyle}>Confirm your email</Text>
     <Text style={copyStyle}>
-      Hello {name}, confirm your email address to finish setting up Avenire.
+      Hi {name}, one more step. Confirm this address and Avenire is ready for your first notes.
     </Text>
-    <Button
-      href={url}
-      style={{
-        ...linkStyle,
-        display: "inline-block",
-        padding: "13px 20px",
-        backgroundColor: "#55527f",
-        color: "#ffffff",
-        textDecoration: "none",
-      }}
-    >
-      Verify email
+    <Button href={url} style={buttonStyle}>
+      Confirm email
     </Button>
+    <Text style={{ ...metaStyle, margin: "20px 0 0" }}>
+      If you didn't create an Avenire account, you can ignore this email.
+    </Text>
   </Layout>
 );
 VerifyEmail.PreviewProps = { name: "Ruth", url: "https://avenire.space/verify" } satisfies Props;

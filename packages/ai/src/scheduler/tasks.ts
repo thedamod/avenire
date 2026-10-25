@@ -2,6 +2,8 @@ import { AssetStore } from "../outputs/assets.ts";
 import {
   CloudRunId,
   CloudTaskId,
+  FolderId,
+  MessageId,
   Conflict,
   NotFound,
   type CloudRun as ContractRun,
@@ -13,6 +15,7 @@ import { Database, type DatabaseError } from "@avenire/database/client";
 import {
   cloudRun,
   cloudTask,
+  userSettings,
   user,
   type CloudRunRow,
   type CloudTaskRow,
@@ -67,7 +70,12 @@ export class CloudTasks extends Context.Service<
     readonly listRuns: (
       userId: UserId,
       limit?: number,
+      taskId?: CloudTaskId,
     ) => Effect.Effect<readonly ContractRun[], DatabaseError>;
+    readonly getRun: (
+      userId: UserId,
+      runId: CloudRunId,
+    ) => Effect.Effect<ContractRun, CloudTasksError>;
     readonly ensureDefaultTask: (
       userId: UserId,
       timeZone?: string,
@@ -105,6 +113,9 @@ export const runToContract = (
   scheduledFor: row.scheduledFor.toISOString(),
   attempt: row.attempt,
   summary: row.summary,
+  folderId: row.folderId ? FolderId.make(row.folderId) : null,
+  reportMessageId: row.reportMessageId ? MessageId.make(row.reportMessageId) : null,
+  startHere: row.startHere ?? null,
   startedAt: iso(row.startedAt),
   finishedAt: iso(row.finishedAt),
   error: row.error,
@@ -148,10 +159,19 @@ export const CloudTasksLive = Layer.effect(
     });
     const ensureDefaultTask = Effect.fn("CloudTasks.ensureDefaultTask")(function* (
       userId: UserId,
-      timeZone = "UTC",
+      requestedTimeZone = "UTC",
     ) {
       const now = yield* DateTime.now;
-      const schedule = { _tag: "cron", expression: "0 3 * * *" } as const;
+      const [savedSettings] = yield* database.use((db) =>
+        db.select().from(userSettings).where(eq(userSettings.userId, userId)),
+      );
+      const ready = savedSettings?.preferences.resultsReadyBy ?? "07:00";
+      const [hour, minute] = ready.split(":").map(Number);
+      const timeZone = savedSettings?.preferences.timeZone ?? requestedTimeZone;
+      const schedule = {
+        _tag: "cron",
+        expression: `${minute} ${(hour! + 22) % 24} * * *`,
+      } as const;
       const next = yield* validateSchedule(schedule, timeZone, now);
       const id = yield* newId(CloudTaskId).pipe(Effect.provideService(Crypto.Crypto, crypto));
       yield* database.use((db) =>
@@ -178,6 +198,7 @@ export const CloudTasksLive = Layer.effect(
     });
     const service = CloudTasks.of({
       ensureDefaultTask,
+      getRun,
       list: Effect.fn("CloudTasks.list")(function* (userId) {
         yield* ensureDefaultTask(userId);
         return (yield* database.use((db) =>
@@ -388,7 +409,7 @@ export const CloudTasksLive = Layer.effect(
         );
         return yield* getRun(userId, runId);
       }),
-      listRuns: Effect.fn("CloudTasks.listRuns")(function* (userId, limit = 20) {
+      listRuns: Effect.fn("CloudTasks.listRuns")(function* (userId, limit = 20, taskId) {
         const rows = yield* database.use((db) =>
           db
             .select({ run: cloudRun, taskTitle: cloudTask.title })
@@ -397,7 +418,9 @@ export const CloudTasksLive = Layer.effect(
               cloudTask,
               and(eq(cloudRun.taskId, cloudTask.id), eq(cloudTask.userId, userId)),
             )
-            .where(eq(cloudRun.userId, userId))
+            .where(
+              and(eq(cloudRun.userId, userId), taskId ? eq(cloudRun.taskId, taskId) : undefined),
+            )
             .orderBy(desc(cloudRun.createdAt), desc(cloudRun.id))
             .limit(Math.max(1, Math.min(100, Math.floor(limit)))),
         );

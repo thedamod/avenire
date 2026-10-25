@@ -151,7 +151,7 @@ export const cloudFixture = () => {
                 where: (where?: SQL) => chain(() => select(where)),
                 innerJoin: () => ({
                   where: (where?: SQL) => ({
-                    orderBy: async () =>
+                    orderBy: async (order: SQL) =>
                       rows(name)
                         .filter((row) => matches(row, where))
                         .map((row) => ({
@@ -159,9 +159,10 @@ export const cloudFixture = () => {
                           fileTitle:
                             rows("file").find((file) => file.id === row.fileId)?.title ?? "Missing",
                         }))
-                        .sort(
-                          (a, b) => Number(b.approval.createdAt) - Number(a.approval.createdAt),
-                        ),
+                        .sort((a, b) => {
+                          const delta = Number(a.approval.createdAt) - Number(b.approval.createdAt);
+                          return dialect.sqlToQuery(order).sql.endsWith(" asc") ? delta : -delta;
+                        }),
                   }),
                 }),
                 leftJoin: () => ({

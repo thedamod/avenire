@@ -29,6 +29,23 @@ const settings = {
   secret: Redacted.make("widget-secret"),
   frameAncestors: ["https://app.test"],
 };
+
+it.effect(
+  "stores and loads a built widget larger than 2 MiB",
+  () =>
+    Effect.gen(function* () {
+      const html = "<main>Large figure</main><!--" + "x".repeat(2 * 1024 * 1024) + "-->";
+      const widgets = yield* makeWidgetStore(settings);
+      const result = yield* widgets.render(ctx, { title: "Large figure", html });
+      const assets = yield* AssetStore;
+      const entry = yield* assets.get(result.assetId);
+      expect(Option.isSome(entry)).toBe(true);
+      if (Option.isNone(entry)) return;
+      const bytes = yield* widgets.load((yield* widgets.url(entry.value)).split("/w/")[1]!);
+      expect(bytes.byteLength).toBeGreaterThan(2 * 1024 * 1024);
+      expect(new TextDecoder().decode(bytes)).toContain(html);
+    }).pipe(Effect.provide(AssetStoreTest), Effect.provideService(Crypto.Crypto, testCrypto)),
+);
 for (const appearance of ["light", "dark"] as const)
   it.effect(`wraps ${appearance} with kits CSP, bootstrap and tokens`, () =>
     Effect.gen(function* () {
@@ -73,6 +90,29 @@ it.effect(
       });
       expect(yield* assets.load(entry.value)).toEqual(bytes);
     }).pipe(Effect.provide(AssetStoreTest), Effect.provideService(Crypto.Crypto, testCrypto)),
+);
+it.effect("loads stored widgets using the current kit host without changing stored bytes", () =>
+  Effect.gen(function* () {
+    const previous = yield* makeWidgetStore({
+      ...settings,
+      origin: "http://widgets.localhost:3000",
+    });
+    const result = yield* previous.render(ctx, {
+      title: "Existing chart",
+      html: '<script type="module" src="http://widgets.localhost:3000/kits/math.js"></script><p>Chart</p>',
+    });
+    const assets = yield* AssetStore;
+    const entry = yield* assets.get(result.assetId);
+    if (Option.isNone(entry)) return;
+    const original = yield* assets.load(entry.value);
+    const current = yield* makeWidgetStore({ ...settings, origin: "http://127.0.0.1:3100" });
+    const token = (yield* current.url(entry.value)).split("/w/")[1]!;
+    const loaded = new TextDecoder().decode(yield* current.load(token));
+    expect(loaded).toContain('src="http://127.0.0.1:3100/kits/math.js"');
+    expect(loaded).toContain("script-src &#39;unsafe-inline&#39; http://127.0.0.1:3100/kits/");
+    expect(loaded).not.toContain("widgets.localhost");
+    expect(yield* assets.load(entry.value)).toEqual(original);
+  }).pipe(Effect.provide(AssetStoreTest), Effect.provideService(Crypto.Crypto, testCrypto)),
 );
 it("short tokens reject tampering, expiry and excessive lifetime", () => {
   const id = AssetId.make("widget");

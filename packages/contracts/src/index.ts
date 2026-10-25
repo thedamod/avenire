@@ -1,4 +1,5 @@
 export * from "./capture.ts";
+export * from "./desktop.ts";
 export * from "./cloud.ts";
 export * from "./errors.ts";
 export * from "./ids.ts";
@@ -10,6 +11,7 @@ export * from "./retrieval.ts";
 export * from "./rpc.ts";
 export * from "./ruth.ts";
 export * from "./session.ts";
+export * from "./settings.ts";
 export * from "./widget.ts";
 
 export * from "./assets.ts";

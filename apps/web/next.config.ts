@@ -21,10 +21,14 @@ const nextConfig: NextConfig = {
     "@avenire/ui",
     "@avenire/widget-kit",
   ],
-  serverExternalPackages: ["agent-browser"],
+  serverExternalPackages: ["agent-browser", "@daytonaio/sdk", "pdfjs-dist"],
   outputFileTracingIncludes: {
     "/*": [
       "../../packages/widget-kit/dist/kits/**/*",
+      "../../node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+      "../../node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/wasm/**/*",
+      "../../node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/standard_fonts/**/*",
+      "../../node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/cmaps/**/*",
       "../../node_modules/.pnpm/agent-browser@*/node_modules/agent-browser/package.json",
       "../../node_modules/.pnpm/agent-browser@*/node_modules/agent-browser/bin/**/*",
     ],

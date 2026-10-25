@@ -1,3 +1,4 @@
+import { Settings } from "./settings.ts";
 import { AuthenticationLive } from "@avenire/auth/middleware";
 import { AuthService, createAuth, makeAuthService } from "@avenire/auth/server";
 import type { DatabaseClient } from "@avenire/database/client";
@@ -60,8 +61,30 @@ const job = {
   updatedAt: snapshot.capturedAt,
 };
 const payloads: Record<string, unknown> = {
-  "library.getCanvas": null,
-  "library.saveCanvas": { nodes: [] },
+  "library.getFile": { fileId: "file" },
+  "library.renameFile": { fileId: "file", title: "Renamed" },
+  "library.getFileContentUrl": { fileId: "file" },
+  "library.createNote": { title: "Note", markdown: "", folderIds: [] },
+  "library.getNote": { fileId: "file" },
+  "library.saveNote": { fileId: "file", markdown: "", baseRevision: "rev" },
+  "library.getFolder": { folderId: "folder" },
+  "library.createFolder": { name: "Folder", color: "teal", cover: "atom" },
+  "library.updateFolder": { folderId: "folder", cover: "globe" },
+  "library.trashFiles": { fileIds: ["file"] },
+  "library.trashFolder": { folderId: "folder" },
+  "library.listTrash": null,
+  "library.restore": { refs: [{ _tag: "file", id: "file" }] },
+  "library.purge": { refs: [{ _tag: "folder", id: "folder" }] },
+  "library.emptyTrash": null,
+  "ruth.getThread": { threadId: "thread" },
+  "ruth.renameThread": { threadId: "thread", title: "Renamed" },
+  "ruth.deleteThread": { threadId: "thread" },
+  "cloud.getRun": { runId: "run" },
+  "settings.get": null,
+  "settings.completeOnboarding": {},
+  "settings.update": { timeZone: "UTC" },
+  "settings.updateProfile": { name: "Renamed" },
+  "settings.signOutOtherSessions": null,
   "library.recordFileEvent": { fileId: "file", kind: "opened" },
   "library.submitCapture": { snapshot },
   "library.listFiles": {},
@@ -122,14 +145,25 @@ const fixtures = (calls: Call[]) => {
     ...(Object.fromEntries(
       [
         "getFile",
+        "renameFile",
+        "getFileContentUrl",
+        "createNote",
+        "getNote",
+        "saveNote",
+        "getFolder",
+        "updateFolder",
+        "trashFiles",
+        "trashFolder",
+        "listTrash",
+        "restore",
+        "purge",
+        "emptyTrash",
         "submitCapture",
         "placeFile",
         "listFolders",
         "createFolder",
         "renameFolder",
         "setIngestionPaused",
-        "getCanvas",
-        "saveCanvas",
         "recordFileEvent",
       ].map((method) => [
         method,
@@ -151,6 +185,7 @@ const fixtures = (calls: Call[]) => {
   };
   return Layer.mergeAll(
     Layer.succeed(AuthService, auth),
+    Layer.succeed(Settings, service<Settings["Service"]>("settings")),
     Layer.succeed(Library, library),
     Layer.succeed(Retrieval, service<Retrieval["Service"]>("search")),
     Layer.succeed(ThreadStore, service<ThreadStore["Service"]>("ruth")),
@@ -184,7 +219,8 @@ it.effect("serves every declared method through the composed HTTP NDJSON protoco
       expect(text, tag).toMatch(/"(Exit|Chunk)"/);
       expect(calls.length, tag).toBeGreaterThan(0);
       const call = calls.pop()!;
-      if (tag !== "assets.get") expect(call.args[0], tag).toBe(viewer.id);
+      if (tag.startsWith("settings.")) expect(call.args[0], tag).toEqual(viewer);
+      else if (tag !== "assets.get") expect(call.args[0], tag).toBe(viewer.id);
       expect(calls.length, tag).toBe(0);
     }
   }).pipe(Effect.scoped),
@@ -330,6 +366,7 @@ it.effect(
       const instance = createAuth(
         {
           db: {} as DatabaseClient,
+          sendEmail: () => undefined,
           baseURL: "https://app.test",
           secret: "rpc-test-secret-with-at-least-thirty-two-characters",
           trustedOrigins: ["https://app.test"],

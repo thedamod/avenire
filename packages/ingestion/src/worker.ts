@@ -3,13 +3,15 @@
  * `FOR UPDATE SKIP LOCKED` and hold a lease (`locked_until`), so several worker
  * processes can run side by side and a crashed worker's jobs are picked up again.
  */
+import { prettyWorkerCause } from "@avenire/shared/error-cause";
 import { IngestionJobId, type IngestionStatus, FileId, NotFound, UserId } from "@avenire/contracts";
 import { Database, type DatabaseClient, type DatabaseTransaction } from "@avenire/database/client";
 import { lockCorpus, advanceCorpusRevision } from "@avenire/database/corpus";
 import { ingestionJob, file } from "@avenire/database/schema";
 import { newId } from "@avenire/shared/id";
-import { and, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
@@ -18,11 +20,23 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 
 import { claimPredicate, IngestionLeaseLost } from "./claim.ts";
-import { IngestionPipeline } from "./pipeline.ts";
+import { IngestionError, IngestionPipeline } from "./pipeline.ts";
+import { graphRetryDelay } from "./graph/extract.ts";
 
 const MAX_ATTEMPTS = 3;
 const IDLE_DELAY = "2 seconds";
 const OUTAGE_DELAY = "10 seconds";
+
+/** Each free slot polls immediately, independently of slower jobs in the other slots. */
+export const startIngestionLanes = <E, R>(
+  concurrency: number,
+  pollOnce: Effect.Effect<void, E, R>,
+) =>
+  Effect.forEach(
+    Array.from({ length: concurrency }),
+    () => Effect.forkScoped(Effect.repeat(pollOnce, Schedule.forever)),
+    { discard: true },
+  );
 
 const IN_PROGRESS: ReadonlyArray<IngestionStatus> = [
   "extracting",
@@ -126,6 +140,7 @@ const ClaimedJob = Schema.Struct({
   generation: Schema.Number,
   claimToken: Schema.String,
   attempts: Schema.Number,
+  background: Schema.optionalKey(Schema.Boolean),
 });
 type ClaimedJob = typeof ClaimedJob.Type;
 const decodeClaimed = Schema.decodeUnknownEffect(Schema.Array(ClaimedJob));
@@ -145,6 +160,8 @@ export const claimJobs = (db: DatabaseClient, limit: number, token: string) => {
           or(isNull(ingestionJob.lockedUntil), lt(ingestionJob.lockedUntil, sql`now()`)),
         ),
         and(inArray(ingestionJob.status, IN_PROGRESS), lt(ingestionJob.lockedUntil, sql`now()`)),
+        // An indexed source can still have a scheduled optional extraction retry.
+        and(eq(ingestionJob.status, "indexed"), lt(ingestionJob.lockedUntil, sql`now()`)),
       ),
     )
     .orderBy(ingestionJob.createdAt)
@@ -153,7 +170,8 @@ export const claimJobs = (db: DatabaseClient, limit: number, token: string) => {
   return db
     .update(ingestionJob)
     .set({
-      status: "extracting",
+      status: sql`CASE WHEN ${ingestionJob.status} = 'indexed' THEN 'indexed' ELSE 'extracting' END`,
+      error: null,
       claimToken: token,
       lockedUntil: sql`now() + interval '10 minutes'`,
       attempts: sql`${ingestionJob.attempts} + 1`,
@@ -167,12 +185,46 @@ export const claimJobs = (db: DatabaseClient, limit: number, token: string) => {
       generation: ingestionJob.generation,
       claimToken: ingestionJob.claimToken,
       attempts: ingestionJob.attempts,
+      background: sql<boolean>`${ingestionJob.status} = 'indexed'`,
     });
 };
 
-const failureReason = (cause: Cause.Cause<unknown>): string => {
-  const error = Cause.squash(cause);
-  return error instanceof Error ? error.message : Cause.pretty(cause);
+export const failureReason = (cause: Cause.Cause<unknown>): string => {
+  let error: unknown = Cause.squash(cause);
+  const messages: string[] = [];
+  const seen = new Set<unknown>();
+  while (error && !seen.has(error)) {
+    seen.add(error);
+    if (error instanceof Error) messages.push(error.message);
+    else if (typeof error === "string") messages.push(error);
+    if (typeof error !== "object") break;
+    const nested = error as { cause?: unknown; lastError?: unknown };
+    error = nested.lastError ?? nested.cause;
+  }
+  const message = [...new Set(messages)].join(": ") || "Processing failed";
+  // The same redactor used for worker logs also protects the persisted UI reason.
+  return prettyWorkerCause(Cause.fail(new Error(message)))
+    .split("\n")[0]!
+    .replace(/^Error: /, "")
+    .slice(0, 1000);
+};
+
+/** Unwrap stage errors to preserve the provider's quota-reset time in the durable queue. */
+export const providerRetryDelay = (
+  cause: Cause.Cause<unknown>,
+  now: number,
+): number | undefined => {
+  let error: unknown = Cause.squash(cause);
+  const seen = new Set<unknown>();
+  while (error && !seen.has(error)) {
+    seen.add(error);
+    const delay = graphRetryDelay(error, now);
+    if (delay !== undefined) return delay;
+    if (typeof error !== "object") break;
+    const nested = error as { cause?: unknown; lastError?: unknown };
+    error = nested.lastError ?? nested.cause;
+  }
+  return undefined;
 };
 
 export const IngestionWorkerLive = Layer.effectDiscard(
@@ -183,27 +235,36 @@ export const IngestionWorkerLive = Layer.effectDiscard(
       1,
       yield* Config.Int("INGESTION_CONCURRENCY").pipe(Config.withDefault(2)),
     );
+    const jobTimeoutSeconds = Math.max(
+      1,
+      yield* Config.Int("INGESTION_JOB_TIMEOUT_SECONDS").pipe(Config.withDefault(900)),
+    );
 
     const crypto = yield* Crypto.Crypto;
     const claim = crypto.randomUUIDv7.pipe(
-      Effect.flatMap((token) => database.use((db) => claimJobs(db, concurrency, token))),
+      Effect.flatMap((token) => database.use((db) => claimJobs(db, 1, token))),
       Effect.flatMap(decodeClaimed),
       Effect.withSpan("IngestionWorker.claim"),
     );
 
     /** Re-queue with exponential backoff, or fail the job once it is out of attempts. */
-    const recordFailure = (job: ClaimedJob, message: string) => {
-      const exhausted = job.attempts >= MAX_ATTEMPTS;
+    const recordFailure = (job: ClaimedJob, message: string, retryAfterMs?: number) => {
+      const deferred = retryAfterMs !== undefined;
+      const exhausted = !deferred && job.attempts >= MAX_ATTEMPTS;
       return database.use((db) =>
         db
           .update(ingestionJob)
           .set({
-            status: exhausted ? "failed" : "queued",
+            status: job.background ? "indexed" : exhausted ? "failed" : "queued",
             error: message,
+            // Quota availability is not a failed processing attempt.
+            attempts: deferred ? Math.max(0, job.attempts - 1) : job.attempts,
             claimToken: null,
-            lockedUntil: exhausted
-              ? null
-              : sql`now() + (${retryDelayMinutes(job.attempts)} * interval '1 minute')`,
+            lockedUntil: deferred
+              ? sql`now() + (${retryAfterMs + 1000} * interval '1 millisecond')`
+              : exhausted
+                ? null
+                : sql`now() + (${retryDelayMinutes(job.attempts)} * interval '1 minute')`,
             updatedAt: sql`now()`,
           })
           .where(claimPredicate(job)),
@@ -234,19 +295,55 @@ export const IngestionWorkerLive = Layer.effectDiscard(
         );
 
     const handleFailure = (job: ClaimedJob, cause: Cause.Cause<unknown>) => {
+      const error = Cause.squash(cause);
+      if (error instanceof IngestionError && error.cause instanceof NotFound) {
+        return database
+          .use((db) =>
+            db
+              .update(ingestionJob)
+              .set({
+                status: "cancelled",
+                error: null,
+                claimToken: null,
+                lockedUntil: null,
+                updatedAt: sql`now()`,
+              })
+              .where(claimPredicate(job)),
+          )
+          .pipe(
+            Effect.catchTag("DatabaseError", (failure) =>
+              Effect.logError("Could not cancel ingestion for a removed file", {
+                jobId: job.id,
+                error: failure,
+              }),
+            ),
+          );
+      }
+      if (
+        error instanceof IngestionLeaseLost ||
+        (error instanceof IngestionError && error.cause instanceof IngestionLeaseLost)
+      )
+        return Effect.void;
       const reason = failureReason(cause);
-      return Effect.logWarning("Ingestion failed", cause).pipe(
-        Effect.annotateLogs({ jobId: job.id, attempts: job.attempts }),
-        Effect.andThen(recordFailure(job, reason)),
-        Effect.catchTag("DatabaseError", (error) =>
-          Effect.logError("Could not record the ingestion failure", { jobId: job.id, error }),
-        ),
+      return Clock.currentTimeMillis.pipe(
+        Effect.flatMap((now) => {
+          const delay = providerRetryDelay(cause, now);
+          return Effect.logWarning(
+            delay === undefined ? "Ingestion failed" : "Ingestion waiting for provider quota",
+            prettyWorkerCause(cause),
+          ).pipe(
+            Effect.annotateLogs({ jobId: job.id, attempts: job.attempts }),
+            Effect.andThen(recordFailure(job, reason, delay)),
+            Effect.catchTag("DatabaseError", (error) =>
+              Effect.logError("Could not record the ingestion failure", { jobId: job.id, error }),
+            ),
+          );
+        }),
       );
     };
 
     // Any failure, including a defect, counts as an attempt; otherwise a job that
-    // crashes the pipeline would be re-claimed forever. Interruption (shutdown)
-    // is left to the lease.
+    // crashes the pipeline would be re-claimed forever. Shutdown releases its fenced claim.
     const heartbeat = (job: ClaimedJob) =>
       database
         .use((db) =>
@@ -264,21 +361,50 @@ export const IngestionWorkerLive = Layer.effectDiscard(
 
     const runJob = (job: ClaimedJob) =>
       Effect.raceFirst(
-        pipeline.run(job),
+        pipeline.run(job).pipe(
+          Effect.timeout(`${jobTimeoutSeconds} seconds`),
+          Effect.catchTag("TimeoutError", () =>
+            Effect.fail(
+              new IngestionError({
+                stage: "processing",
+                cause: `Processing exceeded ${jobTimeoutSeconds / 60} minutes. Try again after the provider recovers.`,
+              }),
+            ),
+          ),
+        ),
         Effect.repeat(heartbeat(job), Schedule.spaced("30 seconds")),
       ).pipe(
         Effect.catchCause((cause) =>
           Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : handleFailure(job, cause),
         ),
+        Effect.onInterrupt(() =>
+          database
+            .use((db) =>
+              db
+                .update(ingestionJob)
+                .set({
+                  status: job.background ? "indexed" : "queued",
+                  attempts: Math.max(0, job.attempts - 1),
+                  claimToken: null,
+                  lockedUntil: job.background ? sql`now()` : null,
+                  updatedAt: sql`now()`,
+                })
+                .where(claimPredicate(job)),
+            )
+            .pipe(
+              Effect.catchTag("DatabaseError", (error) =>
+                Effect.logWarning("Could not release ingestion claim on shutdown", {
+                  jobId: job.id,
+                  error,
+                }),
+              ),
+            ),
+        ),
         Effect.andThen(releaseIfSuperseded(job)),
       );
 
     const pollOnce = claim.pipe(
-      Effect.flatMap((jobs) =>
-        jobs.length === 0
-          ? Effect.sleep(IDLE_DELAY)
-          : Effect.forEach(jobs, runJob, { concurrency, discard: true }),
-      ),
+      Effect.flatMap((jobs) => (jobs.length === 0 ? Effect.sleep(IDLE_DELAY) : runJob(jobs[0]!))),
       // Infrastructure failures (database down, ...) must not stop the worker.
       Effect.catchCause((cause) =>
         Effect.logError("Ingestion poll failed", cause).pipe(
@@ -287,6 +413,6 @@ export const IngestionWorkerLive = Layer.effectDiscard(
       ),
     );
 
-    yield* Effect.forkScoped(Effect.repeat(pollOnce, Schedule.forever));
+    yield* startIngestionLanes(concurrency, pollOnce);
   }),
 );

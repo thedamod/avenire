@@ -7,11 +7,15 @@ description: Use sandbox tools for real computation, data processing, matplotlib
 
 Use the Daytona thread sandbox for computation and shareable files. Python 3 scientific packages, matplotlib, pandas/openpyxl, manimgx, `kicad-cli`, Node and pnpm are available. Treat it as ephemeral; keep source and output paths explicit. Never claim a render, calculation or export succeeded until you inspect its command output and file.
 
+The working directory is `/home/daytona/work`. Prefer relative paths such as `afterburner.html`; absolute writes must stay under `/home/daytona` or `/tmp`. `/mnt`, `/mnt/data` and local host paths are unavailable. Keep the same sandbox path through write, build, preview and render. `/opt/avenire/figures` is a read-only source reference; copy sources into the working directory before editing or building.
+
 1. `sandbox_write({ path: "work.py", content: "..." })` writes code/data.
 2. `sandbox_exec({ command: "python work.py" })` computes; inspect exit status and concise stdout/stderr. Use the tool's supported timeout for long renders and stay within output caps. Break long jobs into inspect and final render stages.
 3. `sandbox_read` reads text or bounded file content; inspect files with scripts (`file`, image dimensions, CSV row count) before publishing. For charts, print JSON aggregates and embed them into widget HTML.
 4. `publish_asset({ path: "figure.png", title: "..." })` uploads PNG/SVG/GIF/MP4/PDF/HTML and returns a permanent `{assetId,url}` for chat. Explain what it shows and cite source data. Do not use the URL inside a widget under `connect-src 'none'`.
 5. Call `sandbox_close` after the work is complete, except while waiting for needed user input; close after that follow-up.
+
+For large visualizations, build an HTML file with `sandbox_exec` and pass the same file path to `preview_widget({ path: "visualization.html" })` and `render_widget({ title: "...", path: "visualization.html" })`. Inline HTML is capped at 512,000 bytes; a built widget supports 8 MiB. There is no 2 MiB widget cap. Write a concise generator or build script when the finished page is too large for one model/tool argument. Keep the finished HTML out of model context; inspect its byte size and preview report instead. Sandbox files go directly to preview and storage, so increasing UploadThing's source-upload limit is unnecessary.
 
 ## Matplotlib and spreadsheets
 

@@ -33,4 +33,10 @@ export const runRoute = <E>(
         ),
       ),
     )
-    .catch(() => Response.json({ error: "The server is unavailable." }, { status: 500 }));
+    .catch((cause) =>
+      Effect.runPromise(
+        Effect.logError("Server runtime initialization failed", cause).pipe(
+          Effect.as(Response.json({ error: "The server is unavailable." }, { status: 500 })),
+        ),
+      ),
+    );

@@ -1,0 +1,18 @@
+.pdf-view .react-pdf__Page__textContent mark {
+  background: color-mix(in srgb, var(--ruth) 45%, transparent);
+  color: transparent;
+  border-radius: 2px;
+}
+.pdf-view .react-pdf__Page__canvas {
+  display: block;
+}
+/* react-pdf wraps its loader in a message div. It must fill the document row too. */
+.pdf-view .react-pdf__message--loading {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+/* v1's "PDF dark mode": invert page canvases only, so citation marks keep their colour. */
+.dark .pdf-view[data-invert="true"] .react-pdf__Page__canvas {
+  filter: brightness(80%) contrast(228%) hue-rotate(180deg) invert(94%);
+}

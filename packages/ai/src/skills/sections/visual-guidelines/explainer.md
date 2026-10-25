@@ -5,7 +5,7 @@ description: Explain concepts with crafted interactive figures: direct physical 
 
 # Interactive explainer
 
-Choose the representation that makes the causal relationship easiest to understand. Visual style guides the finish and behaviour, not a required code structure, part count, or long build process. Load `style` for tokens and `kit-api` only for signatures you need. Keep the explanation in chat and let the widget demonstrate it.
+Choose the representation that makes the causal relationship easiest to understand. Load `style` for tokens, `mechanism` for real machines and constructed assemblies, and `kit-api` for signatures you need. Keep the explanation in chat and let the widget demonstrate it. Preserve the physical construction and detail of a machine even when its controls and surrounding prose are minimal.
 
 ## Choose the explanation before drawing
 
@@ -34,6 +34,8 @@ Do not place a lesson, derivation, assumptions panel, instructions list, repeate
 Use `--figure-*` tokens, opaque faces, four facing shades, 0.6px non-scaling hairlines and calm motion. Ground the object on a base or pivot with a subtle contact shadow. Base/detail use lo/faint, structure mid, the explanatory subject hi, and one lit accent. Red/green/blue are meaningful signals, never a decorative rainbow.
 
 For mechanisms and analogies, borrow the finish of a small real instrument: feet, rails, carriage bushings, end stops, groove/ruler, screw heads, a knurled control, a dial and a probe. Each detail has a purpose and sits on another part. Keep simple physical models simple; a pivot, two rods and bobs can be the whole double pendulum.
+
+For an actual machine, follow `mechanism` and inspect a complete source example before building. A dimensional cutaway preserves the shell, curved housing, mounts, connected assemblies and working interior. Do not reduce it to an outline, labelled blocks or a few flat slabs merely because the interface is quiet. Inspect the subject at normal scale and 4× before delivery.
 
 - Solid parts have filled top and side faces, convincing volume and consistent lighting. Do not approximate a solid by translucent wireframes or a pile of disconnected polygons.
 - Paint back to front and bottom to top; split a part that wraps a moving component into back/front pieces. Moving pieces stay in their physical depth slot.
@@ -74,7 +76,7 @@ For gradient descent use `next = x - learningRate * derivative(x)`. The gauge re
 
 ## Runtime and delivery
 
-Use concise inline HTML/SVG/Canvas and optional bundled kit imports (`/kits/math.js`, `/kits/iso.js`, `/kits/iso-gl.js`). A Node example is an option, not the mandatory authoring pipeline. Aim for under 24 KiB of authored code. `get_page_context` provides the sandbox `runtime.sourceRoot`; when needed read a relevant source/reference there, in one batch rather than repeatedly browsing an entire example. Available source examples include dial-indicator, test-rig, arcade-cabinet, raptor-engine, ripple-tank, turning-dial, desk-computer and spot-plate. Craft, kit, motion and verify references are available under that root. Read only what improves this figure.
+Use HTML/SVG/Canvas and optional bundled kit imports (`/kits/math.js`, `/kits/iso.js`, `/kits/iso-gl.js`). Small direct models can be authored inline. For detailed assemblies, use reusable geometry components and a Node build when useful; preserve the required craft rather than shrinking the drawing to a code-size target. `get_page_context` provides the sandbox `runtime.sourceRoot`; read the closest complete source example and relevant construction references before a mechanical figure. Available source examples include dial-indicator, test-rig, arcade-cabinet, raptor-engine, ripple-tank, turning-dial, desk-computer and spot-plate. Craft, kit, motion and verify references are available under that root. Batch the relevant reads; there is no need to browse unrelated examples.
 
 Use ES modules or a private IIFE for live code. An inlined kit already declares its helpers: do not redeclare names such as `lineOnTop` in the same global scope. Pin kit imports to the page's bundled runtime; no network, external scripts/fonts or CDN libraries. Inline `ISO_CSS` if using the isometric kit. For sandbox builds copy sources to a writable directory and preserve relative imports; reference sources are read only.
 

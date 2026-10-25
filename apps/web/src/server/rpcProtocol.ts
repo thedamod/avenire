@@ -1,3 +1,4 @@
+import { SettingsHandlersLive } from "./settingsRpc.ts";
 /** Protocol composition stays independently testable without live infrastructure or providers. */
 import { AvenireRpcs } from "@avenire/contracts";
 import * as Layer from "effect/Layer";
@@ -13,6 +14,7 @@ import {
 
 export const ApplicationHandlersLive = Layer.mergeAll(
   LibraryHandlersLive,
+  SettingsHandlersLive,
   SearchHandlersLive,
   RuthHandlersLive,
   CloudHandlersLive,

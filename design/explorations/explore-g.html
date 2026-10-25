@@ -1,0 +1,195 @@
+<!doctype html><html><head><meta charset="utf-8"><title>G · Before / after</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Avenire design system v1 — dark first.
+   Shared: colour + type. Landing and App differ only in corners, spacing and depth. */
+:root {
+  /* Ground and surfaces (anatomy dark plate greys) */
+  --color-bg: #0b0b0b;
+  --color-surface-1: #111111;
+  --color-surface-2: #161616;
+  --color-surface-3: #1c1c1c;
+  --color-surface-4: #242424;
+  --color-border: #222222;
+  --color-border-strong: #2e2e2e;
+
+  /* Text */
+  --color-text-strong: #ededed;
+  --color-text: #a3a3a3;
+  --color-text-muted: #6e6e6e;
+
+  /* Accent: amber lamp. One per view. */
+  --color-accent: #ffb547;
+  --color-accent-text: #ffc46b;
+  --color-accent-tint: #1f1810;
+  --color-accent-line: #4a3818;
+  --color-on-accent: #1a1206;
+
+  /* Signals (anatomy) */
+  --color-signal-red: #ff6b6b;
+  --color-signal-green: #6be0a0;
+  --color-signal-blue: #6b9bff;
+
+  /* Figure inks (anatomy iso.css, dark) */
+  --color-iso-paper: #131313;
+  --color-iso-top: #1c1c1c;
+  --color-iso-shade-0: #0f0f0f;
+  --color-iso-shade-1: #121212;
+  --color-iso-shade-2: #151515;
+  --color-iso-shade-3: #181818;
+  --color-iso-hi: #d4d4d4;
+  --color-iso-mid: #6a6a6a;
+  --color-iso-lo: #3e3e3e;
+  --color-iso-faint: #2a2a2a;
+  --color-iso-lit-top: #2a2112;
+
+  /* Notebook covers: the only saturated colour */
+  --color-cover-graphite: #2e2e33;
+  --color-cover-moss: #18803a;
+  --color-cover-orchid: #b526c9;
+  --color-cover-mustard: #d9a50d;
+  --color-cover-sky: #2b9bd8;
+  --color-cover-lime: #8bdf3c;
+  --color-cover-silver: #d3d3d8;
+  --color-cover-tangerine: #ee7b14;
+  --color-cover-rose: #ef4579;
+  --color-cover-lilac: #b48bf2;
+
+  /* Type */
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --tracking-display: -0.035em;
+  --tracking-heading: -0.02em;
+  --tracking-label: 0.08em;
+  --text-mono: 11px;
+
+  /* Landing scale */
+  --text-l-display: 60px; --leading-l-display: 64px;
+  --text-l-h2: 44px;      --leading-l-h2: 48px;
+  --text-l-h3: 28px;      --leading-l-h3: 34px;
+  --text-l-lead: 20px;    --leading-l-lead: 30px;
+  --text-l-body: 16px;    --leading-l-body: 26px;
+
+  /* App scale */
+  --text-a-title: 22px;   --leading-a-title: 28px;
+  --text-a-heading: 16px; --leading-a-heading: 22px;
+  --text-a-read: 15px;    --leading-a-read: 26px;
+  --text-a-body: 14px;    --leading-a-body: 22px;
+  --text-a-ui: 13px;      --leading-a-ui: 18px;
+  --text-a-small: 12px;   --leading-a-small: 16px;
+
+  /* Radius */
+  --radius-pill: 999px;
+  --radius-l-card: 2px;   /* landing cards, media, figure plates */
+  --radius-xs: 4px;       /* app chips, kbd, citations */
+  --radius-sm: 6px;       /* app rows */
+  --radius-md: 8px;       /* app controls */
+  --radius-lg: 10px;      /* app panels, composer — the maximum */
+
+  /* Elevation: app floating layers only (promptbox, menus, toasts). Never cards. */
+  --shadow-float: 0 16px 40px -20px rgba(0, 0, 0, 0.8);
+
+  /* Spacing (4px grid) */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px;
+  --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px; --space-16: 64px;
+  --space-20: 80px; --space-24: 96px; --space-30: 120px; --space-40: 160px;
+
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Shared base for landing explorations */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--color-bg); color: var(--color-text); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+body { width: 1440px; }
+.fig { display: flex; align-items: center; justify-content: center; }
+.fig svg { width: 100%; height: 100%; display: block; }
+.mono { font-family: var(--font-mono); font-size: var(--text-mono); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-muted); }
+.display { font-weight: 500; font-size: var(--text-l-display); line-height: var(--leading-l-display); letter-spacing: var(--tracking-display); color: var(--color-text-strong); }
+.h2 { font-weight: 500; font-size: var(--text-l-h2); line-height: var(--leading-l-h2); letter-spacing: var(--tracking-display); color: var(--color-text-strong); }
+.h3 { font-weight: 500; font-size: var(--text-l-h3); line-height: var(--leading-l-h3); letter-spacing: var(--tracking-heading); color: var(--color-text-strong); }
+.quiet { color: var(--color-text-muted); }
+.lead { font-size: var(--text-l-lead); line-height: var(--leading-l-lead); color: var(--color-text-muted); }
+.body { font-size: var(--text-l-body); line-height: var(--leading-l-body); color: var(--color-text); }
+.btn { display: inline-flex; align-items: center; height: 44px; padding: 0 22px; border-radius: var(--radius-pill); font-size: 15px; font-weight: 500; white-space: nowrap; }
+.btn-sm { height: 34px; padding: 0 16px; font-size: 14px; }
+.btn-primary { background: var(--color-text-strong); color: var(--color-bg); }
+.btn-ghost { border: 1px solid var(--color-border-strong); color: var(--color-text-strong); }
+.nav { display: flex; align-items: center; justify-content: space-between; height: 72px; padding: 0 32px; }
+.nav-links { display: flex; gap: 32px; font-size: 14px; color: var(--color-text); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: -0.02em; color: var(--color-text-strong); }
+.rails { margin: 0 112px; border-left: 1px solid var(--color-border); border-right: 1px solid var(--color-border); }
+.tag { position: fixed; top: 0; left: 0; z-index: 9; padding: 6px 10px; background: var(--color-text-strong); color: var(--color-bg); font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+
+/* app bits reused inside landing shots */
+.win { border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-1); overflow: hidden; }
+.win-bar { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--color-border); font-size: 12px; color: var(--color-text-muted); }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 7px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); font-size: 12px; color: var(--color-text); white-space: nowrap; }
+.cite { display: inline-flex; align-items: center; height: 17px; padding: 0 5px; border-radius: var(--radius-xs); background: var(--color-surface-3); border: 1px solid var(--color-border-strong); font-family: var(--font-mono); font-size: 10px; color: var(--color-text); vertical-align: 1px; }
+.cov { display: inline-block; width: 9px; height: 12px; border-radius: 1px 2px 2px 1px; flex-shrink: 0; }
+.kbd { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-xs); font-family: var(--font-mono); font-size: 10.5px; color: var(--color-text-muted); }
+
+.hero { padding: 112px 48px 72px; display: flex; flex-direction: column; gap: 24px; }
+.split { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
+.col { padding: 36px 48px 48px; display: flex; flex-direction: column; gap: 22px; }
+.col + .col { border-left: 1px solid var(--color-border); }
+.tree { font-family: var(--font-mono); font-size: 13px; line-height: 25px; color: var(--color-text); white-space: pre; }
+.tree .d { color: var(--color-text-muted); } .tree .x { color: var(--color-signal-red); } .tree .f { color: var(--color-text-strong); }
+.steps { display: flex; flex-direction: column; }
+.st { display: grid; grid-template-columns: 34px 1fr; gap: 14px; padding: 16px 0; border-top: 1px solid var(--color-border); }
+.st .n { font-family: var(--font-mono); font-size: 12px; color: var(--color-text-muted); padding-top: 3px; }
+.st b { display: block; font-weight: 500; font-size: 16px; color: var(--color-text-strong); }
+.st span { font-size: 14px; line-height: 21px; color: var(--color-text-muted); }
+.count { display: flex; align-items: baseline; gap: 10px; }
+.count b { font-weight: 500; font-size: 44px; letter-spacing: -0.03em; color: var(--color-text-strong); }
+.count span { font-size: 14px; color: var(--color-text-muted); }
+.pb { border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-2); overflow: hidden; }
+.pb-in { height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 14px; font-size: 14.5px; color: var(--color-text-strong); border-bottom: 1px solid var(--color-border); }
+.pb-b { padding: 14px; font-size: 14px; line-height: 22px; color: var(--color-text-strong); display: flex; flex-direction: column; gap: 10px; }
+.section { padding: 112px 48px 120px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 48px; }
+.section h4 { font-weight: 500; font-size: 20px; letter-spacing: -0.015em; color: var(--color-text-strong); margin: 14px 0 8px; }
+.section p { font-size: 15px; line-height: 24px; color: var(--color-text-muted); }
+</style></head><body>
+<div class="tag">G · Before / after</div>
+<div class="rails">
+  <nav class="nav"><div class="brand"><svg width="20" height="16" viewBox="0 0 198 154" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M119 116.5V81.5C119 79.1 117 78.1666 116 77.9999H83C79.8 77.9999 78.3807 80.3333 78.071 81.5V116.5C78.071 117.667 76.752 120.223 72.1038 122.5C67 125 34.9745 143.667 19.3934 153C18.5647 153.333 16.6087 153.5 15.4153 151.5C14.2219 149.5 10.6084 143.333 8.95082 140.5C8.45355 139.333 8.25465 136.6 11.4372 135C14.6197 133.4 36.3005 121 46.7432 115C47.5719 114.167 49.0306 112.1 48.235 110.5C47.4393 108.9 45.9144 108.167 45.2514 108H1.98907C1.32605 108 0 107.6 0 106V91.3892C0 90.5928 0.397815 89 1.98907 89H44.3705C45.6587 89 48.235 88.3 48.235 85.5C48.235 82.7 45.2514 81 43.7596 80.5L9.44809 60.5C8.95082 60.1667 8.25465 59 9.44809 57C10.6415 55 14.918 47.5 16.9071 44C17.2386 43.6667 18.3989 43.3 20.388 44.5C22.377 45.7 59.3406 67.3333 77.5738 77.9999L43.7596 19.4999C43.2623 18.8333 42.8645 17.1999 45.2514 15.9999C47.6383 14.7999 54.5337 10.4999 57.6831 8.49994C58.1803 8.16661 59.5727 8.19994 61.1639 10.9999C62.7552 13.7999 75.7505 36.1666 82.0492 47C84.204 47.6667 88.5137 47.9 88.5137 43.5V1.38477C88.5137 0.923177 89.0109 0 91 0H106C108 0 108.5 0.923177 108.5 1.38477V43.5C108.5 47.9 112.833 47.6667 115 47C121.333 36.1666 134.4 13.7999 136 10.9999C137.6 8.19994 139 8.16661 139.5 8.49994C142.667 10.4999 149.6 14.7999 152 15.9999C154.4 17.1999 154 18.8333 153.5 19.4999L119.5 77.9999C137.833 67.3333 175 45.7 177 44.5C179 43.3 180.167 43.6667 180.5 44C182.5 47.5 186.8 55 188 57C189.2 59 188.5 60.1667 188 60.5L153.5 80.5C152 81 149 82.7 149 85.5C149 88.3 151.59 89 152.886 89H195.5C197.1 89 197.5 90.5928 197.5 91.3892V106C197.5 107.6 196.167 108 195.5 108H152C151.333 108.167 149.8 108.9 149 110.5C148.2 112.1 149.667 114.167 150.5 115C161 121 182.8 133.4 186 135C189.2 136.6 189 139.333 188.5 140.5C186.833 143.333 183.2 149.5 182 151.5C180.8 153.5 178.833 153.333 178 153C162.333 143.667 129.5 125 125 122.5C120.454 119.975 119 117.667 119 116.5Z" fill="currentColor"/>
+</svg>
+Avenire</div><div class="nav-links"><span>Capture</span><span>Search</span><span>Pricing</span><span>Changelog</span></div><div style="display:flex; gap:10px;"><span class="btn btn-sm btn-ghost">Log in</span><span class="btn btn-sm btn-primary">Get started</span></div></nav>
+  <header class="hero">
+    <h1 class="display" style="max-width:1000px;">Organizing your notes is a second job.<br><span class="quiet">Quit it.</span></h1>
+    <p class="lead" style="max-width:620px;">Lectures on Canvas, notes in Notion, the whiteboard in a WhatsApp group, the explanation on YouTube. Avenire gives you one key to keep it and one box to find it.</p>
+    <div style="display:flex; gap:12px; margin-top:8px;"><span class="btn btn-primary">Download for Mac</span><span class="btn btn-ghost">Open in browser</span></div>
+  </header>
+
+  <div class="split">
+    <div class="col">
+      <div style="display:flex; justify-content:space-between;"><span class="mono">Before · finding one slide</span><div class="count"><b>11</b><span>steps, 6 min</span></div></div>
+<div class="tree"><span class="d">~/Downloads/</span>
+├─ <span class="f">lecture6.pdf</span>
+├─ <span class="f">lecture6 (1).pdf</span>
+├─ <span class="f">lecture6 final (1).pdf</span>      <span class="d">← which one?</span>
+├─ <span class="f">IMG_4471.jpg</span>                 <span class="d">← whiteboard? receipts?</span>
+├─ <span class="f">Screenshot 2026-09-29 at 11.02.png</span>
+<span class="d">Drive/</span>
+├─ <span class="f">Untitled document (3)</span>        <span class="d">← lab notes, maybe</span>
+<span class="d">Notion/ PHYS 101 / week 6</span>      <span class="x">half finished</span>
+<span class="d">YouTube history</span>                  <span class="x">"that MIT one?"</span>
+<span class="d">WhatsApp · study group</span>           <span class="x">scroll 400 messages</span></div>
+    </div>
+    <div class="col">
+      <div style="display:flex; justify-content:space-between;"><span class="mono">After · Avenire</span><div class="count"><b>2</b><span>keys, 4 s</span></div></div>
+      <div class="steps">
+        <div class="st"><span class="n">01</span><div><b>When you see it, press ⌥ C</b><span>Slides, tabs, videos, photos: captured, read, searchable.</span></div></div>
+        <div class="st"><span class="n">02</span><div><b>When you need it, press ⌥ Space</b><span>Ask the way you remember it.</span></div></div>
+      </div>
+      <div class="pb"><div class="pb-in">the slide on why there's a threshold voltage</div><div class="pb-b"><span>Lecture 6 — Transistors.pdf, page 14. <span style="color:var(--color-text-muted)">The same slides are also in Downloads twice; Avenire kept one.</span></span><div style="display:flex; gap:6px;"><span class="chip">Canvas · PHYS 101</span><span class="chip">p.14</span></div></div></div>
+    </div>
+  </div>
+
+  <section class="section">
+    <div><span class="mono">01 · Capture</span><h4>Keep it without filing it</h4><p>One key from any app. Avenire reads every page, frame and photo, so you never name or sort anything.</p></div>
+    <div><span class="mono">02 · Find</span><h4>Ask how you remember it</h4><p>"The whiteboard from Tuesday", "the bit at 18 minutes". Answers come with the exact page or second.</p></div>
+    <div><span class="mono">03 · Tidy, if you want</span><h4>Ruth sorts it overnight</h4><p>Notebooks fill themselves while you sleep, and nothing moves until you say so. Optional.</p></div>
+  </section>
+</div>
+</body></html>

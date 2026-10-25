@@ -365,7 +365,11 @@ export const SourceUploadsLive = Layer.effect(
                 catch: failure,
               });
               yield* storage
-                .put(key, blob, { contentType: row.mimeType })
+                .put(key, blob, {
+                  contentType: row.mimeType,
+                  // files-sdk maps this to provider-native multipart where supported.
+                  multipart: { partSize: 8 * 1024 * 1024, concurrency: 3 },
+                })
                 .pipe(Effect.uninterruptible);
               const jobId = yield* newId(IngestionJobId).pipe(
                 Effect.provideService(Crypto.Crypto, crypto),

@@ -1,5 +1,10 @@
-import { CanvasPage } from "~/features/canvas/CanvasPage";
+import { Suspense } from "react";
+import { HomePage } from "~/features/home/HomePage";
 
 export default function Page() {
-  return <CanvasPage />;
+  return (
+    <Suspense>
+      <HomePage />
+    </Suspense>
+  );
 }

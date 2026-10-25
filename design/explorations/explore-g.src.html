@@ -1,0 +1,67 @@
+<!doctype html><html><head><meta charset="utf-8"><title>G · Before / after</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/*{{tokens}}*/
+/*{{base}}*/
+.hero { padding: 112px 48px 72px; display: flex; flex-direction: column; gap: 24px; }
+.split { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
+.col { padding: 36px 48px 48px; display: flex; flex-direction: column; gap: 22px; }
+.col + .col { border-left: 1px solid var(--color-border); }
+.tree { font-family: var(--font-mono); font-size: 13px; line-height: 25px; color: var(--color-text); white-space: pre; }
+.tree .d { color: var(--color-text-muted); } .tree .x { color: var(--color-signal-red); } .tree .f { color: var(--color-text-strong); }
+.steps { display: flex; flex-direction: column; }
+.st { display: grid; grid-template-columns: 34px 1fr; gap: 14px; padding: 16px 0; border-top: 1px solid var(--color-border); }
+.st .n { font-family: var(--font-mono); font-size: 12px; color: var(--color-text-muted); padding-top: 3px; }
+.st b { display: block; font-weight: 500; font-size: 16px; color: var(--color-text-strong); }
+.st span { font-size: 14px; line-height: 21px; color: var(--color-text-muted); }
+.count { display: flex; align-items: baseline; gap: 10px; }
+.count b { font-weight: 500; font-size: 44px; letter-spacing: -0.03em; color: var(--color-text-strong); }
+.count span { font-size: 14px; color: var(--color-text-muted); }
+.pb { border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-2); overflow: hidden; }
+.pb-in { height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 14px; font-size: 14.5px; color: var(--color-text-strong); border-bottom: 1px solid var(--color-border); }
+.pb-b { padding: 14px; font-size: 14px; line-height: 22px; color: var(--color-text-strong); display: flex; flex-direction: column; gap: 10px; }
+.section { padding: 112px 48px 120px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 48px; }
+.section h4 { font-weight: 500; font-size: 20px; letter-spacing: -0.015em; color: var(--color-text-strong); margin: 14px 0 8px; }
+.section p { font-size: 15px; line-height: 24px; color: var(--color-text-muted); }
+</style></head><body>
+<div class="tag">G · Before / after</div>
+<div class="rails">
+  <nav class="nav"><div class="brand">{{logo}}Avenire</div><div class="nav-links"><span>Capture</span><span>Search</span><span>Pricing</span><span>Changelog</span></div><div style="display:flex; gap:10px;"><span class="btn btn-sm btn-ghost">Log in</span><span class="btn btn-sm btn-primary">Get started</span></div></nav>
+  <header class="hero">
+    <h1 class="display" style="max-width:1000px;">Organizing your notes is a second job.<br><span class="quiet">Quit it.</span></h1>
+    <p class="lead" style="max-width:620px;">Lectures on Canvas, notes in Notion, the whiteboard in a WhatsApp group, the explanation on YouTube. Avenire gives you one key to keep it and one box to find it.</p>
+    <div style="display:flex; gap:12px; margin-top:8px;"><span class="btn btn-primary">Download for Mac</span><span class="btn btn-ghost">Open in browser</span></div>
+  </header>
+
+  <div class="split">
+    <div class="col">
+      <div style="display:flex; justify-content:space-between;"><span class="mono">Before · finding one slide</span><div class="count"><b>11</b><span>steps, 6 min</span></div></div>
+<div class="tree"><span class="d">~/Downloads/</span>
+├─ <span class="f">lecture6.pdf</span>
+├─ <span class="f">lecture6 (1).pdf</span>
+├─ <span class="f">lecture6 final (1).pdf</span>      <span class="d">← which one?</span>
+├─ <span class="f">IMG_4471.jpg</span>                 <span class="d">← whiteboard? receipts?</span>
+├─ <span class="f">Screenshot 2026-09-29 at 11.02.png</span>
+<span class="d">Drive/</span>
+├─ <span class="f">Untitled document (3)</span>        <span class="d">← lab notes, maybe</span>
+<span class="d">Notion/ PHYS 101 / week 6</span>      <span class="x">half finished</span>
+<span class="d">YouTube history</span>                  <span class="x">"that MIT one?"</span>
+<span class="d">WhatsApp · study group</span>           <span class="x">scroll 400 messages</span></div>
+    </div>
+    <div class="col">
+      <div style="display:flex; justify-content:space-between;"><span class="mono">After · Avenire</span><div class="count"><b>2</b><span>keys, 4 s</span></div></div>
+      <div class="steps">
+        <div class="st"><span class="n">01</span><div><b>When you see it, press ⌥ C</b><span>Slides, tabs, videos, photos: captured, read, searchable.</span></div></div>
+        <div class="st"><span class="n">02</span><div><b>When you need it, press ⌥ Space</b><span>Ask the way you remember it.</span></div></div>
+      </div>
+      <div class="pb"><div class="pb-in">the slide on why there's a threshold voltage</div><div class="pb-b"><span>Lecture 6 — Transistors.pdf, page 14. <span style="color:var(--color-text-muted)">The same slides are also in Downloads twice; Avenire kept one.</span></span><div style="display:flex; gap:6px;"><span class="chip">Canvas · PHYS 101</span><span class="chip">p.14</span></div></div></div>
+    </div>
+  </div>
+
+  <section class="section">
+    <div><span class="mono">01 · Capture</span><h4>Keep it without filing it</h4><p>One key from any app. Avenire reads every page, frame and photo, so you never name or sort anything.</p></div>
+    <div><span class="mono">02 · Find</span><h4>Ask how you remember it</h4><p>"The whiteboard from Tuesday", "the bit at 18 minutes". Answers come with the exact page or second.</p></div>
+    <div><span class="mono">03 · Tidy, if you want</span><h4>Ruth sorts it overnight</h4><p>Notebooks fill themselves while you sleep, and nothing moves until you say so. Optional.</p></div>
+  </section>
+</div>
+</body></html>

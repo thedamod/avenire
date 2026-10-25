@@ -8,7 +8,7 @@ import {
 } from "@avenire/contracts";
 import { ObjectNotFound, type StorageError } from "@avenire/storage/storage";
 import { WIDGET_THEME_TOKENS } from "@avenire/ui/tokens";
-import { buildWidgetDocument } from "@avenire/ui/widget-protocol";
+import { buildWidgetDocument, rebaseWidgetKitOrigin } from "@avenire/ui/widget-protocol";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -75,16 +75,10 @@ export const resolveWidgetSource = Effect.fn("Widget.resolveSource")(function* (
   if (!input.path.toLowerCase().endsWith(".html"))
     return yield* invalid("Widget path must name an HTML file.");
   const sandboxes = yield* ChatSandboxes;
-  const file = yield* sandboxes
-    .readArtifact(
-      { userId: ctx.userId, threadId: ctx.threadId },
-      { path: input.path, maxBytes: MAX_WIDGET_HTML_BYTES },
-    )
-    .pipe(
-      Effect.mapError(() =>
-        invalid("Cannot read the thread's HTML file; check the path and 8 MiB limit."),
-      ),
-    );
+  const file = yield* sandboxes.readArtifact(
+    { userId: ctx.userId, threadId: ctx.threadId },
+    { path: input.path, maxBytes: MAX_WIDGET_HTML_BYTES },
+  );
   return yield* Effect.try({
     try: () => new TextDecoder("utf-8", { fatal: true }).decode(file.bytes),
     catch: () => invalid("Widget HTML must be UTF-8."),
@@ -166,7 +160,10 @@ export const makeWidgetStore = Effect.fn("WidgetStore.make")(function* (options:
       const resolved = yield* assets.get(id.value);
       if (Option.isNone(resolved) || resolved.value.kind !== "widget")
         return yield* new ObjectNotFound({ key: "widget" });
-      return yield* assets.load(resolved.value);
+      const bytes = yield* assets.load(resolved.value);
+      return new TextEncoder().encode(
+        rebaseWidgetKitOrigin(new TextDecoder().decode(bytes), options.origin),
+      );
     }),
     render: Effect.fn("WidgetStore.render")(function* (ctx, input) {
       const document = yield* wrapWidget(ctx, input, options.origin);

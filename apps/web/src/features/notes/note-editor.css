@@ -1,0 +1,204 @@
+/* The note body (11 / M10): a calm document, not an editor chrome. Phone first, desktop at md. */
+.note-prose {
+  outline: none;
+  color: var(--foreground);
+  font-size: 16px;
+  line-height: 26px;
+  word-wrap: break-word;
+  caret-color: var(--ruth);
+  min-height: 40dvh;
+  padding-bottom: 24px;
+}
+
+@media (min-width: 768px) {
+  .note-prose {
+    font-size: 15px;
+    line-height: 27px;
+  }
+}
+
+.note-prose > * + * {
+  margin-top: 12px;
+}
+
+@media (min-width: 768px) {
+  .note-prose > * + * {
+    margin-top: 16px;
+  }
+}
+
+.note-prose p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--muted-foreground);
+}
+
+.note-prose h1,
+.note-prose h2,
+.note-prose h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+}
+
+.note-prose h1 {
+  font-size: 22px;
+  line-height: 28px;
+  margin-top: 28px;
+}
+
+.note-prose h2 {
+  font-size: 18px;
+  line-height: 24px;
+  margin-top: 22px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.note-prose h3 {
+  font-size: 16px;
+  line-height: 22px;
+  margin-top: 20px;
+}
+
+@media (min-width: 768px) {
+  .note-prose h2 {
+    font-size: 20px;
+    line-height: 26px;
+    margin-top: 32px;
+    padding-bottom: 12px;
+  }
+  .note-prose h3 {
+    font-size: 16px;
+    margin-top: 24px;
+  }
+}
+
+.note-prose > :first-child {
+  margin-top: 0;
+}
+
+.note-prose h2 + * {
+  margin-top: 12px;
+}
+
+@media (min-width: 768px) {
+  .note-prose h2 + * {
+    margin-top: 18px;
+  }
+}
+
+.note-prose ul,
+.note-prose ol {
+  padding-left: 1.25em;
+}
+
+.note-prose ul {
+  list-style: disc;
+}
+
+.note-prose ol {
+  list-style: decimal;
+}
+
+.note-prose li + li {
+  margin-top: 10px;
+}
+
+.note-prose li::marker {
+  color: var(--foreground-soft);
+}
+
+.note-prose li > p + * {
+  margin-top: 6px;
+}
+
+.note-prose strong {
+  font-weight: 600;
+}
+
+.note-prose a {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-decoration-color: var(--control-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.note-prose a:hover {
+  text-decoration-color: var(--foreground-soft);
+}
+
+.note-prose a[href^="/sources/"] {
+  color: var(--ruth-text);
+  text-decoration-color: var(--ruth-line);
+}
+
+.note-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface-4);
+}
+
+.note-prose pre {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.note-prose pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.note-prose blockquote {
+  border-left: 2px solid var(--input);
+  padding-left: 12px;
+  color: var(--foreground-soft);
+}
+
+.note-prose hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 24px 0;
+}
+
+/* Math: rendered by KaTeX; editable math gets a quiet hover so it reads as clickable. */
+.note-prose .tiptap-mathematics-render {
+  border-radius: 4px;
+  padding: 0 1px;
+}
+
+.note-prose .tiptap-mathematics-render--editable {
+  cursor: pointer;
+}
+
+.note-prose .tiptap-mathematics-render--editable:hover {
+  background: var(--hover);
+}
+
+.note-prose [data-type="block-math"] {
+  display: block;
+  text-align: center;
+  overflow-x: auto;
+  padding: 6px 0;
+}
+
+.note-prose .katex {
+  font-size: 1.05em;
+}
+
+.note-prose .ProseMirror-selectednode {
+  background: var(--ruth-tint);
+  border-radius: 4px;
+}

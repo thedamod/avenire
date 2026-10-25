@@ -14,6 +14,7 @@ export { PreviewResult } from "./preview/report.ts";
 export type PreviewInput = import("@avenire/contracts").WidgetSource & {
   readonly width?: number;
   readonly appearance?: "light" | "dark";
+  readonly requireWebGL?: boolean;
 };
 export class WidgetPreview extends Context.Service<
   WidgetPreview,
@@ -42,6 +43,19 @@ export const makeWidgetPreview = Effect.fn("WidgetPreview.make")(function* (
       Effect.gen(function* () {
         const html = yield* resolveWidgetSource(ctx, input).pipe(
           Effect.provideService(ChatSandboxes, sandboxes),
+          Effect.timeoutOrElse({
+            duration: "120 seconds",
+            orElse: () =>
+              Effect.fail(
+                new RuthToolError({
+                  tool: "preview_widget",
+                  code: "timeout",
+                  message:
+                    "Reading the widget HTML from the sandbox timed out. Try preview_widget again.",
+                  recoverable: true,
+                }),
+              ),
+          }),
         );
         const width = Math.max(
           240,
@@ -60,6 +74,7 @@ export const makeWidgetPreview = Effect.fn("WidgetPreview.make")(function* (
                 width,
                 appearance,
                 tokens,
+                requireWebGL: input.requireWebGL === true,
                 document: (origin) =>
                   Effect.runPromise(
                     wrapWidget(ctx, { html, title: "Widget preview" }, origin, appearance),
@@ -72,13 +87,17 @@ export const makeWidgetPreview = Effect.fn("WidgetPreview.make")(function* (
           (task) =>
             Effect.tryPromise({
               try: () => task.promise,
-              catch: (cause) =>
-                new RuthToolError({
+              catch: (cause) => {
+                const detail = cause instanceof Error ? cause.message : "";
+                const timeout = /timed out|timeout/i.test(detail);
+                const stage = /^agent-browser ([a-z-]+):/.exec(detail)?.[1];
+                return new RuthToolError({
                   tool: "preview_widget",
-                  code: "failed",
-                  message: cause instanceof Error ? cause.message : String(cause),
+                  code: timeout ? "timeout" : "failed",
+                  message: `The widget preview browser ${timeout ? "timed out" : "failed"}${stage ? ` during ${stage}` : ""}. Try preview_widget again.`,
                   recoverable: true,
-                }),
+                });
+              },
             }),
           (task) =>
             Effect.promise(async () => {
@@ -86,11 +105,37 @@ export const makeWidgetPreview = Effect.fn("WidgetPreview.make")(function* (
               // Keep the pool permit until interrupted browser cleanup finishes.
               await task.promise.catch(() => undefined);
             }),
+        ).pipe(
+          // File transfer and time waiting for a browser must not consume its execution budget.
+          Effect.timeoutOrElse({
+            duration: "60 seconds",
+            orElse: () =>
+              Effect.fail(
+                new RuthToolError({
+                  tool: "preview_widget",
+                  code: "timeout",
+                  message: "The widget preview browser timed out. Try preview_widget again.",
+                  recoverable: true,
+                }),
+              ),
+          }),
+          pool.withPermits(1),
         );
         return result;
       }).pipe(
-        pool.withPermits(1),
-        Effect.timeout("60 seconds"),
+        Effect.timeoutOrElse({
+          duration: "180 seconds",
+          orElse: () =>
+            Effect.fail(
+              new RuthToolError({
+                tool: "preview_widget",
+                code: "timeout",
+                message:
+                  "The widget preview could not finish within three minutes. Try preview_widget again.",
+                recoverable: true,
+              }),
+            ),
+        }),
         Effect.catchCause((cause) => toToolError("preview_widget", cause)),
       ),
   });

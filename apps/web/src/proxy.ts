@@ -2,6 +2,9 @@ import * as Effect from "effect/Effect";
 import { NextResponse, type NextRequest } from "next/server";
 import { WidgetHost, WidgetHostLive, widgetHostDecision } from "./server/widgetHost.ts";
 
+// Brand files must load on the sign-in page and in email clients, which have no session.
+const PUBLIC_ASSETS = new Set(["/favicon.ico", "/icon.svg", "/apple-icon.png"]);
+
 export async function proxy(request: NextRequest) {
   const widgetHost = await Effect.runPromise(
     Effect.map(WidgetHost, (policy) => policy.host).pipe(Effect.provide(WidgetHostLive)),
@@ -16,9 +19,12 @@ export async function proxy(request: NextRequest) {
   if (decision === "widget") return NextResponse.next();
   if (
     path.startsWith("/a/") ||
+    // Document-only shell: PDF bytes use their own signed URL, never an app session.
+    path.startsWith("/source-preview/") ||
     path.startsWith("/api/") ||
     path.startsWith("/_next/") ||
-    path === "/favicon.ico"
+    PUBLIC_ASSETS.has(path) ||
+    path.startsWith("/branding/")
   )
     return NextResponse.next();
   // This hint only avoids a redirect. HTTP/RPC handlers validate the actual
@@ -27,8 +33,21 @@ export async function proxy(request: NextRequest) {
     request.cookies.get("better-auth.session_token")?.value ||
     request.cookies.get("__Secure-better-auth.session_token")?.value,
   );
-  const authRoute = path === "/sign-in" || path === "/sign-up";
-  if (!hasSessionHint && !authRoute) return NextResponse.redirect(new URL("/sign-in", request.url));
+  const authRoute = [
+    "/sign-in",
+    "/sign-up",
+    "/verify-email",
+    "/forgot-password",
+    "/reset-password",
+    "/login",
+    "/register",
+  ].includes(path);
+  if (!hasSessionHint && !authRoute) {
+    const signIn = new URL("/sign-in", request.url);
+    if (path === "/desktop/authorize")
+      signIn.searchParams.set("callbackURL", path + request.nextUrl.search);
+    return NextResponse.redirect(signIn);
+  }
   // Stale or forged cookies must not prevent users from reaching sign-in.
   return NextResponse.next();
 }

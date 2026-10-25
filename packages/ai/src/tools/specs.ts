@@ -47,12 +47,13 @@ const boundedInt = (max: number) =>
 export const searchMaterialsSpec = {
   name: "search_materials",
   description:
-    "Search the user's study material before explaining a concept. Use deep depth for comparisons, multi-step, or relationship questions. Abstained means the materials do not cover the question; facts are graph relations with chunk citations.",
+    "Search the user's study material before explaining a concept. Use deep depth for comparisons, multi-step, or relationship questions. Defaults to the current chat scope. Set widenScope only when the user explicitly asks to search beyond it. Abstained means the materials do not cover the question; facts are graph relations with chunk citations.",
   inputSchema: standardSchema(
     Schema.Struct({
       query: Schema.NonEmptyString,
       limit: Schema.optionalKey(Schema.Int),
       depth: Schema.optionalKey(SearchDepth),
+      widenScope: Schema.optionalKey(Schema.Boolean),
     }),
   ),
   outputSchema: standardSchema(

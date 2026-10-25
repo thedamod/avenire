@@ -48,7 +48,12 @@ const fixture = () => {
           rows = [[fileId]];
         }
       } else if (statement.includes("case when exists")) {
-        if (!state.deleted && params[1] === fileId && params[2] === userId && !state.claimed) {
+        if (
+          !state.deleted &&
+          params.at(-2) === fileId &&
+          params.at(-1) === userId &&
+          !state.claimed
+        ) {
           state.placement = "inbox";
           rows = [[fileId]];
         }
@@ -85,7 +90,8 @@ describe("archive", () => {
     expect(rendered.sql).toContain("case when exists");
     expect(rendered.sql).toContain('"file_folder"."user_id" = "file"."user_id"');
     expect(rendered.sql).toContain('"file"."purge_started_at" is null');
-    expect(rendered.params).toEqual([null, fileId, userId]);
+    expect(rendered.params).toEqual([userId, null, null, null, fileId, userId]);
+    expect(rendered.sql).toContain('"folder"."archived_at" is null');
   });
 
   it("claims only owned archived expired rows, or resumes an existing claim", () => {
@@ -93,7 +99,7 @@ describe("archive", () => {
     expect(rendered.sql).toContain('coalesce("file"."purge_started_at", now())');
     expect(rendered.sql).toContain('"file"."placement" =');
     expect(rendered.sql).toContain(
-      '"file"."purge_started_at" is not null or "file"."archived_at" <',
+      '"file"."purge_started_at" is not null or "file"."purge_requested_at" <= now() or "file"."archived_at" <',
     );
     expect(rendered.params).toEqual([fileId, userId, "archived", cutoff.toISOString()]);
   });

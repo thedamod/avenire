@@ -17,6 +17,7 @@ export interface RunnerInput {
   width: number;
   appearance: "light" | "dark";
   tokens: Readonly<Record<string, string>>;
+  requireWebGL?: boolean;
   document: (origin: string) => Promise<string>;
 }
 export type PreviewRunner = (input: RunnerInput, signal: AbortSignal) => Promise<PreviewReport>;
@@ -34,6 +35,7 @@ type Measure = {
   contentHeight: number;
   overflowX: boolean;
   nonfinite: boolean;
+  rendering: NonNullable<PreviewReport["rendering"]>;
 };
 type Control = {
   selector: string;
@@ -55,12 +57,37 @@ const object = (value: unknown): Json =>
   typeof value === "object" && value !== null ? (value as Json) : {};
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+/** Chrome can detach from the CLI/daemon. The unique profile root still proves ownership. */
+export const ownedPreviewPids = (listing: string, directory: string, daemon: number): number[] => {
+  const rows = listing.split("\n").flatMap((line) => {
+    const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+    return match ? [{ pid: Number(match[1]), parent: Number(match[2]), args: match[3]! }] : [];
+  });
+  const pids = new Set<number>();
+  if (daemon > 0) pids.add(daemon);
+  for (const row of rows)
+    if (
+      row.args
+        .split(/\s+/)
+        .some((arg) => arg.startsWith(`--user-data-dir=${directory}/agent-browser-chrome-`))
+    )
+      pids.add(row.pid);
+  let count = -1;
+  while (count !== pids.size) {
+    count = pids.size;
+    for (const row of rows) if (pids.has(row.parent)) pids.add(row.pid);
+  }
+  return [...pids].toReversed();
+};
+
 /** No shell and no inherited application credentials, providers, profiles or browser config. */
 export function createLocalRunner(
   environment: Readonly<Record<string, string | undefined>>,
 ): PreviewRunner {
   const cli = join(
-    dirname(createRequire(import.meta.url).resolve("agent-browser/package.json")),
+    dirname(
+      createRequire(join(process.cwd(), "package.json")).resolve("agent-browser/package.json"),
+    ),
     "bin/agent-browser.js",
   );
   return async (input, signal) => {
@@ -199,18 +226,10 @@ export function createLocalRunner(
       const daemon = Number(
         await readFile(join(directory, `${session}.pid`), "utf8").catch(() => "0"),
       );
-      if (!daemon) return [];
       const listing = await new Promise<string>((resolve, reject) =>
-        execFile("ps", ["-eo", "pid=,ppid="], (e, out) => (e ? reject(e) : resolve(out))),
+        execFile("ps", ["-eo", "pid=,ppid=,args="], (e, out) => (e ? reject(e) : resolve(out))),
       );
-      const rows = listing
-        .trim()
-        .split("\n")
-        .map((line) => line.trim().split(/\s+/).map(Number));
-      const pids = new Set([daemon]);
-      for (let pass = 0; pass < 10; pass++)
-        for (const [pid, parent] of rows) if (pid && parent && pids.has(parent)) pids.add(pid);
-      return [...pids].toReversed();
+      return ownedPreviewPids(listing, directory, daemon);
     };
     const report: Mutable<Omit<PreviewReport, "screenshot" | "consoleMessages">> = {
       ok: true,
@@ -243,6 +262,7 @@ export function createLocalRunner(
         `(async()=>{await new Promise(r=>setTimeout(r,140));return window.__avenirePreview.measure()})()`,
       );
       report.contentHeight = Math.max(report.contentHeight, measured.contentHeight);
+      report.rendering = measured.rendering;
       report.overflowX ||= measured.overflowX;
       for (const error of measured.errors)
         if (report.errors.length < 100) report.errors.push({ ...error, ...tagged });
@@ -496,6 +516,17 @@ export function createLocalRunner(
           "accessibility",
           report.accessibility.map((e) => `${e.ref}: ${e.message}`).join("; "),
         );
+      if (
+        input.requireWebGL &&
+        (!report.rendering ||
+          report.rendering.webgl + report.rendering.webgl2 === 0 ||
+          report.rendering.programsLinked === 0 ||
+          report.rendering.drawCalls === 0)
+      )
+        recordError(
+          "webgl",
+          "WebGL was required, but no linked shader program submitted a draw. A Canvas 2D fallback does not satisfy this check.",
+        );
       report.ok =
         report.errors.length === 0 &&
         !report.console.some((e) => ["error", "assert"].includes(e.level));
@@ -514,6 +545,15 @@ export function createLocalRunner(
       report.summary = report.ok
         ? `Preview passed at ${input.width}px (${input.appearance}); ${report.interactions.length} interactions exercised. ${stop ? "Coverage is incomplete." : "No runtime errors or overflow detected."}`
         : `${issues.length} issue(s): ${issues.slice(0, 5).join("; ")}${stop ? "; coverage is incomplete" : ""}`;
+      if (report.rendering) {
+        const { canvas2d, webgl, webgl2, programsLinked, drawCalls } = report.rendering;
+        report.summary +=
+          webgl + webgl2 > 0
+            ? ` Rendering: WebGL (${programsLinked} linked program(s), ${drawCalls} draw call(s)).`
+            : canvas2d > 0
+              ? " Rendering: Canvas 2D; no WebGL shader was rendered."
+              : " Rendering: DOM/SVG; no WebGL context.";
+      }
       let screenshotImage = report.screenshots[0]?.image;
       if (!screenshotImage?.data) throw new Error("Preview browser returned no screenshot");
       // images.ts accepts one image. Compose all labeled states into that image
@@ -620,8 +660,12 @@ export function createLocalRunner(
       }
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
-      await rm(directory, { recursive: true, force: true });
-      process.removeListener("exit", onExit);
+      try {
+        // Chrome/profile writers may still be exiting after SIGKILL.
+        await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      } finally {
+        process.removeListener("exit", onExit);
+      }
     }
   };
 }

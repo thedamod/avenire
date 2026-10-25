@@ -12,7 +12,7 @@ import {
   lockCorpus,
   refreshFolderCentroidsTx,
 } from "@avenire/database/corpus";
-import { file, fileFolder, transcriptCache } from "@avenire/database/schema";
+import { file, folder, fileFolder, transcriptCache } from "@avenire/database/schema";
 import { and, eq, exists, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -71,9 +71,19 @@ export const restoreStatement = (
         db
           .select({ fileId: fileFolder.fileId })
           .from(fileFolder)
+          .innerJoin(
+            folder,
+            and(
+              eq(folder.id, fileFolder.folderId),
+              eq(folder.userId, userId),
+              isNull(folder.archivedAt),
+            ),
+          )
           .where(and(eq(fileFolder.fileId, file.id), eq(fileFolder.userId, file.userId))),
       )} then 'filed' else 'inbox' end`,
       archivedAt: null,
+      archivedViaFolderId: null,
+      purgeRequestedAt: null,
       updatedAt: sql`now()`,
     })
     .where(and(eq(file.id, fileId), eq(file.userId, userId), isNull(file.purgeStartedAt)))
@@ -126,7 +136,11 @@ export const claimPurgeStatement = (
         eq(file.id, fileId),
         eq(file.userId, userId),
         eq(file.placement, "archived"),
-        or(isNotNull(file.purgeStartedAt), lt(file.archivedAt, cutoff)),
+        or(
+          isNotNull(file.purgeStartedAt),
+          lte(file.purgeRequestedAt, sql`now()`),
+          lt(file.archivedAt, cutoff),
+        ),
       ),
     )
     .returning({ id: file.id });
@@ -193,6 +207,54 @@ export const purgeArchived = Effect.fn("Archive.purgeArchived")(function* () {
   const database = yield* Database;
   yield* collectExpiredTranscripts();
   const now = yield* DateTime.now;
+  const dueFolders = yield* database.use((db) =>
+    db
+      .select({ id: folder.id, userId: folder.userId })
+      .from(folder)
+      .where(
+        and(
+          isNotNull(folder.archivedAt),
+          or(
+            isNotNull(folder.purgeStartedAt),
+            lte(folder.purgeRequestedAt, DateTime.toDateUtc(now)),
+            lt(folder.archivedAt, new Date(archiveCutoff(DateTime.toEpochMillis(now)))),
+          ),
+        ),
+      )
+      .orderBy(folder.archivedAt, folder.id)
+      .limit(PURGE_BATCH_SIZE),
+  );
+  for (const row of dueFolders)
+    yield* database.useTransaction(async (tx) => {
+      await lockCorpus(tx, row.userId);
+      const claimed = await tx
+        .update(folder)
+        .set({ purgeStartedAt: sql`coalesce(${folder.purgeStartedAt}, now())` })
+        .where(
+          and(
+            eq(folder.id, row.id),
+            eq(folder.userId, row.userId),
+            isNotNull(folder.archivedAt),
+            or(
+              isNotNull(folder.purgeStartedAt),
+              lte(folder.purgeRequestedAt, DateTime.toDateUtc(now)),
+              lt(folder.archivedAt, new Date(archiveCutoff(DateTime.toEpochMillis(now)))),
+            ),
+          ),
+        )
+        .returning({ id: folder.id });
+      if (claimed.length)
+        await tx
+          .update(file)
+          .set({ purgeRequestedAt: DateTime.toDateUtc(now) })
+          .where(
+            and(
+              eq(file.userId, row.userId),
+              eq(file.archivedViaFolderId, row.id),
+              eq(file.placement, "archived"),
+            ),
+          );
+    });
   const expired = yield* database.use((db) =>
     db
       .select({ id: file.id, userId: file.userId })
@@ -202,6 +264,7 @@ export const purgeArchived = Effect.fn("Archive.purgeArchived")(function* () {
           eq(file.placement, "archived"),
           or(
             isNotNull(file.purgeStartedAt),
+            lte(file.purgeRequestedAt, sql`now()`),
             lt(file.archivedAt, new Date(archiveCutoff(DateTime.toEpochMillis(now)))),
           ),
         ),
@@ -212,6 +275,25 @@ export const purgeArchived = Effect.fn("Archive.purgeArchived")(function* () {
   const purged = yield* Effect.forEach(expired, (row) =>
     purgeFile(UserIdSchema.make(row.userId), FileId.make(row.id)),
   );
+  for (const row of dueFolders)
+    yield* database.useTransaction(async (tx) => {
+      await lockCorpus(tx, row.userId);
+      const remaining = await tx
+        .select({ id: file.id })
+        .from(file)
+        .where(and(eq(file.userId, row.userId), eq(file.archivedViaFolderId, row.id)))
+        .limit(1);
+      if (!remaining.length)
+        await tx
+          .delete(folder)
+          .where(
+            and(
+              eq(folder.id, row.id),
+              eq(folder.userId, row.userId),
+              isNotNull(folder.purgeStartedAt),
+            ),
+          );
+    });
   yield* Effect.logInfo("Purged archived files", {
     found: expired.length,
     purged: purged.filter(Boolean).length,

@@ -1,3 +1,4 @@
+import { defaultNotebookAppearance } from "@avenire/shared/notebook";
 import { FolderId, NotFound, type FileId, type UserId } from "@avenire/contracts";
 import { Database, type DatabaseTransaction } from "@avenire/database/client";
 import {
@@ -40,7 +41,7 @@ const nearestFolder = (tx: DatabaseTransaction, userId: UserId, vector: Readonly
   tx
     .select({ id: folder.id, centroid: folder.centroid })
     .from(folder)
-    .where(and(eq(folder.userId, userId), isNotNull(folder.centroid)))
+    .where(and(eq(folder.userId, userId), isNull(folder.archivedAt), isNotNull(folder.centroid)))
     .orderBy(cosineDistance(folder.centroid, [...vector]), folder.id)
     .limit(1)
     .then(([nearest]) => nearest);
@@ -101,6 +102,16 @@ export const setFileFoldersTx = async (
     .where(and(eq(fileFolder.userId, userId), eq(fileFolder.fileId, fileId)));
   const affected = [...new Set([...ids, ...previous.map((row) => row.id)])].sort();
   if (!(await lockOwnedFolders(tx, userId, affected))) return false;
+  if (
+    ids.length &&
+    (
+      await tx
+        .select({ id: folder.id })
+        .from(folder)
+        .where(and(eq(folder.userId, userId), inArray(folder.id, ids), isNull(folder.archivedAt)))
+    ).length !== ids.length
+  )
+    return false;
   await tx
     .delete(fileFolder)
     .where(and(eq(fileFolder.userId, userId), eq(fileFolder.fileId, fileId)));
@@ -182,6 +193,7 @@ export const assignFoldersTx = async (
       userId,
       name: title.slice(0, FOLDER_NAME_LENGTH) || "Untitled",
       suggested: true,
+      ...defaultNotebookAppearance(title.slice(0, FOLDER_NAME_LENGTH) || "Untitled"),
     });
   }
   await tx.insert(fileFolder).values({ fileId, folderId, userId }).onConflictDoNothing();

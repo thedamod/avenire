@@ -1,4 +1,9 @@
-import { Daytona, DaytonaNotFoundError } from "@daytonaio/sdk";
+import {
+  Daytona,
+  DaytonaNotFoundError,
+  DaytonaConnectionError,
+  DaytonaError,
+} from "@daytonaio/sdk";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -35,7 +40,11 @@ export class SandboxTimeout extends Schema.TaggedError<SandboxTimeout>()("Sandbo
 export class SandboxInputRejected extends Schema.TaggedError<SandboxInputRejected>()(
   "SandboxInputRejected",
   { reason: Schema.String },
-) {}
+) {
+  override get message(): string {
+    return this.reason;
+  }
+}
 
 export class DaytonaClient extends Context.Service<DaytonaClient, Daytona>()(
   "avenire/cloud/DaytonaClient",
@@ -61,7 +70,21 @@ export const DaytonaClientLive = Layer.effect(
 
 /** Wrap a Daytona SDK call, attributing failures to `operation`. */
 export const attempt = <A>(operation: string, run: () => Promise<A>) =>
-  Effect.tryPromise({ try: run, catch: (cause) => new CloudError({ operation, cause }) });
+  Effect.tryPromise({ try: run, catch: (cause) => new CloudError({ operation, cause }) }).pipe(
+    Effect.tapError((error) =>
+      Effect.logWarning("Sandbox provider operation failed", {
+        operation,
+        failureType: error.cause instanceof Error ? error.cause.name : "unknown",
+        statusCode: error.cause instanceof DaytonaError ? (error.cause.statusCode ?? null) : null,
+        providerCode: error.cause instanceof DaytonaError ? (error.cause.code ?? null) : null,
+      }),
+    ),
+  );
+
+export const isTransientCloudError = (error: CloudError): boolean =>
+  error.cause instanceof DaytonaConnectionError ||
+  (error.cause instanceof DaytonaError &&
+    [408, 429, 500, 502, 503, 504].includes(error.cause.statusCode ?? 0));
 
 /** Shell commands report failure through exit codes, not rejections. */
 export const requireSuccess =

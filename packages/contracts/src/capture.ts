@@ -21,6 +21,7 @@ export const CapturedTab = Schema.Struct({
   finalUrl: Schema.optional(Schema.String),
   title: Schema.String,
   activeInWindow: Schema.Boolean,
+  incognito: Schema.optional(Schema.Boolean),
   selectionText: Schema.optional(Schema.String),
   likelyPdf: Schema.optional(Schema.Boolean),
   engagement: TabEngagement,

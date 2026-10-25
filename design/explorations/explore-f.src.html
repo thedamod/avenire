@@ -1,0 +1,58 @@
+<!doctype html><html><head><meta charset="utf-8"><title>F · Find it without filing it</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/*{{tokens}}*/
+/*{{base}}*/
+.hero { padding: 112px 48px 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 22px; }
+.finder { width: 820px; margin: 56px auto 0; border: 1px solid var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-1); overflow: hidden; text-align: left; }
+.qrow { display: flex; align-items: center; gap: 12px; height: 60px; padding: 0 18px; border-bottom: 1px solid var(--color-border); font-size: 18px; color: var(--color-text-strong); }
+.caret { width: 1.5px; height: 22px; background: var(--color-accent); }
+.res { display: grid; grid-template-columns: 64px 1fr 170px; gap: 16px; padding: 16px 18px; align-items: start; }
+.res + .res { border-top: 1px solid var(--color-border); }
+.res .ty { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .06em; color: var(--color-text-muted); padding-top: 3px; }
+.res .ti { font-size: 14.5px; color: var(--color-text-strong); }
+.res .sn { margin-top: 4px; font-size: 13px; line-height: 20px; color: var(--color-text); }
+.res .sn mark { background: var(--color-accent-tint); color: var(--color-accent-text); padding: 0 2px; border-radius: 2px; }
+.res .or { font-size: 12px; line-height: 18px; color: var(--color-text-muted); text-align: right; }
+.res.top { background: var(--color-surface-2); }
+.foot { display: flex; align-items: center; gap: 14px; height: 38px; padding: 0 18px; border-top: 1px solid var(--color-border); font-size: 12px; color: var(--color-text-muted); }
+.section { border-top: 1px solid var(--color-border); margin-top: 112px; padding: 104px 48px 112px; display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
+.keys { display: flex; align-items: center; gap: 14px; }
+.key { width: 92px; height: 92px; border: 1px solid var(--color-border-strong); border-bottom-width: 4px; border-radius: 12px; background: var(--color-surface-2); display: flex; align-items: flex-end; justify-content: flex-start; padding: 12px; font-family: var(--font-mono); font-size: 22px; color: var(--color-text-strong); }
+.grabs { display: grid; grid-template-columns: 1fr 1fr 1fr; margin-top: 40px; border-top: 1px solid var(--color-border); }
+.grabs div { padding: 18px 16px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.grabs b { font-weight: 500; font-size: 15px; color: var(--color-text-strong); }
+.grabs span { font-size: 13.5px; line-height: 20px; color: var(--color-text-muted); }
+</style></head><body>
+<div class="tag">F · Find it without filing it</div>
+<div class="rails">
+  <nav class="nav"><div class="brand">{{logo}}Avenire</div><div class="nav-links"><span>Capture</span><span>Search</span><span>Pricing</span><span>Changelog</span></div><div style="display:flex; gap:10px;"><span class="btn btn-sm btn-ghost">Log in</span><span class="btn btn-sm btn-primary">Get started</span></div></nav>
+  <header class="hero">
+    <h1 class="display">Stop organizing.<br><span class="quiet">Just find it.</span></h1>
+    <p class="lead" style="max-width:600px;">Capture slides, tabs, videos and photos with one key. Ask for them the way you remember them, and get the exact page or second.</p>
+    <div style="display:flex; gap:12px; margin-top:8px;"><span class="btn btn-primary">Download for Mac</span><span class="btn btn-ghost">Open in browser</span></div>
+  </header>
+
+  <div class="finder">
+    <div class="qrow"><span style="color:var(--color-text-muted); font-size:15px;">⌥ Space</span>the bit where he drew the band diagram<span class="caret"></span></div>
+    <div class="res top"><span class="ty">VIDEO</span><div><div class="ti">MIT 6.002 Lecture 12 · <span style="font-family:var(--font-mono); font-size:13px; color:var(--color-accent-text)">18:42</span></div><div class="sn">"…so if I draw the <mark>band diagram</mark> for the MOS capacitor, the conduction band bends down toward the surface…"</div></div><span class="or">YouTube<br>captured Oct 9</span></div>
+    <div class="res"><span class="ty">PDF</span><div><div class="ti">Lecture 6 — Transistors.pdf · p.17</div><div class="sn">Fig 6.7: <mark>band diagram</mark> of the MOS structure at inversion.</div></div><span class="or">Canvas · PHYS 101<br>captured Sep 29</span></div>
+    <div class="res"><span class="ty">PHOTO</span><div><div class="ti">IMG_4471.jpg</div><div class="sn">Whiteboard: E<sub>c</sub>, E<sub>F</sub>, E<sub>v</sub> sketched with the <mark>band</mark> bending at the oxide.</div></div><span class="or">WhatsApp · study group<br>captured Oct 2</span></div>
+    <div class="res"><span class="ty">NOTE</span><div><div class="ti">My notes on lab 3</div><div class="sn">Ask about the <mark>band diagram</mark> in office hours.</div></div><span class="or">Your note<br>Sep 30</span></div>
+    <div class="foot"><span>4 results across 4 places</span><span style="margin-left:auto">↵ open · ⌘↵ ask Ruth about these</span></div>
+  </div>
+
+  <section class="section">
+    <div style="display:flex; flex-direction:column; gap:20px;">
+      <span class="mono">Capture</span>
+      <h2 class="h2">One key.<br><span class="quiet">Whatever's open comes with you.</span></h2>
+      <p class="body" style="color:var(--color-text-muted); max-width:460px;">No upload screen, no "save to folder". Avenire grabs the files, tabs and videos you have open, reads them, and they're searchable a few seconds later.</p>
+      <div class="grabs"><div><b>Slides and PDFs</b><span>Every page, searchable</span></div><div><b>Tabs and videos</b><span>Videos keep the second you were at</span></div><div><b>Photos</b><span>Whiteboards and handwriting, read</span></div></div>
+    </div>
+    <div style="display:flex; flex-direction:column; align-items:center; gap:28px;">
+      <div class="keys"><div class="key">⌥</div><span style="font-size:22px; color:var(--color-text-muted)">+</span><div class="key">C</div></div>
+      <div style="width:360px; border:1px solid var(--color-border-strong); border-radius:var(--radius-lg); background:var(--color-surface-2); padding:10px 12px 12px 14px; display:flex; flex-direction:column; gap:6px;"><div style="display:flex; align-items:center;"><span style="font-size:13px; font-weight:500; color:var(--color-text-strong);">Captured 3 items</span><span class="kbd" style="margin-left:auto">Undo</span></div><div style="display:flex; gap:10px; font-size:12.5px; color:var(--color-text-strong);"><span style="width:44px; font-family:var(--font-mono); font-size:10px; color:var(--color-text-muted)">PDF</span>Lecture 7 — Amplifiers.pdf</div><div style="display:flex; gap:10px; font-size:12.5px; color:var(--color-text-strong);"><span style="width:44px; font-family:var(--font-mono); font-size:10px; color:var(--color-text-muted)">TAB</span>Common-source amplifier</div><div style="display:flex; gap:10px; font-size:12.5px; color:var(--color-text-strong);"><span style="width:44px; font-family:var(--font-mono); font-size:10px; color:var(--color-text-muted)">VIDEO</span>MIT 6.002 Lecture 12 · 18:42</div></div>
+    </div>
+  </section>
+</div>
+</body></html>

@@ -3,6 +3,9 @@ import type { AvenireDesktopBridge, CapturePayload } from "./bridge.ts";
 
 const bridge: AvenireDesktopBridge = {
   platform: process.platform,
+  getWindowChrome: () => ipcRenderer.invoke("avenire:window-chrome"),
+  setWindowTheme: (theme) =>
+    ipcRenderer.invoke("avenire:window-theme", theme).then(() => undefined),
   onCapture(callback) {
     const listener = (_event: Electron.IpcRendererEvent, payload: CapturePayload) =>
       callback(payload);
@@ -10,8 +13,25 @@ const bridge: AvenireDesktopBridge = {
     return () => ipcRenderer.removeListener("avenire:capture", listener);
   },
   captureNow: () => ipcRenderer.invoke("avenire:capture-now").then(() => undefined),
+  setCaptureReady: (ready, userId) =>
+    ipcRenderer.invoke("avenire:capture-ready", ready, userId).then(() => undefined),
+  acknowledgeCapture: (captureId) =>
+    ipcRenderer.invoke("avenire:capture-ack", captureId).then(() => undefined),
   setCaptureShortcut: (accelerator) =>
     ipcRenderer.invoke("avenire:set-shortcut", accelerator) as Promise<boolean>,
+  getCaptureShortcut: () => ipcRenderer.invoke("avenire:get-shortcut") as Promise<string | null>,
+  getOnboardingPreferences: () => ipcRenderer.invoke("avenire:onboarding-preferences"),
+  acknowledgeOnboardingPreferences: () =>
+    ipcRenderer.invoke("avenire:onboarding-preferences-ack").then(() => undefined),
+  hidePrompt: () => ipcRenderer.invoke("avenire:hide-prompt").then(() => undefined),
+  onPromptShown(callback) {
+    const listener = () => callback();
+    ipcRenderer.on("avenire:prompt-shown", listener);
+    return () => ipcRenderer.removeListener("avenire:prompt-shown", listener);
+  },
+  setPromptBusy: (busy) =>
+    ipcRenderer.invoke("avenire:set-prompt-busy", busy).then(() => undefined),
+  openInMain: (path) => ipcRenderer.invoke("avenire:open-in-main", path) as Promise<boolean>,
 };
 
 contextBridge.exposeInMainWorld("avenire", bridge);

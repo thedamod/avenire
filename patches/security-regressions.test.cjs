@@ -158,7 +158,9 @@ test("resolved graph removes vulnerable Effect, esbuild, uuid and cache versions
       /const n = 1/,
     );
   }
-  for (const entry of entries("uuid")) {
+  // xcode 4 uses node:crypto and no longer installs uuid. Check every installed
+  // copy when present; the xcode UUID-generation probe below still runs either way.
+  for (const entry of graph.filter((entry) => entry.name === "uuid")) {
     const [major, minor, patch] = entry.version.split(".").map(Number);
     assert.ok(major > 11 || (major === 11 && (minor > 1 || (minor === 1 && patch >= 1))));
     assert.match(load(entry).v4(), /^[\da-f-]{36}$/);

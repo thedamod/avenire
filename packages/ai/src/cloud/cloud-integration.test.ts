@@ -225,3 +225,86 @@ it.effect("rehydrates a same-length input modified by a sandbox command", () => 
     }).pipe(Effect.provide(f.services(storage)));
   }).pipe(Effect.provide(StorageMemory));
 });
+
+it.effect("rejects invalid quiz JSON before publication, then accepts a corrected quiz", () => {
+  const f = cloudFixture();
+  const path = `${CLOUD_WORKSPACE}/quiz.json`;
+  const quiz = {
+    title: "Entropy",
+    questions: [
+      {
+        id: "q1",
+        topic: "free expansion",
+        question: "What happens?",
+        choices: ["Increases", "Decreases"],
+        answer: 2,
+        explanationTitle: "Entropy rises",
+        explanation: "The accessible volume increases.",
+        sources: [{ fileId, page: 6 }],
+      },
+    ],
+  };
+  return Effect.gen(function* () {
+    const storage = yield* Storage;
+    yield* Effect.gen(function* () {
+      for (const bytes of ["{", JSON.stringify(quiz)]) {
+        f.files.set(path, new TextEncoder().encode(bytes));
+        const error = yield* Effect.flip(
+          cloudTools.publish_output({ sandboxPath: path }, cloudCtx),
+        );
+        expect(error).toMatchObject({ code: "invalid_input", recoverable: true });
+        expect(error).toMatchObject({ message: expect.stringContaining("Invalid CloudQuiz JSON") });
+      }
+      expect(f.storageWrites).toHaveLength(0);
+      expect(f.rows("folder")).toHaveLength(0);
+      quiz.questions[0]!.answer = 0;
+      f.files.set(path, new TextEncoder().encode(JSON.stringify(quiz)));
+      expect(yield* cloudTools.publish_output({ sandboxPath: path }, cloudCtx)).toMatchObject({
+        kind: "file",
+      });
+      expect(f.rows("file")[1]?.mimeType).toBe("application/json");
+    }).pipe(Effect.provide(f.services(storage)));
+  }).pipe(Effect.provide(StorageMemory));
+});
+
+it.effect(
+  "publishes HTML through the widget host from either publish tool, including replay",
+  () => {
+    const f = cloudFixture();
+    f.files.set(`${CLOUD_WORKSPACE}/figure.html`, new TextEncoder().encode("<h1>Entropy</h1>"));
+    const call = { ...cloudCtx, toolCallId: "html-output" };
+    return Effect.gen(function* () {
+      const storage = yield* Storage;
+      yield* Effect.gen(function* () {
+        const first = yield* cloudTools.publish_output(
+          { sandboxPath: "figure.html", title: "Figure" },
+          call,
+        );
+        expect(first.kind).toBe("file");
+        expect(
+          yield* cloudTools.publish_output({ sandboxPath: "figure.html", title: "Figure" }, call),
+        ).toEqual(first);
+        expect(f.rows("asset")).toHaveLength(1);
+        yield* cloudTools.publish_report(
+          { markdown: "Finished", startHere: "Start with the figure.", assets: ["figure.html"] },
+          cloudCtx,
+        );
+        expect(f.rows("cloud_run")[0]?.startHere).toBe("Start with the figure.");
+        expect(f.rows("asset")).toHaveLength(2);
+        for (const asset of f.rows("asset")) {
+          expect(asset).toMatchObject({
+            kind: "widget",
+            mediaType: "text/html",
+            runId: "run",
+            visibility: "private",
+          });
+          const html = new TextDecoder().decode(
+            yield* storage.get(StorageKey.make(String(asset.storageKey))),
+          );
+          expect(html).toContain("<h1>Entropy</h1>");
+          expect(html).toMatch(/<!doctype html>/i);
+        }
+      }).pipe(Effect.provide(f.services(storage)));
+    }).pipe(Effect.provide(StorageMemory));
+  },
+);

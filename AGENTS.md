@@ -13,7 +13,6 @@ apps/
   web/       Next.js app: UI, the RPC + auth endpoints, and the background worker entry
   desktop/   Electron shell around the web server, plus the global capture hotkey
   mobile/    Expo client (React Navigation + Uniwind), talks to web over RPC
-  emailer/   Drains the email outbox and serves react-email previews
 packages/
   contracts/         Effect Schemas + RPC definitions shared by every surface (no runtime deps)
   shared/            Cross-cutting helpers: ids, PostHog observability
@@ -25,7 +24,8 @@ packages/
   ingestion/         Extract -> chunk -> embed -> graph -> folder, the job queue worker, and retrieval
                      (multi-lane RRF, rerank, graph RAG, semantic cache)
   ai/                Ruth chat, shared tools and outputs, Ruth Cloud orchestration + scheduler
-  emailer/           react-email templates + the `Mailer` service (Resend)
+  emailer/           react-email templates + the `Mailer` service (Resend); callers send directly, no queue.
+                     Preview with `pnpm email:preview`
   retrieval-benchmark/  Dataset + runner for retrieval quality (recall@k, MRR, nDCG)
   ui/                shadcn/ui primitives, widget protocol and sandboxed WidgetFrame
 ```

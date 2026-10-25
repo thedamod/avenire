@@ -12,14 +12,39 @@ import { CloudRun, CloudTask, CloudTaskInput, PendingApproval } from "./cloud.ts
 import { ApiError } from "./errors.ts";
 import { FolderId, FileId } from "./ids.ts";
 import { IngestionJob } from "./ingestion.ts";
-import { CanvasNode, Folder, LibraryFile, FilePlacement } from "./library.ts";
+import {
+  FileContentUrl,
+  Folder,
+  LibraryFile,
+  FilePlacement,
+  NoteContent,
+  TrashEntry,
+} from "./library.ts";
 import { SearchQuery, SearchResult } from "./retrieval.ts";
 import { RuthMessage, RuthThread } from "./ruth.ts";
 import { Authenticated } from "./session.ts";
 import {
+  OnboardingPreferences,
+  OnboardingState,
+  SettingsSnapshot,
+  UserSettings,
+  UserSettingsPatch,
+} from "./settings.ts";
+import {
   CloudRunIdRequest,
   CloudTaskIdRequest,
+  CreateFolderRequest,
+  CreateNoteRequest,
   CreateThreadRequest,
+  FileIdRequest,
+  FolderIdRequest,
+  RenameFileRequest,
+  RenameThreadRequest,
+  SaveNoteRequest,
+  ThreadIdRequest,
+  TrashFilesRequest,
+  TrashRefsRequest,
+  UpdateFolderRequest,
   GetAssetRequest,
   ListAssetsRequest,
   ListCloudApprovalsRequest,
@@ -53,20 +78,53 @@ export class LibraryRpcs extends RpcGroup.make(
     success: Schema.Array(LibraryFile),
     error: ApiError,
   }),
+  Rpc.make("library.getFile", { payload: FileIdRequest, success: LibraryFile, error: ApiError }),
+  Rpc.make("library.renameFile", {
+    payload: RenameFileRequest,
+    success: LibraryFile,
+    error: ApiError,
+  }),
+  Rpc.make("library.getFileContentUrl", {
+    payload: FileIdRequest,
+    success: FileContentUrl,
+    error: ApiError,
+  }),
+  /** Notes are markdown files (`kind: "note"`). */
+  Rpc.make("library.createNote", {
+    payload: CreateNoteRequest,
+    success: LibraryFile,
+    error: ApiError,
+  }),
+  Rpc.make("library.getNote", { payload: FileIdRequest, success: NoteContent, error: ApiError }),
+  Rpc.make("library.saveNote", { payload: SaveNoteRequest, success: NoteContent, error: ApiError }),
   Rpc.make("library.placeFile", {
     payload: { fileId: FileId, folderIds: Schema.Array(FolderId) },
     success: LibraryFile,
     error: ApiError,
   }),
   Rpc.make("library.listFolders", { success: Schema.Array(Folder), error: ApiError }),
-  Rpc.make("library.renameFolder", {
-    payload: { folderId: FolderId, name: Schema.NonEmptyString },
+  Rpc.make("library.getFolder", { payload: FolderIdRequest, success: Folder, error: ApiError }),
+  Rpc.make("library.createFolder", {
+    payload: CreateFolderRequest,
     success: Folder,
     error: ApiError,
   }),
-  Rpc.make("library.getCanvas", { success: Schema.Array(CanvasNode), error: ApiError }),
-  Rpc.make("library.saveCanvas", {
-    payload: { nodes: Schema.Array(CanvasNode) },
+  Rpc.make("library.updateFolder", {
+    payload: UpdateFolderRequest,
+    success: Folder,
+    error: ApiError,
+  }),
+  /** Trash = archive; the purge job deletes for good 30 days later. */
+  Rpc.make("library.trashFiles", { payload: TrashFilesRequest, error: ApiError }),
+  Rpc.make("library.trashFolder", { payload: FolderIdRequest, error: ApiError }),
+  Rpc.make("library.listTrash", { success: Schema.Array(TrashEntry), error: ApiError }),
+  Rpc.make("library.restore", { payload: TrashRefsRequest, error: ApiError }),
+  /** Delete for good now: hands the entries to the purge job instead of waiting 30 days. */
+  Rpc.make("library.purge", { payload: TrashRefsRequest, error: ApiError }),
+  Rpc.make("library.emptyTrash", { error: ApiError }),
+  Rpc.make("library.renameFolder", {
+    payload: { folderId: FolderId, name: Schema.NonEmptyString },
+    success: Folder,
     error: ApiError,
   }),
   Rpc.make("library.watchIngestion", {
@@ -96,6 +154,13 @@ export class RuthRpcs extends RpcGroup.make(
     success: RuthThread,
     error: ApiError,
   }),
+  Rpc.make("ruth.getThread", { payload: ThreadIdRequest, success: RuthThread, error: ApiError }),
+  Rpc.make("ruth.renameThread", {
+    payload: RenameThreadRequest,
+    success: RuthThread,
+    error: ApiError,
+  }),
+  Rpc.make("ruth.deleteThread", { payload: ThreadIdRequest, error: ApiError }),
   Rpc.make("ruth.listMessages", {
     payload: ThreadMessagesRequest,
     success: Schema.Array(RuthMessage),
@@ -142,6 +207,7 @@ export class CloudRpcs extends RpcGroup.make(
     success: Schema.Array(CloudRun),
     error: ApiError,
   }),
+  Rpc.make("cloud.getRun", { payload: CloudRunIdRequest, success: CloudRun, error: ApiError }),
   Rpc.make("cloud.cancelRun", {
     payload: CloudRunIdRequest,
     success: CloudRun,
@@ -158,7 +224,32 @@ export class AssetsRpcs extends RpcGroup.make(
   }),
 ).middleware(Authenticated) {}
 
-export const AvenireRpcs = LibraryRpcs.merge(SearchRpcs, RuthRpcs, CloudRpcs, AssetsRpcs);
+export class SettingsRpcs extends RpcGroup.make(
+  Rpc.make("settings.get", { success: SettingsSnapshot, error: ApiError }),
+  Rpc.make("settings.update", {
+    payload: UserSettingsPatch,
+    success: UserSettings,
+    error: ApiError,
+  }),
+  Rpc.make("settings.completeOnboarding", {
+    payload: OnboardingPreferences,
+    success: OnboardingState,
+    error: ApiError,
+  }),
+  Rpc.make("settings.updateProfile", {
+    payload: { name: Schema.NonEmptyString.check(Schema.isMaxLength(100)) },
+    error: ApiError,
+  }),
+  Rpc.make("settings.signOutOtherSessions", { error: ApiError }),
+).middleware(Authenticated) {}
+
+export const AvenireRpcs = LibraryRpcs.merge(
+  SearchRpcs,
+  RuthRpcs,
+  CloudRpcs,
+  AssetsRpcs,
+  SettingsRpcs,
+);
 export type AvenireRpcs = typeof AvenireRpcs;
 
 /** Path the RPC endpoint is mounted on, relative to the web server origin. */

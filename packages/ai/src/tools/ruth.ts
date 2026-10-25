@@ -26,6 +26,7 @@ export type RuthToolServices =
   | AssetStore;
 export interface RuthTurn {
   readonly userId: UserId;
+  readonly scope?: import("@avenire/contracts").ChatScope | undefined;
   readonly threadId: ThreadId;
   readonly page: PageContext;
   readonly fullAccess: boolean;
@@ -44,6 +45,7 @@ export const createRuthTools = (
   const ctx: AgentContext = {
     agent: "ruth",
     userId: turn.userId,
+    scope: turn.scope,
     threadId: turn.threadId,
     fullAccess: turn.fullAccess,
     timeZone: turn.timeZone,

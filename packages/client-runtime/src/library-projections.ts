@@ -1,13 +1,14 @@
 import type { FileId, IngestionJob } from "@avenire/contracts";
 
-export type LibraryProjection = "files" | "folders" | "canvas";
+export type LibraryProjection = "files" | "folders" | "trash" | "notes" | "threads" | "settings";
 const subscriptions = new WeakMap<
   object,
   Set<{ projection: LibraryProjection; refresh: () => void }>
 >();
 
 export function libraryProjection(queryKey: string): LibraryProjection | undefined {
-  if (queryKey === "canvas-nodes") return "canvas";
+  for (const name of ["trash", "notes", "threads", "settings"] as const)
+    if (queryKey.includes(name)) return name;
   if (queryKey.includes("folders") || queryKey === "folders-list") return "folders";
   if (queryKey.includes("files")) return "files";
   return undefined;
@@ -31,7 +32,7 @@ export function subscribeLibraryProjection(
 
 export function invalidateLibrary(
   runtime: object,
-  projections: readonly LibraryProjection[] = ["files", "folders"],
+  projections: readonly LibraryProjection[] = ["files", "folders", "notes", "trash"],
 ): void {
   for (const entry of subscriptions.get(runtime) ?? []) {
     if (projections.includes(entry.projection)) entry.refresh();
@@ -62,3 +63,5 @@ export function pruneJobs(
   if ([...previous.keys()].every((id) => visibleFiles.has(id))) return previous;
   return new Map([...previous].filter(([id]) => visibleFiles.has(id)));
 }
+
+export const invalidate = invalidateLibrary;

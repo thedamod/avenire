@@ -2,21 +2,15 @@ import type { DatabaseClient } from "@avenire/database/client";
 import { expect, it } from "@effect/vitest";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import * as Effect from "effect/Effect";
-import { createAuth, makeAuthService } from "./server.ts";
+import { type AuthEmail, createAuth, makeAuthService } from "./server.ts";
 
 it.effect("serves verified signup, sign-in, revocable sessions and sign-out over HTTP", () =>
   Effect.gen(function* () {
-    const emails: Array<{ props: { url: string }; template: string }> = [];
-    const db = {
-      insert: () => ({
-        values: async (entry: (typeof emails)[number]) => {
-          emails.push(entry);
-        },
-      }),
-    } as unknown as DatabaseClient;
+    const emails: Array<AuthEmail> = [];
     const auth = createAuth(
       {
-        db,
+        db: {} as DatabaseClient,
+        sendEmail: (message) => emails.push(message),
         baseURL: "https://app.test",
         secret: "test-only-auth-secret-at-least-32-characters",
         trustedOrigins: ["https://app.test", "avenire://"],
@@ -52,9 +46,7 @@ it.effect("serves verified signup, sign-in, revocable sessions and sign-out over
     expect(emails[0]?.template).toBe("verify-email");
     expect((yield* handle("sign-in/email", credentials)).status).toBe(403);
 
-    const verification = yield* Effect.promise(() =>
-      auth.handler(new Request(emails[0]!.props.url)),
-    );
+    const verification = yield* Effect.promise(() => auth.handler(new Request(emails[0]!.url)));
     expect(verification.status).toBe(302);
     expect(verification.headers.get("location")).toBe("/");
 
@@ -73,6 +65,22 @@ it.effect("serves verified signup, sign-in, revocable sessions and sign-out over
     expect(yield* Effect.promise(() => session.json())).toMatchObject({
       user: { email: credentials.email, emailVerified: true },
     });
+
+    // Desktop handoff tokens can only be issued by our authenticated server action.
+    expect((yield* handle("one-time-token/generate", undefined, cookies)).status).toBe(400);
+    const { token: desktopToken } = yield* Effect.promise(() =>
+      auth.api.generateOneTimeToken({ headers }),
+    );
+    const desktopSignIn = yield* handle("one-time-token/verify", { token: desktopToken });
+    expect(desktopSignIn.status).toBe(200);
+    const desktopCookies = desktopSignIn.headers
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
+    expect(yield* service.getSession(new Headers({ cookie: desktopCookies }))).toMatchObject({
+      email: credentials.email,
+    });
+    expect((yield* handle("one-time-token/verify", { token: desktopToken })).status).toBe(400);
 
     expect((yield* handle("sign-out", {}, cookies)).status).toBe(200);
     expect(yield* service.getSession(headers)).toBeNull();
@@ -108,7 +116,7 @@ it.effect("serves verified signup, sign-in, revocable sessions and sign-out over
     expect(reset.status).toBe(200);
     const resetEmail = emails.find((email) => email.template === "reset-password");
     expect(resetEmail).toBeDefined();
-    const token = new URL(resetEmail!.props.url).pathname.split("/").at(-1);
+    const token = new URL(resetEmail!.url).pathname.split("/").at(-1);
     const resetBody = { token, newPassword: "replacement-password-123" };
     expect((yield* handle("reset-password", resetBody)).status).toBe(200);
     expect(yield* service.getSession(new Headers({ cookie: nativeCookies }))).toBeNull();
@@ -127,6 +135,7 @@ it.effect(
       const auth = createAuth(
         {
           db: {} as DatabaseClient,
+          sendEmail: () => undefined,
           baseURL: "https://app.test",
           secret: "test-only-auth-secret-at-least-32-characters",
           trustedOrigins: ["https://app.test", "avenire://"],

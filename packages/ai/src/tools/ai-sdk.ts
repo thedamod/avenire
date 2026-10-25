@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 
 import { type AgentContext, RuthToolError, runTool } from "./core.ts";
 import type { ToolRegistration } from "./registration.ts";
-import { standardSchema } from "./schema.ts";
+import { standardSchema, standardObjectSchema } from "./schema.ts";
 import { RUTH_TOOL_POLICY, RUTH_TOOL_SPECS, type RuthToolName } from "./specs.ts";
 import { ruthKitTools, type RuthKitServices, type RuthToolImplementations } from "./library.ts";
 
@@ -44,7 +44,7 @@ export const toAiSdkTools = <R = never>(
     if (!policy.agents.includes(ctx.agent)) continue;
     tools[name] = tool({
       description: spec.description,
-      inputSchema: standardSchema(spec.inputSchema),
+      inputSchema: standardObjectSchema(spec.inputSchema),
       outputSchema: standardSchema(spec.outputSchema),
       needsApproval: policy.approval === "unless-full-access" && !ctx.fullAccess,
       ...(images ? { toModelOutput: images.toModelOutput } : {}),

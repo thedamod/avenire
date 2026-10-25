@@ -3,6 +3,7 @@ import { AssetStoreLive } from "@avenire/ai/outputs/assets";
 import { WidgetStoreLive } from "@avenire/ai/outputs/widgets";
 import { AuthLive } from "@avenire/auth/server";
 import { DatabaseLive } from "@avenire/database/client";
+import { MailerLive } from "@avenire/emailer/mailer";
 import { StorageLive } from "@avenire/storage/storage";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -14,7 +15,9 @@ export const OutputServicesLive = Layer.mergeAll(
   AuthLive,
   WidgetHostLive,
   WidgetStoreLive.pipe(Layer.provideMerge(AssetStoreLive)),
-).pipe(Layer.provideMerge(Layer.mergeAll(DatabaseLive, StorageLive, NodeServices.layer)));
+).pipe(
+  Layer.provideMerge(Layer.mergeAll(DatabaseLive, StorageLive, MailerLive, NodeServices.layer)),
+);
 const makeRuntime = () => ManagedRuntime.make(OutputServicesLive);
 let runtime: ReturnType<typeof makeRuntime> | undefined;
 export const runOutputRoute = <E>(

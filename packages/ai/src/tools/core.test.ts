@@ -4,6 +4,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import { SandboxInputRejected } from "@avenire/cloud/daytona";
 
 import { RuthToolError, runTool, toToolError } from "./core.ts";
 import { ctx, recordingAnalytics } from "./test-support.ts";
@@ -27,6 +28,45 @@ const cases: Array<[unknown, RuthToolError["code"], string]> = [
   [{ _tag: "OtherExpected", message: "Try again" }, "failed", "Try again"],
 ];
 describe("toToolError", () => {
+  it.effect("preserves real sandbox validation reasons and falls back from empty messages", () =>
+    Effect.gen(function* () {
+      for (const error of [
+        new SandboxInputRejected({ reason: "Paths must stay under /home/daytona or /tmp" }),
+        {
+          _tag: "SandboxInputRejected",
+          message: "",
+          reason: "Paths must stay under /home/daytona or /tmp",
+        },
+      ]) {
+        const result = yield* toToolError("sandbox_write", Cause.fail(error)).pipe(Effect.result);
+        expect(result).toMatchObject({
+          failure: {
+            code: "invalid_input",
+            message: "Paths must stay under /home/daytona or /tmp",
+          },
+        });
+      }
+    }),
+  );
+  it.effect("names a failed sandbox operation without leaking the provider response", () =>
+    Effect.gen(function* () {
+      const result = yield* toToolError(
+        "sandbox_write",
+        Cause.fail({
+          _tag: "CloudError",
+          operation: "writeChatFile",
+          message: "Authorization: Bearer secret",
+        }),
+      ).pipe(Effect.result);
+      expect(result).toMatchObject({
+        failure: {
+          code: "sandbox_unavailable",
+          message: "Could not upload the file to the sandbox. Try again in a moment.",
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain("secret");
+    }),
+  );
   for (const [error, code, message] of cases)
     it.effect(`maps ${code}: ${message}`, () =>
       Effect.gen(function* () {
@@ -101,3 +141,18 @@ for (const failure of [false, true])
     },
   );
 
+it.effect("distinguishes an unsubmitted command from an uncertain command result", () =>
+  Effect.gen(function* () {
+    const result = yield* toToolError(
+      "sandbox_exec",
+      Cause.fail({ _tag: "CloudError", operation: "chatExecSessionCreate" }),
+    ).pipe(Effect.result);
+    expect(result).toMatchObject({
+      failure: {
+        code: "sandbox_unavailable",
+        message:
+          "Could not start the sandbox command session. No command was submitted; try again.",
+      },
+    });
+  }),
+);

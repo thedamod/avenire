@@ -76,7 +76,7 @@ persisted message, so the banner is rebuilt from the last assistant message's pa
 
 A **markdown worker** turns text into a sanitized hast tree: remark-gfm, remark-math with
 KaTeX output, Shiki highlighting, and rehype-sanitize with an allowlist that admits
-`avenire-chart`, `avenire-sim`, `avenire-vis` (stored, in notes and canvas) and their
+`avenire-chart`, `avenire-sim`, `avenire-vis` (stored, in notes and notebooks) and their
 declared children (`script[type="avenire/params"]`,
 `script[type="avenire/worker"]`). The main thread renders hast → React with
 `hast-util-to-jsx-runtime` and maps the custom tags to components.
@@ -171,7 +171,7 @@ v2:
 
 Use TipTap (as t3code does) so references are real inline tokens, not text:
 
-- `@` opens a picker for files, folders and canvas nodes; picking one inserts a mention
+- `@` opens a picker for files and notebooks; picking one inserts a mention
   node that renders as a chip.
 - `/` opens commands that set intent (`/quiz`, `/explain`, `/flashcards`, `/summarize`).
 - Pasting a URL offers to turn it into a capture token.

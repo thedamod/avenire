@@ -1,0 +1,39 @@
+M00 | Read me | M00 Mobile · how it maps from desktop
+M01 | Home | M01 Home · morning toast
+M02 | Home | M02 Home · failed overnight run
+M03 | Home | M03 Home · Notes tab (quiet day, no toast)
+M04 | Home | M04 Home · Sources › Unfiled (synced from computer)
+M05 | Home | M05 Home · Sources › processing and needs you
+M06 | Home | M06 Home · empty (first run, capture lives on the computer)
+M07 | Search and Ask | M07 Search results vs Ask Ruth (composer focused)
+M08 | Search and Ask | M08 Ask Ruth from home · streaming (replaces ⌥ Space)
+M08b | Search and Ask | M08b Ask Ruth from home · answer, save to notebook
+M09 | Notebook | M09 Notebook · Thermodynamics
+M10 | Notebook | M10 Note · Entropy and the second law
+M11 | Notebook | M11 New notebook (sheet)
+M12 | Morning report | M12 Morning report · chat
+M13 | Morning report | M13 Morning report · Summary sheet
+M14 | Morning report | M14 Morning report · Quiz, answered with feedback
+M15 | Morning report | M15 Morning report · Quiz score
+M16 | Morning report | M16 Morning report · Widget (Raptor 2), full height
+M17 | Morning report | M17 Morning report · file changes expanded
+M18 | Citations | M18 Citation → PDF opens at p.11 (half sheet)
+M19 | Citations | M19 Citation → video opens at 18:40 (half sheet)
+M20 | Citations | M20 Citation → image opens on the region
+M21 | Chat | M21 Chat · generated figure + video
+M22 | Chat | M22 Mid-chat approval (composer tray)
+M23 | Chat | M23 Mid-chat question from Ruth (composer tray)
+M24 | Chats and Tasks | M24 Chats and Tasks · see all (swipe for task actions)
+M25 | Chats and Tasks | M25 Task detail · failed overnight run
+M26 | Chats and Tasks | M26 Ruth Cloud · schedule an overnight task (sheet)
+M27 | Filing | M27 Filing · select sources (long-press), icon dock
+M28 | Filing | M28 Filing · move 2 sources to a notebook (sheet)
+M29 | Filing | M29 Filing · review Ruth's clusters
+M30 | Settings and Trash | M30 Settings
+M31 | Settings and Trash | M31 Trash · two selected, icon dock
+M32 | Onboarding | M32 Onboarding · Welcome
+M33 | Onboarding | M33 Onboarding · About you
+M34 | Onboarding | M34 Onboarding · Your morning
+M35 | Onboarding | M35 Onboarding · Notifications (mobile only)
+M36 | Onboarding | M36 Onboarding · Capture is on your computer (replaces 23d–23i)
+M37 | Onboarding | M37 Onboarding · You're set

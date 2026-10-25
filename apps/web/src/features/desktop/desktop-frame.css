@@ -1,0 +1,100 @@
+/* Browser (and the frameless prompt): the frame is transparent to layout. */
+.desktop-frame,
+.desktop-frame > .desktop-frame-content {
+  display: contents;
+}
+.desktop-titlebar {
+  display: none;
+}
+/*
+ * Desktop windows with native caption buttons over the page. Window Controls Overlay reports the
+ * real caption geometry (≈138px of buttons on Windows); fallbacks match main.ts titleBarOverlay.
+ * Fixed or portaled controls near the top offset by --desktop-titlebar-height (0 in the browser).
+ */
+:root[data-desktop-chrome] {
+  --desktop-titlebar-height: env(titlebar-area-height, 40px);
+  --desktop-caption-left: env(titlebar-area-x, 0px);
+  --desktop-caption-right: calc(
+    100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, calc(100vw - 138px))
+  );
+  --desktop-content-height: calc(100dvh - var(--desktop-titlebar-height));
+}
+:root[data-desktop-chrome="darwin"] {
+  /* Traffic lights at {x:12,y:12}, nothing on the right. */
+  --desktop-caption-left: max(env(titlebar-area-x, 0px), 66px);
+  --desktop-caption-right: 0px;
+}
+:root[data-desktop-chrome] .desktop-frame {
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: var(--desktop-titlebar-height) minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+}
+:root[data-desktop-chrome] .desktop-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--desktop-titlebar-height);
+  /* The ⋯ menu sits 4px from the Windows/Linux caption buttons, 8px from the macOS window edge. */
+  padding: 0 calc(var(--desktop-caption-right) + 4px) 0 calc(var(--desktop-caption-left) + 16px);
+  border-bottom: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground-soft);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 16px;
+  user-select: none;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+:root[data-desktop-chrome="darwin"] .desktop-titlebar {
+  padding-right: 8px;
+}
+/* Only controls opt out of dragging; the gaps between them still move and snap the window. */
+.desktop-titlebar :is(a, button, input, select, textarea, [role="button"], [tabindex]) {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+.desktop-titlebar-start {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+}
+.desktop-titlebar-end {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+/* Phone widths keep the page's own sticky glass header under a plain drag row. */
+@media (width < 48rem) {
+  .desktop-titlebar-start,
+  .desktop-titlebar-end {
+    display: none;
+  }
+}
+/* The in-page desktop header row moves into the title bar; hidden before first paint. */
+:root[data-desktop-chrome] [data-desktop-header] {
+  display: none !important;
+}
+:root[data-desktop-chrome] .desktop-frame > .desktop-frame-content {
+  display: block;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+:root[data-desktop-chrome]
+  .desktop-frame-content
+  :is(.min-h-dvh, .min-h-screen, .auth-shell, .auth-brand, .onboarding-screen) {
+  min-height: var(--desktop-content-height);
+}
+:root[data-desktop-chrome] .desktop-frame-content :is(.h-dvh, .h-screen) {
+  height: var(--desktop-content-height);
+}
+/* Dialogs portal to <body>: centre them in the content area, clear of the caption buttons. */
+:root[data-desktop-chrome] :is([data-slot="dialog-content"], [data-slot="alert-dialog-content"]) {
+  top: calc(50% + var(--desktop-titlebar-height) / 2);
+}

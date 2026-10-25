@@ -20,6 +20,7 @@ import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import * as Stream from "effect/Stream";
 export {
   invalidateLibrary,
+  invalidate,
   libraryProjection,
   subscribeLibraryProjection,
   updateLatestJob,
@@ -58,15 +59,18 @@ export const makeClientLayer = (options: ClientOptions) => {
   );
   const protocol = RpcClient.layerProtocolHttp({
     url: `${options.baseUrl}${RPC_PATH}`,
-    ...(getAuthHeaders === undefined
-      ? {}
-      : {
-          transformClient: HttpClient.mapRequestEffect((request) =>
-            Effect.promise(async () =>
-              HttpClientRequest.setHeaders(request, await getAuthHeaders()),
-            ),
-          ),
-        }),
+    transformClient: HttpClient.mapRequestEffect((request) =>
+      Effect.promise(async () =>
+        // The protocol appends "/", which Next answers with a 308 redirect on every call.
+        HttpClientRequest.setHeaders(
+          HttpClientRequest.setUrl(request, request.url.replace(/\/$/, "")),
+          {
+            "x-avenire-time-zone": Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+            ...(getAuthHeaders === undefined ? {} : await getAuthHeaders()),
+          },
+        ),
+      ),
+    ),
   }).pipe(Layer.provide(Layer.mergeAll(RpcSerialization.layerNdjson, http)));
 
   return Layer.effect(AvenireClient, RpcClient.make(AvenireRpcs)).pipe(Layer.provide(protocol));

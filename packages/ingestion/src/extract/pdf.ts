@@ -1,6 +1,7 @@
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
-import { getDocumentProxy, getResolvedPDFJS } from "unpdf";
+import { getDocument, OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { dirname, join } from "node:path";
 
 import { pageHasFigure } from "./pdf-figures.ts";
 import { sectionsFromMarkdown } from "./markdown.ts";
@@ -15,6 +16,13 @@ import {
 const MIN_NATIVE_CHARS = 200;
 const MAX_OCR_PAGES = 150;
 const OCR_BATCH_SIZE = 30;
+// Resolve with Node at runtime: bundlers can turn a static require.resolve into a module id.
+const pdfAssets = dirname(
+  process
+    .getBuiltinModule("module")
+    .createRequire(import.meta.url)
+    .resolve("pdfjs-dist/package.json"),
+);
 export interface NativePdfPage {
   readonly page: number;
   readonly text: string;
@@ -92,11 +100,17 @@ export const assemblePdfDocument = (
 const readNativePages = Effect.fn("Pdf.readNativePages")(function* (bytes: Uint8Array) {
   const pdf = yield* Effect.tryPromise({
     // pdf.js rejects Node Buffers and detaches what it is given: hand it a plain copy.
-    try: () => getDocumentProxy(new Uint8Array(bytes)),
-    catch: (cause) => new ExtractionError({ source: "pdf", cause }),
-  });
-  const { OPS } = yield* Effect.tryPromise({
-    try: () => getResolvedPDFJS(),
+    try: () =>
+      getDocument({
+        data: new Uint8Array(bytes),
+        wasmUrl: `${join(pdfAssets, "wasm")}/`,
+        standardFontDataUrl: `${join(pdfAssets, "standard_fonts")}/`,
+        cMapUrl: `${join(pdfAssets, "cmaps")}/`,
+        cMapPacked: true,
+        useSystemFonts: true,
+        disableFontFace: true,
+        useWorkerFetch: false,
+      }).promise,
     catch: (cause) => new ExtractionError({ source: "pdf", cause }),
   });
   const numbers = Array.from({ length: pdf.numPages }, (_, index) => index + 1);
@@ -124,7 +138,7 @@ const readNativePages = Effect.fn("Pdf.readNativePages")(function* (bytes: Uint8
         catch: (cause) => new ExtractionError({ source: "pdf", cause }),
       }),
     { concurrency: 4 },
-  );
+  ).pipe(Effect.ensuring(Effect.promise(() => pdf.loadingTask.destroy())));
 });
 
 export const extractPdf = Effect.fn("extractPdf")(function* (bytes: Uint8Array) {

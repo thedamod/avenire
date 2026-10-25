@@ -98,11 +98,11 @@ interface Artifact {
 ```
 
 - **Revisions, not overwrites:** "make it slower" creates a child artifact, so notes and
-  canvas embeds that reference the old version stay stable.
+  note embeds that reference the old version stay stable.
 - **Cloud runs** reuse the same document. A nightly run can produce longer videos and
   heavier computations because nobody is waiting.
 - **When a record exists.** Chat visuals live inline in the message (§3.2) and get an
-  `Artifact` record only when they're saved to a note, placed on the canvas, shared, or
+  `Artifact` record only when they're saved to a note, saved to a notebook, shared, or
   rendered as a job (video). Cloud runs always create records.
 
 ### 3.2 Inline in the message, with a page-context tool
@@ -121,7 +121,7 @@ phone. So before writing a visual Ruth calls **`get_page_context`**, which retur
 
 | Field                           | Example                                                | Source                             |
 | ------------------------------- | ------------------------------------------------------ | ---------------------------------- |
-| `surface`                       | `chat` / `note` / `canvas`                             | client, sent with the chat request |
+| `surface`                       | `chat` / `note` / `library`                            | client, sent with the chat request |
 | `platform`                      | `desktop` / `web` / `mobile`                           | client                             |
 | `contentWidthPx`, `colorScheme` | `720`, `dark`                                          | client                             |
 | `themeTokens`, `fonts`          | `--accent`, `--ink`, `--surface-2`, body and mono font | client                             |
@@ -143,9 +143,9 @@ the policy (§5), so planning and page facts are one call.
 - **Validation:** the renderer validates a widget when its closing tag arrives (schema,
   size, CSP, lint) and shows a diagnostic instead of mounting a broken one. The same
   validators run server-side on the finished message, for evals and for "ask Ruth to fix".
-- **Promotion to storage:** saving a visual to a note, placing it on the canvas or sharing
+- **Promotion to storage:** saving a visual to a note, saving it to a notebook or sharing
   it copies its source into the bucket as an `Artifact` (`artifacts/art_…/v1/index.html`).
-  Notes and canvas nodes then reference it as `<avenire-vis src="…" />`, and a share link
+  Notes and notebooks then reference it as `<avenire-vis src="…" />`, and a share link
   renders the stored file standalone with the same runtime and capability rules (§6).
 
 ## 4. Rendering, per modality
@@ -434,7 +434,7 @@ parameters? } })`. The tool validates the plan against the policy:
    repair → final, and captions.
 5. **Polish:**
    - revisions UI;
-   - note and canvas embedding;
+   - note and notebook embedding;
    - share links;
    - Pyodide tier;
    - paid TTS;

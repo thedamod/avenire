@@ -1,0 +1,1 @@
+ALTER TABLE "cloud_run" ADD COLUMN "start_here" text;
