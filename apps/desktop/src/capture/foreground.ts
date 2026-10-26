@@ -1,6 +1,8 @@
 import * as ChildProcess from "node:child_process";
 import { promisify } from "node:util";
 import type { CapturedWindow } from "@avenire/contracts";
+import type { ForegroundApp } from "./research/src/capture/types.ts";
+import { WINDOWS_FOREGROUND_SCRIPT } from "./foreground-windows.ts";
 import { resolveDocumentPath } from "./document-path.ts";
 
 const execFile = promisify(ChildProcess.execFile);
@@ -13,7 +15,8 @@ async function command(file: string, args: readonly string[]): Promise<string> {
   return result.stdout.trim();
 }
 
-export async function collectForeground(): Promise<{
+export async function readForeground(): Promise<{
+  readonly app?: ForegroundApp;
   readonly windows: readonly CapturedWindow[];
   readonly notes: readonly string[];
 }> {
@@ -26,10 +29,8 @@ export async function collectForeground(): Promise<{
       const result = await command("osascript", ["-e", foregroundScript]);
       [appName = "", title = "", pidText = ""] = result.split(/\r?\n/);
     } else if (process.platform === "win32") {
-      const script =
-        '$sig=\'[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);\'; if (-not (\'N.W\' -as [type])) { Add-Type -MemberDefinition $sig -Name W -Namespace N }; $h=[N.W]::GetForegroundWindow(); $t=New-Object System.Text.StringBuilder 1024; [void][N.W]::GetWindowText($h,$t,$t.Capacity); [uint32]$capturePid=0; [void][N.W]::GetWindowThreadProcessId($h,[ref]$capturePid); $p=Get-Process -Id $capturePid; Write-Output $p.ProcessName; Write-Output $t.ToString(); Write-Output $capturePid';
       const { execPowerShell } = await import("./research/electron/collectors/ps-queue.ts");
-      const { stdout } = await execPowerShell(script, { timeout: 8000, notes });
+      const { stdout } = await execPowerShell(WINDOWS_FOREGROUND_SCRIPT, { timeout: 1200, notes });
       [appName = "", title = "", pidText = ""] = stdout.trim().split(/\r?\n/);
     } else {
       title = await command("xdotool", ["getactivewindow", "getwindowname"]);
@@ -46,26 +47,16 @@ export async function collectForeground(): Promise<{
       }
     }
     const pid = Number(pidText);
-    let filePath: string | undefined;
-    try {
-      filePath = await resolveDocumentPath(
-        {
-          appName,
-          bundleIdOrExe: appName,
-          windowTitle: title,
-          ...(Number.isSafeInteger(pid) && pid > 0 ? { processId: pid } : {}),
-          isPrivateWindow: /incognito|inprivate|private browsing|private window/i.test(title),
-        },
-        notes,
-      );
-    } catch {
-      notes.push("Document path could not be resolved.");
-    }
+    const app: ForegroundApp = {
+      appName,
+      bundleIdOrExe: appName,
+      windowTitle: title,
+      ...(Number.isSafeInteger(pid) && pid > 0 ? { processId: pid } : {}),
+      isPrivateWindow: /incognito|inprivate|private browsing|private window/i.test(title),
+    };
     return {
-      windows:
-        title || appName
-          ? [{ appName, title, foreground: true, ...(filePath ? { filePath } : {}) }]
-          : [],
+      app,
+      windows: title || appName ? [{ appName, title, foreground: true }] : [],
       notes,
     };
   } catch (error) {
@@ -75,4 +66,56 @@ export async function collectForeground(): Promise<{
         : `Foreground window collector failed: ${error instanceof Error ? error.message : "unknown error"}`;
     return { windows: [], notes: [note] };
   }
+}
+
+export async function resolveForeground(observation: Awaited<ReturnType<typeof readForeground>>) {
+  if (!observation.app || observation.app.isPrivateWindow) return observation;
+  const notes = [...observation.notes];
+  const { bounded } = await import("./timing.ts");
+  try {
+    const filePath = await bounded(
+      resolveDocumentPath(observation.app, notes),
+      process.platform === "win32" ? 4000 : 3000,
+    );
+    return {
+      ...observation,
+      windows: observation.windows.map((window) => ({
+        ...window,
+        ...(filePath ? { filePath } : {}),
+      })),
+      notes,
+    };
+  } catch {
+    return {
+      ...observation,
+      notes: [...notes, "Document resolution timed out; capture again to retry."],
+    };
+  }
+}
+export async function collectForeground() {
+  return resolveForeground(await readForeground());
+}
+let cached: Awaited<ReturnType<typeof readForeground>> = { windows: [], notes: [] };
+let polling = false;
+export function cachedForeground() {
+  return cached;
+}
+export function startForegroundPoll(enabled: () => boolean): () => void {
+  const poll = async () => {
+    if (!enabled()) {
+      cached = { windows: [], notes: [] };
+      return;
+    }
+    if (polling) return;
+    polling = true;
+    try {
+      cached = await readForeground();
+    } finally {
+      polling = false;
+    }
+  };
+  void poll();
+  const timer = setInterval(() => void poll(), 2000);
+  timer.unref();
+  return () => clearInterval(timer);
 }

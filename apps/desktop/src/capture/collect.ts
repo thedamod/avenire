@@ -1,5 +1,4 @@
 import * as Crypto from "node:crypto";
-import * as OS from "node:os";
 import { fileURLToPath } from "node:url";
 import { CaptureId } from "@avenire/contracts";
 import type {
@@ -8,9 +7,14 @@ import type {
   CapturedTab,
   CapturedWindow,
 } from "@avenire/contracts";
-import { collectForeground } from "./foreground.ts";
+import { cachedForeground, resolveForeground, collectForeground } from "./foreground.ts";
 import { collectSelection } from "./selection.ts";
 import { latestTabs } from "./tabs.ts";
+
+let installId = Crypto.randomBytes(16).toString("hex");
+export function setCaptureDeviceId(id: string) {
+  installId = id;
+}
 
 type Collected = {
   readonly windows?: readonly CapturedWindow[];
@@ -52,7 +56,7 @@ export async function collectSnapshot(
   const results = await Promise.allSettled(
     // The research path collectors include a bounded Windows handle scan.
     collectors.map(([name, collector]) =>
-      withTimeout(collector, name === "foreground" ? 25_000 : 1500),
+      withTimeout(collector, name === "foreground" ? 4000 : 1500),
     ),
   );
   const values: Collected[] = [];
@@ -95,15 +99,50 @@ export async function collectSnapshot(
   return {
     id: CaptureId.make(Crypto.randomUUID()),
     capturedAt,
-    deviceId: Crypto.createHash("sha256")
-      .update(`${OS.hostname()}\0${OS.userInfo().username}`)
-      .digest("hex")
-      .slice(0, 32),
+    deviceId: installId,
     platform,
     windows: [...values.flatMap((value) => value.windows ?? []), ...browserFiles],
     tabs,
     media: values.flatMap((value) => value.media ?? []),
     ...(selectionText === undefined ? {} : { selectionText }),
     collectorNotes: notes,
+  };
+}
+
+/** The hotkey never waits on an OS call, session lookup, disk read, or extraction. */
+export function instantCapture(capturedAt: string, foreground: boolean) {
+  const observation = foreground ? cachedForeground() : { windows: [], notes: [] };
+  const tabs = latestTabs();
+  const browserFiles: CapturedWindow[] = [];
+  for (const tab of tabs) {
+    if (tab.incognito || !tab.url.startsWith("file:")) continue;
+    try {
+      browserFiles.push({
+        appName: "Browser",
+        title: tab.title,
+        filePath: fileURLToPath(tab.url),
+        foreground: tab.activeInWindow,
+      });
+    } catch {
+      /* Unsupported file URL: never a server URL. */
+    }
+  }
+  const snapshot: CaptureSnapshot = {
+    id: CaptureId.make(Crypto.randomUUID()),
+    capturedAt,
+    deviceId: installId,
+    platform:
+      process.platform === "darwin" || process.platform === "win32" ? process.platform : "linux",
+    windows: [...observation.windows, ...browserFiles],
+    tabs,
+    media: [],
+    collectorNotes: [],
+  };
+  return {
+    snapshot,
+    resolve: async () => {
+      const resolved = await resolveForeground(observation);
+      return { ...snapshot, windows: [...resolved.windows, ...browserFiles] };
+    },
   };
 }

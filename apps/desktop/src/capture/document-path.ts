@@ -36,14 +36,14 @@ export async function resolveDocumentPath(
     };
     const script = office[app.appName.toLowerCase()];
     if (script) {
-      const { stdout } = await execPowerShell(script, { timeout: 5000, notes });
+      const { stdout } = await execPowerShell(script, { timeout: 3000, notes });
       const path = stdout.trim();
       return path && existsSync(path) ? path : undefined;
     }
     if (app.processId) {
       const { scanProcessFiles } =
         await import("./research/electron/collectors/handle-scan-win.ts");
-      return scanProcessFiles(app.processId, notes, 12_000, ctx, app.windowTitle);
+      return scanProcessFiles(app.processId, notes, 4000, ctx, app.windowTitle);
     }
   }
   return undefined;

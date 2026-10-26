@@ -1,3 +1,4 @@
+import { PairingAuthority } from "./pairing.ts";
 import { once } from "node:events";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { latestTabs, startTabsReceiver, stopTabsReceiver, tabsReceiverAvailable } from "./tabs.ts";
@@ -20,7 +21,10 @@ const tab = {
   engagement: { dwellMs: 10_000, scrollDepthPct: 0, mediaPlaying: false },
 };
 async function receiver() {
-  const server = startTabsReceiver();
+  const pairing = new PairingAuthority("/unused");
+  pairing.setOwner("owner");
+  pairing.setToken("owner", "A".repeat(43));
+  const server = startTabsReceiver(pairing);
   await once(server, "listening");
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("No receiver address");
@@ -28,7 +32,16 @@ async function receiver() {
     fetch(`http://127.0.0.1:${address.port}/tabs`, {
       method: "POST",
       headers: { origin: source, "content-type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(
+        Array.isArray(body)
+          ? body
+          : {
+              _tag: "TabsReport",
+              version: 1,
+              auth: { _tag: "Token", token: "A".repeat(43) },
+              ...(body as object),
+            },
+      ),
     });
 }
 
@@ -63,6 +76,6 @@ it("rejects page/foreign extension origins and malformed reports", async () => {
   ])
     expect((await post([tab], source)).status).toBe(403);
   expect((await post({ senderId: "profile-a", tabs: [{ url: "broken" }] })).status).toBe(400);
-  expect((await post([tab])).status).toBe(204);
-  expect(latestTabs()).toHaveLength(1);
+  expect((await post([tab])).status).toBe(400);
+  expect(latestTabs()).toHaveLength(0);
 });

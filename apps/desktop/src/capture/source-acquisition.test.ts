@@ -1,3 +1,5 @@
+import { HashLru } from "./hash-cache.ts";
+import { LocalOriginRegistry } from "./registry.ts";
 import { createHash } from "node:crypto";
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import * as http from "node:http";
@@ -75,6 +77,7 @@ const appHarness = async (
     onPut?: () => void;
     stallPut?: boolean;
     completed?: boolean;
+    completedFile?: boolean;
     expiresAt?: string;
     invalidPutResponse?: boolean;
   } = {},
@@ -97,6 +100,7 @@ const appHarness = async (
             uploadUrl: options.uploadUrl ?? `/api/library/uploads/${id}`,
             expiresAt: options.expiresAt ?? "2099-01-01T00:00:00Z",
             status: options.completed ? "completed" : "pending",
+            ...(options.completedFile ? { file } : {}),
           }),
         );
       } else if (request.method === "DELETE") {
@@ -119,6 +123,72 @@ const appHarness = async (
 };
 
 describe("device source byte acquisition backend", () => {
+  it("sends origin/access and skips PUT for a completed ticket with its LibraryFile, persisting native origin on a dedupe hit", async () => {
+    const directory = await temp();
+    const path = join(directory, "study.pdf");
+    await writeFile(path, bytes);
+    const registry = new LocalOriginRegistry(join(directory, "registry.json"));
+    await registry.load();
+    const app = await appHarness({
+      completed: true,
+      completedFile: true,
+      expiresAt: "2000-01-01T00:00:00Z",
+    });
+    const origin = {
+      _tag: "LocalFile" as const,
+      deviceId: "install",
+      deviceName: "Student laptop",
+      platform: "linux" as const,
+      fileName: "study.pdf",
+      capturedAt: "2026-10-26T00:00:00Z",
+    };
+    const result = await acquireAndUploadSource(
+      { type: "local-file", path },
+      { ...metadata, access: "open" },
+      {
+        ...app,
+        localOrigin: origin,
+        onLocalUploaded: (file, local) => registry.record("alice", file.id, local),
+      },
+    );
+    expect(result.id).toBe(id);
+    expect(app.requests.map((entry) => entry.method)).toEqual(["POST"]);
+    const payload = JSON.parse(app.requests[0]!.body.toString());
+    expect(payload.origin).toEqual({
+      ...origin,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      sizeBytes: bytes.length,
+    });
+    expect(payload.access).toBe("open");
+    expect(JSON.stringify(payload)).not.toContain(directory);
+    const restored = new LocalOriginRegistry(join(directory, "registry.json"));
+    await restored.load();
+    expect(restored.get("alice", id)).toMatchObject({
+      path,
+      sha256: payload.sha256,
+      sizeBytes: bytes.length,
+    });
+  });
+
+  it("reuses a native hash only for the same path/size/mtime and hashes changed bytes", async () => {
+    const directory = await temp();
+    const path = join(directory, "study.pdf");
+    await writeFile(path, bytes);
+    const cache = new HashLru();
+    const app = await appHarness({ completed: true, completedFile: true });
+    const acquire = () =>
+      acquireAndUploadSource({ type: "local-file", path }, metadata, { ...app, hashCache: cache });
+    await acquire();
+    await acquire();
+    await writeFile(path, Buffer.from("changed original"));
+    await acquire();
+    const payloads = app.requests
+      .filter((request) => request.method === "POST")
+      .map((request) => JSON.parse(request.body.toString()));
+    expect(payloads[0].sha256).toBe(payloads[1].sha256);
+    expect(payloads[2].sha256).toBe(createHash("sha256").update("changed original").digest("hex"));
+  });
+
   it("retries completed tickets past their original expiry without cancelling finalized uploads", async () => {
     for (const invalidPutResponse of [false, true]) {
       const tempRoot = await temp();

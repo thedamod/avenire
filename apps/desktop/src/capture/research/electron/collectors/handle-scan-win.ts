@@ -257,7 +257,7 @@ export function parseHandleScanOutput(stdout: string): HandleScanParse {
 export async function scanProcessFilesBatch(
   pids: number[] | (() => number[]),
   notes: string[],
-  timeoutMs = 12000,
+  timeoutMs = 4000,
 ): Promise<Map<number, string[]>> {
   const out = new Map<number, string[]>();
   let taken: number[] = [];
@@ -269,7 +269,7 @@ export async function scanProcessFilesBatch(
         );
         return buildHandleScanScript(taken);
       },
-      { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, notes },
+      { timeout: Math.min(timeoutMs, 4000), maxBuffer: 8 * 1024 * 1024, notes },
     );
     const { diag, perPid } = parseHandleScanOutput(stdout);
     notes.push(`win:scan:batch:pids=${taken.length} ${diag}`.trim());
@@ -307,7 +307,7 @@ const batchers = new WeakMap<CaptureContext, BatcherState>();
 export function requestProcessScan(
   ctx: CaptureContext,
   pid: number,
-  timeoutMs = 12000,
+  timeoutMs = 4000,
   exec: BatchExec = scanProcessFilesBatch,
   windowMs = 10,
 ): Promise<string[]> {
@@ -367,7 +367,7 @@ function startBatch(
 export async function scanProcessFiles(
   pid: number,
   notes: string[] = [],
-  timeoutMs = 12000,
+  timeoutMs = 4000,
   ctx?: CaptureContext,
   windowTitle?: string,
 ): Promise<string | undefined> {

@@ -23,6 +23,7 @@ it("offers Avenire actions and only routes with known destinations", () => {
     "Settings",
     "separator",
     "Pause shortcuts",
+    "Pair browser extension…",
     "Desktop setup…",
     "separator",
     "Quit Avenire",

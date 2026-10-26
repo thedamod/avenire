@@ -1,4 +1,5 @@
 /** Device-only byte transfer. Parsing, OCR, transcription and indexing belong to the server. */
+import type { Stats } from "node:fs";
 import { createHash } from "node:crypto";
 import { open, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,7 +13,11 @@ import {
   LibraryFile,
   MAX_SOURCE_UPLOAD_BYTES,
   SourceUploadTicket,
+  type CaptureOrigin,
 } from "@avenire/contracts";
+
+import type { HashLru } from "./hash-cache.ts";
+import type { LocalOrigin } from "./registry.ts";
 
 export class DeviceAcquisitionError extends Schema.TaggedError<DeviceAcquisitionError>()(
   "DeviceAcquisitionError",
@@ -43,7 +48,7 @@ export type DeviceSessionFetch = (
 export type AvenireUploadFetch = (url: string, init: RequestInit) => Promise<Response>;
 export type SourceUploadMetadata = Pick<
   CreateSourceUpload,
-  "idempotencyKey" | "title" | "kind" | "mimeType" | "sourceUrl"
+  "idempotencyKey" | "title" | "kind" | "mimeType" | "sourceUrl" | "origin" | "access"
 >;
 export interface DeviceAcquisitionOptions {
   /** Trusted application configuration, never a source URL or page-controlled value. */
@@ -55,6 +60,12 @@ export interface DeviceAcquisitionOptions {
   /** A caller may lower, never raise, the contract's 256 MiB limit. */
   readonly maxBytes?: number;
   readonly tempRoot?: string;
+  readonly hashCache?: HashLru;
+  readonly localOrigin?: Omit<
+    Extract<CaptureOrigin, { _tag: "LocalFile" }>,
+    "sha256" | "sizeBytes"
+  >;
+  readonly onLocalUploaded?: (file: LibraryFile, origin: LocalOrigin) => Promise<void>;
 }
 
 const httpUrl = (value: string) => {
@@ -151,6 +162,9 @@ export const acquireAndUploadSource = async (
   let uploadStream: Readable | undefined;
   let cancelUrl: string | undefined;
   let completed = false;
+  let localFile: Awaited<ReturnType<typeof open>> | undefined;
+  let localInfo: Stats | undefined;
+  let cachedHash: string | undefined;
   try {
     signal.throwIfAborted();
     const app = httpUrl(options.appUrl);
@@ -169,6 +183,8 @@ export const acquireAndUploadSource = async (
       kind: metadata.kind,
       mimeType: metadata.mimeType.split(";")[0]!.trim().toLowerCase(),
       ...(sourceUrl === undefined ? {} : { sourceUrl }),
+      ...(metadata.origin === undefined ? {} : { origin: metadata.origin }),
+      ...(metadata.access === undefined ? {} : { access: metadata.access }),
     };
     // Reject malformed metadata before touching a local file or an authenticated session.
     Schema.decodeUnknownSync(CreateSourceUpload)({
@@ -182,7 +198,10 @@ export const acquireAndUploadSource = async (
         const info = await file.stat();
         if (!info.isFile() || info.size > maxBytes)
           throw new Error("Local source exceeds byte limit or is not a regular file");
-        sourceStream = file.createReadStream();
+        localFile = file;
+        localInfo = info;
+        cachedHash = options.hashCache?.get(source.path, info.size, info.mtimeMs);
+        sourceStream = file.createReadStream({ autoClose: false });
       } catch (cause) {
         await file.close();
         throw cause;
@@ -239,17 +258,43 @@ export const acquireAndUploadSource = async (
           callback(new Error("Device source stream exceeds byte limit"));
           return;
         }
-        hash.update(chunk);
+        if (!cachedHash) hash.update(chunk);
         callback(null, chunk);
       },
     });
     await pipeline(sourceStream, meter, destination.createWriteStream(), { signal });
     if (sizeBytes === 0) throw new Error("Empty source bytes cannot be uploaded");
+    const sha256 = cachedHash ?? hash.digest("hex");
+    if (source.type === "local-file" && localFile && localInfo) {
+      const after = await localFile.stat();
+      if (
+        after.size !== localInfo.size ||
+        after.mtimeMs !== localInfo.mtimeMs ||
+        after.ctimeMs !== localInfo.ctimeMs ||
+        sizeBytes !== localInfo.size
+      )
+        throw new Error("Source changed during capture; capture again.");
+      options.hashCache?.set(source.path, sizeBytes, localInfo.mtimeMs, sha256);
+    }
     const payload = Schema.decodeUnknownSync(CreateSourceUpload)({
       ...cleanMetadata,
+      ...(source.type === "local-file" && options.localOrigin
+        ? { origin: { ...options.localOrigin, sha256, sizeBytes } }
+        : {}),
       sizeBytes,
-      sha256: hash.digest("hex"),
+      sha256,
     });
+    const finish = async (file: LibraryFile) => {
+      if (source.type === "local-file" && localInfo && options.onLocalUploaded)
+        await options.onLocalUploaded(file, {
+          path: source.path,
+          sha256,
+          sizeBytes,
+          mtimeMs: localInfo.mtimeMs,
+          ...(options.localOrigin?.appName ? { appName: options.localOrigin.appName } : {}),
+        });
+      return file;
+    };
     operation = "upload";
     const request = (url: string, init: RequestInit, requestSignal = signal) =>
       abortable(
@@ -287,7 +332,8 @@ export const acquireAndUploadSource = async (
       (!completed && Date.parse(ticket.expiresAt) <= Date.now())
     )
       throw new Error("Upload ticket is cancelled or expired");
-    // Completed idempotent retries still PUT: the API returns the existing library file.
+    if (completed && ticket.file) return await finish(ticket.file);
+    // Older servers may omit file on completed tickets; retain the idempotent PUT fallback.
     const file = await open(path, "r");
     uploadStream = file.createReadStream();
     const uploaded = await request(target.href, {
@@ -303,7 +349,7 @@ export const acquireAndUploadSource = async (
     // A successful PUT has finalized the server upload even if response decoding fails.
     completed = true;
     const result = Schema.decodeUnknownSync(LibraryFile)(await readJson(uploaded, signal));
-    return result;
+    return await finish(result);
   } catch (cause) {
     throw new DeviceAcquisitionError({ operation, cause });
   } finally {
@@ -311,6 +357,7 @@ export const acquireAndUploadSource = async (
     controller.abort();
     sourceStream?.destroy();
     uploadStream?.destroy();
+    await localFile?.close().catch(() => {});
     if (cancelUrl !== undefined && !completed) {
       // Cancellation gets a fresh short deadline even when the main request was aborted.
       const cleanupSignal = AbortSignal.timeout(2000);

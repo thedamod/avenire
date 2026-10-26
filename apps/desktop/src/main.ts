@@ -6,6 +6,7 @@ import {
   DesktopSetupChoice,
   DesktopShortcuts,
   DesktopWindowTheme,
+  ReopenPlan,
 } from "@avenire/contracts";
 import {
   app,
@@ -27,15 +28,24 @@ import {
   defaultPromptShortcut,
   fallbackPromptShortcut,
 } from "./config.ts";
-import { collectSnapshot } from "./capture/collect.ts";
+import { instantCapture, setCaptureDeviceId, collectSnapshot } from "./capture/collect.ts";
 import { applyPolicy } from "@avenire/capture/policy";
-import { startTabsReceiver } from "./capture/tabs.ts";
+import { extensionChannel, resetTabsOwner, startTabsReceiver } from "./capture/tabs.ts";
 import { latestTabs, stopTabsReceiver, tabsReceiverAvailable } from "./capture/tabs.ts";
 import { externalUrl, isAppUrl, isAssetUrl } from "./navigation-policy.ts";
 import { DesktopSetup } from "./setup.ts";
 import { trayTemplate } from "./tray.ts";
-import { describeCapturedSources, uploadCapturedFiles } from "./capture/upload.ts";
+import { describeCapturedSources } from "./capture/upload.ts";
 import { captureUploadSession } from "./capture/session.ts";
+import { loadInstallIdentity } from "./capture/identity.ts";
+import { LocalOriginRegistry } from "./capture/registry.ts";
+import { PairingAuthority } from "./capture/pairing.ts";
+import { startForegroundPoll } from "./capture/foreground.ts";
+import { prewarmPowerShell } from "./capture/research/electron/collectors/ps-queue.ts";
+import { CaptureProgressStream } from "./capture/progress.ts";
+import { captureItems, runCapturePipeline } from "./capture/pipeline.ts";
+import { executeReopen } from "./capture/reopen.ts";
+import { captureLibraryClient } from "./capture/library-client.ts";
 import { DesktopAuth, isProviderAuthUrl } from "./auth.ts";
 
 let window: BrowserWindow | undefined;
@@ -53,6 +63,15 @@ let pendingCapture: CapturePayload | undefined;
 let captureOwner: string | undefined;
 let pendingCaptureOwner: string | undefined;
 let desktopAuth: DesktopAuth;
+let registry: LocalOriginRegistry;
+let pairing: PairingAuthority;
+let deviceId: string;
+let stopForegroundPoll: (() => void) | undefined;
+let activeCapture:
+  | { owner: string; controller: AbortController; stream: CaptureProgressStream }
+  | undefined;
+let lastOwner: string | undefined;
+let readInBrowser = false;
 let requestedShortcuts = { capture: defaultCaptureShortcut, prompt: defaultPromptShortcut };
 let setupHotkeys = false;
 let setupNotifications = false;
@@ -76,6 +95,12 @@ else {
   app
     .whenReady()
     .then(async () => {
+      const userData = app.getPath("userData");
+      deviceId = loadInstallIdentity(userData).deviceId;
+      setCaptureDeviceId(deviceId);
+      registry = new LocalOriginRegistry(Path.join(userData, "capture-origins.json"));
+      pairing = new PairingAuthority(Path.join(userData, "capture-pairings.json"));
+      await Promise.all([registry.load(), pairing.load()]);
       setup = new DesktopSetup(Path.join(app.getPath("userData"), "desktop-setup.json"));
       await setup.load();
       requestedShortcuts = setup.shortcuts ?? requestedShortcuts;
@@ -91,7 +116,13 @@ else {
       );
       showMain();
       createTray();
-      startTabsReceiver();
+      startTabsReceiver(pairing, () => void capture().catch(reportCaptureError));
+      stopForegroundPoll = startForegroundPoll(
+        () =>
+          (setup.completed && setup.foregroundCapture && setup.permissions.foregroundAvailable) ||
+          (setupTry && setupForeground),
+      );
+      void prewarmPowerShell().catch(() => {});
       if (setup.completed && setup.hotkeysEnabled !== false) {
         setupHotkeys = true;
         registerShortcut(requestedShortcuts.capture);
@@ -458,6 +489,29 @@ function rebuildTray(): void {
     settings: () => openTrayRoute("/settings"),
     shortcuts: () => void toggleTrayShortcuts(),
     setup: showSetup,
+    pair: () => {
+      try {
+        const code = pairing.issueCode();
+        if (Notification.isSupported())
+          new Notification({
+            title: "Pair browser extension",
+            body: `Enter ${code} in the Avenire extension. This code expires in 10 minutes and works once.`,
+          }).show();
+        void dialog.showMessageBox({
+          type: "info",
+          title: "Pair browser extension",
+          message: code,
+          detail:
+            "Enter this code in the Avenire extension. It expires in 10 minutes and works once.",
+          buttons: ["Done"],
+        });
+      } catch {
+        dialog.showErrorBox(
+          "Pair browser extension",
+          "Sign in to Avenire before pairing the extension.",
+        );
+      }
+    },
     quit: () => app.quit(),
   };
   tray.setContextMenu(
@@ -561,31 +615,60 @@ async function capture(): Promise<void> {
   rebuildTray();
   const owner = captureOwner;
   const capturedAt = new Date().toISOString();
+  // Fix the id, owner and replayable placeholder before the first asynchronous operation.
+  const staged = stagedCapture;
+  const instant = staged
+    ? { snapshot: staged.snapshot, resolve: async () => staged.snapshot }
+    : instantCapture(capturedAt, setup.foregroundCapture && setup.permissions.foregroundAvailable);
+  const initial = staged ?? applyPolicy(instant.snapshot);
+  const controller = new AbortController();
+  pendingCaptureOwner = owner;
+  const stream = new CaptureProgressStream(
+    { id: initial.snapshot.id, items: captureItems(initial.snapshot) },
+    (channel, payload) => {
+      if (
+        captureReady &&
+        captureOwner === owner &&
+        lastOwner === owner &&
+        window &&
+        !window.isDestroyed()
+      )
+        window.webContents.send(channel, payload);
+    },
+  );
+  activeCapture = { owner, controller, stream };
+  window.showInactive();
+  const session = captureUploadSession(window.webContents.session, appUrl, owner);
+  void session.catch(() => {}); // The pipeline observes and reports session failure after resolution.
   try {
-    const avenireFetch = await captureUploadSession(window.webContents.session, appUrl, owner);
-    const payload: CapturePayload =
-      stagedCapture ??
-      applyPolicy(
-        await collectSnapshot(capturedAt, {
-          foreground: setup.foregroundCapture && setup.permissions.foregroundAvailable,
-        }),
-      );
-    const uploads = await uploadCapturedFiles(payload.snapshot, appUrl, avenireFetch);
+    const payload = await runCapturePipeline({
+      initial,
+      resolve: instant.resolve,
+      session,
+      appUrl,
+      owner,
+      registry,
+      stream,
+      ...(extensionChannel ? { channel: extensionChannel } : {}),
+      readInBrowser,
+      signal: controller.signal,
+    });
+    if (lastOwner !== owner || controller.signal.aborted) return;
     stagedCapture = undefined;
-    // Retain the receipt until the renderer acknowledges submission, including across reloads.
-    const snapshot = {
-      ...payload.snapshot,
-      windows: [],
-      media: payload.snapshot.media.filter((entry) => !entry.filePath),
-    };
-    if (captureOwner !== undefined && captureOwner !== owner) return;
-    pendingCapture = { ...payload, snapshot, uploads };
+    pendingCapture = payload;
     pendingCaptureOwner = owner;
-    if (window && !window.isDestroyed() && captureReady) {
+    activeCapture = undefined;
+    if (window && !window.isDestroyed() && captureReady && captureOwner === owner) {
       window.webContents.send("avenire:capture", pendingCapture);
       window.showInactive();
     }
+  } catch {
+    if (!controller.signal.aborted)
+      throw new Error(
+        "Capture could not finish. Check your sign-in and connection, then capture again.",
+      );
   } finally {
+    if (activeCapture?.controller === controller) activeCapture = undefined;
     captureRunning = false;
     rebuildTray();
   }
@@ -605,17 +688,89 @@ ipcMain.handle("avenire:capture-now", (event) => {
   if (!trustedSender(event)) throw new Error("Untrusted desktop IPC sender");
   return capture();
 });
-ipcMain.handle("avenire:capture-ready", (event, ready: unknown, userId: unknown) => {
-  if (!trustedSender(event) || typeof ready !== "boolean") return;
-  captureReady = ready && typeof userId === "string" && userId.length > 0 && userId.length <= 200;
-  captureOwner = captureReady ? (userId as string) : undefined;
-  rebuildTray();
-  if (captureReady && pendingCaptureOwner !== captureOwner) pendingCapture = undefined;
-  if (captureReady && pendingCapture) window!.webContents.send("avenire:capture", pendingCapture);
-  else if (captureReady && stagedCapture) void capture().catch(reportCaptureError);
-});
+ipcMain.handle(
+  "avenire:capture-ready",
+  (event, ready: unknown, userId: unknown, options: unknown) => {
+    if (!trustedSender(event) || typeof ready !== "boolean") return;
+    captureReady = ready && typeof userId === "string" && userId.length > 0 && userId.length <= 200;
+    const nextOwner = captureReady ? (userId as string) : undefined;
+    if (nextOwner && lastOwner !== nextOwner) {
+      activeCapture?.controller.abort();
+      activeCapture = undefined;
+      pendingCapture = undefined;
+      pendingCaptureOwner = undefined;
+      if (lastOwner !== undefined) stagedCapture = undefined;
+      lastOwner = nextOwner;
+    }
+    if (captureOwner !== nextOwner) {
+      resetTabsOwner();
+      pairing.setOwner(nextOwner);
+      if (nextOwner)
+        void pairing
+          .refreshToken(
+            nextOwner,
+            deviceId,
+            appUrl,
+            captureUploadSession(window!.webContents.session, appUrl, nextOwner),
+          )
+          .catch(() => {}); // Offline users can still pair with a code or an existing secret.
+    }
+    captureOwner = nextOwner;
+    readInBrowser =
+      captureReady &&
+      typeof options === "object" &&
+      options !== null &&
+      (options as { readInBrowser?: unknown }).readInBrowser === true;
+    rebuildTray();
+    if (captureReady && pendingCaptureOwner !== captureOwner) pendingCapture = undefined;
+    if (captureReady && pendingCapture) window!.webContents.send("avenire:capture", pendingCapture);
+    else if (captureReady && activeCapture && activeCapture.owner === captureOwner)
+      activeCapture.stream.replay((channel, value) => window!.webContents.send(channel, value));
+    else if (captureReady && stagedCapture) void capture().catch(reportCaptureError);
+  },
+);
 ipcMain.handle("avenire:capture-ack", (event, id: unknown) => {
-  if (trustedSender(event) && id === pendingCapture?.snapshot.id) pendingCapture = undefined;
+  if (
+    trustedSender(event) &&
+    captureReady &&
+    captureOwner === pendingCaptureOwner &&
+    id === pendingCapture?.snapshot.id
+  ) {
+    pendingCapture = undefined;
+    pendingCaptureOwner = undefined;
+  }
+});
+ipcMain.handle("avenire:extension-connected", (event) => {
+  if (!trustedSender(event)) throw new Error("Untrusted desktop IPC sender");
+  return captureReady && (extensionChannel?.connected() ?? false);
+});
+ipcMain.handle("avenire:reopen", async (event, value: unknown) => {
+  if (!trustedSender(event)) throw new Error("Untrusted desktop IPC sender");
+  const owner = captureOwner;
+  if (!owner || !captureReady) return { ok: false };
+  try {
+    const input = Schema.decodeUnknownSync(
+      Schema.Struct({
+        fileId: Schema.String.check(Schema.isPattern(/^[a-f0-9-]{36}$/i)),
+        plan: Schema.optional(ReopenPlan),
+      }),
+    )(value);
+    const fetch = await captureUploadSession(window!.webContents.session, appUrl, owner);
+    const library = captureLibraryClient(appUrl, fetch);
+    return executeReopen(input.fileId, input.plan, {
+      owner,
+      deviceId,
+      registry,
+      getFile: library.getFile,
+      opened: library.opened,
+      openPath: (path) => shell.openPath(path),
+      openExternal: (url) => shell.openExternal(url),
+      ...(extensionChannel ? { extension: extensionChannel } : {}),
+      stillOwner: () => captureReady && captureOwner === owner,
+    });
+  } catch {
+    return { ok: false, note: "missing" };
+  }
 });
 
 function trustedSetupSender(event: Electron.IpcMainInvokeEvent): boolean {
@@ -829,6 +984,8 @@ app.on("before-quit", () => {
 });
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();
+  activeCapture?.controller.abort();
+  stopForegroundPoll?.();
   stopTabsReceiver();
   desktopAuth?.close();
   tray?.destroy();

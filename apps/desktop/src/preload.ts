@@ -12,9 +12,27 @@ const bridge: AvenireDesktopBridge = {
     ipcRenderer.on("avenire:capture", listener);
     return () => ipcRenderer.removeListener("avenire:capture", listener);
   },
+  onCaptureStarted(callback) {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: import("./bridge.ts").CaptureStarted,
+    ) => callback(payload);
+    ipcRenderer.on("avenire:capture-started", listener);
+    return () => ipcRenderer.removeListener("avenire:capture-started", listener);
+  },
+  onCaptureProgress(callback) {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: import("./bridge.ts").CaptureProgress,
+    ) => callback(payload);
+    ipcRenderer.on("avenire:capture-progress", listener);
+    return () => ipcRenderer.removeListener("avenire:capture-progress", listener);
+  },
+  reopen: (fileId, plan) => ipcRenderer.invoke("avenire:reopen", { fileId, plan }),
+  extensionConnected: () => ipcRenderer.invoke("avenire:extension-connected"),
   captureNow: () => ipcRenderer.invoke("avenire:capture-now").then(() => undefined),
-  setCaptureReady: (ready, userId) =>
-    ipcRenderer.invoke("avenire:capture-ready", ready, userId).then(() => undefined),
+  setCaptureReady: (ready, userId, options) =>
+    ipcRenderer.invoke("avenire:capture-ready", ready, userId, options).then(() => undefined),
   acknowledgeCapture: (captureId) =>
     ipcRenderer.invoke("avenire:capture-ack", captureId).then(() => undefined),
   setCaptureShortcut: (accelerator) =>

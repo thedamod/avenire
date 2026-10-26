@@ -1,3 +1,5 @@
+import { WINDOWS_FOREGROUND_SCRIPT } from "../../../foreground-windows.ts";
+import { bounded } from "../../../timing.ts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
@@ -61,13 +63,20 @@ const RETRY_DELAYS_MS = [500, 1500];
 
 export async function execPowerShell(command: PsCommand, opts: PsOpts = {}): Promise<PsResult> {
   const timeout = opts.timeout ?? 8000;
+  const deadline = Date.now() + timeout;
+  const remaining = () => {
+    const ms = deadline - Date.now();
+    if (ms <= 0) throw new Error("PowerShell operation deadline exceeded");
+    return ms;
+  };
   const maxBuffer = opts.maxBuffer ?? 1024 * 1024;
   const run = (): Promise<PsResult> =>
     runPsQueue(async () => {
+      remaining();
       const script = typeof command === "function" ? command() : command;
       if (psHostManager.usable) {
         try {
-          return await psHostManager.run(script, timeout, maxBuffer);
+          return await psHostManager.run(script, remaining(), maxBuffer);
         } catch (e) {
           // This very death just disabled the host: don't burn a retry,
           // run THIS command one-shot right now.
@@ -77,21 +86,23 @@ export async function execPowerShell(command: PsCommand, opts: PsOpts = {}): Pro
         }
       }
       psHostManager.drainNotes(opts.notes);
-      return runOneShot(script, timeout, maxBuffer);
+      return runOneShot(script, remaining(), maxBuffer);
     });
   let lastErr: unknown;
   let bestErr: unknown; // on exhaustion, throw the most informative failure:
   // an attempt carrying stderr text beats a bare exit-1, even if older.
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     try {
-      return await run();
+      return await bounded(run(), remaining());
     } catch (e) {
       lastErr = e;
       if (hasStderrText(e)) bestErr = e;
       else bestErr ??= e;
       if (!isBareExit1(e) || attempt === RETRY_DELAYS_MS.length) break;
       const jitter = Math.floor(Math.random() * 250);
-      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]! + jitter));
+      const delay = RETRY_DELAYS_MS[attempt]! + jitter;
+      if (Date.now() + delay >= deadline) break;
+      await new Promise((r) => setTimeout(r, delay));
     }
   }
   throw bestErr ?? lastErr;
@@ -135,4 +146,9 @@ function isBareExit1(e: unknown): boolean {
 function hasStderrText(e: unknown): boolean {
   const err = e as { stderr?: unknown } | null;
   return typeof err?.stderr === "string" && err.stderr.trim() !== "";
+}
+
+export async function prewarmPowerShell(): Promise<void> {
+  if (process.platform !== "win32") return;
+  await execPowerShell(WINDOWS_FOREGROUND_SCRIPT, { timeout: 4000 });
 }
