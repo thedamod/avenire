@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type {
   CloudRun,
   CloudTask,
@@ -102,6 +102,18 @@ export function useActivityData(prefix: string) {
     `${prefix}-cloud-runs`,
   );
   const tasks = useCloudTasks();
+  const hasActiveRuns = runs.data?.some((run) =>
+    ["scheduled", "provisioning", "running"].includes(run.status),
+  );
+  const refetchRuns = runs.refetch;
+  useEffect(() => {
+    if (!hasActiveRuns) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void refetchRuns();
+    }, 8_000);
+    return () => clearInterval(timer);
+  }, [hasActiveRuns, refetchRuns]);
+
   return { threads, runs, tasks };
 }
 

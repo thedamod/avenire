@@ -1,4 +1,5 @@
 import {
+  APICallError,
   stepCountIs,
   streamText,
   toUIMessageStream,
@@ -161,8 +162,23 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
       return [name, definition];
     }),
   );
-  const modelFailure = (cause: unknown) =>
-    new CloudLoopError({ reason: "The server model request failed.", cause, retryable: true });
+  const modelFailure = (cause: unknown) => {
+    // Provider errors can contain request bodies/credentials. Keep only actionable status metadata.
+    if (APICallError.isInstance(cause)) {
+      const status = cause.statusCode;
+      const reason =
+        status === 401 || status === 403
+          ? "The model provider rejected authentication."
+          : status === 429
+            ? "The model provider rate limited the request."
+            : "The model provider request failed.";
+      return new CloudLoopError({
+        reason: `${reason}${status === undefined ? "" : ` HTTP ${status}.`}`,
+        retryable: cause.isRetryable,
+      });
+    }
+    return new CloudLoopError({ reason: "The server model request failed.", retryable: true });
+  };
   /** One streamed AI SDK step: tools carry no `execute`, so it stops at the tool calls. */
   const modelStep = Effect.fn("RuthCloud.modelStep")(function* (messages: ModelMessage[]) {
     return yield* Effect.acquireUseRelease(
@@ -193,9 +209,15 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
             sendFinish: false,
             onError: () => "The model request failed.",
           });
-          yield* Stream.fromReadableStream({ evaluate: () => chunks, onError: modelFailure }).pipe(
+          yield* Stream.fromReadableStream({
+            evaluate: () => chunks,
+            onError: (cause) => modelFailure(streamError ?? cause),
+          }).pipe(
             Stream.groupedWithin(64, "250 millis"),
-            Stream.runForEach((batch) => options.emit(batch)),
+            // A step failure may be retried. Only the executor's terminal event ends the UI stream.
+            Stream.runForEach((batch) =>
+              options.emit(batch.filter((chunk) => chunk.type !== "error")),
+            ),
           );
           const [response, finishReason, rawFinishReason, usage, metadata, text] =
             yield* Effect.tryPromise({
@@ -208,7 +230,7 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
                   result.providerMetadata,
                   result.text,
                 ]),
-              catch: modelFailure,
+              catch: (cause) => modelFailure(streamError ?? cause),
             });
           return { response, finishReason, rawFinishReason, usage, metadata, text, streamError };
         }),
@@ -347,11 +369,12 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
       };
     yield* options.save(state);
     if (outcome.action === "finish") return { checkpoint: state, text: step.text };
-    if (outcome.action === "fail")
+    if (outcome.action === "fail") {
+      if (step.streamError !== undefined) return yield* modelFailure(step.streamError);
       return yield* new CloudLoopError({
         reason: outcome.reason,
         retryable: outcome.retryable,
-        ...(step.streamError === undefined ? {} : { cause: step.streamError }),
       });
+    }
   }
 });
