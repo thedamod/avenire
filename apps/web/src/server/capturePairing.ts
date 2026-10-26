@@ -1,4 +1,7 @@
-import { CurrentUser, type UserId } from "@avenire/contracts";
+import { CurrentUser, type CapturePairing, type UserId } from "@avenire/contracts";
+import { Database } from "@avenire/database/client";
+import { userSettings } from "@avenire/database/schema";
+import { eq } from "drizzle-orm";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -40,6 +43,23 @@ export const capturePairingResponse = (request: Request) =>
         return yield* new HttpRequestError({ status: 404, message: "Resource not found." });
       yield* assertCapturePairingOrigin(request);
       const userId = (yield* CurrentUser).id;
-      return { token: yield* capturePairingToken(userId) };
+      const [row] = yield* (yield* Database)
+        .use((db) =>
+          db
+            .select({ preferences: userSettings.preferences })
+            .from(userSettings)
+            .where(eq(userSettings.userId, userId)),
+        )
+        .pipe(
+          Effect.mapError(
+            () => new HttpRequestError({ status: 503, message: "Capture pairing is unavailable." }),
+          ),
+        );
+      const pairing: CapturePairing = {
+        token: yield* capturePairingToken(userId),
+        // Unset preferences mean the default, which keeps reading in the browser off.
+        readInBrowser: row?.preferences.captureLoggedInPages ?? false,
+      };
+      return pairing;
     }),
   );

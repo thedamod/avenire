@@ -1,3 +1,4 @@
+import { Database } from "@avenire/database/client";
 import { AuthService } from "@avenire/auth/server";
 import { UserId } from "@avenire/contracts";
 import { expect, it } from "@effect/vitest";
@@ -47,6 +48,14 @@ it.effect("pairing requires a session, enforces origins and returns private no-s
             : null,
         ),
     });
+    // The route reads one preferences row; the chain resolves to it.
+    const rows = [{ preferences: { captureLoggedInPages: true } }];
+    const chain = { select: () => chain, from: () => chain, where: () => Promise.resolve(rows) };
+    const database = Database.of({
+      db: chain as never,
+      use: (fn) => Effect.promise(() => fn(chain as never)),
+      useTransaction: (fn) => Effect.promise(() => fn(chain as never)),
+    });
     for (const [origin, cookie, status] of [
       [`chrome-extension://${extension}`, "session=owner", 200],
       ["https://app.test", "session=owner", 200],
@@ -59,12 +68,13 @@ it.effect("pairing requires a session, enforces origins and returns private no-s
         new Request("https://app.test/api/capture/pairing", {
           headers: { origin, cookie },
         }),
-      ).pipe(Effect.provideService(AuthService, auth));
+      ).pipe(Effect.provideService(AuthService, auth), Effect.provideService(Database, database));
       expect(response.status).toBe(status);
       expect(response.headers.get("cache-control")).toContain("no-store");
       if (status === 200)
         expect(yield* Effect.promise(() => response.json())).toEqual({
           token: yield* capturePairingToken(UserId.make("owner")),
+          readInBrowser: true,
         });
     }
   }).pipe(

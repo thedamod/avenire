@@ -228,6 +228,16 @@ export const ExtensionAuth = Schema.Union([
   }),
 ]);
 export type ExtensionAuth = typeof ExtensionAuth.Type;
+
+/**
+ * `GET /api/capture/pairing`: the owner's pairing token plus their `captureLoggedInPages`, so an
+ * extension capturing without the desktop applies the same read-in-browser choice.
+ */
+export const CapturePairing = Schema.Struct({
+  token: ExtensionAuth.members[0].fields.token,
+  readInBrowser: Schema.Boolean,
+});
+export type CapturePairing = typeof CapturePairing.Type;
 export const ExtensionMessage = Schema.Union([
   Schema.TaggedStruct("Hello", {
     version: Version,
@@ -279,6 +289,8 @@ export const ExtensionMessage = Schema.Union([
     requestId: RequestId,
     ok: Schema.Boolean,
   }),
+  /** Extension → desktop: the browser shortcut or popup asked for a capture; desktop runs it. */
+  Schema.TaggedStruct("CaptureNow", { version: Version }),
   Schema.TaggedStruct("Ping", { version: Version }),
   Schema.TaggedStruct("Pong", { version: Version }),
 ]);

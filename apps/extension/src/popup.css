@@ -1,0 +1,94 @@
+:root {
+  color-scheme: dark;
+  font:
+    13px/1.5 system-ui,
+    sans-serif;
+  color: #e7e8ed;
+  background: #17181b;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  width: 304px;
+  margin: 0;
+  padding: 20px;
+}
+h1 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+p {
+  margin: 0;
+  color: #a3a5af;
+}
+header {
+  margin-bottom: 18px;
+}
+button,
+input {
+  font: inherit;
+  min-height: 32px;
+  border-radius: 8px;
+  border: 1px solid #393b43;
+}
+button {
+  padding: 4px 12px;
+  background: #abc4ff;
+  color: #17181b;
+  font-weight: 500;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid #abc4ff;
+  outline-offset: 3px;
+}
+#capture {
+  width: 100%;
+}
+form {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #303138;
+}
+label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+#code-help {
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+.pairing-row {
+  display: flex;
+  gap: 8px;
+}
+input {
+  width: 100%;
+  min-width: 0;
+  background: #202126;
+  padding: 4px 10px;
+  color: inherit;
+  letter-spacing: 3px;
+}
+#result:not(:empty) {
+  margin-top: 14px;
+  font-size: 12px;
+}
+a {
+  display: inline-block;
+  margin-top: 12px;
+  color: #abc4ff;
+}
+[hidden] {
+  display: none !important;
+}
