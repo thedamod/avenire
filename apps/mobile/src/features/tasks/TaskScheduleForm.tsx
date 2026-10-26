@@ -109,6 +109,7 @@ export function TaskScheduleForm({
   const [scopeChanged, setScopeChanged] = useState(false);
   const [scheduleChanged, setScheduleChanged] = useState(false);
   const [email, setEmail] = useState(task?.delivery.email ?? false);
+  const [keepWorkspace, setKeepWorkspace] = useState((task?.workspace ?? "keep") === "keep");
   const [more, setMore] = useState(false);
   const [choice, setChoice] = useState<"repeat" | "time">();
   const [scrolled, setScrolled] = useState(false);
@@ -139,6 +140,7 @@ export function TaskScheduleForm({
           : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       preHydration: task && !scopeChanged ? task.preHydration : toRules(folderIds, captures),
       delivery: { email },
+      workspace: keepWorkspace ? ("keep" as const) : ("delete" as const),
     };
     try {
       const saved = task
@@ -293,6 +295,31 @@ export function TaskScheduleForm({
                 value={email}
                 onValueChange={setEmail}
                 accessibilityLabel="Email me when it's ready"
+              />
+            </View>
+          </View>
+          <View
+            style={{
+              minHeight: 48,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 12,
+              borderTopWidth: 1,
+              borderTopColor: colors.line,
+              paddingTop: 12,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text color="fg">Keep Ruth's workspace</Text>
+              <Text variant="meta">
+                Off deletes the sandbox after each run. Your report and files stay.
+              </Text>
+            </View>
+            <View style={{ minHeight: 44, justifyContent: "center" }}>
+              <Switch
+                value={keepWorkspace}
+                onValueChange={setKeepWorkspace}
+                accessibilityLabel="Keep Ruth's workspace"
               />
             </View>
           </View>

@@ -99,6 +99,7 @@ function ScheduleForm({
   const [folderIds, setFolderIds] = useState<FolderId[]>(initial.folderIds);
   const [todaysCaptures, setTodaysCaptures] = useState(initial.todaysCaptures);
   const [email, setEmail] = useState(task?.delivery.email ?? false);
+  const [keepWorkspace, setKeepWorkspace] = useState((task?.workspace ?? "keep") === "keep");
   const [busy, setBusy] = useState(false);
 
   const savedPrompt = writeTaskOutputs(prompt, outputs);
@@ -115,6 +116,7 @@ function ScheduleForm({
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       preHydration: toRules(folderIds, todaysCaptures),
       delivery: { email },
+      workspace: keepWorkspace ? ("keep" as const) : ("delete" as const),
     };
     try {
       const saved = task
@@ -260,6 +262,15 @@ function ScheduleForm({
             </span>
           </span>
           <Switch checked={email} onCheckedChange={setEmail} />
+        </label>
+        <label className="flex items-center justify-between gap-4 text-[13.5px]">
+          <span>
+            Keep Ruth's workspace
+            <span className="block text-[12.5px] text-muted-foreground">
+              Off deletes the sandbox after each run. Your report and files stay.
+            </span>
+          </span>
+          <Switch checked={keepWorkspace} onCheckedChange={setKeepWorkspace} />
         </label>
         {savedPrompt.length > 20_000 ? (
           <p role="alert" className="text-xs text-destructive">
