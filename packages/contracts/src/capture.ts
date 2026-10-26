@@ -152,6 +152,12 @@ export const CapturedTab = Schema.Struct({
   selectionText: Schema.optional(Schema.String.check(Schema.isMaxLength(5000))),
   likelyPdf: Schema.optional(Schema.Boolean),
   engagement: TabEngagement,
+  /**
+   * Set when the page was read in the browser and the student is blocked too. The server applies
+   * `paywalledPages` and keeps `summary` (description or abstract) for a title-abstract stub.
+   */
+  access: Schema.optional(SourceAccess),
+  summary: Schema.optional(Schema.String.check(Schema.isMaxLength(10000))),
 });
 export type CapturedTab = typeof CapturedTab.Type;
 
