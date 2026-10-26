@@ -71,17 +71,24 @@ CapturePosition = {
 CaptureOrigin =
   | { _tag: "Web"; url; finalUrl?; canonicalUrl?; title; browser: BrowserKind; capturedAt;
       position?: CapturePosition }
-  | { _tag: "LocalFile"; deviceId; deviceName; platform; path; appName?; sizeBytes; modifiedAt;
+  | { _tag: "LocalFile"; deviceId; deviceName; platform; fileName; appName?; sizeBytes; sha256;
       capturedAt; position?: CapturePosition }
 
 BrowserKind = "chrome" | "edge" | "brave" | "arc" | "vivaldi" | "opera" | "firefox" | "other"
 ```
 
-- `url` keeps its query (minus tracking parameters). `sourceUrl` stays the provenance-only form.
-- `deviceId` is the existing hashed install id. `deviceName` is the OS hostname so the web can say
-  "Saved on Abhiram's MacBook". The path is the student's own data, owned by one user row like
-  everything else. It is never sent to models or to Ruth Cloud boxes. Cloud hydration already uses
-  copies, so it does not need the path.
+- `url` is the reopen URL: the query is kept, minus tracking parameters (`utm_*`, `fbclid`, ...)
+  and secret-looking parameters (`token`, `sig`, `signature`, `key`, `auth`, `code`,
+  `access_token`, `session`, `X-Amz-*`, `X-Goog-*`). `sourceUrl` stays the query-free citation
+  form, and it is the only URL that models and Ruth Cloud see.
+- **Absolute paths never leave the device.** The server stores only `fileName`, `deviceId`,
+  `deviceName` ("Saved on Abhiram's MacBook") and the content hash. The desktop keeps a
+  main-process **local origin registry**: `fileId → { path, sha256, size, mtimeMs, appName }`,
+  written only from native collector output after an upload returns its file, and persisted under
+  `app.getPath("userData")`. Losing the registry (reinstall) only downgrades reopen to
+  `OpenInLibrary`.
+- `deviceId` is a random install id persisted in the desktop's userData. It replaces today's
+  hostname+username hash.
 - A selection becomes a `selection` file whose origin is the page it came from, with `textQuote`.
 - `mediaPositionSec` stays for compatibility and is written from `position.mediaSec`.
 
@@ -100,10 +107,11 @@ ReopenPlan =
 
 Executors:
 
-- **Desktop** (`avenire:reopen` IPC, trusted sender only; the main process re-reads the origin
-  from the server by `fileId` and never trusts a renderer path): checks that the path exists and
-  that size and mtime still match, so a changed file opens with a "changed since capture" note. Then
-  it opens with `shell.openPath`, or with the app-specific position form where one exists (macOS
+- **Desktop** (`avenire:reopen` IPC takes only `{ fileId, position? }` from a trusted sender; the path
+  comes from the local origin registry, never from the renderer or the server). It checks the path:
+  absolute, a regular file after `realpath`, no UNC/device paths, no executable or shortcut
+  extensions (`.exe .app .lnk .bat .cmd .sh .command .desktop ...`). If size or mtime changed, it
+  re-hashes and opens with a "changed since capture" note. Then it opens with `shell.openPath`, or with the app-specific position form where one exists (fixed argument arrays via `execFile`, never a shell: macOS
   `open -a Preview`; Acrobat `/A page=N`; VLC `--start-time`; mpv `--start=`). `FocusTab` goes to
   the extension over the loopback channel, falling back to `shell.openExternal(OpenUrl)`.
 - **Extension** (`reopen` message): finds a tab whose normalized URL matches. It focuses that tab or
@@ -116,8 +124,13 @@ Executors:
 ## Access: paywalls and logins
 
 ```ts
-SourceAccess = "open" | "paywalled" | "login-required" | "partial"
+SourceAccess = "open" | "paywalled" | "login-required"
 ```
+
+Access is evidence about the student's reach, kept apart from extraction coverage (how much of the
+document was read). A canvas editor, an inaccessible frame or a browser PDF viewer that yields no
+text is a coverage problem (`partial`/unsupported coverage), not an access state. A title-only stub
+that indexes successfully keeps its blocked access state.
 
 Stored on `file.access` (default `"open"`) and exposed on `LibraryFile.access`. `ingestionState`
 reads it and drops the regexes.
@@ -135,37 +148,56 @@ no header tricks). We read the page the student already has open, in their own s
    metering, Substack, NYT/WSJ/FT gateways), password inputs with little other text, a visible
    text length far below the article's word count, and the HTTP status when the server fetched the
    page itself (401/403 → `login-required`, 402 → `paywalled`).
-3. If the student can read it (`open`): the snapshot is uploaded as the source bytes
-   (`text/markdown` plus a `web-snapshot` marker). Ingestion indexes it without a server fetch.
+3. If the student can read it (`open`): the cleaned page is uploaded as markdown bytes, with
+   `kind: "web-page"` and `mimeType: "text/markdown"` (`sourceUploads.ts` allows that pairing). The
+   upload declares `origin` and `access`, and its dedupe key is `dedupeKeyFor(origin)` (not
+   `upload:<ticketId>`), so URL captures and snapshot uploads of one page are the same file. Stored
+   markdown already routes to the text extractor, so ingestion never refetches.
+   Only visible, rendered text is read; hidden paywall markup is never scraped.
 4. If the student is blocked too (`paywalled`/`login-required`): apply `settings.paywalledPages`.
    - `title-abstract`: keep a source with the title, description and abstract, set `access`,
      and give it an "Open original" action.
    - `skip`: report it in the capture receipt as skipped with a clear reason.
-5. When there is no extension, the server fetches anonymously as it does today, but `remote.ts` /
-   `public-document.ts` report the result as a typed `access` value instead of an error string.
+5. When there is no extension, the server fetches anonymously as it does today. Extraction carries
+   a typed access observation: the HTTP status is kept through `AcquisitionError`, and
+   `public-document.ts`, `remote.ts`, `extract/index.ts` and `av.ts` stop flattening it into
+   strings. Network, throttling and unsupported-format failures stay distinct; a bare 403 with no
+   login markers is not proof of a login wall. `file.access` is written only through
+   `FileIndexer`'s publication transaction (success or partial) or a worker failure transaction,
+   both guarded by `ownsPublication` (user → file → claim lock order, generation, token, lease).
 6. "Needs you" rows (web and mobile) read `file.access`. "Open original" uses `planReopen`. Once the
-   student has logged in, the next capture of that page replaces the stub (same dedupe key) and the
-   access state clears.
+   student has logged in, the next capture of that page replaces the stub: same dedupe key, new
+   bytes, access cleared, and a generation-safe re-enqueue. Today's dedupe returns the old file
+   unchanged, which is a bug.
 
 ## Speed
 
 Target: toast visible within **150 ms** of the hotkey and the first sources uploaded within
 **2 s** on a warm machine. Every slow step streams instead of blocking.
 
-1. **Instant phase (≤ 50 ms):** build candidates from what is already in memory: the extension's
-   pushed tab state and the cheap foreground title. Send `avenire:capture` with every item
-   `pending`. The toast renders the list immediately.
+1. **Instant phase (≤ 50 ms):** fix the capture id and owner-bound pending state first. Build
+   candidates from what is already in memory: the extension's pushed tab state and the last
+   foreground window, refreshed by a cheap poll every 2 s while the app runs. Send
+   `avenire:capture-started` with every item `pending`. The toast renders the list immediately.
+   The renderer submits nothing yet.
 2. **Fill-in phase (parallel, each bounded):**
    - extension extraction over the loopback WebSocket: 2.5 s per tab, 4 s total, 4 tabs at a time;
    - document-path resolution: 3 s on macOS/Linux; on Windows, a warm persistent PowerShell host
      (v1 `ps-host.ts`) that is started at app launch and serialized through `ps-queue.ts`, with the
      handle scan capped at 4 s;
-   - each item streams `avenire:capture-progress` (`pending → uploading → saved | skipped | failed`)
-     as it settles. Late items join the same toast.
+   - each item streams `avenire:capture-progress` (sequenced; `pending → uploading → saved |
+     skipped | failed`) as it settles. Late items join the same toast.
+   - when everything has settled, main sends the final `avenire:capture` payload once. The renderer
+     submits it and acknowledges it, exactly as today. Single-flight capture, owner isolation,
+     trusted main-frame IPC and reload replay all stay; a placeholder is never acknowledged.
 3. **Uploads:** three at a time. Hash before uploading. A `(path, size, mtime) → sha256` LRU on
-   the desktop avoids rehashing. `POST /api/library/uploads` accepts `sha256`: if the user already
-   has a file with that `content_hash`, the server returns the existing file at once (status
-   `completed`, no PUT), refreshes its origin, and records a `captured` event.
+   the desktop avoids rehashing. `SourceUploads.create` (`POST /api/library/uploads`) looks up a
+   completed `source_upload` with the same `(user_id, sha256)` whose `completed_file_id` is an owned,
+   active, non-purging file (indexed). On a hit it returns `status: "completed"` with the existing
+   `file` in the ticket, refreshes the origin, and records a `captured` event. The client skips the
+   PUT; today the desktop PUTs even completed tickets. The lookup is serialized with creation and
+   rechecked at PUT completion to cover concurrent captures. An archived match is restored to the
+   inbox.
 4. **Server:** `submitCapture` dedupes candidates against existing `dedupe_key`s and inserts files,
    events and jobs in one transaction with batched inserts.
 5. **Extension:** pushes tab state on change (debounced 250 ms) plus a 5 s heartbeat over the
@@ -180,17 +212,31 @@ TypeScript MV3, bundled with esbuild like `apps/desktop/scripts/build.mjs`. Outp
 - `background.ts`: tab and engagement state, the WebSocket client to `ws://127.0.0.1:17842/ws`
   (outbound only, keepalive every 20 s, reconnect with backoff), handlers for `capture-request` /
   `reopen` / `ping`, and a `chrome.commands` shortcut plus a toolbar button.
-- **Direct mode** when no desktop app is running: the extension uploads to the Avenire origin with
-  the student's Avenire cookies (`/api/library/uploads` + `library.submitCapture`). The web server
-  accepts `chrome-extension://<id>` origins listed in `AVENIRE_EXTENSION_IDS` (read through Config)
-  for those two endpoints only.
+- **Pairing (the Origin header is not authentication).** The server issues a per-user capture
+  pairing token (`GET /api/capture/pairing`, an HMAC of user id + install id under a server
+  secret). The desktop and the extension each fetch it with their own Avenire session, and the
+  extension's `Hello` must carry the token for the desktop's signed-in owner. If the browser isn't
+  signed in to Avenire, the popup accepts a 6-digit code shown in the desktop tray instead. The
+  resulting secret goes in `chrome.storage.local`. Messages are size-capped and request-correlated,
+  and per-socket state is dropped on disconnect.
+- **Direct mode** when no desktop app is running: the service worker uploads to the Avenire origin
+  with the student's Avenire cookies. Extension fetches to permitted hosts count as same-site, so
+  better-auth's Lax cookie is sent. The server accepts exact `chrome-extension://<id>` origins from
+  `AVENIRE_EXTENSION_IDS` (Config, comma-separated, each `/^[a-p]{32}$/`, empty by default) **only**
+  on `POST /api/library/captures`, `POST /api/library/uploads` and `PUT`/`DELETE
+  /api/library/uploads/:id`. They are not added to `AUTH_TRUSTED_ORIGINS`, and `/api/rpc` is not
+  relaxed.
 - `content.ts`: engagement (dwell, scroll depth, media playing), the current selection as a text
   quote, and position restore for reopen.
 - `extract.ts` comes from `@avenire/capture/extract`.
 - The popup shows connection status, a "Capture this page" button, and the per-site allowlist. It
   follows the app's design system (dark first, system-ui, 32 px buttons, no nested cards).
-- Permissions: `tabs`, `scripting`, `storage`, `alarms`, `webNavigation`, host `<all_urls>`, and
-  optional `file:///*`. Incognito tabs are never read.
+- Permissions (Web Store friendly): `tabs`, `activeTab`, `scripting`, `storage`, `alarms`; required
+  host access only for the Avenire origin and loopback. Every other site is an optional host
+  permission granted per site from the popup's allowlist ("Capture this page" works on any page
+  through `activeTab`). Content scripts are registered dynamically
+  (`chrome.scripting.registerContentScripts`) only for granted sites. Incognito tabs are never
+  read. The store listing discloses that page content is sent to the student's own Avenire library.
 - The desktop's existing origin check (`chrome-extension:` plus `extensionIds`) applies to both the
   WebSocket and the HTTP receiver.
 
