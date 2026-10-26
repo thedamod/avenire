@@ -15,6 +15,7 @@ import {
   cloudRun,
   cloudTask,
   cloudToolCall,
+  cloudWorkspaceFile,
   file,
   fileFolder,
   pendingApproval,
@@ -30,7 +31,7 @@ import { inputsRootFor, runPaths, RUN_WALL_CLOCK } from "../cloud/paths.ts";
 import { withToolJournal } from "../cloud/journal.ts";
 import { newId } from "@avenire/shared/id";
 import { AssetStore } from "../outputs/assets.ts";
-import { VISUAL_THEME_MANIFEST } from "../outputs/visual-theme.ts";
+import { matplotlibrc, VISUAL_THEME_MANIFEST } from "../outputs/visual-theme.ts";
 import { cloudVisualTools } from "../cloud/visuals.ts";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import * as Cause from "effect/Cause";
@@ -446,7 +447,20 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
           if (command.sessionId)
             yield* bestEffort("command cleanup", box.endSession(command.sessionId));
       yield* meterBox();
-      yield* boxes.stop(userId);
+      // Read the setting fresh: terminal recovery runs cleanup without loading the task.
+      const retention = yield* database.use((db) =>
+        db.query.cloudTask.findFirst({
+          columns: { workspace: true },
+          where: and(eq(cloudTask.id, run.taskId), eq(cloudTask.userId, userId)),
+        }),
+      );
+      if (retention?.workspace === "delete") {
+        yield* boxes.destroy(userId);
+        // The cached inputs lived in that box; the next run hydrates into a fresh one.
+        yield* database.use((db) =>
+          db.delete(cloudWorkspaceFile).where(eq(cloudWorkspaceFile.userId, userId)),
+        );
+      } else yield* boxes.stop(userId);
       const metered = yield* snapshot();
       yield* database.use((db) =>
         db
@@ -524,7 +538,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
             leaseExpiresAt: sql`now() + interval '5 minutes'`,
             startedAt: run.startedAt ?? DateTime.toDateUtc(now),
             modelName: name,
-            promptVersion: "server-cua-v2-visuals",
+            promptVersion: "server-cua-v3-palette-gate",
           })
           .where(
             and(
@@ -566,6 +580,10 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         yield* box.writeFile(
           `${paths.runDir}/visual-theme.json`,
           new TextEncoder().encode(JSON.stringify(VISUAL_THEME_MANIFEST)),
+        );
+        yield* box.writeFile(
+          "/home/daytona/.config/matplotlib/matplotlibrc",
+          new TextEncoder().encode(matplotlibrc()),
         );
         yield* box.startDesktop;
         recordingReachable = run.sandboxId === null || run.sandboxId === box.id;

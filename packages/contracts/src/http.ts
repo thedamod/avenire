@@ -65,6 +65,7 @@ export const CloudTaskPatch = Schema.Struct({
   prompt: Schema.optionalKey(CloudTaskInput.fields.prompt),
   model: CloudTaskInput.fields.model,
   network: CloudTaskInput.fields.network,
+  workspace: CloudTaskInput.fields.workspace,
   schedule: Schema.optionalKey(CloudTaskInput.fields.schedule),
   timeZone: Schema.optionalKey(CloudTaskInput.fields.timeZone),
   preHydration: Schema.optionalKey(CloudTaskInput.fields.preHydration),

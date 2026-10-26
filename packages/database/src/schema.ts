@@ -573,6 +573,8 @@ export const cloudTask = pgTable(
       .notNull()
       .default("ruth-core"),
     network: text("network").$type<"packages" | "open">().notNull().default("packages"),
+    /** "delete" destroys the user's sandbox after each run instead of stopping it for reuse. */
+    workspace: text("workspace").$type<"keep" | "delete">().notNull().default("keep"),
     schedule: jsonb("schedule").$type<CloudTaskSchedule>().notNull(),
     timeZone: text("time_zone").notNull().default("UTC"),
     preHydration: jsonb("pre_hydration")

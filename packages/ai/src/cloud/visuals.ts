@@ -9,6 +9,7 @@ import { SANDBOX_TOOL_SPECS } from "../tools/sandbox-specs.ts";
 import { standardSchema } from "../tools/schema.ts";
 import { loadSkillRegistration } from "../tools/skills.ts";
 import { RuthToolError } from "../tools/core.ts";
+import { DEFAULT_MEDIA_APPEARANCE } from "../outputs/visual-theme.ts";
 import { runPaths } from "./paths.ts";
 
 const policy = { agents: ["ruth-cloud"], approval: "never" } as const;
@@ -21,7 +22,7 @@ export const cloudVisualTools = {
       name: "get_page_context",
       ...getPageContextSpec,
       description:
-        "Get the Cloud output's figure tokens, fonts, runtime kits, sourceRoot and themeFile. The server-written themeFile contains both production palettes, neutral series and matplotlib rcParams for plots and video frames. Cloud has no live reader appearance; default static exports to light unless the task requests another theme. HTML must support both themes.",
+        "Get the Cloud output's figure tokens, fonts, runtime kits, sourceRoot and themeFile. The server-written themeFile contains both production palettes, neutral series and matplotlib rcParams for plots and video frames. Cloud has no live reader appearance; the app is dark first, so static exports default to dark unless the task requests light. HTML must support both themes. Publishing rejects visuals that ignore the palette.",
       outputSchema: standardSchema(
         Schema.Struct({ ...PageContextResult.fields, themeFile: Schema.String }),
       ),
@@ -35,7 +36,7 @@ export const cloudVisualTools = {
           message: "A Cloud run is required for visual context.",
           recoverable: false,
         });
-      const appearance = ctx.page?.colorScheme ?? "light";
+      const appearance = ctx.page?.colorScheme ?? DEFAULT_MEDIA_APPEARANCE;
       const tokens = WIDGET_THEME_TOKENS[appearance];
       return {
         surface: "library" as const,

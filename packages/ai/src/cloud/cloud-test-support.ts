@@ -281,6 +281,7 @@ export const cloudFixture = () => {
     reconnect: () => Effect.succeed(Option.some(box)),
     running: () => Effect.succeed(running ? Option.some(box) : Option.none()),
     stop: () => Effect.void,
+    destroy: () => Effect.void,
   });
   const cache = SemanticCache.of({
     lookupExact: () => Effect.succeed(Option.none()),

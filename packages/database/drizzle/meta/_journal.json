@@ -78,6 +78,13 @@
       "when": 1792612864603,
       "tag": "0010_sad_ego",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793014551172,
+      "tag": "0011_cloud_task_workspace",
+      "breakpoints": true
     }
   ]
 }

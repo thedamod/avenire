@@ -39,6 +39,7 @@ const setup = (options: {
   let recordingStops = 0;
   let deleteFailed = false;
   let boxStops = 0;
+  let boxDestroys = 0;
   const recordings = options.leftRecording
     ? [{ id: "recording", fileName: "ruth-run.mp4", status: "recording" }]
     : [];
@@ -92,6 +93,10 @@ const setup = (options: {
           ? Effect.fail(new CloudError({ operation: "stop", detail: "response lost" }))
           : Effect.void;
       }),
+    destroy: () =>
+      Effect.sync(() => {
+        boxDestroys++;
+      }),
   });
   const model = scriptedModel([
     { toolCalls: [{ id: "report-1", name: "publish_report", input: '{"markdown":"Finished"}' }] },
@@ -111,7 +116,7 @@ const setup = (options: {
     model,
     mailer,
     sent,
-    counts: () => ({ recordingsStarted, recordingStops, boxStops }),
+    counts: () => ({ recordingsStarted, recordingStops, boxStops, boxDestroys }),
   };
 };
 const run = (options: {
@@ -119,6 +124,7 @@ const run = (options: {
   crashAfterExecution?: boolean;
   lostDeleteResponse?: boolean;
   cleanupStopFailure?: boolean;
+  deleteWorkspace?: boolean;
 }) => {
   const { db, boxes, model, mailer, sent, counts } = setup(options);
   let crash = options.crashAfterExecution;
@@ -149,6 +155,7 @@ const run = (options: {
         prompt: "Study",
         schedule: { _tag: "once", at: "1970-01-01T00:00:00Z" },
         delivery: { email: true },
+        ...(options.deleteWorkspace ? { workspace: "delete" as const } : {}),
       }),
     );
     yield* db.database.use((client) =>
@@ -227,7 +234,12 @@ const run = (options: {
     // The executor never starts a recording; it only finalises one the agent left running.
     expect(counts()).toMatchObject({
       recordingsStarted: 0,
-      boxStops: options.lostDeleteResponse || options.cleanupStopFailure ? 2 : 1,
+      boxStops: options.deleteWorkspace
+        ? 0
+        : options.lostDeleteResponse || options.cleanupStopFailure
+          ? 2
+          : 1,
+      boxDestroys: options.deleteWorkspace ? 1 : 0,
     });
     if (options.leftRecording) {
       expect(stored).toMatchObject([{ kind: "video", sizeBytes: 13 }]);
@@ -271,4 +283,8 @@ it.effect(
 it.effect(
   "replays terminal cleanup after box stop failure without duplicating report, email or recording",
   () => run({ leftRecording: true, cleanupStopFailure: true }),
+);
+
+it.effect("deletes the sandbox instead of stopping it when the task does not keep it", () =>
+  run({ leftRecording: false, deleteWorkspace: true }),
 );

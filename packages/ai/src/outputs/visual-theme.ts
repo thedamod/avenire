@@ -31,6 +31,28 @@ const rendererTheme = (appearance: "light" | "dark") => {
   };
 };
 
+/** The app is dark first, so baked media without a requested appearance uses the dark palette. */
+export const DEFAULT_MEDIA_APPEARANCE = "dark" as const;
+
+/** A matplotlibrc so plots are on-palette even when a script never loads the theme file. */
+export const matplotlibrc = (appearance: "light" | "dark" = DEFAULT_MEDIA_APPEARANCE) => {
+  const theme = rendererTheme(appearance);
+  // matplotlibrc treats "#" as a comment, so hex colours are written without it.
+  const value = (v: string | number | boolean) =>
+    typeof v === "string"
+      ? v.replace(/^#(?=[0-9a-f]{6}$)/i, "")
+      : v === true
+        ? "True"
+        : v === false
+          ? "False"
+          : String(v);
+  return [
+    ...Object.entries(theme.matplotlib).map(([key, v]) => `${key}: ${value(v)}`),
+    `axes.prop_cycle: cycler('color', [${theme.series.map((c) => `'${c.slice(1)}'`).join(", ")}])`,
+    "",
+  ].join("\n");
+};
+
 export const VISUAL_THEME_MANIFEST = {
   version: 1,
   themes: {

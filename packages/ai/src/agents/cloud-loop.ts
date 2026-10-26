@@ -272,7 +272,11 @@ export const runCloudLoop = Effect.fn("RuthCloud.loop")(function* <E, R>(options
           }),
         catch: (cause) =>
           new CloudLoopError({
-            reason: `Tool ${call.toolName} failed.`,
+            // A recoverable tool error is written for Ruth (and already sanitised), so she can act on it.
+            reason:
+              cause instanceof RuthToolError && cause.recoverable
+                ? cause.message
+                : `Tool ${call.toolName} failed.`,
             cause,
             retryable: cause instanceof RuthToolError && cause.checkpointFatal === true,
           }),
