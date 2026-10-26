@@ -105,6 +105,7 @@ const provide = <A, E>(
         ensure: () => Effect.die("unused"),
         running: () => Effect.die("unused"),
         stop: () => Effect.void,
+        destroy: () => Effect.void,
       }),
     ),
     Effect.provideService(AssetStore, artifacts),

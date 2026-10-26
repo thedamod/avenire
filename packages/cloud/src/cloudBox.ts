@@ -57,6 +57,8 @@ export class CloudBoxes extends Context.Service<
     ) => Effect.Effect<Option.Option<CloudBox>, CloudError>;
     readonly running: (userId: string) => Effect.Effect<Option.Option<CloudBox>, CloudError>;
     readonly stop: (userId: string) => Effect.Effect<void, CloudError>;
+    /** Deletes the persistent box and everything in it; the next `ensure` creates a fresh one. */
+    readonly destroy: (userId: string) => Effect.Effect<void, CloudError>;
   }
 >()("avenire/cloud/CloudBoxes") {}
 
@@ -252,6 +254,21 @@ export const CloudBoxesLive: Layer.Layer<CloudBoxes, never, DaytonaClient> = Lay
             const box = yield* find(userId);
             if (Option.isSome(box) && box.value.state === "started")
               yield* attempt("stopCloudBox", () => box.value.stop());
+          }),
+        ),
+      ),
+      destroy: Effect.fn("CloudBoxes.destroy")((userId) =>
+        locked(
+          userId,
+          Effect.gen(function* () {
+            const box = yield* find(userId);
+            if (Option.isNone(box)) return;
+            yield* attempt("destroyCloudBox", () => box.value.delete()).pipe(
+              // Already gone is the outcome we wanted.
+              Effect.catchTag("CloudError", (error) =>
+                missing(error) ? Effect.void : Effect.fail(error),
+              ),
+            );
           }),
         ),
       ),

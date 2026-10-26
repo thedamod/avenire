@@ -90,6 +90,7 @@ export const taskToContract = (row: CloudTaskRow): ContractTask => ({
   prompt: row.prompt,
   model: row.model,
   network: row.network,
+  workspace: row.workspace,
   schedule: row.schedule,
   timeZone: row.timeZone,
   preHydration: row.preHydration,

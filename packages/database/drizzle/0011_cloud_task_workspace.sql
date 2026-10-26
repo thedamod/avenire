@@ -1,0 +1,1 @@
+ALTER TABLE "cloud_task" ADD COLUMN "workspace" text DEFAULT 'keep' NOT NULL;

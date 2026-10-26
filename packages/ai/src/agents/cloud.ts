@@ -15,6 +15,7 @@ import {
   cloudRun,
   cloudTask,
   cloudToolCall,
+  cloudWorkspaceFile,
   file,
   fileFolder,
   pendingApproval,
@@ -446,7 +447,20 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
           if (command.sessionId)
             yield* bestEffort("command cleanup", box.endSession(command.sessionId));
       yield* meterBox();
-      yield* boxes.stop(userId);
+      // Read the setting fresh: terminal recovery runs cleanup without loading the task.
+      const retention = yield* database.use((db) =>
+        db.query.cloudTask.findFirst({
+          columns: { workspace: true },
+          where: and(eq(cloudTask.id, run.taskId), eq(cloudTask.userId, userId)),
+        }),
+      );
+      if (retention?.workspace === "delete") {
+        yield* boxes.destroy(userId);
+        // The cached inputs lived in that box; the next run hydrates into a fresh one.
+        yield* database.use((db) =>
+          db.delete(cloudWorkspaceFile).where(eq(cloudWorkspaceFile.userId, userId)),
+        );
+      } else yield* boxes.stop(userId);
       const metered = yield* snapshot();
       yield* database.use((db) =>
         db

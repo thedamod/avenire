@@ -52,12 +52,16 @@ export type CloudTaskDelivery = typeof CloudTaskDelivery.Type;
 
 const CloudModelName = Schema.Literals(["ruth-sprint", "ruth-core", "ruth-apex"]);
 const CloudNetwork = Schema.Literals(["packages", "open"]);
+/** After a run: keep the user's sandbox (stopped) for the next run, or delete it. */
+export const CloudWorkspaceRetention = Schema.Literals(["keep", "delete"]);
+export type CloudWorkspaceRetention = typeof CloudWorkspaceRetention.Type;
 
 export const CloudTaskInput = Schema.Struct({
   title: Schema.NonEmptyString.check(Schema.isMaxLength(200)),
   prompt: Schema.NonEmptyString.check(Schema.isMaxLength(20_000)),
   model: Schema.optionalKey(CloudModelName),
   network: Schema.optionalKey(CloudNetwork),
+  workspace: Schema.optionalKey(CloudWorkspaceRetention),
   schedule: CloudTaskSchedule,
   timeZone: Schema.String.check(Schema.isMaxLength(100)),
   preHydration: Schema.Array(HydrationRule).check(Schema.isMaxLength(20)),
