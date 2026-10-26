@@ -26,6 +26,10 @@
     "./extract": {
       "types": "./src/extract.ts",
       "import": "./src/extract.ts"
+    },
+    "./frames": {
+      "types": "./src/frames.ts",
+      "import": "./src/frames.ts"
     }
   },
   "scripts": {

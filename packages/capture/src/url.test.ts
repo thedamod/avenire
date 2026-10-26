@@ -59,7 +59,9 @@ describe("URL identity", () => {
       capturedAt: "now",
     };
     expect(dedupeKeyFor(local)).toBe(`content:${"a".repeat(64)}`);
-    expect(dedupeKeyFor({ ...local, deviceId: "b", fileName: "copy.pdf" })).toBe(dedupeKeyFor(local));
+    expect(dedupeKeyFor({ ...local, deviceId: "b", fileName: "copy.pdf" })).toBe(
+      dedupeKeyFor(local),
+    );
   });
   it("drops secret and session query parameters", () => {
     expect(normalizeUrl("https://example.com/f?id=1&token=x&X-Amz-Signature=y&sig=z")).toBe(

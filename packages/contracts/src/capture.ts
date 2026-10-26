@@ -207,8 +207,39 @@ export type BlockedCategory = typeof BlockedCategory.Type;
 
 const Version = Schema.Literal(1);
 const RequestId = Identifier;
+/**
+ * How an extension proves it belongs to the desktop's signed-in owner. `Token` is the per-user
+ * pairing token both sides fetch from Avenire with their own session; `Code` is the 6-digit code
+ * the desktop shows when the browser isn't signed in; `Secret` is what `Welcome` issued earlier.
+ */
+export const ExtensionAuth = Schema.Union([
+  Schema.TaggedStruct("Token", {
+    token: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/)),
+  }),
+  Schema.TaggedStruct("Code", { code: Schema.String.check(Schema.isPattern(/^\d{6}$/)) }),
+  Schema.TaggedStruct("Secret", {
+    secret: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/)),
+  }),
+]);
+export type ExtensionAuth = typeof ExtensionAuth.Type;
 export const ExtensionMessage = Schema.Union([
-  Schema.TaggedStruct("Hello", { version: Version, senderId: Identifier, browser: BrowserKind }),
+  Schema.TaggedStruct("Hello", {
+    version: Version,
+    senderId: Identifier,
+    browser: BrowserKind,
+    extensionVersion: Schema.String.check(Schema.isMaxLength(32)),
+    auth: ExtensionAuth,
+  }),
+  /** Desktop → extension once `Hello` is accepted; `secret` replaces a code for later sessions. */
+  Schema.TaggedStruct("Welcome", {
+    version: Version,
+    secret: Schema.optional(ExtensionAuth.members[2].fields.secret),
+  }),
+  /** Desktop → extension when `Hello` is rejected; the socket closes after it. */
+  Schema.TaggedStruct("Rejected", {
+    version: Version,
+    reason: Schema.Literals(["unpaired", "account-mismatch", "unsupported-version"]),
+  }),
   Schema.TaggedStruct("TabsReport", {
     version: Version,
     tabs: Schema.Array(CapturedTab).check(Schema.isMaxLength(200)),

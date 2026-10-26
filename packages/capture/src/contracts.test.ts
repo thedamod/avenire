@@ -47,7 +47,13 @@ it("bounds position, text quotes and browser tab identities", () => {
 });
 it("requires version 1 on every extension message", () => {
   const messages = [
-    { _tag: "Hello", senderId: "sender", browser: "chrome" },
+    {
+      _tag: "Hello",
+      senderId: "sender",
+      browser: "chrome",
+      extensionVersion: "1.0.0",
+      auth: { _tag: "Code", code: "123456" },
+    },
     { _tag: "TabsReport", tabs: [] },
     { _tag: "CaptureRequest", requestId: "request", tabIds: [1], readInBrowser: true },
     { _tag: "CaptureResult", requestId: "request", pages: [], skipped: [] },
