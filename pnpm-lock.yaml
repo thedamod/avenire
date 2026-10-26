@@ -792,6 +792,9 @@ importers:
       '@ai-sdk/groq':
         specifier: 'catalog:'
         version: 4.0.57(zod@4.6.5)
+      '@avenire/capture':
+        specifier: workspace:*
+        version: link:../capture
       '@avenire/contracts':
         specifier: workspace:*
         version: link:../contracts

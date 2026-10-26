@@ -223,6 +223,8 @@ export const sourceUpload = pgTable(
     sha256: text("sha256").notNull(),
     /** Citation provenance only. Never a credential or a fallback download target. */
     sourceUrl: text("source_url"),
+    origin: jsonb("origin").$type<CaptureOrigin>(),
+    access: text("access").$type<SourceAccess>().notNull().default("open"),
     storageKey: text("storage_key"),
     abandonedStorageKeys: text("abandoned_storage_keys")
       .array()

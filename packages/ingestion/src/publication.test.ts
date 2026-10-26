@@ -12,7 +12,7 @@ import { Embedder } from "./embed.ts";
 import { GraphError } from "./graph/extract.ts";
 import { GraphIndexer } from "./graph/indexer.ts";
 import { FileIndexer, FileIndexerLive, type IndexInput } from "./indexer.ts";
-import { claimJobs, enqueueIngestionTx } from "./worker.ts";
+import { claimJobs, enqueueIngestionTx, recordIngestionFailureTx } from "./worker.ts";
 
 const userId = UserId.make("owner");
 const fileId = FileId.make("file");
@@ -36,6 +36,7 @@ const input: IndexInput = {
   title: source.title,
   source,
   claim,
+  access: "paywalled",
   sections: [{ text: "The angles of a triangle", location: {} }],
   document: {
     key: StorageKey.make("document"),
@@ -272,4 +273,63 @@ it.effect("publishes partial searchable content and its retry backoff atomically
     expect(completion.sql).toContain("interval '1 minute'");
     expect(completion.sql).toContain('"claim_token" =');
   }),
+);
+
+it.effect("access writes publish with success or partial content only after the claim fence", () =>
+  Effect.gen(function* () {
+    const state = fixture();
+    yield* state.run({ ...input, retryAfterMinutes: 4 });
+    const access = state.committed.find(
+      (query) => query.sql.startsWith('update "file"') && query.sql.includes('"access"'),
+    )!;
+    expect(access.params).toContain("paywalled");
+    const stale = fixture();
+    stale.supersede();
+    expect((yield* stale.run().pipe(Effect.result))._tag).toBe("Failure");
+    expect(stale.committed.some((query) => query.sql.includes('"access"'))).toBe(false);
+  }),
+);
+it.effect(
+  "worker failure access writes refuse stale generations and require a live publication lease",
+  () =>
+    Effect.gen(function* () {
+      const stale = fixture();
+      stale.supersede();
+      yield* Effect.promise(() =>
+        stale.db.transaction((tx) =>
+          recordIngestionFailureTx(
+            tx,
+            { ...claim, attempts: 1 },
+            "Login required",
+            undefined,
+            "login-required",
+          ),
+        ),
+      );
+      expect(stale.committed).toEqual([]);
+      const live = fixture();
+      yield* Effect.promise(() =>
+        live.db.transaction((tx) =>
+          recordIngestionFailureTx(
+            tx,
+            { ...claim, attempts: 1 },
+            "Login required",
+            undefined,
+            "login-required",
+          ),
+        ),
+      );
+      expect(
+        live.committed.find((query) => query.sql.startsWith('update "file"'))?.params,
+      ).toContain("login-required");
+      const fence = live.queries.find((query) => query.sql.includes('from "ingestion_job"'))!;
+      expect(fence.sql).toContain('"locked_until" > now()');
+      expect(fence.sql).toContain('"generation" =');
+      expect(
+        live.queries
+          .filter((query) => query.sql.startsWith("select"))
+          .map((query) => query.sql)
+          .join(" "),
+      ).toMatch(/from "user".*from "file".*from "ingestion_job"/);
+    }),
 );

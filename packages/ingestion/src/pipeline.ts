@@ -30,7 +30,7 @@ import {
   type StoredDocument,
 } from "./document.ts";
 import { extract, type ExtractionServices } from "./extract/index.ts";
-import { EXTRACTOR_VERSION, UnsupportedSource } from "./extract/types.ts";
+import { EXTRACTOR_VERSION, SourceAccessError, UnsupportedSource } from "./extract/types.ts";
 import { FileIndexer } from "./indexer.ts";
 import { claimPredicate, type IngestionClaim, IngestionLeaseLost } from "./claim.ts";
 import { sha256Hex } from "./text.ts";
@@ -182,10 +182,16 @@ export const IngestionPipelineLive = Layer.effect(
       if (document.sections.length === 0) {
         return yield* new IngestionError({
           stage: "extracting",
-          cause: [
-            "Nothing searchable was extracted",
-            ...document.coverage.parts.flatMap((part) => (part.detail ? [part.detail] : [])),
-          ].join(". "),
+          cause:
+            document.access !== undefined && document.access !== "open"
+              ? new SourceAccessError({
+                  access: document.access,
+                  cause: "No searchable content behind the access wall.",
+                })
+              : [
+                  "Nothing searchable was extracted",
+                  ...document.coverage.parts.flatMap((part) => (part.detail ? [part.detail] : [])),
+                ].join(". "),
         });
       }
 
@@ -202,6 +208,7 @@ export const IngestionPipelineLive = Layer.effect(
               sections: document.sections,
               claim: job,
               source: found,
+              ...(document.access === undefined ? {} : { access: document.access }),
               retryAfterMinutes: extractionRetryMinutes({
                 ...document,
                 retryCount: Math.max(document.retryCount ?? 0, job.attempts - 1),

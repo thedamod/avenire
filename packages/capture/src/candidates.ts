@@ -4,6 +4,7 @@ import type {
   CaptureSnapshot,
   CapturedTab,
   FileKind,
+  SourceAccess,
 } from "@avenire/contracts";
 import { applyPolicy } from "./policy.ts";
 import { dedupeKeyFor, normalizeUrl } from "./url.ts";
@@ -16,6 +17,9 @@ export interface CaptureCandidate {
   readonly origin: CaptureOrigin;
   readonly text?: string;
   readonly position?: number;
+  /** Observed in the browser; absent when nobody read the page. */
+  readonly access?: SourceAccess;
+  readonly summary?: string;
 }
 
 export const isEngaged = (tab: CapturedTab): boolean =>
@@ -50,6 +54,8 @@ export function captureCandidates(snapshot: CaptureSnapshot, hash: (text: string
       origin,
       dedupeKey,
       ...(position?.mediaSec === undefined ? {} : { position: position.mediaSec }),
+      ...(tab.access === undefined ? {} : { access: tab.access }),
+      ...(tab.summary === undefined ? {} : { summary: tab.summary }),
     });
     return origin;
   };

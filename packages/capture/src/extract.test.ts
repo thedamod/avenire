@@ -2,6 +2,7 @@
 import { expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 import { PageSnapshot } from "@avenire/contracts";
+import { PAYWALL_SELECTORS } from "./access.ts";
 import { extractPage } from "./extract.ts";
 
 it("executes from serialized source, bounds text without splitting surrogate pairs and emits valid wire data", () => {
@@ -40,4 +41,10 @@ it("falls back from an empty app shell and rejects executable canonical URLs", (
   const page = extractPage(1, -1);
   expect(page.text).toBe("Visible body");
   expect(page.canonicalUrl).toBeUndefined();
+});
+
+it("inlines exactly the shared paywall selectors", () => {
+  const source = extractPage.toString();
+  for (const selector of PAYWALL_SELECTORS)
+    expect(source).toContain(JSON.stringify(selector).slice(1, -1));
 });

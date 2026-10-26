@@ -1,5 +1,5 @@
 {
-  "id": "4755bfba-a502-4b7c-b6ed-872eee29c36d",
+  "id": "c41e5060-018f-4aea-b01f-f6fecaca6284",
   "prevId": "a6d4c1ff-c034-49df-926c-83032a1f67a1",
   "version": "7",
   "dialect": "postgresql",
@@ -3941,6 +3941,19 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "origin": {
+          "name": "origin",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "access": {
+          "name": "access",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
         },
         "storage_key": {
           "name": "storage_key",

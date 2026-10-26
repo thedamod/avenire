@@ -4,7 +4,14 @@
  * processes can run side by side and a crashed worker's jobs are picked up again.
  */
 import { prettyWorkerCause } from "@avenire/shared/error-cause";
-import { IngestionJobId, type IngestionStatus, FileId, NotFound, UserId } from "@avenire/contracts";
+import {
+  IngestionJobId,
+  type IngestionStatus,
+  FileId,
+  NotFound,
+  UserId,
+  type SourceAccess,
+} from "@avenire/contracts";
 import { Database, type DatabaseClient, type DatabaseTransaction } from "@avenire/database/client";
 import { lockCorpus, advanceCorpusRevision } from "@avenire/database/corpus";
 import { ingestionJob, file } from "@avenire/database/schema";
@@ -19,7 +26,8 @@ import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 
-import { claimPredicate, IngestionLeaseLost } from "./claim.ts";
+import { failureAccess } from "./extract/access.ts";
+import { claimPredicate, IngestionLeaseLost, ownsPublication } from "./claim.ts";
 import { IngestionError, IngestionPipeline } from "./pipeline.ts";
 import { graphRetryDelay } from "./graph/extract.ts";
 
@@ -227,6 +235,41 @@ export const providerRetryDelay = (
   return undefined;
 };
 
+/** Access and failure state publish together under the same generation/token/lease fence. */
+export const recordIngestionFailureTx = async (
+  tx: DatabaseTransaction,
+  job: ClaimedJob,
+  message: string,
+  retryAfterMs?: number,
+  access?: SourceAccess,
+): Promise<void> => {
+  const deferred = retryAfterMs !== undefined;
+  const exhausted = !deferred && job.attempts >= MAX_ATTEMPTS;
+
+  if (!(await ownsPublication(tx, job))) return;
+  if (access !== undefined)
+    await tx
+      .update(file)
+      .set({ access })
+      .where(and(eq(file.id, job.fileId), eq(file.userId, job.userId)));
+  await tx
+    .update(ingestionJob)
+    .set({
+      status: job.background ? "indexed" : exhausted ? "failed" : "queued",
+      error: message,
+      // Quota availability is not a failed processing attempt.
+      attempts: deferred ? Math.max(0, job.attempts - 1) : job.attempts,
+      claimToken: null,
+      lockedUntil: deferred
+        ? sql`now() + (${retryAfterMs + 1000} * interval '1 millisecond')`
+        : exhausted
+          ? null
+          : sql`now() + (${retryDelayMinutes(job.attempts)} * interval '1 minute')`,
+      updatedAt: sql`now()`,
+    })
+    .where(claimPredicate(job));
+};
+
 export const IngestionWorkerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const database = yield* Database;
@@ -247,29 +290,15 @@ export const IngestionWorkerLive = Layer.effectDiscard(
       Effect.withSpan("IngestionWorker.claim"),
     );
 
-    /** Re-queue with exponential backoff, or fail the job once it is out of attempts. */
-    const recordFailure = (job: ClaimedJob, message: string, retryAfterMs?: number) => {
-      const deferred = retryAfterMs !== undefined;
-      const exhausted = !deferred && job.attempts >= MAX_ATTEMPTS;
-      return database.use((db) =>
-        db
-          .update(ingestionJob)
-          .set({
-            status: job.background ? "indexed" : exhausted ? "failed" : "queued",
-            error: message,
-            // Quota availability is not a failed processing attempt.
-            attempts: deferred ? Math.max(0, job.attempts - 1) : job.attempts,
-            claimToken: null,
-            lockedUntil: deferred
-              ? sql`now() + (${retryAfterMs + 1000} * interval '1 millisecond')`
-              : exhausted
-                ? null
-                : sql`now() + (${retryDelayMinutes(job.attempts)} * interval '1 minute')`,
-            updatedAt: sql`now()`,
-          })
-          .where(claimPredicate(job)),
+    const recordFailure = (
+      job: ClaimedJob,
+      message: string,
+      retryAfterMs?: number,
+      access?: SourceAccess,
+    ) =>
+      database.useTransaction((tx) =>
+        recordIngestionFailureTx(tx, job, message, retryAfterMs, access),
       );
-    };
 
     /** If the file was re-enqueued while this run held the lease, hand the lease back. */
     const releaseIfSuperseded = (job: ClaimedJob) =>
@@ -333,7 +362,7 @@ export const IngestionWorkerLive = Layer.effectDiscard(
             prettyWorkerCause(cause),
           ).pipe(
             Effect.annotateLogs({ jobId: job.id, attempts: job.attempts }),
-            Effect.andThen(recordFailure(job, reason, delay)),
+            Effect.andThen(recordFailure(job, reason, delay, failureAccess(error))),
             Effect.catchTag("DatabaseError", (error) =>
               Effect.logError("Could not record the ingestion failure", { jobId: job.id, error }),
             ),

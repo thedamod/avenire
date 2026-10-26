@@ -10,6 +10,7 @@ import {
   type StorageKey,
   type FileId,
   type UserId,
+  type SourceAccess,
 } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { advanceCorpusRevision, lockCorpus } from "@avenire/database/corpus";
@@ -55,6 +56,7 @@ export interface IndexInput {
   readonly sections: ReadonlyArray<ChunkSection>;
   readonly claim?: IngestionClaim;
   readonly source?: SourceSnapshot;
+  readonly access?: SourceAccess;
   /** Publish useful content while reserving the next extraction retry in the same commit. */
   readonly retryAfterMinutes?: number | undefined;
   /** An extracted object staged before publication; its pointer commits with the index. */
@@ -354,6 +356,12 @@ export const FileIndexerLive = Layer.effect(
                 ),
               );
           }
+          // Access observations require the same live claim fence as searchable publication.
+          if (input.claim && input.access !== undefined)
+            await tx
+              .update(file)
+              .set({ access: input.access })
+              .where(and(eq(file.id, input.fileId), eq(file.userId, input.userId)));
           if (input.document) {
             await tx
               .update(file)

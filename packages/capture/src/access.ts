@@ -1,5 +1,28 @@
 import type { AccessSignals, SourceAccess } from "@avenire/contracts";
 
+/**
+ * Known paywall and metering containers. `extractPage` inlines the same list because
+ * executeScript serializes it without imports; extract.test.ts keeps the two in sync.
+ */
+export const PAYWALL_SELECTORS = [
+  ".tp-modal",
+  ".tp-backdrop",
+  '[id^="piano-"]',
+  ".tinypass",
+  "[data-paywall]",
+  ".paywall",
+  ".meteredContent",
+  "[data-testid=paywall]",
+  ".paywall-title",
+  ".paywall-content",
+  ".subscribe-wall",
+  "#gateway-content",
+  "#standalone-footer",
+  ".wsj-snippet-login",
+  ".snippet-promotion",
+  ".n-content-paywall",
+] as const;
+
 export function classifyAccess(signals: AccessSignals): SourceAccess {
   if (signals.httpStatus === 401 || signals.httpStatus === 403) return "login-required";
   if (signals.httpStatus === 402) return "paywalled";

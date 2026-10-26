@@ -151,6 +151,8 @@ export function applyPolicy(snapshot: CaptureSnapshot): PolicyResult {
         ...(tab.finalUrl === undefined ? {} : { finalUrl: tab.finalUrl }),
         // Legacy free-form selection has no verified provenance.
         ...(tab.likelyPdf === undefined ? {} : { likelyPdf: tab.likelyPdf }),
+        ...(tab.access === undefined ? {} : { access: tab.access }),
+        ...(tab.summary === undefined ? {} : { summary: tab.summary }),
         engagement: {
           dwellMs: tab.engagement.dwellMs,
           scrollDepthPct: tab.engagement.scrollDepthPct,

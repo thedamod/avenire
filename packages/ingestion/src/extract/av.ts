@@ -3,6 +3,7 @@ import type { CoverageStatus, ExtractionCoverage } from "@avenire/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
+import { failureAccess } from "./access.ts";
 import { formatTimestamp } from "../chunk.ts";
 import { parseCaptions } from "./captions.ts";
 import { ImageDescriber } from "./describe.ts";
@@ -16,6 +17,7 @@ import {
   type ExtractedDocument,
   type ExtractedSection,
   ExtractionError,
+  SourceAccessError,
   type SourceInput,
 } from "./types.ts";
 
@@ -49,6 +51,21 @@ const orMissing =
     effect.pipe(
       Effect.tapError((error) => Effect.logWarning(`${what} failed`, error)),
       Effect.option,
+    );
+
+/** Optional media work may lose coverage, but must retain access evidence. */
+const remoteOrMissing =
+  (what: string) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.map(Option.some),
+      Effect.catch((cause) => {
+        const access = failureAccess(cause);
+        return access === undefined
+          ? Effect.as(Effect.logWarning(`${what} failed`, cause), Option.none<A>())
+          : Effect.fail(new SourceAccessError({ access, cause }));
+      }),
+      Effect.mapError((cause) => new ExtractionError({ source: "remote-media", cause })),
     );
 
 const nearbyText = (cues: ReadonlyArray<Cue>, atSec: number) =>
@@ -305,7 +322,7 @@ export const extractRemoteMedia = Effect.fn("extractRemoteMedia")(function* (
       ? Option.none()
       : yield* remote
           .captions(url, metadata, captionLanguages(metadata))
-          .pipe(orMissing("Platform captions"));
+          .pipe(remoteOrMissing("Platform captions"));
   const platform = Option.flatMap(captions, Option.fromUndefinedOr);
 
   const speech =
@@ -323,7 +340,7 @@ export const extractRemoteMedia = Effect.fn("extractRemoteMedia")(function* (
                 ),
               ),
             ),
-            orMissing("Remote audio"),
+            remoteOrMissing("Remote audio"),
             Effect.map(
               Option.getOrElse(() => ({
                 cues: [],

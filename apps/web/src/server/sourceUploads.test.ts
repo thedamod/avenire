@@ -332,6 +332,11 @@ it.effect(
             ...metadata(),
             sourceUrl: "https://study.test/chapter?token=secret#fragment",
           };
+          // Stage lifecycle tickets before publishing identical bytes; later creates dedupe.
+          const expired = yield* uploads.create(owner, metadata());
+          const cancelled = yield* uploads.create(owner, metadata());
+          const reclaimed = yield* uploads.create(owner, metadata());
+          const concurrent = yield* uploads.create(owner, metadata());
           const created = yield* uploads.create(owner, input);
           expect(created.uploadUrl).toBe(`/api/library/uploads/${created.uploadId}`);
           expect(yield* uploads.create(owner, input)).toEqual(created);
@@ -395,7 +400,6 @@ it.effect(
           );
           expect(cleaned?.abandonedStorageKeys).toEqual([]);
 
-          const expired = yield* uploads.create(owner, metadata());
           yield* database.use((db) =>
             db
               .update(sourceUpload)
@@ -406,14 +410,12 @@ it.effect(
             yield* uploads.put(owner, expired.uploadId, request()).pipe(Effect.result),
           ).toMatchObject({ failure: { status: 410 } });
           yield* uploads.cleanup();
-          const cancelled = yield* uploads.create(owner, metadata());
           yield* uploads.cancel(owner, cancelled.uploadId);
           expect(
             yield* uploads.put(owner, cancelled.uploadId, request()).pipe(Effect.result),
           ).toMatchObject({ failure: { status: 410 } });
 
           // A dead worker lease is reclaimable; failed garbage deletion stays durable.
-          const reclaimed = yield* uploads.create(owner, metadata());
           const oldKey = `users/${owner}/files/reclaimed/source`;
           yield* memory.put(StorageKey.make(oldKey), "abandoned source");
           yield* database.use((db) =>
@@ -450,7 +452,6 @@ it.effect(
           });
           expect(new TextDecoder().decode(yield* memory.get(recovered.storageKey!))).toBe(content);
 
-          const concurrent = yield* uploads.create(owner, metadata());
           const started = new Promise<void>((resolve) => {
             beginPut = resolve;
           });
@@ -483,4 +484,12 @@ it.effect(
         Effect.provide(NodeServices.layer),
       );
     }).pipe(Effect.scoped),
+);
+
+it.effect("web page snapshots accept markdown originals", () =>
+  Effect.sync(() => {
+    expect(
+      normalizeUploadMetadata({ ...metadata(), kind: "web-page", mimeType: "text/markdown" }),
+    ).toMatchObject({ kind: "web-page", mimeType: "text/markdown", access: "open" });
+  }),
 );
