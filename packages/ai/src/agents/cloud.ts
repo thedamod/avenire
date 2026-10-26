@@ -31,7 +31,7 @@ import { inputsRootFor, runPaths, RUN_WALL_CLOCK } from "../cloud/paths.ts";
 import { withToolJournal } from "../cloud/journal.ts";
 import { newId } from "@avenire/shared/id";
 import { AssetStore } from "../outputs/assets.ts";
-import { VISUAL_THEME_MANIFEST } from "../outputs/visual-theme.ts";
+import { matplotlibrc, VISUAL_THEME_MANIFEST } from "../outputs/visual-theme.ts";
 import { cloudVisualTools } from "../cloud/visuals.ts";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import * as Cause from "effect/Cause";
@@ -538,7 +538,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
             leaseExpiresAt: sql`now() + interval '5 minutes'`,
             startedAt: run.startedAt ?? DateTime.toDateUtc(now),
             modelName: name,
-            promptVersion: "server-cua-v2-visuals",
+            promptVersion: "server-cua-v3-palette-gate",
           })
           .where(
             and(
@@ -580,6 +580,10 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         yield* box.writeFile(
           `${paths.runDir}/visual-theme.json`,
           new TextEncoder().encode(JSON.stringify(VISUAL_THEME_MANIFEST)),
+        );
+        yield* box.writeFile(
+          "/home/daytona/.config/matplotlib/matplotlibrc",
+          new TextEncoder().encode(matplotlibrc()),
         );
         yield* box.startDesktop;
         recordingReachable = run.sandboxId === null || run.sandboxId === box.id;

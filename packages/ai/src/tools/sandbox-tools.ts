@@ -1,4 +1,5 @@
 import { CloudBoxes } from "@avenire/cloud/cloud-box";
+import { checkVisualTheme } from "../cloud/theme-check.ts";
 import * as Option from "effect/Option";
 import { stableToolId } from "../cloud/journal.ts";
 import { AssetId } from "@avenire/contracts";
@@ -103,6 +104,14 @@ export const sandboxTools: SandboxImpls = {
           recoverable: true,
         });
       file = { name: posix.basename(path), bytes: yield* box.value.readFile(path) };
+      if (ctx.runId)
+        yield* checkVisualTheme({
+          tool: "publish_asset",
+          box: box.value,
+          runId: ctx.runId,
+          path,
+          bytes: file.bytes,
+        });
     } else {
       const owner = yield* ownerFor("publish_asset", ctx);
       file = yield* (yield* ChatSandboxes).readArtifact(owner, { path: input.path });

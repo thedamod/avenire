@@ -47,6 +47,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { wrapWidget } from "../outputs/widgets.ts";
+import { checkVisualTheme } from "./theme-check.ts";
 import { AssetStore, assetMediaType } from "../outputs/assets.ts";
 import { CLOUD_TOOL_POLICY, CLOUD_TOOL_SPECS } from "../tools/cloud-specs.ts";
 import { type AgentContext, RuthToolError, type ToolImpl, toToolError } from "../tools/core.ts";
@@ -684,6 +685,7 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
   if (bytes.byteLength > 100 * 1024 * 1024)
     return yield* fail("publish_output", "Publish a file no larger than 100 MB.");
   if (isHtml(name)) yield* widgetBytes(ctx, bytes, input.title?.trim() || name);
+  yield* checkVisualTheme({ tool: "publish_output", box, runId, path, bytes });
   yield* validateQuiz(name, bytes);
   if (input.title && isQuiz(input.title) && !isQuiz(name)) yield* validateQuiz(input.title, bytes);
   const hash = hashBytes(bytes);
@@ -799,6 +801,8 @@ export const cloudTools: CloudImpls = {
     const published: { sandboxPath: string; assetId: AssetId; url: string }[] = [];
     const store = yield* AssetStore;
     const box = yield* runningBox(ctx, "publish_report");
+    // Check every asset before storing any, so a palette fix never leaves a half-published report.
+    const outputs: { sandboxPath: string; path: string; bytes: Uint8Array }[] = [];
     for (const sandboxPath of input.assets ?? []) {
       const path = publishPath(sandboxPath);
       if (path === null)
@@ -809,6 +813,10 @@ export const cloudTools: CloudImpls = {
       const bytes = yield* box.readFile(path);
       if (bytes.byteLength > 50 * 1024 * 1024)
         return yield* fail("publish_report", "Publish an asset no larger than 50 MB.");
+      yield* checkVisualTheme({ tool: "publish_report", box, runId: run.id, path, bytes });
+      outputs.push({ sandboxPath, path, bytes });
+    }
+    for (const { sandboxPath, path, bytes } of outputs) {
       const name = posix.basename(path);
       const stored = yield* store.put(ctx.userId, {
         name,
