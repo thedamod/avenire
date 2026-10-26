@@ -62,7 +62,9 @@ try {
       if (text.trim()) process.stdout.write(`${elapsed()}  text: ${text.trim().slice(0, 300)}\n`);
       text = "";
       if (type === "tool-input-available")
-        process.stdout.write(`${elapsed()}  → ${String(chunk.toolName)} ${JSON.stringify(chunk.input).slice(0, 220)}\n`);
+        process.stdout.write(
+          `${elapsed()}  → ${String(chunk.toolName)} ${JSON.stringify(chunk.input).slice(0, 220)}\n`,
+        );
       else if (type === "tool-output-available")
         process.stdout.write(`${elapsed()}  ← ${JSON.stringify(chunk.output).slice(0, 260)}\n`);
       else if (type === "tool-output-error" || type === "error")
@@ -76,7 +78,14 @@ try {
       return yield* database.use(async (db) => ({
         run: await db.query.cloudRun.findFirst({
           where: (r, { eq }) => eq(r.id, runId),
-          columns: { status: true, error: true, summary: true, stepIndex: true, usage: true, folderId: true },
+          columns: {
+            status: true,
+            error: true,
+            summary: true,
+            stepIndex: true,
+            usage: true,
+            folderId: true,
+          },
         }),
         hydrations: await db.query.cloudHydration.findMany({
           where: (h, { eq }) => eq(h.runId, runId),
@@ -84,7 +93,14 @@ try {
         }),
         approvals: await db.query.pendingApproval.findMany({
           where: (a, { eq }) => eq(a.runId, runId),
-          columns: { id: true, status: true, fileId: true, proposedKey: true, conflict: true, summary: true },
+          columns: {
+            id: true,
+            status: true,
+            fileId: true,
+            proposedKey: true,
+            conflict: true,
+            summary: true,
+          },
         }),
         assets: await db.query.asset.findMany({
           where: (a, { eq }) => eq(a.runId, runId),
@@ -103,7 +119,9 @@ try {
   );
   await writeFile(`${out}/events.json`, JSON.stringify(chunks, null, 1));
   await writeFile(`${out}/summary.json`, JSON.stringify(summary, null, 2));
-  process.stdout.write(`\n${JSON.stringify(summary, null, 2).slice(0, 6000)}\n\nSaved to ${out} in ${elapsed().trim()}\n`);
+  process.stdout.write(
+    `\n${JSON.stringify(summary, null, 2).slice(0, 6000)}\n\nSaved to ${out} in ${elapsed().trim()}\n`,
+  );
 } finally {
   await runtime.dispose();
 }
