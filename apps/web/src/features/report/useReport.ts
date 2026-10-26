@@ -38,6 +38,15 @@ export function useRunReport(runId: CloudRunId) {
   }, [api, refetchApprovals, refetchRun, stream.status]);
 
   const phase = run.data ? runPhase(run.data.status) : null;
+  // A dropped stream must not leave a cached active status on screen after the worker finishes.
+  useEffect(() => {
+    if (phase !== "running") return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void refetchRun();
+    }, 8_000);
+    return () => clearInterval(timer);
+  }, [phase, refetchRun]);
+
   return { run, approvals, stream, products, phase };
 }
 
