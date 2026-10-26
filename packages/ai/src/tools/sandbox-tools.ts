@@ -6,7 +6,9 @@ import { ChatSandboxes, type SandboxOwner } from "@avenire/cloud/chat-sandbox";
 import { posix } from "node:path";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Config from "effect/Config";
 import { AssetStore, assetMediaType, safeAssetName } from "../outputs/assets.ts";
+import { wrapWidget } from "../outputs/widgets.ts";
 import { type AgentContext, RuthToolError, type ToolImpl } from "./core.ts";
 import { registerTool } from "./registration.ts";
 import { SANDBOX_TOOL_SPECS } from "./sandbox-specs.ts";
@@ -113,6 +115,26 @@ export const sandboxTools: SandboxImpls = {
         recoverable: true,
       });
     const mediaType = assetMediaType(file.name);
+    const isWidget = ctx.agent === "ruth-cloud" && mediaType === "text/html";
+    let bytes = file.bytes;
+    if (isWidget) {
+      const html = yield* Effect.try({
+        try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+        catch: () =>
+          new RuthToolError({
+            tool: "publish_asset",
+            code: "invalid_input",
+            message: "Widget HTML must be UTF-8.",
+            recoverable: true,
+          }),
+      });
+      const origin = yield* Config.String("WIDGET_ORIGIN").pipe(
+        Config.withDefault("https://widgets.avenire.space"),
+      );
+      bytes = new TextEncoder().encode(
+        yield* wrapWidget(ctx, { html, title: input.title ?? file.name }, origin),
+      );
+    }
     // Preserve the extension when a title supplies a friendlier download filename.
     const extension = posix.extname(file.name);
     // A title is prose, not a path: "dQ_rev / T" must not become the file name "T)".
@@ -123,8 +145,9 @@ export const sandboxTools: SandboxImpls = {
     const stored = yield* store.put(ctx.userId, {
       name,
       title: input.title ?? name,
-      bytes: file.bytes,
+      bytes,
       mediaType,
+      ...(isWidget ? { kind: "widget" as const } : {}),
       ...(ctx.threadId ? { threadId: ctx.threadId } : {}),
       ...(ctx.runId ? { runId: ctx.runId } : {}),
       ...(ctx.toolCallId && ctx.runId
@@ -137,7 +160,7 @@ export const sandboxTools: SandboxImpls = {
       name,
       url: stored.url,
       mediaType,
-      sizeBytes: file.bytes.byteLength,
+      sizeBytes: bytes.byteLength,
     };
   }),
   sandbox_close: Effect.fn("RuthKit.sandboxClose")(function* (_input, ctx) {

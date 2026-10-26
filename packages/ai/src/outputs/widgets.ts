@@ -1,4 +1,5 @@
 import { ChatSandboxes } from "@avenire/cloud/chat-sandbox";
+import { CLOUD_WORKSPACE, CloudBoxes } from "@avenire/cloud/cloud-box";
 import {
   AssetId,
   MAX_WIDGET_HTML_BYTES,
@@ -10,6 +11,7 @@ import { ObjectNotFound, type StorageError } from "@avenire/storage/storage";
 import { WIDGET_THEME_TOKENS } from "@avenire/ui/tokens";
 import { buildWidgetDocument, rebaseWidgetKitOrigin } from "@avenire/ui/widget-protocol";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { posix } from "node:path";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -50,7 +52,7 @@ export const verifyWidgetToken = (
     ? Option.some(AssetId.make(id))
     : Option.none();
 };
-/** Resolve only this thread's sandbox, checking size before downloading. Never echo source. */
+/** Resolve the caller's chat sandbox or running Cloud workspace; check size before downloading. */
 export const resolveWidgetSource = Effect.fn("Widget.resolveSource")(function* (
   ctx: AgentContext,
   input: WidgetSource,
@@ -71,9 +73,30 @@ export const resolveWidgetSource = Effect.fn("Widget.resolveSource")(function* (
       );
     return input.html;
   }
-  if (!ctx.threadId) return yield* invalid("A thread is required for a widget path.");
   if (!input.path.toLowerCase().endsWith(".html"))
     return yield* invalid("Widget path must name an HTML file.");
+  if (ctx.agent === "ruth-cloud") {
+    const path = posix.resolve(CLOUD_WORKSPACE, input.path);
+    if (!path.startsWith(`${CLOUD_WORKSPACE}/`) || path.includes("\0"))
+      return yield* invalid("Preview an HTML file inside the Cloud workspace.");
+    // CloudBoxes is supplied by the Cloud tool runner; chat preview layers need only ChatSandboxes.
+    const boxes = yield* Effect.serviceOption(CloudBoxes);
+    const box = Option.isSome(boxes) ? yield* boxes.value.running(ctx.userId) : Option.none();
+    if (Option.isNone(box)) return yield* invalid("The Cloud workspace is not running.");
+    const info = yield* box.value.fileInfo(path);
+    if (Option.isNone(info) || info.value.isDir || info.value.size > MAX_WIDGET_HTML_BYTES)
+      return yield* invalid(
+        `Widget HTML must be a file no larger than ${MAX_WIDGET_HTML_BYTES} bytes.`,
+      );
+    const bytes = yield* box.value.readFile(path);
+    if (bytes.byteLength > MAX_WIDGET_HTML_BYTES)
+      return yield* invalid(`Widget HTML must be at most ${MAX_WIDGET_HTML_BYTES} bytes.`);
+    return yield* Effect.try({
+      try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+      catch: () => invalid("Widget HTML must be UTF-8."),
+    });
+  }
+  if (!ctx.threadId) return yield* invalid("A thread is required for a widget path.");
   const sandboxes = yield* ChatSandboxes;
   const file = yield* sandboxes.readArtifact(
     { userId: ctx.userId, threadId: ctx.threadId },

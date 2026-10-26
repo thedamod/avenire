@@ -1067,6 +1067,8 @@ Use the Daytona thread sandbox for computation and shareable files. Python 3 sci
 
 The working directory is \`/home/daytona/work\`. Prefer relative paths such as \`afterburner.html\`; absolute writes must stay under \`/home/daytona\` or \`/tmp\`. \`/mnt\`, \`/mnt/data\` and local host paths are unavailable. Keep the same sandbox path through write, build, preview and render. \`/opt/avenire/figures\` is a read-only source reference; copy sources into the working directory before editing or building.
 
+In Ruth Cloud, use the run output directory and \`box_write\` / \`box_exec\` / \`box_read\` instead of the chat sandbox tools. \`preview_widget\` reads Cloud paths, and \`publish_output\` / \`publish_asset\` publish HTML as a wrapped widget. The executor closes the persistent workspace; do not call \`sandbox_close\` or \`render_widget\` in Cloud.
+
 1. \`sandbox_write({ path: "work.py", content: "..." })\` writes code/data.
 2. \`sandbox_exec({ command: "python work.py" })\` computes; inspect exit status and concise stdout/stderr. Use the tool's supported timeout for long renders and stay within output caps. Break long jobs into inspect and final render stages.
 3. \`sandbox_read\` reads text or bounded file content; inspect files with scripts (\`file\`, image dimensions, CSV row count) before publishing. For charts, print JSON aggregates and embed them into widget HTML.
@@ -1077,23 +1079,56 @@ For large visualizations, build an HTML file with \`sandbox_exec\` and pass the 
 
 ## Matplotlib and spreadsheets
 
-Select Agg before pyplot. Use Avenire light/dark colours copied from the current \`style\` tokens into the script. Set a restrained \`axes.edgecolor\`, \`grid.color\`, font sizes, and \`lines.linewidth\` (~1–1.5 pt) through \`rcParams\`; export at readable dimensions/DPI. Example:
+Load \`style\` and call \`get_page_context\` before rendering. Select Agg before pyplot. Use the current figure tokens for every surface, mark and label. Ordinary series use neutral ink, labelled or dashed; reserve semantic red/green/blue for actual signals. Use square framing and thin axes, restrained typography, and readable export dimensions/DPI. Never use a library's default categorical palette or an unrelated custom dark theme.
+
+Cloud's \`get_page_context\` returns \`themeFile\`: an absolute path to the server-written \`visual-theme.json\` beside the run's \`out\` directory. It has \`themes.light\` and \`themes.dark\`, each with \`tokens\`, neutral \`series\`, and ready-to-use \`matplotlib\` rcParams derived from the same production widget tokens. Read it from the script, select the requested appearance (light by default), and use \`plt.rcParams.update(theme['matplotlib'])\` plus \`plt.rcParams['axes.prop_cycle'] = cycler(color=theme['series'])\`. Use these values for diagrams as well as charts. Do not overwrite them with an invented palette later in the script.
+
+For chat, save \`get_page_context().themeTokens\` as \`figure-tokens.json\` in the script directory before running this example. In Cloud, replace the token-loading expression with \`json.loads(theme_file.read_text())['themes'][appearance]['tokens']\`, using the returned \`themeFile\` path. This plots supplied \`series.csv\` data rather than fabricated observations:
 
 \`\`\`python
+import json
+from pathlib import Path
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-plt.rcParams.update({'figure.facecolor':'#faf9f5','axes.facecolor':'#faf9f5',
-                     'axes.edgecolor':'#b4b0a9','grid.color':'#d7d3cc',
-                     'axes.linewidth':0.6,'lines.linewidth':1.2,'font.size':10})
+import pandas as pd
+from cycler import cycler
+
+root = Path(__file__).resolve().parent
+tokens = json.loads((root / 'figure-tokens.json').read_text())
+plt.rcParams.update({
+    'figure.facecolor': tokens['--figure-page'],
+    'axes.facecolor': tokens['--figure-card'],
+    'savefig.facecolor': tokens['--figure-page'],
+    'text.color': tokens['--figure-strong'],
+    'axes.labelcolor': tokens['--figure-text'],
+    'xtick.color': tokens['--figure-text'],
+    'ytick.color': tokens['--figure-text'],
+    'axes.edgecolor': tokens['--figure-mid'],
+    'grid.color': tokens['--figure-faint'],
+    'axes.linewidth': 0.45, 'grid.linewidth': 0.45,
+    'lines.linewidth': 1.125, 'font.size': 10,
+    'legend.frameon': False,
+    'axes.prop_cycle': cycler(color=[tokens['--figure-hi'], tokens['--figure-mid']]),
+})
+data = pd.read_csv(root / 'series.csv')
 fig, ax = plt.subplots(figsize=(7, 4), layout='constrained')
-ax.plot([1,2,3], [2,3,5], color='#6050a5')
-ax.grid(alpha=.5)
-fig.savefig('figure.png', dpi=180)
-fig.savefig('figure.svg')
+ax.plot(data['x'], data['y'], label='Observed')
+ax.spines[['top', 'right']].set_visible(False)
+ax.grid(True)
+ax.legend()
+fig.savefig(root / 'figure.png', dpi=180)
+fig.savefig(root / 'figure.svg')
+plt.close(fig)
 \`\`\`
 
 For CSV/XLSX: \`pd.read_csv\` or \`pd.read_excel(engine='openpyxl')\`; inspect dtypes, parse dates, coerce numbers with an explicit missing-value policy, group and aggregate, then export compact \`to_json(orient='records', date_format='iso')\`. Avoid dumping private rows into tool output. Animate GIFs with matplotlib \`PillowWriter\` or \`imageio\`; MP4 with \`FFMpegWriter\` if ffmpeg is present. Check output size and a sample frame.
+
+## Video appearance
+
+Videos use the same selected figure theme on every frame. Load the renderer palette once, then use its \`--figure-page\`, \`--figure-card\`, \`--figure-strong\`, \`--figure-text\`, \`--figure-mid\` and neutral series values in Pillow/ImageDraw, matplotlib animation, manimgx scene backgrounds/text/strokes, or Node rendering. Use square hairline panels, concise technical labels and the same model for motion and readouts. A controller identity is a label/dash/shape, not a reason for teal/orange colouring; a failed state can use semantic red. Never introduce a separate video design system.
+
+For Cloud Pillow frames, for example, use \`Image.new('RGB', (width, height), theme['tokens']['--figure-page'])\`, and draw labels with \`theme['tokens']['--figure-strong']\`. For manimgx, set scene background and all mark/text colours from those same selected tokens. Explicitly label the exported appearance in filenames, such as \`comparison-light.mp4\`; when both are required, render each palette into its own file. PNG and MP4 pixels cannot follow live CSS theme messages. Inspect representative frames at the beginning, middle and end unless the task waives verification.
 
 ## ManimGX, KiCad, Node
 
@@ -1867,6 +1902,8 @@ description: Shared figure tokens and figure framing for all Ruth widgets, chart
 
 Every widget uses the shared two-theme token layer. The host injects it before first paint and on \`avenire:themechange\`; it updates \`.iso\` wrappers’ data-theme and values. Standalone kit \`--light\` pages retain their own theme outside the host. Read Canvas/WebGL tokens on its nearest \`.iso\` wrapper (and redraw/reconfigure on themechange). Use CSS variables for every colour and preserve the kit’s four facing shades; do not replace them with opacity approximations.
 
+The same figure contract applies to exported matplotlib charts, SVG/PDF diagrams, GIFs and MP4s. Use the selected theme for backgrounds, labels, axes, marks and every video frame; never invent a separate media palette. Cloud's \`get_page_context\` supplies \`themeFile\`, a server-written JSON manifest containing both production token sets, neutral series and matplotlib rcParams. Read it in render scripts. Static exports use the requested appearance, or light when none is requested; provide separately named variants when both themes are needed. Static media cannot respond to live CSS. See \`sandbox\` for renderer recipes.
+
 The restraint applies to chrome, palette and line weight; it does not flatten the object. Mechanical figures retain solid thickness, facing shades, smooth curved shading and grounded contact shadows. Localized physical light, flame or exhaust may use the source kit's shader/material treatment inside the object; keep it in perspective and the surrounding UI stable. Avoid decorative page gradients and ambient UI glow, while preserving the physical shading that makes an assembly readable. See \`mechanism\` for construction and close-up fidelity.
 
 | Token | Purpose | Light | Dark |
@@ -1950,6 +1987,8 @@ Keep the widget quiet: one figure, a short title/hint, minimal labelled controls
 Batch skill/context lookup, build concisely, call \`preview_widget\` once, and repair actual errors with a fresh preview before \`render_widget\`. There is no step-count cap: continue until the error is fixed and the page is delivered, or explain an actual blocking failure. Avoid unnecessary redesign. Close the sandbox when finished.
 
 Pass exactly one of \`html\` (512,000 bytes maximum) or \`path\` (8 MiB maximum). Built pages travel directly from the thread sandbox to preview/storage. Never read a multi-MB page into context. CSP permits inline scripts/styles and bundled \`/kits\` modules; images/media are \`data:\` or \`blob:\` only. No external libraries, fonts, network requests or sandbox file links. Use \`--figure-*\` tokens, accessible native controls, reduced-motion/manual stepping and a responsive stage.
+
+Cloud follows this same visual contract using its persistent run output directory: replace sandbox file/command tools with \`box_*\`, use \`preview_widget\` on the built Cloud path, and publish through \`publish_output\` or \`publish_asset\`. The executor handles cleanup; Cloud does not call chat-only \`render_widget\` or \`sandbox_close\`. \`get_page_context\` also returns a \`themeFile\` containing both production palettes and renderer settings for static charts and video frames. Apply \`style\` to all media, not only interactive HTML.
 `,
   },
   "kit-api": {

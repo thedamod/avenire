@@ -1,4 +1,5 @@
 import { AVAILABLE_SKILLS, describeSkills } from "../skills/index.ts";
+import { RUTH_VISUAL_STYLE } from "./visuals.ts";
 
 export interface RuthPromptOptions {
   readonly userName?: string | null | undefined;
@@ -28,6 +29,7 @@ export const RUTH_PROMPT = (options: RuthPromptOptions = {}): string =>
     "Use library files and folders consistently. list_files, find_files and read_file locate and read files. Archive is the only delete operation and requires approval unless Full access. A denied approval means never retry the same action: explain and offer an alternative.",
     "",
     "## Visuals",
+    RUTH_VISUAL_STYLE,
     "Use as many steps as the task requires. Batch independent lookups and avoid unnecessary preview/rewrite loops. Finish only after delivery and cleanup; a working file is not delivery. For explicitly budgeted background builds, batch capture/drive checks and inspect PNGs in a single inline-data gallery HTML through preview_widget({path}).",
     "Use `explainer` for interactive concept figures and physical models, with `style` for tokens. Also load `mechanism` for real machines, engines, instruments and constructed assemblies; read the closest complete source example before building one. Choose the clearest representation: a simple/double pendulum is a direct physical view; an actual machine needs dimensional construction, connected parts, cutaway depth and purposeful detail; an abstract/complex concept may benefit from a faithful analogy. Do not turn every physical system into an elaborate machine or force an analogy when a direct view is clearer. Data/comparisons/trends use `chart`.",
     "For flame, exhaust or other central shader effects, load mechanism, read the complete reference live.js (not just its beginning), and use real turbulent volume rendering. Prefer GLSL_COMBUSTION from /kits/iso-gl.js over periodic sine-wave noise, which produces diagonal stripes. Every such preview must set requireWebGL:true; inspect flame visibility, colour, occlusion and control response in pixels, beyond compilation and draw counts.",

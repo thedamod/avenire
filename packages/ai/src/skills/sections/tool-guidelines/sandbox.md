@@ -9,6 +9,8 @@ Use the Daytona thread sandbox for computation and shareable files. Python 3 sci
 
 The working directory is `/home/daytona/work`. Prefer relative paths such as `afterburner.html`; absolute writes must stay under `/home/daytona` or `/tmp`. `/mnt`, `/mnt/data` and local host paths are unavailable. Keep the same sandbox path through write, build, preview and render. `/opt/avenire/figures` is a read-only source reference; copy sources into the working directory before editing or building.
 
+In Ruth Cloud, use the run output directory and `box_write` / `box_exec` / `box_read` instead of the chat sandbox tools. `preview_widget` reads Cloud paths, and `publish_output` / `publish_asset` publish HTML as a wrapped widget. The executor closes the persistent workspace; do not call `sandbox_close` or `render_widget` in Cloud.
+
 1. `sandbox_write({ path: "work.py", content: "..." })` writes code/data.
 2. `sandbox_exec({ command: "python work.py" })` computes; inspect exit status and concise stdout/stderr. Use the tool's supported timeout for long renders and stay within output caps. Break long jobs into inspect and final render stages.
 3. `sandbox_read` reads text or bounded file content; inspect files with scripts (`file`, image dimensions, CSV row count) before publishing. For charts, print JSON aggregates and embed them into widget HTML.
@@ -19,23 +21,56 @@ For large visualizations, build an HTML file with `sandbox_exec` and pass the sa
 
 ## Matplotlib and spreadsheets
 
-Select Agg before pyplot. Use Avenire light/dark colours copied from the current `style` tokens into the script. Set a restrained `axes.edgecolor`, `grid.color`, font sizes, and `lines.linewidth` (~1–1.5 pt) through `rcParams`; export at readable dimensions/DPI. Example:
+Load `style` and call `get_page_context` before rendering. Select Agg before pyplot. Use the current figure tokens for every surface, mark and label. Ordinary series use neutral ink, labelled or dashed; reserve semantic red/green/blue for actual signals. Use square framing and thin axes, restrained typography, and readable export dimensions/DPI. Never use a library's default categorical palette or an unrelated custom dark theme.
+
+Cloud's `get_page_context` returns `themeFile`: an absolute path to the server-written `visual-theme.json` beside the run's `out` directory. It has `themes.light` and `themes.dark`, each with `tokens`, neutral `series`, and ready-to-use `matplotlib` rcParams derived from the same production widget tokens. Read it from the script, select the requested appearance (light by default), and use `plt.rcParams.update(theme['matplotlib'])` plus `plt.rcParams['axes.prop_cycle'] = cycler(color=theme['series'])`. Use these values for diagrams as well as charts. Do not overwrite them with an invented palette later in the script.
+
+For chat, save `get_page_context().themeTokens` as `figure-tokens.json` in the script directory before running this example. In Cloud, replace the token-loading expression with `json.loads(theme_file.read_text())['themes'][appearance]['tokens']`, using the returned `themeFile` path. This plots supplied `series.csv` data rather than fabricated observations:
 
 ```python
+import json
+from pathlib import Path
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-plt.rcParams.update({'figure.facecolor':'#faf9f5','axes.facecolor':'#faf9f5',
-                     'axes.edgecolor':'#b4b0a9','grid.color':'#d7d3cc',
-                     'axes.linewidth':0.6,'lines.linewidth':1.2,'font.size':10})
+import pandas as pd
+from cycler import cycler
+
+root = Path(__file__).resolve().parent
+tokens = json.loads((root / 'figure-tokens.json').read_text())
+plt.rcParams.update({
+    'figure.facecolor': tokens['--figure-page'],
+    'axes.facecolor': tokens['--figure-card'],
+    'savefig.facecolor': tokens['--figure-page'],
+    'text.color': tokens['--figure-strong'],
+    'axes.labelcolor': tokens['--figure-text'],
+    'xtick.color': tokens['--figure-text'],
+    'ytick.color': tokens['--figure-text'],
+    'axes.edgecolor': tokens['--figure-mid'],
+    'grid.color': tokens['--figure-faint'],
+    'axes.linewidth': 0.45, 'grid.linewidth': 0.45,
+    'lines.linewidth': 1.125, 'font.size': 10,
+    'legend.frameon': False,
+    'axes.prop_cycle': cycler(color=[tokens['--figure-hi'], tokens['--figure-mid']]),
+})
+data = pd.read_csv(root / 'series.csv')
 fig, ax = plt.subplots(figsize=(7, 4), layout='constrained')
-ax.plot([1,2,3], [2,3,5], color='#6050a5')
-ax.grid(alpha=.5)
-fig.savefig('figure.png', dpi=180)
-fig.savefig('figure.svg')
+ax.plot(data['x'], data['y'], label='Observed')
+ax.spines[['top', 'right']].set_visible(False)
+ax.grid(True)
+ax.legend()
+fig.savefig(root / 'figure.png', dpi=180)
+fig.savefig(root / 'figure.svg')
+plt.close(fig)
 ```
 
 For CSV/XLSX: `pd.read_csv` or `pd.read_excel(engine='openpyxl')`; inspect dtypes, parse dates, coerce numbers with an explicit missing-value policy, group and aggregate, then export compact `to_json(orient='records', date_format='iso')`. Avoid dumping private rows into tool output. Animate GIFs with matplotlib `PillowWriter` or `imageio`; MP4 with `FFMpegWriter` if ffmpeg is present. Check output size and a sample frame.
+
+## Video appearance
+
+Videos use the same selected figure theme on every frame. Load the renderer palette once, then use its `--figure-page`, `--figure-card`, `--figure-strong`, `--figure-text`, `--figure-mid` and neutral series values in Pillow/ImageDraw, matplotlib animation, manimgx scene backgrounds/text/strokes, or Node rendering. Use square hairline panels, concise technical labels and the same model for motion and readouts. A controller identity is a label/dash/shape, not a reason for teal/orange colouring; a failed state can use semantic red. Never introduce a separate video design system.
+
+For Cloud Pillow frames, for example, use `Image.new('RGB', (width, height), theme['tokens']['--figure-page'])`, and draw labels with `theme['tokens']['--figure-strong']`. For manimgx, set scene background and all mark/text colours from those same selected tokens. Explicitly label the exported appearance in filenames, such as `comparison-light.mp4`; when both are required, render each palette into its own file. PNG and MP4 pixels cannot follow live CSS theme messages. Inspect representative frames at the beginning, middle and end unless the task waives verification.
 
 ## ManimGX, KiCad, Node
 

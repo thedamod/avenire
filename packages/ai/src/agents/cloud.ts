@@ -30,6 +30,8 @@ import { inputsRootFor, runPaths, RUN_WALL_CLOCK } from "../cloud/paths.ts";
 import { withToolJournal } from "../cloud/journal.ts";
 import { newId } from "@avenire/shared/id";
 import { AssetStore } from "../outputs/assets.ts";
+import { VISUAL_THEME_MANIFEST } from "../outputs/visual-theme.ts";
+import { cloudVisualTools } from "../cloud/visuals.ts";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -522,7 +524,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
             leaseExpiresAt: sql`now() + interval '5 minutes'`,
             startedAt: run.startedAt ?? DateTime.toDateUtc(now),
             modelName: name,
-            promptVersion: "server-cua-v1",
+            promptVersion: "server-cua-v2-visuals",
           })
           .where(
             and(
@@ -561,6 +563,10 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         );
         const paths = runPaths(runId);
         yield* box.exec(`mkdir -p ${shellQuote(paths.outDir)}`);
+        yield* box.writeFile(
+          `${paths.runDir}/visual-theme.json`,
+          new TextEncoder().encode(JSON.stringify(VISUAL_THEME_MANIFEST)),
+        );
         yield* box.startDesktop;
         recordingReachable = run.sandboxId === null || run.sandboxId === box.id;
         const ctx = {
@@ -616,7 +622,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
           db.query.cloudToolCall.findMany({
             where: and(
               eq(cloudToolCall.runId, runId),
-              eq(cloudToolCall.name, "computer"),
+              inArray(cloudToolCall.name, ["computer", "preview_widget"]),
               eq(cloudToolCall.status, "completed"),
             ),
             orderBy: [desc(cloudToolCall.createdAt)],
@@ -645,6 +651,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         const registry = withToolJournal<CloudToolServices | RuthToolServices | ComputerServices>({
           ...base,
           ...cloudToolRegistrations,
+          ...cloudVisualTools,
           ...computer.registry,
           ...recordingRegistry,
           publish_asset: sandboxToolRegistry.publish_asset,

@@ -77,7 +77,7 @@ export const sandboxReadSpec = {
 export const publishAssetSpec = {
   name: "publish_asset",
   description:
-    "Publish a sandbox file (up to 50 MB) as a permanent, private asset. Use for figures, videos and documents.",
+    "Publish a sandbox file (up to 50 MB) as a permanent, private asset. Use for figures, videos and documents. In Cloud, HTML (8 MiB max) is wrapped with the production CSP/theme and published as an interactive widget; use its returned URL in the report.",
   inputSchema: standardSchema(
     Schema.Struct({ path: Schema.NonEmptyString, title: Schema.optionalKey(Schema.String) }),
   ),
