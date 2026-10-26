@@ -21,6 +21,7 @@ import { registerTool } from "../tools/registration.ts";
 import { withToolJournal } from "../cloud/journal.ts";
 import { recordingDatabase } from "../cloud-test-support.ts";
 import { ctx } from "../tools/test-support.ts";
+import { RuthToolError } from "../tools/core.ts";
 import type { RuthKitServices } from "../tools/library.ts";
 class SimulatedCrash extends Schema.TaggedError<SimulatedCrash>()("SimulatedCrash", {}) {}
 const idle = {
@@ -88,6 +89,65 @@ it.effect(
     });
   },
 );
+it.effect("tells Ruth why a tool refused, but not what an unexpected failure said", () => {
+  const model = scriptedModel([
+    {
+      toolCalls: [
+        { id: "refused", name: "publish_output", input: "{}" },
+        { id: "crashed", name: "box_exec", input: "{}" },
+      ],
+    },
+    { text: "Done" },
+  ]);
+  const capabilities = { vision: false, toolResultImages: false };
+  const chunks: UIMessageChunk[] = [];
+  const empty = jsonSchema<Record<string, never>>({ type: "object", properties: {} });
+  return Effect.gen(function* () {
+    const result = yield* runCloudLoop({
+      model,
+      system: "Publish",
+      tools: {
+        publish_output: tool({
+          inputSchema: empty,
+          execute: async (): Promise<unknown> => {
+            throw new RuthToolError({
+              tool: "publish_output",
+              code: "invalid_input",
+              message: "plot.png does not follow Avenire's figure palette.",
+              recoverable: true,
+            });
+          },
+        }),
+        box_exec: tool({
+          inputSchema: empty,
+          execute: async (): Promise<unknown> => {
+            throw new Error("secret provider response");
+          },
+        }),
+      },
+      images: createImageTransport(capabilities),
+      capabilities,
+      checkpoint: {
+        messages: [{ role: "user", content: "Publish" }],
+        stepIndex: 0,
+        usage: { inputTokens: 0, outputTokens: 0, cost: 0, actions: 0 },
+      },
+      deadline: 100000,
+      maxCost: 1,
+      maxActions: 10,
+      ...idle,
+      emit: (batch) =>
+        Effect.sync(() => {
+          chunks.push(...batch);
+        }),
+    });
+    expect(result.text).toBe("Done");
+    expect(chunks.filter((c) => c.type === "tool-output-error")).toMatchObject([
+      { toolCallId: "refused", errorText: "plot.png does not follow Avenire's figure palette." },
+      { toolCallId: "crashed", errorText: "Tool box_exec failed." },
+    ]);
+  });
+});
 it("prices steps a provider reports no cost for, and prefers a reported cost", () => {
   const usage = {
     inputTokens: 1_000_000,
