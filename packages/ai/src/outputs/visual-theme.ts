@@ -39,7 +39,13 @@ export const matplotlibrc = (appearance: "light" | "dark" = DEFAULT_MEDIA_APPEAR
   const theme = rendererTheme(appearance);
   // matplotlibrc treats "#" as a comment, so hex colours are written without it.
   const value = (v: string | number | boolean) =>
-    typeof v === "string" ? v.replace(/^#(?=[0-9a-f]{6}$)/i, "") : v === true ? "True" : v === false ? "False" : String(v);
+    typeof v === "string"
+      ? v.replace(/^#(?=[0-9a-f]{6}$)/i, "")
+      : v === true
+        ? "True"
+        : v === false
+          ? "False"
+          : String(v);
   return [
     ...Object.entries(theme.matplotlib).map(([key, v]) => `${key}: ${value(v)}`),
     `axes.prop_cycle: cycler('color', [${theme.series.map((c) => `'${c.slice(1)}'`).join(", ")}])`,

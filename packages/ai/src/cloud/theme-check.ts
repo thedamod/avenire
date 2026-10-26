@@ -13,11 +13,19 @@ const SVG = /\.svg$/i;
 export const isCapture = (path: string) => path.split("/").includes("captures");
 
 const hex = (r: number, g: number, b: number) =>
-  `#${[r, g, b].map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, "0")).join("")}`;
+  `#${[r, g, b]
+    .map((v) =>
+      Math.round(Math.min(255, Math.max(0, v)))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
 const NEUTRAL_ENDS = new Set(["#000000", "#ffffff"]);
 const TOKEN_COLORS = new Set<string>(
   Object.values(WIDGET_THEME_TOKENS).flatMap((tokens) =>
-    Object.values(tokens as Record<string, string>).filter((value) => /^#[0-9a-f]{6}$/i.test(value)),
+    Object.values(tokens as Record<string, string>).filter((value) =>
+      /^#[0-9a-f]{6}$/i.test(value),
+    ),
   ),
 );
 const NAMED =
