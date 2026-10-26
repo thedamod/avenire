@@ -13,6 +13,9 @@ const origin = "chrome-extension://gdegpabcfhonkcnecpgaekplbfmopace";
 const tab = {
   url: "https://example.com/lecture",
   title: "Lecture",
+  tabId: 1,
+  windowId: 1,
+  browser: "chrome",
   activeInWindow: true,
   engagement: { dwellMs: 10_000, scrollDepthPct: 0, mediaPlaying: false },
 };

@@ -1,0 +1,44 @@
+{
+  "name": "@avenire/capture",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./url": {
+      "types": "./src/url.ts",
+      "import": "./src/url.ts"
+    },
+    "./policy": {
+      "types": "./src/policy.ts",
+      "import": "./src/policy.ts"
+    },
+    "./candidates": {
+      "types": "./src/candidates.ts",
+      "import": "./src/candidates.ts"
+    },
+    "./access": {
+      "types": "./src/access.ts",
+      "import": "./src/access.ts"
+    },
+    "./reopen": {
+      "types": "./src/reopen.ts",
+      "import": "./src/reopen.ts"
+    },
+    "./extract": {
+      "types": "./src/extract.ts",
+      "import": "./src/extract.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
+  },
+  "dependencies": {
+    "@avenire/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "effect": "catalog:",
+    "happy-dom": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

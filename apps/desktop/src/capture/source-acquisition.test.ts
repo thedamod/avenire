@@ -33,6 +33,8 @@ const file = {
   sizeBytes: bytes.length,
   captureId: null,
   folderIds: [],
+  origin: null,
+  access: "open",
   mediaPositionSec: null,
   preview: null,
   purgeAt: null,

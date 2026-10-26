@@ -9,10 +9,6 @@
       "types": "./src/bridge.ts",
       "import": "./src/bridge.ts"
     },
-    "./capture-policy": {
-      "types": "./src/capture/policy.ts",
-      "import": "./src/capture/policy.ts"
-    },
     "./source-acquisition": {
       "types": "./src/capture/source-acquisition.ts",
       "import": "./src/capture/source-acquisition.ts"
@@ -27,6 +23,7 @@
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
+    "@avenire/capture": "workspace:*",
     "@avenire/contracts": "workspace:*",
     "effect": "catalog:"
   },

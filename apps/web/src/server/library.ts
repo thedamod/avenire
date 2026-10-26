@@ -14,14 +14,13 @@ import {
   LibraryFile,
   NotFound,
   StorageKey,
-  type FileKind,
   type FilePlacement,
   type Folder,
   type IngestionJob,
   type SubmitCaptureResult,
   type UserId,
 } from "@avenire/contracts";
-import { applyPolicy } from "@avenire/desktop/capture-policy";
+import { captureCandidates } from "@avenire/capture/candidates";
 import { lockCorpus } from "@avenire/database/corpus";
 import { isDeepStrictEqual } from "node:util";
 import { Database } from "@avenire/database/client";
@@ -107,6 +106,8 @@ export const fileToContract = (row: FileRow, folderIds: readonly FolderId[] = []
   contentModifiedAt: row.contentModifiedAt?.toISOString() ?? null,
   archivedAt: row.archivedAt?.toISOString() ?? null,
   sourceUrl: row.sourceUrl,
+  origin: row.origin,
+  access: row.access,
   storageKey: row.storageKey === null ? null : StorageKey.make(row.storageKey),
   mimeType: row.mimeType,
   sizeBytes: row.sizeBytes,
@@ -128,80 +129,6 @@ export const jobToContract = (row: typeof ingestionJob.$inferSelect): IngestionJ
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
 });
-
-interface CaptureCandidate {
-  readonly title: string;
-  readonly kind: FileKind;
-  readonly dedupeKey: string;
-  readonly url: string | null;
-  readonly text?: string;
-  readonly position?: number;
-}
-/** Local filesystem paths never become server reads. Native clients must upload their bytes. */
-export const captureCandidates = (snapshot: CaptureSnapshot) => {
-  const policy = applyPolicy(snapshot);
-  const candidates = new Map<string, CaptureCandidate>();
-  const skipped = policy.blocked.map((entry) => ({
-    title: entry.title,
-    reason: entry.category as string,
-  }));
-  const addUrl = (raw: string, title: string, kind: FileKind, position?: number) => {
-    let url: URL;
-    try {
-      url = new URL(raw);
-    } catch {
-      skipped.push({ title, reason: "Invalid URL" });
-      return;
-    }
-    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) {
-      skipped.push({ title, reason: "Only public HTTP URLs can be captured" });
-      return;
-    }
-    url.hash = "";
-    const normalized = url.toString();
-    const dedupeKey = `url:${normalized}`;
-    candidates.set(dedupeKey, {
-      title: title.trim().slice(0, 500) || url.hostname,
-      kind,
-      url: normalized,
-      dedupeKey,
-      ...(position !== undefined && Number.isFinite(position) && position >= 0 ? { position } : {}),
-    });
-  };
-  const addText = (text: string, title: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    const dedupeKey = `selection:${createHash("sha256").update(trimmed).digest("hex")}`;
-    candidates.set(dedupeKey, {
-      title: title.trim().slice(0, 500) || trimmed.slice(0, 80),
-      kind: "selection",
-      url: null,
-      text: trimmed,
-      dedupeKey,
-    });
-  };
-  for (const tab of policy.snapshot.tabs) {
-    addUrl(tab.finalUrl ?? tab.url, tab.title, tab.likelyPdf ? "pdf" : "web-page");
-    if (tab.selectionText) addText(tab.selectionText, `Selection from ${tab.title}`);
-  }
-  for (const media of policy.snapshot.media) {
-    if (media.url) addUrl(media.url, media.title, "video", media.positionSec);
-    else
-      skipped.push({
-        title: media.title,
-        reason: "Upload this local media file to capture its contents",
-      });
-  }
-  for (const window of policy.snapshot.windows) {
-    if (window.filePath)
-      skipped.push({
-        title: window.title,
-        reason: "Upload this local file to capture its contents",
-      });
-  }
-  if (policy.snapshot.selectionText) addText(policy.snapshot.selectionText, "Captured selection");
-  return { snapshot: policy.snapshot, candidates: [...candidates.values()], skipped };
-};
 
 const validName = (name: string) => {
   const value = name.trim();
@@ -507,7 +434,9 @@ export const LibraryLive = Layer.effect(
             return yield* new Conflict({
               reason: "Capture must contain a valid timestamp and at most 200 sources.",
             });
-          const prepared = captureCandidates(snapshot);
+          const prepared = captureCandidates(snapshot, (text) =>
+            createHash("sha256").update(text).digest("hex"),
+          );
           const entries = yield* Effect.forEach(prepared.candidates, (candidate) =>
             Effect.gen(function* () {
               const id = yield* makeId(FileId);

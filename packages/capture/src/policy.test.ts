@@ -13,12 +13,18 @@ const snapshot: CaptureSnapshot = {
     {
       url: "https://mail.google.com",
       title: "Inbox",
+      tabId: 1,
+      windowId: 1,
+      browser: "chrome",
       activeInWindow: true,
       engagement: { dwellMs: 10_000, scrollDepthPct: 20, mediaPlaying: false },
     },
     {
       url: "https://example.com/notes",
       title: "Notes",
+      tabId: 1,
+      windowId: 1,
+      browser: "chrome",
       activeInWindow: true,
       engagement: { dwellMs: 10_000, scrollDepthPct: 20, mediaPlaying: false },
     },
@@ -106,4 +112,22 @@ it("requires media title and app provenance and never attaches an unrelated path
     ],
   });
   expect(result.snapshot.media).toEqual([allowed]);
+});
+
+it("preserves only declared fields in verified tab provenance", () => {
+  const selection = { exact: "Selected text", prefix: "Before", unexpected: "secret" };
+  const position = { scrollPct: 20, textQuote: selection, unexpected: "secret" };
+  const result = applyPolicy({
+    ...snapshot,
+    tabs: [{ ...snapshot.tabs[1]!, selection, position }],
+  });
+  expect(result.snapshot.tabs[0]).toMatchObject({
+    tabId: 1,
+    windowId: 1,
+    browser: "chrome",
+    selection: { exact: "Selected text", prefix: "Before" },
+    position: { scrollPct: 20, textQuote: { exact: "Selected text", prefix: "Before" } },
+  });
+  expect(JSON.stringify(result)).not.toContain("secret");
+  expect(applyPolicy(result.snapshot).snapshot).toEqual(result.snapshot);
 });

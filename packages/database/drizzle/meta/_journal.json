@@ -85,6 +85,13 @@
       "when": 1793014551172,
       "tag": "0011_cloud_task_workspace",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793056089478,
+      "tag": "0012_capture_origin_access",
+      "breakpoints": true
     }
   ]
 }

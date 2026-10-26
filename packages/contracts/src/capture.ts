@@ -7,22 +7,149 @@
  */
 import * as Schema from "effect/Schema";
 
-import { CaptureId } from "./ids.ts";
+import { CaptureId, FileId } from "./ids.ts";
+
+const Url = Schema.String.check(Schema.isMaxLength(8192));
+const Title = Schema.String.check(Schema.isMaxLength(2000));
+const Identifier = Schema.NonEmptyString.check(Schema.isMaxLength(200));
+const Timestamp = Schema.String.check(Schema.isMaxLength(64));
+const NonNegative = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0));
+const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+const Sha256 = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/));
+const ScrollPct = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 100 }));
+
+export const TextQuote = Schema.Struct({
+  exact: Schema.NonEmptyString.check(Schema.isMaxLength(500)),
+  prefix: Schema.optional(Schema.String.check(Schema.isMaxLength(500))),
+  suffix: Schema.optional(Schema.String.check(Schema.isMaxLength(500))),
+});
+export type TextQuote = typeof TextQuote.Type;
+
+export const CapturePosition = Schema.Struct({
+  scrollPct: Schema.optional(ScrollPct),
+  textQuote: Schema.optional(TextQuote),
+  pdfPage: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+  mediaSec: Schema.optional(NonNegative),
+});
+export type CapturePosition = typeof CapturePosition.Type;
+
+export const BrowserKind = Schema.Literals([
+  "chrome",
+  "edge",
+  "brave",
+  "arc",
+  "vivaldi",
+  "opera",
+  "firefox",
+  "other",
+]);
+export type BrowserKind = typeof BrowserKind.Type;
+
+export const CaptureOrigin = Schema.Union([
+  Schema.TaggedStruct("Web", {
+    url: Url,
+    finalUrl: Schema.optional(Url),
+    canonicalUrl: Schema.optional(Url),
+    title: Title,
+    browser: BrowserKind,
+    capturedAt: Timestamp,
+    position: Schema.optional(CapturePosition),
+  }),
+  Schema.TaggedStruct("LocalFile", {
+    deviceId: Identifier,
+    deviceName: Schema.String.check(Schema.isMaxLength(255)),
+    platform: Schema.Literals(["darwin", "win32", "linux"]),
+    /** Basename only: absolute paths stay in the desktop's local origin registry. */
+    fileName: Schema.NonEmptyString.check(Schema.isMaxLength(255)),
+    appName: Schema.optional(Schema.String.check(Schema.isMaxLength(255))),
+    sizeBytes: NonNegativeInt,
+    sha256: Sha256,
+    capturedAt: Timestamp,
+    position: Schema.optional(CapturePosition),
+  }),
+]);
+export type CaptureOrigin = typeof CaptureOrigin.Type;
+
+/** Whether the student could reach the source. Extraction coverage is tracked separately. */
+export const SourceAccess = Schema.Literals(["open", "paywalled", "login-required"]);
+export type SourceAccess = typeof SourceAccess.Type;
+
+export const AccessSignals = Schema.Struct({
+  httpStatus: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 599 }))),
+  isAccessibleForFree: Schema.optional(Schema.Boolean),
+  visibleTextLength: NonNegativeInt,
+  articleWordCount: Schema.optional(NonNegativeInt),
+  paywallContainers: Schema.Array(Schema.String.check(Schema.isMaxLength(100))).check(
+    Schema.isMaxLength(32),
+  ),
+  passwordInput: Schema.Boolean,
+});
+export type AccessSignals = typeof AccessSignals.Type;
+
+export const PageSnapshot = Schema.Struct({
+  tabId: NonNegativeInt,
+  url: Url,
+  title: Title,
+  canonicalUrl: Schema.optional(Url),
+  description: Schema.String.check(Schema.isMaxLength(5000)),
+  abstract: Schema.optional(Schema.String.check(Schema.isMaxLength(10000))),
+  language: Schema.String.check(Schema.isMaxLength(35)),
+  text: Schema.String.check(Schema.isMaxLength(1_500_000)),
+  textLength: NonNegativeInt,
+  truncated: Schema.Boolean,
+  signals: AccessSignals,
+  /**
+   * The original file (PDF, Office document) read with the browser session. Its bytes follow as
+   * binary frames on the same socket, or go straight to the upload API in direct mode.
+   */
+  file: Schema.optional(
+    Schema.Struct({
+      url: Url,
+      fileName: Schema.String.check(Schema.isMaxLength(255)),
+      mimeType: Schema.String.check(Schema.isMaxLength(255)),
+      sizeBytes: NonNegativeInt,
+      sha256: Sha256,
+    }),
+  ),
+});
+export type PageSnapshot = typeof PageSnapshot.Type;
+
+export const ReopenPlan = Schema.Union([
+  Schema.TaggedStruct("FocusTab", { url: Url, position: Schema.optional(CapturePosition) }),
+  Schema.TaggedStruct("OpenUrl", { url: Url }),
+  /** The desktop resolves `fileId` through its local origin registry; no path crosses the wire. */
+  Schema.TaggedStruct("OpenLocal", {
+    fileId: FileId,
+    fileName: Schema.String.check(Schema.isMaxLength(255)),
+    appName: Schema.optional(Schema.String.check(Schema.isMaxLength(255))),
+    position: Schema.optional(CapturePosition),
+  }),
+  Schema.TaggedStruct("OpenInLibrary", {
+    fileId: FileId,
+    position: Schema.optional(CapturePosition),
+  }),
+]);
+export type ReopenPlan = typeof ReopenPlan.Type;
 
 export const TabEngagement = Schema.Struct({
-  dwellMs: Schema.Number,
-  scrollDepthPct: Schema.Number,
+  dwellMs: NonNegative,
+  scrollDepthPct: ScrollPct,
   mediaPlaying: Schema.Boolean,
 });
 export type TabEngagement = typeof TabEngagement.Type;
 
 export const CapturedTab = Schema.Struct({
-  url: Schema.String,
-  finalUrl: Schema.optional(Schema.String),
-  title: Schema.String,
+  tabId: NonNegativeInt,
+  windowId: NonNegativeInt,
+  browser: BrowserKind,
+  selection: Schema.optional(TextQuote),
+  position: Schema.optional(CapturePosition),
+  url: Url,
+  finalUrl: Schema.optional(Url),
+  title: Title,
   activeInWindow: Schema.Boolean,
   incognito: Schema.optional(Schema.Boolean),
-  selectionText: Schema.optional(Schema.String),
+  selectionText: Schema.optional(Schema.String.check(Schema.isMaxLength(5000))),
   likelyPdf: Schema.optional(Schema.Boolean),
   engagement: TabEngagement,
 });
@@ -30,17 +157,17 @@ export type CapturedTab = typeof CapturedTab.Type;
 
 export const CapturedMedia = Schema.Struct({
   appName: Schema.String,
-  title: Schema.String,
+  title: Title,
   url: Schema.optional(Schema.String),
   filePath: Schema.optional(Schema.String),
-  positionSec: Schema.optional(Schema.Number),
-  durationSec: Schema.optional(Schema.Number),
+  positionSec: Schema.optional(NonNegative),
+  durationSec: Schema.optional(NonNegative),
 });
 export type CapturedMedia = typeof CapturedMedia.Type;
 
 export const CapturedWindow = Schema.Struct({
   appName: Schema.String,
-  title: Schema.String,
+  title: Title,
   filePath: Schema.optional(Schema.String),
   foreground: Schema.Boolean,
 });
@@ -56,7 +183,7 @@ export const CaptureSnapshot = Schema.Struct({
   windows: Schema.Array(CapturedWindow),
   tabs: Schema.Array(CapturedTab),
   media: Schema.Array(CapturedMedia),
-  selectionText: Schema.optional(Schema.String),
+  selectionText: Schema.optional(Schema.String.check(Schema.isMaxLength(5000))),
   /** Why a collector could not report something (denied permission, timeout, ...). */
   collectorNotes: Schema.Array(Schema.String),
 });
@@ -77,3 +204,45 @@ export const BlockedCategory = Schema.Literals([
   "private-window",
 ]);
 export type BlockedCategory = typeof BlockedCategory.Type;
+
+const Version = Schema.Literal(1);
+const RequestId = Identifier;
+export const ExtensionMessage = Schema.Union([
+  Schema.TaggedStruct("Hello", { version: Version, senderId: Identifier, browser: BrowserKind }),
+  Schema.TaggedStruct("TabsReport", {
+    version: Version,
+    tabs: Schema.Array(CapturedTab).check(Schema.isMaxLength(200)),
+  }),
+  Schema.TaggedStruct("CaptureRequest", {
+    version: Version,
+    requestId: RequestId,
+    tabIds: Schema.optional(Schema.Array(NonNegativeInt).check(Schema.isMaxLength(200))),
+    /** The owner's `captureLoggedInPages`: read page text and files in the browser session. */
+    readInBrowser: Schema.Boolean,
+  }),
+  Schema.TaggedStruct("CaptureResult", {
+    version: Version,
+    requestId: RequestId,
+    pages: Schema.Array(PageSnapshot).check(Schema.isMaxLength(200)),
+    skipped: Schema.Array(
+      Schema.Struct({
+        tabId: NonNegativeInt,
+        reason: Schema.String.check(Schema.isMaxLength(500)),
+      }),
+    ).check(Schema.isMaxLength(200)),
+  }),
+  Schema.TaggedStruct("Reopen", {
+    version: Version,
+    requestId: RequestId,
+    url: Url,
+    position: Schema.optional(CapturePosition),
+  }),
+  Schema.TaggedStruct("ReopenResult", {
+    version: Version,
+    requestId: RequestId,
+    ok: Schema.Boolean,
+  }),
+  Schema.TaggedStruct("Ping", { version: Version }),
+  Schema.TaggedStruct("Pong", { version: Version }),
+]);
+export type ExtensionMessage = typeof ExtensionMessage.Type;

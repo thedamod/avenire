@@ -28,7 +28,7 @@ import {
   fallbackPromptShortcut,
 } from "./config.ts";
 import { collectSnapshot } from "./capture/collect.ts";
-import { applyPolicy } from "./capture/policy.ts";
+import { applyPolicy } from "@avenire/capture/policy";
 import { startTabsReceiver } from "./capture/tabs.ts";
 import { latestTabs, stopTabsReceiver, tabsReceiverAvailable } from "./capture/tabs.ts";
 import { externalUrl, isAppUrl, isAssetUrl } from "./navigation-policy.ts";

@@ -21,6 +21,8 @@ const saved = {
   sizeBytes: 5,
   captureId: null,
   folderIds: [],
+  origin: null,
+  access: "open",
   mediaPositionSec: null,
   preview: null,
   purgeAt: null,

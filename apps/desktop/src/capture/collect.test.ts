@@ -12,12 +12,18 @@ vi.mock("./tabs.ts", () => ({
     {
       url: "file:///tmp/Browser%20Study.pdf",
       title: "Browser Study",
+      tabId: 1,
+      windowId: 1,
+      browser: "chrome",
       activeInWindow: true,
       engagement: { dwellMs: 0, scrollDepthPct: 0, mediaPlaying: false },
     },
     {
       url: "file:///tmp/Private.pdf",
       title: "Private",
+      tabId: 1,
+      windowId: 1,
+      browser: "chrome",
       activeInWindow: true,
       incognito: true,
       engagement: { dwellMs: 0, scrollDepthPct: 0, mediaPlaying: false },

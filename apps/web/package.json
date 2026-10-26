@@ -17,6 +17,7 @@
     "@ai-sdk/react": "catalog:",
     "@avenire/ai": "workspace:*",
     "@avenire/auth": "workspace:*",
+    "@avenire/capture": "workspace:*",
     "@avenire/client-runtime": "workspace:*",
     "@avenire/cloud": "workspace:*",
     "@avenire/contracts": "workspace:*",

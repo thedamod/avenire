@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vite-plus/test";
 import { describeCapturedSources, uploadCapturedFiles } from "./upload.ts";
-import type { CaptureSnapshot } from "@avenire/contracts";
+import type { CaptureSnapshot, CapturedTab } from "@avenire/contracts";
 const mocks = vi.hoisted(() => ({ acquire: vi.fn(async () => ({ id: "uploaded" })) }));
 vi.mock("./source-acquisition.ts", () => ({ acquireAndUploadSource: mocks.acquire }));
 const snapshot = {
@@ -61,9 +61,12 @@ it("reports unsupported files and upload failures without sending a path to the 
 
 it("previews only unique sources supported by ingestion, without exposing device paths", () => {
   const source = { ...snapshot.windows[0]!, filePath: "/home/student/Book.epub" };
-  const tab = {
+  const tab: CapturedTab = {
     url: "https://example.org/study",
     title: "Study page",
+    tabId: 1,
+    windowId: 1,
+    browser: "chrome",
     activeInWindow: true,
     engagement: { dwellMs: 0, scrollDepthPct: 0, mediaPlaying: false },
   };

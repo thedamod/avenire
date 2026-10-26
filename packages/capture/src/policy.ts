@@ -1,4 +1,9 @@
-import type { BlockedCategory, CaptureSnapshot } from "@avenire/contracts";
+import type {
+  BlockedCategory,
+  CapturePosition,
+  CaptureSnapshot,
+  TextQuote,
+} from "@avenire/contracts";
 
 export type BlockedFile = { readonly title: string; readonly category: BlockedCategory };
 export type PolicyResult = {
@@ -92,6 +97,18 @@ function blockedCategory(
   return undefined;
 }
 
+const copyQuote = (quote: TextQuote): TextQuote => ({
+  exact: quote.exact,
+  ...(quote.prefix === undefined ? {} : { prefix: quote.prefix }),
+  ...(quote.suffix === undefined ? {} : { suffix: quote.suffix }),
+});
+const copyPosition = (position: CapturePosition): CapturePosition => ({
+  ...(position.scrollPct === undefined ? {} : { scrollPct: position.scrollPct }),
+  ...(position.textQuote === undefined ? {} : { textQuote: copyQuote(position.textQuote) }),
+  ...(position.pdfPage === undefined ? {} : { pdfPage: position.pdfPage }),
+  ...(position.mediaSec === undefined ? {} : { mediaSec: position.mediaSec }),
+});
+
 export function applyPolicy(snapshot: CaptureSnapshot): PolicyResult {
   const blocked: BlockedFile[] = [];
   const report = (category: BlockedCategory) => {
@@ -123,11 +140,16 @@ export function applyPolicy(snapshot: CaptureSnapshot): PolicyResult {
       return [];
     return [
       {
+        tabId: tab.tabId,
+        windowId: tab.windowId,
+        browser: tab.browser,
+        ...(tab.position === undefined ? {} : { position: copyPosition(tab.position) }),
+        ...(tab.selection === undefined ? {} : { selection: copyQuote(tab.selection) }),
         url: tab.url,
         title: tab.title,
         activeInWindow: tab.activeInWindow,
         ...(tab.finalUrl === undefined ? {} : { finalUrl: tab.finalUrl }),
-        // The wire format has no verified selection provenance. Omit until one exists.
+        // Legacy free-form selection has no verified provenance.
         ...(tab.likelyPdf === undefined ? {} : { likelyPdf: tab.likelyPdf }),
         engagement: {
           dwellMs: tab.engagement.dwellMs,

@@ -1,6 +1,6 @@
 "use client";
 
-import { applyPolicy } from "@avenire/desktop/capture-policy";
+import { applyPolicy } from "@avenire/capture/policy";
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { toast } from "sonner";
