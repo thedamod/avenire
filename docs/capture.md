@@ -138,11 +138,29 @@ reads it and drops the regexes.
 The principle: **capture what the student can see.** We never bypass a paywall (no archive mirrors,
 no header tricks). We read the page the student already has open, in their own session.
 
-1. On the hotkey, the extension runs `extract` in each allowlisted candidate tab. The tab is
-   rendered with the student's cookies, so subscriptions, university proxies, LMS logins and Google
-   Docs all just work. The result is a `PageSnapshot`: cleaned text, title, canonical URL,
-   description/abstract, language, and the `AccessSignals` probe below. It also includes the PDF
-   bytes when the tab is a PDF, fetched by the extension with `credentials: "include"`.
+**Read in the browser, no extra friction.** The switch is the existing `captureLoggedInPages`
+setting, shown on the Settings page and passed to the extension as `CaptureRequest.readInBrowser`.
+When it is on, the extension reads **real content, never screenshots**: the rendered page text
+and the original files (PDF and Office bytes) through the student's own browser session. There
+are no per-site prompts and no allowlist to curate. The blocklist and incognito exclusion still
+apply. When it is off, the server fetches public URLs anonymously as it does today.
+
+1. On the hotkey, the extension runs `extract` in every candidate tab. The tab is rendered with the
+   student's cookies, so subscriptions, university proxies and LMS logins just work. The result is
+   a `PageSnapshot`: cleaned text, title, canonical URL, description/abstract, language and the
+   `AccessSignals` probe below. Files are read as bytes from the browser:
+   - a PDF/Office tab: the extension service worker fetches the tab's URL with
+     `credentials: "include"`. Built-in PDF viewer tabs can't host a content script, but the
+     service worker can still fetch their URL;
+   - documents linked on the page (an LMS module page listing lecture PDFs): port v1's
+     `discover.js`/`file-capture.js` link discovery and fetch them the same way, capped at 10 files
+     and 256 MiB total per capture;
+   - Google Docs/Slides/Sheets: fetch the export URL (`/export?format=pdf`/`docx`) in the session,
+     because the canvas editor has no DOM text.
+
+   The bytes stream to the desktop as binary frames (or straight to the upload API in direct mode)
+   and become ordinary uploaded originals: same hashing, same content dedupe, and the same viewer
+   as an uploaded PDF.
 2. `classifyAccess(signals)` uses JSON-LD `isAccessibleForFree: false` together with a short
    visible body, known paywall containers (Piano/TinyPass, `[data-paywall]`, `.paywall`, Medium
    metering, Substack, NYT/WSJ/FT gateways), password inputs with little other text, a visible
@@ -229,14 +247,16 @@ TypeScript MV3, bundled with esbuild like `apps/desktop/scripts/build.mjs`. Outp
 - `content.ts`: engagement (dwell, scroll depth, media playing), the current selection as a text
   quote, and position restore for reopen.
 - `extract.ts` comes from `@avenire/capture/extract`.
-- The popup shows connection status, a "Capture this page" button, and the per-site allowlist. It
-  follows the app's design system (dark first, system-ui, 32 px buttons, no nested cards).
-- Permissions (Web Store friendly): `tabs`, `activeTab`, `scripting`, `storage`, `alarms`; required
-  host access only for the Avenire origin and loopback. Every other site is an optional host
-  permission granted per site from the popup's allowlist ("Capture this page" works on any page
-  through `activeTab`). Content scripts are registered dynamically
-  (`chrome.scripting.registerContentScripts`) only for granted sites. Incognito tabs are never
-  read. The store listing discloses that page content is sent to the student's own Avenire library.
+- The popup shows connection status and a "Capture this page" button. That's all: no settings
+  live in the extension; the switch is Avenire's own setting. It follows the app's design system
+  (dark first, system-ui, 32 px buttons, no nested cards).
+- Permissions: `tabs`, `scripting`, `storage`, `alarms` and host `<all_urls>`, granted once at
+  install with no per-site prompts. That host access is what lets reading in the browser work
+  without friction, and the store listing justifies it and discloses that page content and files
+  go to the student's own Avenire library. A static content script runs on http(s) pages for
+  engagement and selection. Reading happens only on the hotkey, and only when
+  `readInBrowser` is true. `file:///*` is optional, because Chrome needs a manual toggle for it,
+  and the desktop already reads `file://` tabs from disk. Incognito tabs are never read.
 - The desktop's existing origin check (`chrome-extension:` plus `extensionIds`) applies to both the
   WebSocket and the HTTP receiver.
 
