@@ -228,7 +228,7 @@ export default function HeroArt() {
       vel.x += (rawX - vel.x) * 0.18;
       vel.y += (rawY - vel.y) * 0.18;
       const speed = Math.hypot(vel.x, vel.y);
-      if (speed > 30) Object.assign(vel, { x: (vel.x / speed) * 30, y: (vel.y / speed) * 30 });
+      if (speed > 12) Object.assign(vel, { x: (vel.x / speed) * 12, y: (vel.y / speed) * 12 });
       hover += ((pointer.inside ? 1 : 0) - hover) * (1 - Math.exp(-dt * 6));
 
       // The rocket leans a few pixels toward the pointer on a spring.

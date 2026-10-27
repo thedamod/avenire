@@ -52,9 +52,9 @@ void main() {
 
   // Pointer: drag the liquid along the pointer's motion and part it around the cursor.
   vec2 dm = p - uMouse;
-  float fall = exp(-dot(dm, dm) / (190.0 * 190.0));
-  p -= uVel * 3.2 * fall;
-  p -= normalize(dm + 1e-4) * 26.0 * uHover * fall;
+  float fall = exp(-dot(dm, dm) / (160.0 * 160.0));
+  p -= uVel * 0.9 * fall; // at most ~11 CSS pixels with the 12-pixel velocity cap
+  p -= normalize(dm + 1e-4) * 6.0 * uHover * fall;
 
   // Domain warp (hero_flow.py's, at full resolution), now drifting with time.
   vec2 w = vec2(
