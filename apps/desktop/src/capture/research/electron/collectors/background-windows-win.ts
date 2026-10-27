@@ -1,4 +1,11 @@
-import { isBrowserApp, isMediaApp, isOfficeApp, isSelfApp } from "../../src/capture/app-catalog.ts";
+import { nativeFile } from "../../../native-file.ts";
+import {
+  isLocalFileApp,
+  isBrowserApp,
+  isMediaApp,
+  isOfficeApp,
+  isSelfApp,
+} from "../../src/capture/app-catalog.ts";
 import { mediaBasename } from "../../src/capture/background-merge.ts";
 import { pickBestPath, rankCandidatePaths } from "../../src/capture/path-ranking.ts";
 import { isAutoCapturableFile } from "../../src/capture/scannable-files.ts";
@@ -15,8 +22,8 @@ import { requestProcessScan } from "./handle-scan-win.ts";
 import { execPowerShell } from "./ps-queue.ts";
 
 // Browsers are covered by the tab pipeline (extension merges all windows),
-// the app itself is excluded by pid — everything else with a real title
-// counts as a visible background window.
+// only known document/media apps are candidates. A resolved supported file
+// is required before any window is returned.
 const MAX_WINDOWS = 20;
 // One handle-table walk serves every pid, so the per-window cap of 3 (one
 // walk each) is gone; this only bounds DuplicateHandle work per walk.
@@ -35,24 +42,23 @@ export async function getBackgroundWindowsWindows(
   notes: string[] = [],
   ctx: CaptureContext = createCaptureContext(notes),
 ): Promise<BackgroundWindow[]> {
-  // Enumerate before queuing enrichments; retain titles even if those jobs exhaust the budget.
+  // Enumerate before queuing enrichments; unresolved titles stay internal.
   const wins = await enumerateWindows(ctx, notes);
   if (!wins) return [];
 
   const out: { item: BackgroundWindow; pid: number }[] = [];
   for (const w of wins) {
     if (!w.title || w.pid === fgPid || w.pid === process.pid) continue;
-    if (isBrowserApp(w.proc) || isSelfApp(w.proc)) continue;
+    if (isBrowserApp(w.proc) || isSelfApp(w.proc) || !isLocalFileApp(w.proc)) continue;
     if (out.some((o) => o.pid === w.pid && o.item.windowTitle === w.title)) continue; // same window twice
     if (out.length < MAX_WINDOWS)
       out.push({ item: { appName: w.proc, windowTitle: w.title }, pid: w.pid });
   }
-  ctx.partialWindows = out.map((entry) => entry.item);
+  ctx.partialWindows = [];
   if (Date.now() >= ctx.deadline) return ctx.partialWindows;
   const officeP = ctx.memo("win:office", () => readOfficeDocs(notes, ctx));
   const recentP = listRecentTargets(notes, ctx);
   // Office owns its own resolution (COM below); see app-catalog OFFICE_APP.
-  const { isLocalFileApp } = await import("../../src/capture/app-catalog.ts");
   const routeForApp = (app: { appName: string; [key: string]: unknown }) =>
     isLocalFileApp(app.appName);
   const synthetic = (appName: string, windowTitle: string, processId: number) => ({
@@ -143,7 +149,10 @@ export async function getBackgroundWindowsWindows(
   }
   const files = out.filter((o) => o.item.filePath).length;
   notes.push(`win:bgwin:windows=${out.length}:files=${files}`);
-  return out.map((o) => o.item);
+  return out.flatMap(({ item }) => {
+    const path = nativeFile(item.appName, item.filePath);
+    return path ? [{ ...item, filePath: path }] : [];
+  });
 }
 
 // Window list: native get-windows (no PowerShell, multi-window per process);

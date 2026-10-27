@@ -13,7 +13,20 @@ export async function atomicJson(path: string, value: unknown): Promise<void> {
   }
 }
 export const ownerKey = (owner: string) => createHash("sha256").update(owner).digest("hex");
+export interface RegisteredDownload {
+  readonly path: string;
+  readonly sizeBytes: number;
+  readonly download: {
+    readonly captureId: string;
+    readonly startedAt: number;
+    readonly endedAt: number;
+    readonly url: string;
+  };
+}
 export interface LocalOrigin {
+  /** Desktop-validated capture window; permits safe browser reuse after reconnection/restart. */
+  readonly download?: RegisteredDownload["download"] & { readonly reportedPath?: string };
+  readonly originUrl?: string;
   readonly path: string;
   readonly sha256: string;
   readonly sizeBytes: number;
@@ -48,6 +61,35 @@ export class LocalOriginRegistry {
       Number.isFinite(value.mtimeMs)
       ? { ...value }
       : undefined;
+  }
+  downloads(owner: string): RegisteredDownload[] {
+    return Object.keys(this.owners[ownerKey(owner)] ?? {})
+      .flatMap((id) => {
+        const entry = this.get(owner, id);
+        const download = entry?.download;
+        return entry &&
+          download &&
+          /^[a-zA-Z0-9_-]{1,200}$/.test(download.captureId) &&
+          Number.isFinite(download.startedAt) &&
+          Number.isFinite(download.endedAt) &&
+          typeof download.url === "string"
+          ? [
+              {
+                path:
+                  typeof download.reportedPath === "string" ? download.reportedPath : entry.path,
+                sizeBytes: entry.sizeBytes,
+                download: {
+                  captureId: download.captureId,
+                  startedAt: download.startedAt,
+                  endedAt: download.endedAt,
+                  url: download.url,
+                },
+              },
+            ]
+          : [];
+      })
+      .sort((a, b) => b.download.endedAt - a.download.endedAt)
+      .slice(0, 200);
   }
   record(owner: string, fileId: string, origin: LocalOrigin): Promise<void> {
     const task = this.tail.then(async () => {

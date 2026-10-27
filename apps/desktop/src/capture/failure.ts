@@ -1,3 +1,4 @@
+import { scrubCaptureText } from "./diagnostics.ts";
 import type { UploadRejected } from "./source-acquisition.ts";
 
 // Matched by tag and name rather than instanceof, so the check survives module mocks and bundling.
@@ -10,12 +11,12 @@ const isRejection = (value: unknown): value is UploadRejected =>
 
 /**
  * What the capture overlay says when a source couldn't be saved. Server text is safe to show
- * (the server never sees device paths); local errors are reduced to their kind.
+ * and local messages share the same path scrubber as the diagnostic log.
  */
 export function captureFailureReason(error: unknown): string {
   const cause = causeOf(error);
   if (isRejection(cause)) {
-    const detail = cause.detail ? ` (${cause.detail})` : "";
+    const detail = cause.detail ? ` (${scrubCaptureText(cause.detail)})` : "";
     if (cause.status === 401 || cause.status === 403)
       return "Avenire needs you to sign in again, then capture again.";
     if (cause.status === 413) return "This file is larger than Avenire's 256 MB limit.";
@@ -36,5 +37,5 @@ export function captureFailureReason(error: unknown): string {
     return "Saving this file took too long. Capture again.";
   if (/fetch failed|ECONNREFUSED|ENOTFOUND|network/i.test(message))
     return "Couldn't reach Avenire. Check that it's running, then capture again.";
-  return "Could not save this file. Capture again; if it keeps failing, restart Avenire.";
+  return `Could not save this file: ${scrubCaptureText(message || "Unknown capture error").slice(0, 500)}`;
 }

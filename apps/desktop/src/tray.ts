@@ -48,6 +48,7 @@ export function trayTemplate(state: TrayState): MenuItemConstructorOptions[] {
     },
     { id: "pair", label: "Pair browser extension…", enabled: state.captureReady },
     { id: "setup", label: "Desktop setup…" },
+    { id: "capture-log", label: "Open capture log" },
     { type: "separator" },
     {
       id: "quit",

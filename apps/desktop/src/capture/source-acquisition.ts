@@ -9,6 +9,9 @@ import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
+import { captureLog, captureError } from "./diagnostics.ts";
+import { localBasename, readableLocalPath, uploadName } from "./local-file.ts";
+import { setTimeout as delay } from "node:timers/promises";
 import {
   CreateSourceUpload,
   LibraryFile,
@@ -195,6 +198,7 @@ export const acquireAndUploadSource = async (
   let localInfo: Stats | undefined;
   let cachedHash: string | undefined;
   try {
+    captureLog("Acquisition started", { count: 1, source: source.type });
     signal.throwIfAborted();
     const app = httpUrl(options.appUrl);
     const maxBytes = Math.min(options.maxBytes ?? MAX_SOURCE_UPLOAD_BYTES, MAX_SOURCE_UPLOAD_BYTES);
@@ -208,7 +212,7 @@ export const acquireAndUploadSource = async (
         : provenance(metadata.sourceUrl);
     const cleanMetadata = {
       idempotencyKey: metadata.idempotencyKey,
-      title: metadata.title,
+      title: uploadName(metadata.title, 200),
       kind: metadata.kind,
       mimeType: metadata.mimeType.split(";")[0]!.trim().toLowerCase(),
       ...(sourceUrl === undefined ? {} : { sourceUrl }),
@@ -222,7 +226,19 @@ export const acquireAndUploadSource = async (
       sha256: "0".repeat(64),
     });
     if (source.type === "local-file") {
-      const file = await open(source.path, "r");
+      if (localBasename(source.path).startsWith("~$"))
+        throw new Error("Office owner lock file skipped");
+      const path = readableLocalPath(source.path);
+      if (!path) throw new Error("Unsupported device or network path; open a local drive copy");
+      let file;
+      try {
+        file = await open(path, "r");
+      } catch (error) {
+        if (!["EBUSY", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+        captureLog("Local file retry", captureError(error));
+        await delay(300, undefined, { signal });
+        file = await open(path, "r");
+      }
       try {
         const info = await file.stat();
         if (!info.isFile() || info.size > maxBytes)
@@ -299,7 +315,6 @@ export const acquireAndUploadSource = async (
       if (
         after.size !== localInfo.size ||
         after.mtimeMs !== localInfo.mtimeMs ||
-        after.ctimeMs !== localInfo.ctimeMs ||
         sizeBytes !== localInfo.size
       )
         throw new Error("Source changed during capture; capture again.");
@@ -322,8 +337,10 @@ export const acquireAndUploadSource = async (
           mtimeMs: localInfo.mtimeMs,
           ...(options.localOrigin?.appName ? { appName: options.localOrigin.appName } : {}),
         });
+      captureLog("Uploaded", { count: 1 });
       return file;
     };
+    captureLog("Acquired", { count: 1, sizeBytes });
     operation = "upload";
     const request = (url: string, init: RequestInit, requestSignal = signal) =>
       abortable(
@@ -342,8 +359,8 @@ export const acquireAndUploadSource = async (
     });
     if (!created.ok) {
       const error = await rejection(created, signal);
-      console.warn("[capture] Upload rejected", {
-        stage: "create",
+      captureLog("Upload rejected", {
+        operation: "create",
         status: error.status,
         fields: Object.keys(payload),
         origin: payload.origin?._tag ?? "none",
@@ -380,8 +397,8 @@ export const acquireAndUploadSource = async (
     } as RequestInit);
     if (!uploaded.ok) {
       const error = await rejection(uploaded, signal);
-      console.warn("[capture] Upload rejected", {
-        stage: "put",
+      captureLog("Upload rejected", {
+        operation: "put",
         status: error.status,
         detail: error.detail,
       });
@@ -392,25 +409,22 @@ export const acquireAndUploadSource = async (
     const result = Schema.decodeUnknownSync(LibraryFile)(await readJson(uploaded, signal));
     return await finish(result);
   } catch (cause) {
-    // Only kinds and schema field names leave the device-only error, never its input values/path.
-    if (!(cause instanceof UploadRejected)) {
-      const fields = Schema.isSchemaError(cause)
-        ? SchemaIssue.makeFormatterStandardSchemaV1()(cause.issue).issues.map(
-            (issue) =>
-              issue.path
-                ?.map((part) => (typeof part === "object" ? String(part.key) : String(part)))
-                .join(".") || "response",
-          )
-        : [];
-      const code = (cause as NodeJS.ErrnoException | null)?.code;
-      console.warn("[capture] Source failed", {
-        operation,
-        kind: cause instanceof Error ? cause.name : "Error",
-        ...(typeof code === "string" && /^(?:E[A-Z0-9_]+|ABORT_ERR)$/.test(code) ? { code } : {}),
-        ...(fields.length ? { fields: fields.slice(0, 5) } : {}),
-      });
+    // Schema errors can embed the decoded response (including previews). Log only field paths.
+    let failure = cause;
+    if (Schema.isSchemaError(cause)) {
+      const fields = SchemaIssue.makeFormatterStandardSchemaV1()(cause.issue).issues.map(
+        (issue) =>
+          issue.path
+            ?.map((part) => (typeof part === "object" ? String(part.key) : String(part)))
+            .join(".") || "response",
+      );
+      failure = Object.assign(
+        new Error(`Invalid upload metadata or response: ${fields.slice(0, 5).join(", ")}`),
+        { name: cause.name },
+      );
     }
-    throw new DeviceAcquisitionError({ operation, cause });
+    captureLog("Source failed", { operation, ...captureError(failure) });
+    throw new DeviceAcquisitionError({ operation, cause: failure });
   } finally {
     clearTimeout(timer);
     controller.abort();

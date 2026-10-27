@@ -149,7 +149,7 @@ export function instantCapture(capturedAt: string, foreground: boolean) {
     deviceId: installId,
     platform:
       process.platform === "darwin" || process.platform === "win32" ? process.platform : "linux",
-    windows: mergeNativeWindows(observation.windows, native.windows, browserFiles),
+    windows: mergeNativeWindows(native.windows, browserFiles),
     tabs,
     media: native.media,
     collectorNotes: [...observation.notes, ...native.notes],

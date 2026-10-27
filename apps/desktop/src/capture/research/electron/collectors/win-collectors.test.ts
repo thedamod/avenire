@@ -193,12 +193,12 @@ describe("handle scan parsing", () => {
   });
   it("cleans extended-length prefixes defensively", () => {
     expect(cleanFinalPath("\\\\?\\C:\\Users\\u\\a.pdf")).toBe("C:\\Users\\u\\a.pdf");
-    expect(cleanFinalPath("\\\\?\\UNC\\srv\\share\\a.pdf")).toBe("\\\\srv\\share\\a.pdf");
+    expect(cleanFinalPath("\\\\?\\UNC\\srv\\share\\a.pdf")).toBe("");
     expect(cleanFinalPath("C:\\plain.pdf")).toBe("C:\\plain.pdf");
     const p = parseHandleScanOutput(
       "::PID:: 5 handles=1 open=yes files=1\n\\\\?\\C:\\x.pdf\n\\\\?\\UNC\\s\\h\\y.pdf",
     );
-    expect(p.perPid.get(5)?.paths).toEqual(["C:\\x.pdf", "\\\\s\\h\\y.pdf"]);
+    expect(p.perPid.get(5)?.paths).toEqual(["C:\\x.pdf"]);
   });
   it("keeps non-ASCII paths intact", () => {
     const p = parseHandleScanOutput(
@@ -463,7 +463,7 @@ describe("getBackgroundWindowsWindows", () => {
       stderr: "",
     });
     const out = await getBackgroundWindowsWindows(undefined, notes, ctx);
-    expect(out.map((w) => w.appName)).toEqual(["Notepad"]);
+    expect(out).toEqual([]); // Unknown/unresolved windows never become capture rows.
     expect(notes).toContain("win:bgwin:source=powershell");
   });
 
@@ -559,4 +559,57 @@ describe("SMTC is read once per snapshot", () => {
     expect(await getTimelineWindows(ctx)).toBeUndefined();
     expect(await getNowPlayingWindows(ctx)).toEqual({ title: "t" });
   });
+});
+
+it("filters a full Windows window enumeration before scans and excludes every unresolved window", async () => {
+  const ctx = createCaptureContext([], 9000);
+  const ignored = [
+    "TextInputHost",
+    "explorer",
+    "ShellExperienceHost",
+    "StartMenuExperienceHost",
+    "ApplicationFrameHost",
+    "SystemSettings",
+    "Taskmgr",
+    "NVIDIA Overlay",
+    "AMDSoftware",
+    "Raycast",
+    "PowerToys",
+    "Flow.Launcher",
+    "Everything",
+    "WindowsTerminal",
+    "powershell",
+    "cmd",
+    "Code",
+    "devenv",
+    "Olk",
+    "Teams",
+    "Avenire",
+    "msedge",
+    "chrome",
+  ];
+  await ctx.memo("windows", async () => [
+    ...ignored.map((appName, i) => ({
+      pid: 100 + i,
+      appName,
+      title: `${appName} background window`,
+    })),
+    { pid: 1, appName: "WINWORD", title: "Essay.docx - Word" },
+    { pid: 2, appName: "SumatraPDF", title: "Lecture.pdf - SumatraPDF" },
+    { pid: 3, appName: "Acrobat", title: "Unresolved viewer" },
+    { pid: 4, appName: "VLC", title: "Unresolved stream" },
+  ]);
+  ps.handler = (script) => ({
+    stdout: script.includes("Word.Application")
+      ? "::DOC:: Word\tC:\\Users\\student\\Essay.docx"
+      : script.includes("FilesForPids")
+        ? scanOut([2, ["C:\\Users\\student\\Lecture.pdf"]], [3, []])
+        : "",
+    stderr: "",
+  });
+  const windows = await getBackgroundWindowsWindows(undefined, ctx.notes, ctx);
+  expect(windows.map((window) => window.appName)).toEqual(["WINWORD", "SumatraPDF"]);
+  expect(windows.every((window) => window.filePath)).toBe(true);
+  const scan = ps.calls.find((script) => script.includes("FilesForPids"));
+  expect(scan).toContain("@(2,3)");
 });

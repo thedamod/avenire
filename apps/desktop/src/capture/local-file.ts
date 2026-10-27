@@ -35,3 +35,33 @@ export function displayTitle(title: string, path?: string): string {
     ) || "Captured source"
   );
 }
+
+/** Normalize DOS extended paths; unmapped NT volumes and network shares are never guessed. */
+export function normalizeCapturePath(path: string): string | undefined {
+  const value = path.replace(/^\\\\\?\\(?=[a-z]:\\)/i, "");
+  if (/^(?:\\Device\\|\\\\|\\\?\\|\\\?\?\\)/i.test(value) || /[\u0000-\u001f]/.test(value))
+    return undefined;
+  if (/^[a-z]:[\\/]/i.test(value)) {
+    if (value.slice(2).includes(":")) return undefined;
+    return win32.normalize(value);
+  }
+  return posix.isAbsolute(value) ? posix.normalize(value) : undefined;
+}
+export function readableLocalPath(
+  path: string,
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  const normalized = normalizeCapturePath(path);
+  // Node's Windows namespace form supports paths beyond MAX_PATH for open/stat/reopen.
+  return normalized && platform === "win32" ? win32.toNamespacedPath(normalized) : normalized;
+}
+/** Respect upload decoder limits, strip control characters, and always produce a nonempty name. */
+export function uploadName(value: string, max = 255): string {
+  return (
+    value
+      .replace(/[\u0000-\u001f\u007f]/g, " ")
+      .trim()
+      .slice(0, max)
+      .trim() || "Captured source"
+  );
+}

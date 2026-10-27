@@ -162,3 +162,36 @@ it("refuses non-http origins returned by the server and never opens the renderer
   expect(h.openExternal).not.toHaveBeenCalled();
   expect(h.openPath).not.toHaveBeenCalled();
 });
+
+it("returns downloaded originals to their browser page and still allows explicit local reopening", async () => {
+  const h = await harness();
+  const path = join(h.directory, "Handout.pdf");
+  await writeFile(path, "original");
+  const info = await stat(path);
+  await h.registry.record(h.owner, id, {
+    path,
+    sizeBytes: info.size,
+    mtimeMs: info.mtimeMs,
+    sha256: createHash("sha256").update("original").digest("hex"),
+    originUrl: "https://school.test/course/handout?token=secret",
+  });
+  const extension = { connected: () => true, reopen: vi.fn(async () => false) };
+  expect(await executeReopen(id, undefined, { ...h, extension })).toEqual({ ok: true });
+  expect(extension.reopen).toHaveBeenCalledWith("https://school.test/course/handout");
+  expect(h.openExternal).toHaveBeenCalledWith("https://school.test/course/handout");
+  expect(h.openPath).not.toHaveBeenCalled();
+  expect(
+    await executeReopen(id, { _tag: "OpenLocal", fileId: id, fileName: "Handout.pdf" }, h),
+  ).toEqual({ ok: true });
+  expect(h.openPath).toHaveBeenCalledWith(path);
+  h.openExternal.mockClear();
+  let owner = true;
+  extension.reopen.mockImplementation(async () => {
+    owner = false;
+    return false;
+  });
+  expect(
+    (await executeReopen(id, undefined, { ...h, extension, stillOwner: () => owner })).ok,
+  ).toBe(false);
+  expect(h.openExternal).not.toHaveBeenCalled();
+});

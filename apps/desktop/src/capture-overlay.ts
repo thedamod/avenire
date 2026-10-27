@@ -1,3 +1,4 @@
+import { captureLog } from "./capture/diagnostics.ts";
 import { BrowserWindow, screen } from "electron";
 import { pathToFileURL } from "node:url";
 import { existsSync } from "node:fs";
@@ -81,24 +82,24 @@ export class CaptureOverlay {
     this.window.webContents.on("will-redirect", (event) => event.preventDefault());
     this.window.webContents.on("will-attach-webview", (event) => event.preventDefault());
     this.window.webContents.on("did-fail-load", (_event, code, _description, _url, mainFrame) => {
-      if (mainFrame) console.warn("[capture] Overlay page failed to load", { code });
+      if (mainFrame) captureLog("Overlay page failed to load", { code });
     });
     this.window.webContents.on("render-process-gone", (_event, details) => {
-      console.warn("[capture] Overlay renderer stopped", { reason: details.reason });
+      captureLog("Overlay renderer stopped", { reason: details.reason });
     });
     this.window.webContents.on("console-message", (event) => {
       if (event.level !== "error") return;
       // Forward the bundled renderer's errors; redact URLs, including private bundle paths.
-      const message = event.message.replace(/(?:https?|file):\/\/[^\s]+/gi, "[url]").slice(0, 500);
-      console.warn("[capture] Overlay renderer error", { message });
+      const message = event.message.slice(0, 8000);
+      captureLog("Overlay renderer error", { message });
     });
     this.window.webContents.on("did-finish-load", () => {
-      console.info("[capture] Overlay page loaded");
+      captureLog("Overlay page loaded");
       this.push();
       if (this.state) this.window.showInactive();
     });
     void this.window.loadFile(path).catch(() => {
-      console.warn("[capture] Overlay could not open its bundled page");
+      captureLog("Overlay could not open its bundled page");
     });
   }
   trusted(event: Electron.IpcMainInvokeEvent): boolean {

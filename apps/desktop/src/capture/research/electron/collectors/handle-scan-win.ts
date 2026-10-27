@@ -1,3 +1,4 @@
+import { normalizeCapturePath } from "../../../local-file.ts";
 import { pickBestPath, rankCandidatePaths } from "../../src/capture/path-ranking.ts";
 import { SCANNABLE_EXTENSIONS } from "../../src/capture/scannable-files.ts";
 import { collectorTimeout, type CaptureContext } from "./capture-context.ts";
@@ -164,7 +165,7 @@ public static class HandleScan {
                         if (GetFileType(dup) != FILE_TYPE_DISK) continue;
                         StringBuilder sb = new StringBuilder(1024);
                         uint n = GetFinalPathNameByHandle(dup, sb, 1024, 0);
-                        if (n > 1024 && n < 32768) {
+                        if (n >= 1024 && n < 32768) {
                             sb = new StringBuilder((int)n + 1);
                             n = GetFinalPathNameByHandle(dup, sb, n + 1, 0);
                         }
@@ -217,10 +218,7 @@ export type HandleScanParse = { diag: string; perPid: Map<number, PidScan> };
 // \\?\C:\x and \\?\UNC\srv\share\x -> DOS spellings (the C# already does this;
 // repeated here so a stray prefix can never reach existsSync or ranking).
 export function cleanFinalPath(p: string): string {
-  const t = p.trim();
-  if (/^\\\\\?\\UNC\\/i.test(t)) return "\\\\" + t.slice(8);
-  if (t.startsWith("\\\\?\\")) return t.slice(4);
-  return t;
+  return normalizeCapturePath(p.trim()) ?? "";
 }
 
 // Pure: ::DIAG:: line + grouped ::PID:: sections. Unknown junk lines (a stray

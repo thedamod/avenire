@@ -25,6 +25,7 @@ const PLAYER_PROCS = [
   "mpc-hc",
   "mpc-hc64",
   "mpc-be64",
+  "mpc-be",
   "PotPlayer*",
   "wmplayer",
   "Microsoft.Media.Player",

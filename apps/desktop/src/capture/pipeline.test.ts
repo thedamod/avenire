@@ -102,7 +102,9 @@ it("starts immediately, uploads browser content while document resolution is pen
   expect(result.snapshot.windows).toEqual([]);
   expect(JSON.stringify(result)).not.toContain("/private");
   expect(result.snapshot.tabs[0]?.selection).toEqual(tab.selection);
-  expect(h.stream.events.find((event) => event.key === "window:0")?.status).toBe("uploading");
+  expect(
+    h.stream.events.some((event) => event.key === "window:0" && event.status === "uploading"),
+  ).toBe(true);
   const [, metadata] = mocks.acquire.mock.calls[0]!;
   expect(metadata).toMatchObject({
     kind: "web-page",
@@ -353,7 +355,7 @@ it("redacts file-tab failure receipts and never requests browser extraction for 
   const result = await runCapturePipeline({ ...h, channel: { ...h.channel, capture } });
   expect(capture).toHaveBeenCalledOnce();
   const serialized = JSON.stringify([result, h.stream.started, ...h.stream.events]);
-  expect(serialized).not.toMatch(/student|Downloads|C:|file:/);
+  expect(serialized).not.toMatch(/student|Downloads|C:|file:\/\//);
   expect(result.uploads?.skipped).toContainEqual({
     title: "Private Course.pdf",
     reason: "Browser timed out",
@@ -465,4 +467,65 @@ it("skips unread Drive tabs with a Needs you reason and retains ordinary timed-o
       reason: "Read in browser timed out",
     }),
   );
+});
+
+it("uploads browser downloads as LocalFiles, records their private real path, and keeps the page URL for reopen", async () => {
+  const path = "/Downloads/Avenire/request-id/Handout.pdf";
+  const url = "https://school.test/files/123/download";
+  const h = setup({ ...snapshot, tabs: [{ ...tab, selection: undefined }] }, [
+    {
+      tab: { ...tab, selection: undefined },
+      path,
+      downloadWindow: { captureId: "request-id", startedAt: 1, endedAt: 2 },
+      page: {
+        ...page,
+        text: "",
+        textLength: 0,
+        download: {
+          path,
+          captureId: "request-id",
+          url,
+          sizeBytes: 10,
+          mimeType: "application/pdf",
+          primary: true,
+          originUrl: tab.url,
+        },
+      },
+    },
+  ]);
+  const record = vi.spyOn(h.registry, "record").mockResolvedValue();
+  mocks.acquire.mockImplementation(async (source, metadata, options) => {
+    expect(source).toEqual({ type: "local-file", path });
+    expect(metadata).toMatchObject({
+      sourceUrl: "https://example.com/study?course=physics",
+      kind: "pdf",
+    });
+    expect(options.localOrigin).toMatchObject({
+      _tag: "LocalFile",
+      deviceId: "install",
+      fileName: "Handout.pdf",
+      originUrl: "https://example.com/study?course=physics",
+    });
+    const file = uploaded();
+    await options.onLocalUploaded?.(file, {
+      path,
+      sizeBytes: 10,
+      sha256: "a".repeat(64),
+      mtimeMs: 1,
+    });
+    return file;
+  });
+  const result = await runCapturePipeline(h);
+  expect(record).toHaveBeenCalledWith(
+    "alice",
+    expect.anything(),
+    expect.objectContaining({
+      path,
+      originUrl: "https://example.com/study?course=physics",
+      download: { captureId: "request-id", startedAt: 1, endedAt: 2, url, reportedPath: path },
+    }),
+  );
+  expect(result.snapshot.tabs).toEqual([]);
+  expect(result.uploads?.files).toHaveLength(1);
+  expect(JSON.stringify(result)).not.toContain("/Downloads");
 });

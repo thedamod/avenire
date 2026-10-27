@@ -18,7 +18,7 @@
 // NOTE: the Win11 Media Player runs as Microsoft.Media.Player (NOT Video.UI —
 // that's the old Films & TV app); Groove's process is Music.UI.
 export const MEDIA_APP =
-  /vlc|mpv|mplayer|mpc|wmplayer|groove|music\.ui|quicktime|itunes|^music$|totem|rhythmbox|potplayer|kmplayer|kodi|plex|jellyfin|video\.ui|^gom$|microsoft\.media\.player|windows[ ._-]*media|media[ ._-]*player|audacious|celluloid|haruna|elisa/i;
+  /vlc|mpv|mplayer|mpc|wmplayer|groove|music\.ui|quicktime|itunes|^music$|totem|rhythmbox|potplayer|kmplayer|kodi|plex|jellyfin|video\.ui|^gom$|microsoft\.media\.player|windows[ ._-]*media|media[ ._-]*player|audacious|celluloid|haruna|elisa|iina|films\s*&\s*tv|movies\s*&\s*tv/i;
 
 // appName, or (optionally) bundle id / exe path-ish string, looks like a player.
 export function isMediaApp(appName: string, exe = ""): boolean {
@@ -63,26 +63,13 @@ export function isSelfApp(name: string): boolean {
 }
 
 // ---- Local-file targets ----
-// Apps whose document path we resolve to a local file upload.
-// Scope: PDFs, Office documents, notes, media, file managers — NOT code.
-// Code editors (VS Code family, JetBrains family, Sublime, vim/emacs, Zed,
-// Atom, Notepad++, devenv, Xcode) are parked: resolvers live frozen in
-// parked/editors/, revival tracked in docs/IMPROVEMENTS.md.
-// Names verified against real process tables (Sep 2026):
-// - Office (MS Support): WINWORD.EXE, EXCEL.EXE, POWERPNT.EXE, PPTVIEW.EXE,
-//   MSACCESS.EXE, VISIO.EXE, WINPROJ.EXE; mac display "Microsoft Word/Excel/…"
-// - LibreOffice: soffice.bin (the real process, not soffice.exe wrapper)
-// - Reader 64-bit unified: Acrobat.exe; 32-bit Reader: AcroRd32.exe
-// - Foxit: FoxitPDFReader.exe (new) / FoxitReader.exe (old)
-// - Groove: Music.UI.exe / GrooveMusic.exe; Win11 player: Microsoft.Media.Player.exe
-// - Plain-text notes editors: gedit/kate/kwrite, Notepad, TextEdit
-// - New Outlook is Olk.exe (email — must NOT match; it was a leak), Code.exe
-//   is VS Code (an editor, not a local-file target here)
+// Document/media allowlist, adapted from v1. Browsers belong to the extension;
+// file managers, system UI, launchers, terminals and IDEs never qualify.
+// Notepad++ is limited to .md/.txt by native-file.ts. Every app also needs a resolved file.
 export const LOCAL_FILE_APPS =
-  /preview|acrobat|acrord32|sumatra|okular|evince|zathura|foxit|winword|\bword\b|excel|powerpnt|powerpoint|pptview|msaccess|visio|winproj|pages|keynote|libreoffice|soffice|obsidian|vlc|quicktime|mpv|mplayer|mpc|wmplayer|windows[ ._-]*media|media[ ._-]*player|music\.ui|groovemusic|^groove$|totem|rhythmbox|potplayer|kmplayer|kodi|plex|jellyfin|video\.ui|^gom$|itunes|^music$|^notepad$|textedit|gedit|kate|kwrite|finder|explorer|nautilus|dolphin/i;
-
+  /^(?:preview|acrobat(?: reader)?|acrord32|adobe acrobat(?: reader)?|sumatrapdf|okular|evince|zathura|foxit(?:pdfreader|reader|phantompdf| pdf reader)?|winword|(?:microsoft )?word|(?:microsoft )?excel|powerpnt|(?:microsoft )?powerpoint|(?:microsoft )?onenote|pages|numbers|keynote|libreoffice(?: writer| calc| impress)?|soffice(?:\.bin)?|obsidian|typora|notepad\+\+|vlc(?: media player)?|quicktime(?: ?player)?|iina|mpv(?:-bundle)?|mplayer|mpc(?:-hc|-be|hc|be)?(?:64)?|wmplayer|windows media player|media player|microsoft\.media\.player|music\.ui|video\.ui|groove ?music|films ?& ?tv|movies ?& ?tv|potplayer(?:mini)?(?:64)?|calibre|ebook-viewer|zotero)$/i;
 export function isLocalFileApp(name: string): boolean {
-  return LOCAL_FILE_APPS.test(name);
+  return LOCAL_FILE_APPS.test(name.trim().replace(/\.exe$/i, ""));
 }
 
 // ---- Code editors ----

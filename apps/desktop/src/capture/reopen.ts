@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
+import { readableLocalPath, normalizeCapturePath } from "./local-file.ts";
 import { isAbsolute, win32, join } from "node:path";
 import { planReopen, positionUrl } from "@avenire/capture/reopen";
 import { normalizeUrl } from "@avenire/capture/url";
@@ -29,15 +30,19 @@ export async function validateRegisteredFile(
 ): Promise<{ path: string; changed: boolean } | undefined> {
   if (!validLocalPath(origin.path)) return undefined;
   try {
-    const path = await realpath(origin.path);
+    const path = normalizeCapturePath(
+      await realpath(readableLocalPath(origin.path) ?? origin.path),
+    );
+    if (!path) return undefined;
     if (!validLocalPath(path)) return undefined;
-    const info = await stat(path);
+    const info = await stat(readableLocalPath(path) ?? path);
     if (!info.isFile()) return undefined;
     let changed = false;
     // A touched timestamp alone isn't a change: only different bytes are.
     if (info.size !== origin.sizeBytes || info.mtimeMs !== origin.mtimeMs) {
       const hash = createHash("sha256");
-      for await (const bytes of createReadStream(path)) hash.update(bytes);
+      for await (const bytes of createReadStream(readableLocalPath(path) ?? path))
+        hash.update(bytes);
       changed = hash.digest("hex") !== origin.sha256;
     }
     return { path, changed };
@@ -121,6 +126,15 @@ export async function executeReopen(
     const local = options.registry.get(options.owner, fileId);
     let result: ReopenResult;
     if (local && (!requested || requested._tag === "OpenLocal")) {
+      const pageUrl = local.originUrl && safeUrl(normalizeUrl(local.originUrl));
+      if (!requested && pageUrl) {
+        if (options.stillOwner?.() === false) return { ok: false, note: "missing" };
+        const focused = await options.extension?.reopen(pageUrl);
+        if (options.stillOwner?.() === false) return { ok: false, note: "missing" };
+        if (!focused) await options.openExternal(pageUrl);
+        if (options.opened) await options.opened(fileId).catch(() => {});
+        return { ok: true };
+      }
       const checked = await validateRegisteredFile(local);
       if (!checked || options.stillOwner?.() === false) return { ok: false, note: "missing" };
       const command = positionCommand(
@@ -140,7 +154,11 @@ export async function executeReopen(
       const file = await options.getFile(fileId);
       if (file.id !== fileId || options.stillOwner?.() === false)
         return { ok: false, note: "missing" };
-      if (file.origin?._tag === "LocalFile" && file.origin.deviceId !== options.deviceId)
+      if (
+        file.origin?._tag === "LocalFile" &&
+        file.origin.deviceId !== options.deviceId &&
+        !file.origin.originUrl
+      )
         return { ok: false, note: "other-device" };
       const plans = planReopen(file.origin ?? null, {
         fileId: file.id,

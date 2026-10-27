@@ -1,3 +1,4 @@
+import { nativeFile } from "./native-file.ts";
 import * as ChildProcess from "node:child_process";
 import { promisify } from "node:util";
 import type { CapturedWindow } from "@avenire/contracts";
@@ -76,7 +77,7 @@ export async function resolveForeground(
   observation: Awaited<ReturnType<typeof readForeground>>,
   ctx?: CaptureContext,
 ) {
-  if (!observation.app || observation.app.isPrivateWindow) return observation;
+  if (!observation.app || observation.app.isPrivateWindow) return { ...observation, windows: [] };
   const notes = [...observation.notes];
   const { bounded } = await import("./timing.ts");
   try {
@@ -86,15 +87,16 @@ export async function resolveForeground(
     );
     return {
       ...observation,
-      windows: observation.windows.map((window) => ({
-        ...window,
-        ...(filePath ? { filePath } : {}),
-      })),
+      windows: observation.windows.flatMap((window) => {
+        const path = nativeFile(window.appName, filePath);
+        return path ? [{ ...window, filePath: path }] : [];
+      }),
       notes,
     };
   } catch {
     return {
       ...observation,
+      windows: [],
       notes: [...notes, "Document resolution timed out; capture again to retry."],
     };
   }

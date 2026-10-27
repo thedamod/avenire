@@ -1,3 +1,4 @@
+import { captureLog, captureError } from "./diagnostics.ts";
 import { captureFailureReason } from "./failure.ts";
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
@@ -7,7 +8,12 @@ import type {
   DesktopSetupCapture,
   FileKind,
 } from "@avenire/contracts";
-import { localBasename as basename, displayTitle, localPathIdentity } from "./local-file.ts";
+import {
+  localBasename as basename,
+  displayTitle,
+  localPathIdentity,
+  uploadName,
+} from "./local-file.ts";
 import { hostname } from "node:os";
 import { HashLru, mapConcurrent, UploadGate } from "./hash-cache.ts";
 import type { LocalOriginRegistry } from "./registry.ts";
@@ -116,6 +122,11 @@ export async function uploadCapturedFiles(
     const key = options?.keyForPath(path) ?? path;
     const title = displayTitle(path) || "Captured source";
     const format = formats[extname(path).slice(1).toLowerCase()];
+    if (basename(path).startsWith("~$")) {
+      skipped.push({ title, reason: "Office owner lock file skipped" });
+      options?.progress(key, "skipped", undefined, "Office owner lock file skipped");
+      return;
+    }
     if (!format) {
       skipped.push({ title, reason: "This file type is not supported by server ingestion yet." });
       options?.progress(
@@ -153,7 +164,7 @@ export async function uploadCapturedFiles(
               deviceId: snapshot.deviceId,
               deviceName: hostname(),
               platform: snapshot.platform,
-              fileName: basename(path).slice(0, 255),
+              fileName: uploadName(basename(path)),
               capturedAt: snapshot.capturedAt,
               ...(native?.appName ? { appName: native.appName.slice(0, 255) } : {}),
               ...mediaPosition(native),
@@ -170,9 +181,14 @@ export async function uploadCapturedFiles(
       files.push(file);
       options?.progress(key, "saved", file);
     } catch (error) {
-      // Mapped to fixed wording plus server text: local error messages can contain paths.
+      captureLog("Native source failed", captureError(error));
       const reason = captureFailureReason(error);
-      options?.progress(key, "failed", undefined, reason);
+      options?.progress(
+        key,
+        /byte limit|256 MB|lock file skipped/i.test(reason) ? "skipped" : "failed",
+        undefined,
+        reason,
+      );
       skipped.push({ title, reason });
     }
   });

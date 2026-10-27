@@ -1,3 +1,6 @@
+import { hostname } from "node:os";
+import { localBasename, uploadName } from "./local-file.ts";
+import { captureLog, captureError } from "./diagnostics.ts";
 import { captureFailureReason } from "./failure.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { localFilePath, displayTitle, localPathIdentity } from "./local-file.ts";
@@ -43,6 +46,7 @@ export function captureItems(snapshot: CaptureSnapshot): CaptureStarted["items"]
     });
   }
   snapshot.windows.forEach((entry, index) => {
+    if (!entry.filePath) return;
     if (
       entry.filePath &&
       snapshot.tabs.some(
@@ -113,18 +117,21 @@ export async function runCapturePipeline(options: {
   const browser = async (result: BrowserPage) => {
     const { tab, page } = result;
     const baseKey = tabKey(tab);
-    const key = page.file ? `${baseKey}:file:${page.file.sha256}` : baseKey;
-    if (page.file)
+    const document = page.download ?? page.file;
+    const key = document
+      ? `${baseKey}:file:${page.file?.sha256 ?? hash(page.download!.url).slice(0, 20)}`
+      : baseKey;
+    if (document)
       stream.progress({
         key,
         status: "pending",
-        title: displayTitle(page.file.fileName || page.title),
-        kind: fileKind(page.file.mimeType) ?? "document",
+        title: displayTitle(page.file?.fileName || page.title),
+        kind: fileKind(document!.mimeType) ?? "document",
       });
     try {
       signal.throwIfAborted();
       if (
-        [page.url, page.canonicalUrl, page.file?.url, page.file?.originUrl].some(
+        [page.url, page.canonicalUrl, document?.url, document?.originUrl].some(
           (url) => url && /^file:/i.test(url),
         )
       ) {
@@ -144,12 +151,12 @@ export async function runCapturePipeline(options: {
           { ...tab, url: page.url, ...(page.canonicalUrl ? { finalUrl: page.canonicalUrl } : {}) },
         ],
       });
-      const checkedFile = page.file
+      const checkedFile = document
         ? applyPolicy({
             ...initial.snapshot,
             windows: [],
             media: [],
-            tabs: [{ ...tab, url: page.file.url, finalUrl: page.file.originUrl ?? page.file.url }],
+            tabs: [{ ...tab, url: document.url, finalUrl: document.originUrl ?? document.url }],
           })
         : undefined;
       if (checkedFile && !checkedFile.snapshot.tabs.length) {
@@ -193,24 +200,24 @@ export async function runCapturePipeline(options: {
         return;
       }
       if (!options.readInBrowser) return;
-      const kind = page.file ? fileKind(page.file.mimeType.toLowerCase()) : "web-page";
-      if (!kind || (page.file && !result.path) || (!page.file && !page.text.trim()))
+      const kind = document ? fileKind(document.mimeType.toLowerCase()) : "web-page";
+      if (!kind || (document && !result.path) || (!document && !page.text.trim()))
         throw new Error(
           "No supported original or readable page text was returned. Open the original and capture again.",
         );
       const fetch = await options.session;
-      const sourceTab = page.file
+      const sourceTab = document
         ? {
             ...tab,
-            url: page.file.originUrl ?? page.file.url,
-            finalUrl: page.file.originUrl ?? page.url,
+            url: document.originUrl ?? document.url,
+            finalUrl: document.originUrl ?? page.url,
           }
         : { ...tab, finalUrl: page.url };
       const origin = webOrigin(sourceTab, page, initial.snapshot.capturedAt);
       const file = await gate.run(async () => {
         signal.throwIfAborted();
         stream.progress({ key, status: "uploading" });
-        if (page.file) stream.progress({ key: baseKey, status: "uploading" });
+        if (document) stream.progress({ key: baseKey, status: "uploading" });
         return acquireAndUploadSource(
           result.path
             ? { type: "local-file", path: result.path }
@@ -219,25 +226,64 @@ export async function runCapturePipeline(options: {
             idempotencyKey: randomUUID(),
             title: displayTitle(page.title || tab.title || "Captured page"),
             kind,
-            mimeType: page.file?.mimeType ?? "text/markdown",
-            sourceUrl: page.file?.url ?? tab.url,
+            mimeType: document?.mimeType ?? "text/markdown",
+            sourceUrl: page.download ? normalizeUrl(tab.url) : (document?.url ?? tab.url),
             origin,
             access,
           },
-          { appUrl: options.appUrl, avenireFetch: fetch, signal },
+          {
+            appUrl: options.appUrl,
+            avenireFetch: fetch,
+            signal,
+            ...(page.download && result.path
+              ? {
+                  localOrigin: {
+                    _tag: "LocalFile" as const,
+                    deviceId: initial.snapshot.deviceId,
+                    deviceName: hostname(),
+                    platform: initial.snapshot.platform,
+                    fileName: uploadName(localBasename(result.path)),
+                    capturedAt: initial.snapshot.capturedAt,
+                    originUrl: normalizeUrl(tab.url),
+                  },
+                  onLocalUploaded: (
+                    file: LibraryFile,
+                    local: import("./registry.ts").LocalOrigin,
+                  ) =>
+                    options.registry.record(options.owner, file.id, {
+                      ...local,
+                      originUrl: normalizeUrl(tab.url),
+                      ...(result.downloadWindow && page.download
+                        ? {
+                            download: {
+                              ...result.downloadWindow,
+                              url: page.download.url,
+                              reportedPath: page.download.path,
+                            },
+                          }
+                        : {}),
+                    }),
+                }
+              : {}),
+          },
         );
       });
       files.push(file);
       processed.add(baseKey);
       stream.progress({ key, status: "saved", file });
-      if (page.file) stream.progress({ key: baseKey, status: "saved", file });
+      if (document) stream.progress({ key: baseKey, status: "saved", file });
     } catch (error) {
+      captureLog("Browser source failed", captureError(error));
       const reason = captureFailureReason(error);
       skipped.push({
         title: displayTitle(tab.title, tabFilePath(tab, initial.snapshot.platform)),
         reason,
       });
-      stream.progress({ key, status: "failed", reason });
+      stream.progress({
+        key,
+        status: /256 MB|file limit exceeded/i.test(reason) ? "skipped" : "failed",
+        reason,
+      });
     } finally {
       await options.channel?.release(result);
     }

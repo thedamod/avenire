@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -8,6 +8,7 @@ import { afterEach, expect, it, vi } from "vite-plus/test";
 import type { CapturedTab, ExtensionAuth, PageSnapshot } from "@avenire/contracts";
 import { encodeFileFrame } from "@avenire/capture/frames";
 import { PairingAuthority } from "./pairing.ts";
+import type { RegisteredDownload } from "./registry.ts";
 import {
   startTabsReceiver,
   stopTabsReceiver,
@@ -51,18 +52,23 @@ afterEach(async () => {
     directories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
 });
-async function harness() {
+async function harness(knownDownloads: () => readonly RegisteredDownload[] = () => []) {
   const directory = await mkdtemp(join(tmpdir(), "capture-channel-test-"));
   directories.push(directory);
   const pairing = new PairingAuthority(join(directory, "pairings.json"));
   await pairing.load();
   pairing.setOwner("alice");
   pairing.setToken("alice", token);
-  const server = startTabsReceiver(pairing);
+  const server = startTabsReceiver(pairing, undefined, directory, knownDownloads);
   await once(server, "listening");
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("No test port");
-  return { pairing, url: `ws://127.0.0.1:${address.port}/ws`, channel: extensionChannel! };
+  return {
+    directory,
+    pairing,
+    url: `ws://127.0.0.1:${address.port}/ws`,
+    channel: extensionChannel!,
+  };
 }
 async function client(url: string, source = origin) {
   const socket = new WebSocket(url, { origin: source });
@@ -76,7 +82,9 @@ async function client(url: string, source = origin) {
     messages,
     send: (value: unknown) => socket.send(JSON.stringify(value)),
     async next(tag: string) {
-      await vi.waitFor(() => expect(messages.some((message) => message._tag === tag)).toBe(true));
+      await vi.waitFor(() => expect(messages.some((message) => message._tag === tag)).toBe(true), {
+        timeout: 5000,
+      });
       const index = messages.findIndex((message) => message._tag === tag);
       return messages.splice(index, 1)[0];
     },
@@ -145,7 +153,15 @@ it("enforces extension Origin, JSON size, socket cleanup and account isolation",
   await report(c, [tab, { ...tab, tabId: 2, incognito: true }]);
   expect(h.channel.connected()).toBe(true);
   c.socket.send(" ".repeat(1024 * 1024 + 1));
-  await vi.waitFor(() => expect(c.socket.readyState).toBe(WebSocket.CLOSED));
+  // Wait for the actual close event and then the server-side drop; client close can precede cleanup.
+  await vi.waitFor(
+    () => {
+      expect(c.socket.readyState).toBe(WebSocket.CLOSED);
+      expect(h.channel.connected()).toBe(false);
+      expect(latestTabs()).toEqual([]);
+    },
+    { timeout: 5000 },
+  );
   expect(latestTabs()).toEqual([]);
   expect(h.channel.connected()).toBe(false);
   const other = await client(h.url);
@@ -540,7 +556,117 @@ it("refreshes metadata from a paired browser with an empty cache and bounds an u
   c.send({ _tag: "TabsReport", version: 1, tabs: [tab] });
   await refresh;
   expect(h.channel.latestTabs()).toEqual([tab]);
-  const start = performance.now();
-  await h.channel.refreshTabs(25);
-  expect(performance.now() - start).toBeLessThan(200);
+  vi.useFakeTimers();
+  try {
+    const refresh = h.channel.refreshTabs(25);
+    await vi.advanceTimersByTimeAsync(25);
+    await refresh;
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("accepts downloads only for an authenticated pending tab, reuses validated copies, and never deletes browser downloads", async () => {
+  const h = await harness();
+  const c = await client(h.url);
+  await authenticate(c);
+  await report(c);
+  const callback = vi.fn(async () => {});
+  const pending = h.channel.capture([tab], true, undefined, callback);
+  const request = await c.next("CaptureRequest");
+  const path = join(h.directory, "Avenire", request.requestId, "Study.pdf");
+  await mkdir(join(path, ".."), { recursive: true });
+  await writeFile(path, "%PDF-original");
+  const download = {
+    path,
+    captureId: request.requestId,
+    sizeBytes: (await stat(path)).size,
+    mimeType: "application/pdf",
+    url: "https://school.test/file",
+    originUrl: tab.url,
+  };
+  const resultMessage = {
+    _tag: "CaptureResult",
+    version: 1,
+    requestId: request.requestId,
+    pages: [{ ...page, download }],
+    skipped: [],
+  };
+  c.send({ ...resultMessage, requestId: "unsolicited" });
+  c.send({ ...resultMessage, pages: [{ ...page, tabId: 999, download }] });
+  c.send({ _tag: "Ping", version: 1 });
+  await c.next("Pong");
+  expect(callback).not.toHaveBeenCalled();
+  c.send(resultMessage);
+  const results = await pending;
+  expect(results[0]?.path).toBe(path);
+  expect(callback).toHaveBeenCalledOnce();
+  await h.channel.release(results[0]!);
+  expect((await stat(path)).isFile()).toBe(true);
+  const reused = h.channel.capture([tab], true);
+  const next = await c.next("CaptureRequest");
+  expect(next.reusableDownloads).toContain(path);
+  c.send({ ...resultMessage, requestId: next.requestId });
+  expect((await reused)[0]?.path).toBe(path);
+  resetTabsOwner();
+  h.pairing.setOwner("bob");
+  h.pairing.setToken("bob", "B".repeat(43));
+  const other = await client(h.url);
+  await authenticate(other, { _tag: "Token", token: "B".repeat(43) });
+  await report(other);
+  const unauthorizedReuse = h.channel.capture([tab], true);
+  const bob = await other.next("CaptureRequest");
+  expect(bob.reusableDownloads).toEqual([]);
+  other.send({ ...resultMessage, requestId: bob.requestId });
+  expect(await unauthorizedReuse).toEqual([]);
+});
+
+it("reuses owner-registry downloads after an authenticated browser reconnects", async () => {
+  const known: RegisteredDownload[] = [];
+  const h = await harness(() => known);
+  const c = await client(h.url);
+  await authenticate(c);
+  await report(c);
+  const captured = h.channel.capture([tab], true);
+  const request = await c.next("CaptureRequest");
+  const path = join(h.directory, "Avenire", request.requestId, "Handout.pdf");
+  await mkdir(join(path, ".."), { recursive: true });
+  await writeFile(path, "%PDF-original");
+  const download = {
+    path,
+    captureId: request.requestId,
+    sizeBytes: (await stat(path)).size,
+    mimeType: "application/pdf",
+    url: "https://school.test/file",
+  };
+  c.send({
+    _tag: "CaptureResult",
+    version: 1,
+    requestId: request.requestId,
+    pages: [{ ...page, download }],
+    skipped: [],
+  });
+  const result = (await captured)[0]!;
+  known.push({
+    path,
+    sizeBytes: download.sizeBytes,
+    download: { ...result.downloadWindow!, url: download.url },
+  });
+  const closed = once(c.socket, "close");
+  c.socket.close();
+  await closed;
+  const next = await client(h.url);
+  await authenticate(next);
+  await report(next);
+  const reused = h.channel.capture([tab], true);
+  const pending = await next.next("CaptureRequest");
+  expect(pending.reusableDownloads).toContain(path);
+  next.send({
+    _tag: "CaptureResult",
+    version: 1,
+    requestId: pending.requestId,
+    pages: [{ ...page, download }],
+    skipped: [],
+  });
+  expect((await reused)[0]?.path).toBe(path);
 });

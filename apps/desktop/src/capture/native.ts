@@ -1,3 +1,4 @@
+import { nativeFile } from "./native-file.ts";
 import type { CapturedMedia, CapturedTab, CapturedWindow } from "@avenire/contracts";
 import type { ForegroundApp } from "./research/src/capture/types.ts";
 import { isBrowserApp, BROWSER_HINT } from "./research/src/capture/app-catalog.ts";
@@ -50,34 +51,50 @@ export async function collectNative(
     run("background-media", getBackgroundMedia(notes, ctx), 9000, []),
     run("obsidian", resolveObsidianOpenNotes(notes), 3500, []),
   ]);
-  const windows: CapturedWindow[] = background.map((entry) => ({
-    appName: entry.appName,
-    title: entry.windowTitle.slice(0, 2000),
-    foreground: false,
-    ...(entry.filePath ? { filePath: entry.filePath } : {}),
-  }));
-  for (const path of obsidian)
+  const windows: CapturedWindow[] = background.flatMap((entry) => {
+    const path = nativeFile(entry.appName, entry.filePath);
+    return path
+      ? [
+          {
+            appName: entry.appName,
+            title: entry.windowTitle.slice(0, 2000),
+            foreground: false,
+            filePath: path,
+          },
+        ]
+      : [];
+  });
+  for (const candidate of obsidian) {
+    const path = nativeFile("Obsidian", candidate);
+    if (!path) continue;
     windows.push({
       appName: "Obsidian",
       title: localBasename(path),
       filePath: path,
       foreground: false,
     });
-  const media: CapturedMedia[] = sessions.map((entry) => ({
-    appName: entry.appName,
-    title: entry.title.slice(0, 2000),
-    ...(entry.filePath ? { filePath: entry.filePath } : {}),
-    ...(entry.positionSec !== undefined &&
-    Number.isFinite(entry.positionSec) &&
-    entry.positionSec >= 0
-      ? { positionSec: entry.positionSec }
-      : {}),
-    ...(entry.durationSec !== undefined &&
-    Number.isFinite(entry.durationSec) &&
-    entry.durationSec > 0
-      ? { durationSec: entry.durationSec }
-      : {}),
-  }));
+  }
+  const media: CapturedMedia[] = sessions.flatMap((entry) => {
+    const path = nativeFile(entry.appName, entry.filePath);
+    if (!path && !isBrowserApp(entry.appName) && !BROWSER_HINT.test(entry.appName)) return [];
+    return [
+      {
+        appName: entry.appName,
+        title: entry.title.slice(0, 2000),
+        ...(path ? { filePath: path } : {}),
+        ...(entry.positionSec !== undefined &&
+        Number.isFinite(entry.positionSec) &&
+        entry.positionSec >= 0
+          ? { positionSec: entry.positionSec }
+          : {}),
+        ...(entry.durationSec !== undefined &&
+        Number.isFinite(entry.durationSec) &&
+        entry.durationSec > 0
+          ? { durationSec: entry.durationSec }
+          : {}),
+      },
+    ];
+  });
   // Policy requires an independently attributed native path. Keep it in the device snapshot.
   for (const entry of media)
     if (entry.filePath)

@@ -98,3 +98,33 @@ it("validates the real target, refuses directories/symlink executables, and dete
     await validateRegisteredFile({ ...origin, path: join(directory, "innocent.pdf") }),
   ).toBeUndefined();
 });
+
+it("persists validated browser capture windows for reuse after restart and isolates them by owner", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "capture-registry-download-"));
+  try {
+    const path = join(directory, "registry.json");
+    const registry = new LocalOriginRegistry(path);
+    await registry.load();
+    const entry = {
+      path: "/Downloads/Avenire/request-id/Handout.pdf",
+      sizeBytes: 10,
+      mtimeMs: 123,
+      sha256: "a".repeat(64),
+      download: {
+        captureId: "request-id",
+        startedAt: 100,
+        endedAt: 200,
+        url: "https://school.test/file",
+      },
+    };
+    await registry.record("alice", "file-id", entry);
+    const restarted = new LocalOriginRegistry(path);
+    await restarted.load();
+    expect(restarted.downloads("alice")).toEqual([
+      { path: entry.path, sizeBytes: 10, download: entry.download },
+    ]);
+    expect(restarted.downloads("bob")).toEqual([]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

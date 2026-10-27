@@ -1,3 +1,9 @@
+import {
+  captureLog,
+  captureError,
+  initializeCaptureLog,
+  captureLogPath,
+} from "./capture/diagnostics.ts";
 import * as Path from "node:path";
 import { pathToFileURL } from "node:url";
 import * as Schema from "effect/Schema";
@@ -109,6 +115,7 @@ else {
   app
     .whenReady()
     .then(async () => {
+      initializeCaptureLog(app.getPath("logs"));
       const userData = app.getPath("userData");
       deviceId = loadInstallIdentity(userData).deviceId;
       setCaptureDeviceId(deviceId);
@@ -134,7 +141,12 @@ else {
         Path.join(__dirname, "overlay-preload.cjs"),
       );
       createTray();
-      startTabsReceiver(pairing, () => void capture().catch(reportCaptureError));
+      startTabsReceiver(
+        pairing,
+        () => void capture().catch(reportCaptureError),
+        app.getPath("downloads"),
+        () => (captureOwner ? registry.downloads(captureOwner) : []),
+      );
       stopForegroundPoll = startForegroundPoll(
         () => (setup.completed && setup.foregroundCapture) || (setupTry && setupForeground),
       );
@@ -222,10 +234,8 @@ function showSetup(): void {
 }
 
 function reportCaptureError(error: unknown): void {
-  dialog.showErrorBox(
-    "Capture could not finish",
-    error instanceof Error ? error.message : "Unknown capture error",
-  );
+  captureLog("Capture failed", captureError(error));
+  dialog.showErrorBox("Capture could not finish", captureFailureReason(error));
 }
 function reportSignInError(error: unknown): void {
   dialog.showErrorBox(
@@ -511,6 +521,10 @@ function rebuildTray(): void {
     settings: () => openTrayRoute("/settings"),
     shortcuts: () => void toggleTrayShortcuts(),
     setup: showSetup,
+    "capture-log": () => {
+      const path = captureLogPath();
+      if (path) shell.showItemInFolder(path);
+    },
     pair: () => {
       try {
         const code = pairing.issueCode();
@@ -618,7 +632,7 @@ function captureDiagnostic(
   stage: string,
   details: Readonly<Record<string, string | number | boolean>> = {},
 ) {
-  console.info(`[capture] ${stage}`, details);
+  captureLog(stage, details);
   if (window && !window.isDestroyed()) {
     try {
       window.webContents.send("avenire:capture-diagnostic", { stage, ...details });
@@ -633,8 +647,8 @@ function updateCaptureOverlay(update: (overlay: CaptureOverlay) => void): void {
   if (!captureOverlay) return;
   try {
     update(captureOverlay);
-  } catch {
-    console.warn("[capture] Overlay could not update; capture is continuing.");
+  } catch (error) {
+    captureLog("Overlay could not update", captureError(error));
   }
 }
 
@@ -737,7 +751,7 @@ async function capture(): Promise<void> {
       signal: controller.signal,
     });
     if (lastOwner !== owner || controller.signal.aborted) {
-      console.info("[capture] Cancelled after account or session change");
+      captureLog("Cancelled after account or session change");
       return;
     }
     stagedCapture = undefined;
@@ -758,7 +772,7 @@ async function capture(): Promise<void> {
   } catch (error) {
     if (!controller.signal.aborted && lastOwner === owner) {
       const reason = captureFailureReason(error);
-      console.warn("[capture] Failed", { reason });
+      captureLog("Failed", { reason, ...captureError(error) });
       if (initial) {
         const id = initial.snapshot.id;
         updateCaptureOverlay((overlay) => overlay.failed(owner, id, reason));
@@ -951,7 +965,9 @@ ipcMain.handle("avenire:capture-failed", (event, id: unknown, message: unknown) 
     typeof message !== "string"
   )
     return;
-  console.warn("[capture] App submission failed");
+  captureLog("App submission failed", {
+    message: typeof message === "string" ? message : "unknown",
+  });
   updateCaptureOverlay((overlay) => overlay.failed(captureOwner!, id, message.slice(0, 500)));
 });
 function overlaySender(event: Electron.IpcMainInvokeEvent): CaptureOverlay {

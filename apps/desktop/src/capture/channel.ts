@@ -1,7 +1,12 @@
+import type { RegisteredDownload } from "./registry.ts";
+import { browserDownloadRoots } from "./browser-download-roots.ts";
+import { validateBrowserDownload, type DownloadWindow } from "./download-validation.ts";
+import { captureLog, captureError } from "./diagnostics.ts";
+import { homedir } from "node:os";
 import { createHash, randomUUID, type Hash } from "node:crypto";
 import { mkdtemp, open, rm, type FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative, dirname } from "node:path";
 import type { Server, IncomingMessage } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import * as Schema from "effect/Schema";
@@ -21,6 +26,7 @@ export interface BrowserPage {
   readonly tab: CapturedTab;
   readonly page: PageSnapshot;
   readonly path?: string;
+  readonly downloadWindow?: DownloadWindow;
 }
 interface IncomingFile {
   readonly page: PageSnapshot;
@@ -33,6 +39,7 @@ interface IncomingFile {
   done: boolean;
 }
 interface Pending {
+  readonly window: DownloadWindow;
   readonly tabs: readonly CapturedTab[];
   readonly budget: { bytes: number };
   readonly counts: Map<number, number>;
@@ -61,6 +68,11 @@ interface Peer {
   readonly expired: Map<string, number>;
   readonly reopens: Map<string, { resolve: (ok: boolean) => void; timer: NodeJS.Timeout }>;
   readonly directories: Set<string>;
+  downloadRoots: readonly string[];
+  readonly downloads: Map<
+    string,
+    { window: DownloadWindow; url: string; sizeBytes: number; path: string }
+  >;
   queuedBytes: number;
 }
 export class ExtensionChannel {
@@ -74,14 +86,20 @@ export class ExtensionChannel {
   private heartbeat: NodeJS.Timeout;
   private readonly pairing: PairingAuthority;
   private readonly onCaptureNow: () => void;
+  private readonly downloadsRoot: string;
+  private readonly knownDownloads: () => readonly RegisteredDownload[];
   constructor(
     server: Server,
     pairing: PairingAuthority,
     allowed: (request: IncomingMessage) => boolean,
     /** A paired extension's shortcut or popup asked for a capture. */
     onCaptureNow: () => void = () => {},
+    downloadsRoot: string = join(homedir(), "Downloads"),
+    knownDownloads: () => readonly RegisteredDownload[] = () => [],
   ) {
     this.pairing = pairing;
+    this.downloadsRoot = downloadsRoot;
+    this.knownDownloads = knownDownloads;
     this.onCaptureNow = onCaptureNow;
     server.on("upgrade", (request, socket, head) => {
       if (request.url !== "/ws" || !allowed(request) || this.peers.size >= 16) {
@@ -140,6 +158,8 @@ export class ExtensionChannel {
       expired: new Map(),
       reopens: new Map(),
       directories: new Set(),
+      downloads: new Map(),
+      downloadRoots: [this.downloadsRoot],
       queuedBytes: 0,
     };
     this.peers.add(peer);
@@ -205,6 +225,9 @@ export class ExtensionChannel {
         peer.socket.close(1008);
         return;
       }
+      const downloadRoots = await browserDownloadRoots(hello.browser, this.downloadsRoot);
+      if (!this.valid(peer)) return;
+      peer.downloadRoots = downloadRoots;
       peer.sender = hello.senderId;
       peer.lastSeen = Date.now();
       this.send(peer, { _tag: "Welcome", version: 1, ...auth });
@@ -254,6 +277,63 @@ export class ExtensionChannel {
         for (const page of message.pages) {
           if (!accepted.has(page.tabId)) continue;
           const tab = pending.tabs.find((tab) => tab.tabId === page.tabId)!;
+          if (page.download) {
+            const download = page.download;
+            const count = pending.counts.get(page.tabId) ?? 0;
+            if (
+              (!download.primary && count >= 10) ||
+              pending.budget.bytes + download.sizeBytes > 1024 * 1024 * 1024
+            ) {
+              pending.onFailure(tab, "Capture file limit exceeded; document skipped");
+              continue;
+            }
+            try {
+              const reused = peer.downloads.get(download.path);
+              if (
+                download.captureId !== message.requestId &&
+                (!reused || reused.url !== download.url || reused.sizeBytes !== download.sizeBytes)
+              )
+                throw new Error("Browser download does not belong to this capture");
+              const window =
+                download.captureId === message.requestId
+                  ? { ...pending.window, endedAt: Date.now() }
+                  : reused!.window;
+              let path: string | undefined;
+              let validationError: unknown;
+              for (const root of peer.downloadRoots) {
+                try {
+                  path = await validateBrowserDownload(download, root, window);
+                  break;
+                } catch (error) {
+                  validationError = error;
+                }
+              }
+              if (!path) throw validationError ?? new Error("Browser download validation failed");
+              // Filesystem operations may yield through disconnect, timeout, or an account switch.
+              if (!this.valid(peer) || peer.requests.get(message.requestId) !== pending) return;
+              const result = { tab, page, path, downloadWindow: window };
+              pending.budget.bytes += download.sizeBytes;
+              if (!download.primary) pending.counts.set(page.tabId, count + 1);
+              if (peer.downloads.size >= 200)
+                peer.downloads.delete(peer.downloads.keys().next().value!);
+              peer.downloads.set(download.path, {
+                window,
+                url: download.url,
+                sizeBytes: download.sizeBytes,
+                path,
+              });
+              pending.pages.push(result);
+              this.deliver(peer, pending, result);
+              captureLog("Browser download validated", { count: 1, sizeBytes: download.sizeBytes });
+            } catch (error) {
+              captureLog("Browser download rejected", captureError(error));
+              pending.onFailure(
+                tab,
+                error instanceof Error ? error.message : "Browser download validation failed",
+              );
+            }
+            continue;
+          }
           if (!page.file) {
             const result = { tab, page };
             pending.pages.push(result);
@@ -461,6 +541,25 @@ export class ExtensionChannel {
     }
     await Promise.all(
       [...groups].map(async ([peer, selected]) => {
+        // Registry records are owner-bound and carry their original validated capture window.
+        for (const entry of this.knownDownloads().slice(0, 200).reverse()) {
+          if (
+            !peer.downloadRoots.some(
+              (root) =>
+                relative(join(root, "Avenire", entry.download.captureId), dirname(entry.path)) ===
+                "",
+            )
+          )
+            continue;
+          if (!peer.downloads.has(entry.path))
+            peer.downloads.set(entry.path, {
+              path: entry.path,
+              sizeBytes: entry.sizeBytes,
+              url: entry.download.url,
+              window: entry.download,
+            });
+          if (peer.downloads.size > 200) peer.downloads.delete(peer.downloads.keys().next().value!);
+        }
         const requestId = randomUUID();
         const deadlineMs = Math.max(1, deadline - Date.now());
         const delivered = new Set<number>();
@@ -472,6 +571,7 @@ export class ExtensionChannel {
               deadlineMs,
             );
             peer.requests.set(requestId, {
+              window: { captureId: requestId, startedAt: Date.now() - 1000, endedAt: deadline },
               tabs: selected,
               budget,
               timer,
@@ -510,6 +610,7 @@ export class ExtensionChannel {
               tabIds: selected.map((tab) => tab.tabId),
               deadlineMs,
               readInBrowser,
+              reusableDownloads: [...peer.downloads.keys()],
             });
           });
         } catch (error) {
@@ -528,7 +629,7 @@ export class ExtensionChannel {
     return pages;
   }
   async release(page: BrowserPage) {
-    if (!page.path) return;
+    if (!page.path || page.page.download) return;
     const directory = join(page.path, "..");
     for (const peer of this.peers) peer.directories.delete(directory);
     await rm(directory, { recursive: true, force: true });

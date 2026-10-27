@@ -1,3 +1,4 @@
+import type { RegisteredDownload } from "./registry.ts";
 import * as Http from "node:http";
 
 import { CapturedTab, ExtensionAuth } from "@avenire/contracts";
@@ -55,6 +56,8 @@ export function isFromExtension(request: Http.IncomingMessage): boolean {
 export function startTabsReceiver(
   pairing?: PairingAuthority,
   onCaptureNow?: () => void,
+  downloadsRoot?: string,
+  knownDownloads?: () => readonly RegisteredDownload[],
 ): Http.Server {
   if (server) return server;
   server = Http.createServer((request, response) => {
@@ -99,7 +102,14 @@ export function startTabsReceiver(
     });
   });
   if (pairing)
-    extensionChannel = new ExtensionChannel(server, pairing, isFromExtension, onCaptureNow);
+    extensionChannel = new ExtensionChannel(
+      server,
+      pairing,
+      isFromExtension,
+      onCaptureNow,
+      downloadsRoot,
+      knownDownloads,
+    );
   server.requestTimeout = 5000;
   server.headersTimeout = 5000;
   server.on("error", () => {
