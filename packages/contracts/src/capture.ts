@@ -304,6 +304,14 @@ export const ExtensionMessage = Schema.Union([
       }),
     ).check(Schema.isMaxLength(200)),
   }),
+  /** Extension → desktop: bytes received for a requested tab before its result is ready. */
+  Schema.TaggedStruct("CaptureProgress", {
+    version: Version,
+    requestId: RequestId,
+    tabId: NonNegativeInt,
+    // Match the upload contract without a capture → uploads → library → capture cycle.
+    bytesReceived: NonNegativeInt.check(Schema.isLessThanOrEqualTo(256 * 1024 * 1024)),
+  }),
   Schema.TaggedStruct("Reopen", {
     version: Version,
     requestId: RequestId,

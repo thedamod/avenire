@@ -1,6 +1,11 @@
-import { MAX_SOURCE_UPLOAD_BYTES, type PageSnapshot, type SourceAccess } from "@avenire/contracts";
+import { MAX_SOURCE_UPLOAD_BYTES, type PageSnapshot } from "@avenire/contracts";
 import { encodeFileFrame, FILE_FRAME_BYTES } from "@avenire/capture/frames";
-import { classifyAccess } from "@avenire/capture/access";
+import {
+  documentResponse,
+  DocumentReadError,
+  htmlFileReason,
+  looksLikeHtml,
+} from "./document-response.ts";
 import { DOCUMENT_MIMES, documentExtension, type DocumentHint } from "./documents.ts";
 
 export const MAX_CAPTURE_BYTES = 1024 * 1024 * 1024;
@@ -12,13 +17,6 @@ export interface FileBudget {
 export interface CapturedFile {
   readonly page: PageSnapshot;
   readonly bytes: Uint8Array<ArrayBuffer>;
-}
-export class DocumentAccessError extends Error {
-  readonly access: SourceAccess;
-  constructor(access: SourceAccess) {
-    super(access);
-    this.access = access;
-  }
 }
 export const sha256 = async (bytes: Uint8Array<ArrayBuffer>): Promise<string> =>
   [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
@@ -58,6 +56,7 @@ export async function fetchDocument(
   signal: AbortSignal,
   fetcher: typeof fetch = fetch,
   permitted: (url: string) => boolean = () => true,
+  onProgress?: (bytes: number) => void,
 ): Promise<CapturedFile | undefined> {
   const key = hint.url.split("#")[0]!;
   if (signal.aborted || budget.urls.has(key)) return undefined;
@@ -66,45 +65,28 @@ export async function fetchDocument(
   budget.urls.add(key);
   if (!hint.primary) budget.count++;
   // Count failed attempts too: a page cannot turn capture into an unbounded download crawler.
-  const response = await fetcher(hint.url, { credentials: "include", signal });
-  if (response.url && !permitted(response.url)) {
-    await response.body?.cancel();
-    throw new Error("Document redirect blocked by capture policy");
-  }
-  if (!response.ok) {
-    await response.body?.cancel();
-    const access = classifyAccess({
-      visibleTextLength: 0,
-      passwordInput: false,
-      paywallContainers: [],
-      httpStatus: response.status,
-    });
-    if (access !== "open") throw new DocumentAccessError(access);
-    throw new Error(`Document request failed (${response.status})`);
-  }
+  const { response, reader, first } = await documentResponse(hint.url, signal, fetcher, permitted);
   const length = Number(response.headers.get("content-length"));
   if (length > MAX_SOURCE_UPLOAD_BYTES || length > MAX_CAPTURE_BYTES - budget.bytes) {
-    await response.body?.cancel();
+    await reader.cancel();
+    reader.releaseLock();
     throw new Error("Capture file limit exceeded");
   }
   const mime = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? "";
-  if (/html|xhtml/.test(mime)) {
-    await response.body?.cancel();
-    throw new Error("Document returned a login or HTML page");
-  }
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("Document response has no body");
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
+    let initial = true;
     while (true) {
-      const part = await reader.read();
+      const part = initial ? { value: first, done: false } : await reader.read();
+      initial = false;
       if (part.done) break;
       budget.bytes += part.value.byteLength;
       size += part.value.byteLength;
       if (signal.aborted || size > MAX_SOURCE_UPLOAD_BYTES || budget.bytes > MAX_CAPTURE_BYTES)
         throw new Error("Capture file limit exceeded");
       chunks.push(part.value);
+      if (part.value.byteLength) onProgress?.(size);
     }
   } catch (error) {
     await reader.cancel();
@@ -119,9 +101,7 @@ export async function fetchDocument(
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  const head = new TextDecoder().decode(bytes.subarray(0, 512));
-  if (/^\s*(?:<!doctype\s+html|<html|<head|<body)/i.test(head))
-    throw new Error("Document returned a login or HTML page");
+  if (looksLikeHtml(bytes)) throw new DocumentReadError(htmlFileReason(hint.url));
   const disposition = response.headers.get("content-disposition") ?? "";
   const encodedName = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
   let dispositionName = /filename="?([^";]+)/i.exec(disposition)?.[1] ?? "";

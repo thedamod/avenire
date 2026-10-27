@@ -219,7 +219,7 @@ describe("document discovery", () => {
     ],
     [
       "https://drive.google.com/file/d/abc123/view?authuser=1",
-      "https://drive.google.com/uc?export=download&id=abc123&confirm=t&authuser=1",
+      "https://drive.usercontent.google.com/download?id=abc123&export=download&confirm=t&authuser=1",
     ],
   ])("maps Google exports %s", (input, expected) => {
     expect(googleExportUrl(input)).toBe(expected);
@@ -307,7 +307,9 @@ describe("file transfer", () => {
         new AbortController().signal,
         htmlFetch,
       ),
-    ).rejects.toThrow("HTML");
+    ).rejects.toThrow(
+      "The site returned a web page instead of the file (you may need to sign in on school.example)",
+    );
   });
   it("enforces the global byte and file caps before large allocations", async () => {
     const fetcher = vi.fn(
@@ -396,7 +398,7 @@ describe("capture boundaries and access", () => {
     expect(output.files).toHaveLength(1);
     expect(output.pages[0]?.file?.sizeBytes).toBe(10);
   });
-  it("reports session-denied document access without leaking text or files", async () => {
+  it("reports an HTTP refusal without guessing a login access state", async () => {
     const fetcher = vi.fn(async () => new Response(null, { status: 403 }));
     const output = await captureTabs(
       fake(
@@ -408,7 +410,8 @@ describe("capture boundaries and access", () => {
       true,
       { fetcher },
     );
-    expect(output.tabs[0]?.access).toBe("login-required");
+    expect(output.tabs[0]?.access).toBe("open");
+    expect(output.skipped[0]?.reason).toBe("The site didn't return the file (HTTP 403).");
     expect(output.pages).toEqual([]);
     expect(output.files).toEqual([]);
   });
@@ -455,7 +458,7 @@ describe("direct upload requests", () => {
   it.each([
     [
       "https://drive.google.com/file/d/abc/view",
-      "https://drive.google.com/uc?export=download&id=abc&confirm=t",
+      "https://drive.usercontent.google.com/download?id=abc&export=download&confirm=t",
     ],
     [
       "https://docs.google.com/document/d/abc/edit",
@@ -777,7 +780,7 @@ describe("v1 capture regressions", () => {
     ],
     [
       "https://drive.google.com/file/d/drive-file/view",
-      "https://drive.google.com/uc?export=download&id=drive-file&confirm=t",
+      "https://drive.usercontent.google.com/download?id=drive-file&export=download&confirm=t",
     ],
     [
       "https://docs.google.com/document/d/doc/edit",
@@ -1328,7 +1331,7 @@ it("discovers Drive folder tiles and LMS download links with native browser down
       "https://drive.google.com/drive/folders/folder",
     ).map((hint) => hint.url),
   ).toEqual([
-    "https://drive.google.com/uc?export=download&id=pdf-id&confirm=t",
+    "https://drive.usercontent.google.com/download?id=pdf-id&export=download&confirm=t",
     "https://docs.google.com/document/d/doc-id/export?format=docx",
   ]);
   const links = discover(
@@ -1351,6 +1354,6 @@ it("resolves direct LMS downloads and Drive confirmation links without renderer 
     "https://school.test/pluginfile.php/12/content?forcedownload=1",
   );
   expect(resolveDocumentUrl("https://drive.google.com/uc?export=download&id=file-id")).toBe(
-    "https://drive.google.com/uc?export=download&id=file-id&confirm=t",
+    "https://drive.usercontent.google.com/download?id=file-id&export=download&confirm=t",
   );
 });

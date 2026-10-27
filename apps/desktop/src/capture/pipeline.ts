@@ -23,6 +23,13 @@ import type { LocalOriginRegistry } from "./registry.ts";
 import type { ExtensionChannel, BrowserPage } from "./channel.ts";
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+/** Also translates access codes from older paired extensions before they reach the overlay. */
+export const browserFailureReason = (reason: string): string =>
+  reason === "login-required"
+    ? "Sign in to Google with the account that can open this file, then capture again."
+    : reason === "paywalled"
+      ? "This page requires a subscription. Open it in your browser and capture again."
+      : reason;
 export const tabKey = (tab: CapturedTab) =>
   `tab:${tab.browser}:${tab.windowId}:${tab.tabId}:${hash(normalizeUrl(tab.url)).slice(0, 16)}`;
 const tabFilePath = (tab: CapturedTab, platform: CaptureSnapshot["platform"]) => {
@@ -359,12 +366,14 @@ export async function runCapturePipeline(options: {
       signal,
       browser,
       (tab, reason) => {
+        reason = browserFailureReason(reason);
         browserFailures.set(tabKey(tab), reason);
         skipped.push({
           title: displayTitle(tab.title, tabFilePath(tab, initial.snapshot.platform)),
           reason,
         });
       },
+      (tab) => stream.progress({ key: tabKey(tab), status: "uploading" }),
     ) ?? Promise.resolve([]),
   ]);
   signal.throwIfAborted();
@@ -407,7 +416,7 @@ export async function runCapturePipeline(options: {
         : "Turn on “Capture pages you're logged into” in Settings to read this in your browser.");
     if (google) {
       blockedTabs.add(key);
-      const detail = `Needs you · open in browser and capture again. ${reason}`;
+      const detail = browserFailureReason(reason);
       stream.progress({ key, status: "skipped", reason: detail });
       skipped.push({ title: displayTitle(tab.title), reason: detail });
     } else if (!stream.settled(key)) {

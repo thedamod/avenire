@@ -48,6 +48,7 @@ interface Pending {
   readonly delivered: Set<BrowserPage>;
   readonly onPage: (page: BrowserPage) => void;
   readonly onFailure: (tab: CapturedTab, reason: string) => void;
+  readonly onProgress: (tab: CapturedTab) => void;
   readonly timer: NodeJS.Timeout;
   readonly resolve: (pages: BrowserPage[]) => void;
   readonly reject: (cause: Error) => void;
@@ -249,6 +250,14 @@ export class ExtensionChannel {
         break;
       case "Pong":
         break;
+      case "CaptureProgress": {
+        const pending = peer.requests.get(message.requestId);
+        if (!pending || pending.final || pending.seen.has(message.tabId) || !message.bytesReceived)
+          break;
+        const tab = pending.tabs.find((tab) => tab.tabId === message.tabId);
+        if (tab) pending.onProgress(tab);
+        break;
+      }
       case "ReopenResult": {
         const pending = peer.reopens.get(message.requestId);
         if (!pending) throw new Error("Unknown reopen request");
@@ -512,6 +521,7 @@ export class ExtensionChannel {
     signal?: AbortSignal,
     onPage?: (page: BrowserPage) => Promise<void>,
     onFailure?: (tab: CapturedTab, reason: string) => void,
+    onProgress?: (tab: CapturedTab) => void,
   ): Promise<BrowserPage[]> {
     const deadline = Date.now() + 20_000;
     const budget = { bytes: 0 };
@@ -585,6 +595,7 @@ export class ExtensionChannel {
               ignoredFiles: new Set(),
               delivered: new Set(),
               onFailure: (tab, reason) => onFailure?.(tab, reason),
+              onProgress: (tab) => onProgress?.(tab),
               onPage: (page) => {
                 pages.push(page);
                 delivered.add(page.tab.tabId);

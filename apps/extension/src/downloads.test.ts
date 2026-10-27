@@ -4,6 +4,10 @@ import { captureTabs } from "./capture.ts";
 import { extractPage } from "@avenire/capture/extract";
 import { discoverLinks } from "./documents.ts";
 import type { PageSnapshot, CapturedTab } from "@avenire/contracts";
+import { MAX_SOURCE_UPLOAD_BYTES } from "@avenire/contracts";
+import { driveReasons, downloadInterruptedReason } from "./document-response.ts";
+import { fetchDocument } from "./files.ts";
+import { googleExportUrl } from "./documents.ts";
 
 const page: PageSnapshot = {
   tabId: 7,
@@ -40,7 +44,7 @@ function harness() {
   };
   const downloads = {
     search: vi.fn(async (query: any) => (query.id ? [item] : [])),
-    download: vi.fn(async () => item.id),
+    download: vi.fn(async (_options: chrome.downloads.DownloadOptions) => item.id),
     cancel: vi.fn(async () => {}),
     setUiOptions: vi.fn(async () => {}),
     onChanged: {
@@ -128,7 +132,7 @@ it("reports interruptions and cancels a timed out download without leaking liste
     0,
   );
   const rejection = expect(interrupted).rejects.toThrow(
-    "Browser download interrupted: FILE_ACCESS_DENIED",
+    "The browser couldn't save the downloaded file. Check file access and free disk space, then capture again.",
   );
   await vi.waitFor(() => expect(h.downloads.search).toHaveBeenCalledWith({ id: 3 }));
   h.update({ state: "interrupted", error: "FILE_ACCESS_DENIED" });
@@ -253,7 +257,8 @@ it("restores UI after a download failure and keeps interruption reasons visible"
   const output = await captureTabs(api, [tab], true, { desktop: true, captureId: "capture-id" });
   expect(output.skipped).toContainEqual({
     tabId: 7,
-    reason: "Browser download interrupted: NETWORK_FAILED",
+    reason:
+      "The download stopped because of a network problem. Check your connection and capture again.",
   });
   expect(h.downloads.setUiOptions.mock.calls).toEqual([[{ enabled: false }], [{ enabled: true }]]);
 });
@@ -322,4 +327,422 @@ it("reuses a validated PDF download when the protected viewer rejects injected s
   });
   expect(h.downloads.download).toHaveBeenCalledOnce();
   expect(output.pages[0]?.download?.captureId).toBe("capture-id");
+});
+
+const driveTab: CapturedTab = {
+  tabId: 7,
+  windowId: 1,
+  browser: "chrome",
+  title: "Large textbook.pdf - Google Drive",
+  url: "https://drive.google.com/file/d/textbook/view?authuser=1&resourcekey=share-key",
+  activeInWindow: true,
+  engagement: { dwellMs: 10000, scrollDepthPct: 0, mediaPlaying: false },
+};
+const driveUrl = googleExportUrl(driveTab.url)!;
+const driveHint = { ...hint, url: driveUrl };
+const htmlResponse = (html: string, status = 200) =>
+  new Response(html, { status, headers: { "content-type": "text/html; charset=utf-8" } });
+const pdfResponse = () =>
+  new Response("%PDF-original", { headers: { "content-type": "application/pdf" } });
+const virusForm = `<!doctype html><html><body>Google Drive can't scan this file for viruses.
+  <form action="https://drive.usercontent.google.com/download?export=download&amp;authuser=0" id="download-form" method="get">
+    <input value="textbook" name="id" type="hidden">
+    <input type='hidden' name='confirm' value='token&amp;confirmed'>
+    <input type=hidden name=uuid value=large-file-uuid>
+  </form></body></html>`;
+const driveApi = (h: ReturnType<typeof harness>) =>
+  ({
+    ...h.api,
+    scripting: { executeScript: vi.fn(async () => []) },
+  }) as unknown as typeof chrome;
+
+it.each([
+  [
+    "quota",
+    "<html><body>Too many users have viewed or downloaded this file recently.</body></html>",
+    403,
+    driveReasons.quota,
+  ],
+  ["download quota", "<html><body>Download quota exceeded</body></html>", 200, driveReasons.quota],
+  [
+    "owner-disabled",
+    "<html><body>The owner has disabled downloading for this file.</body></html>",
+    403,
+    driveReasons.disabled,
+  ],
+  [
+    "unknown refusal",
+    "<html><body>Something went wrong</body></html>",
+    403,
+    "Google Drive didn't return the file (HTTP 403).",
+  ],
+  [
+    "wrong account",
+    "<html><body>You need access. Switch accounts.</body></html>",
+    403,
+    driveReasons.login,
+  ],
+])(
+  "reports Drive %s honestly without a login access state",
+  async (_name, html, status, reason) => {
+    const h = harness();
+    const fetcher = vi.fn(async () => htmlResponse(html as string, status as number));
+    const output = await captureTabs(driveApi(h), [driveTab], true, {
+      desktop: true,
+      captureId: "capture-id",
+      fetcher,
+    });
+    expect(output.skipped).toEqual([{ tabId: 7, reason }]);
+    expect(output.tabs[0]?.access).toBe("open");
+    expect(output.pages).toEqual([]);
+    expect(h.downloads.download).not.toHaveBeenCalled();
+    expect(fetcher).toHaveBeenCalledOnce(); // Do not invent a Drive preview-original endpoint.
+  },
+);
+
+it("marks only a real ServiceLogin redirect as login-required and keeps its sentence", async () => {
+  const h = harness();
+  const fetcher = vi.fn(async () => {
+    const response = htmlResponse("<html>Sign in</html>");
+    Object.defineProperty(response, "url", {
+      value: "https://accounts.google.com/ServiceLogin?continue=drive",
+    });
+    return response;
+  });
+  const output = await captureTabs(driveApi(h), [driveTab], true, {
+    desktop: true,
+    captureId: "capture-id",
+    fetcher,
+  });
+  expect(output.tabs[0]?.access).toBe("login-required");
+  expect(output.skipped).toEqual([{ tabId: 7, reason: driveReasons.login }]);
+  expect(h.downloads.download).not.toHaveBeenCalled();
+});
+
+it("carries authuser/resourcekey and follows a large-file form once before Chrome downloads", async () => {
+  const h = harness();
+  h.update({ state: "complete", url: driveUrl, finalUrl: driveUrl });
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(htmlResponse(virusForm))
+    .mockResolvedValueOnce(pdfResponse());
+  const output = await downloadDocument(
+    h.api,
+    driveHint,
+    { ...page, url: driveTab.url },
+    budget(),
+    new AbortController().signal,
+    "capture-id",
+    0,
+    [],
+    () => true,
+    { fetcher },
+  );
+  expect(fetcher.mock.calls[0]).toEqual([
+    driveUrl,
+    expect.objectContaining({ credentials: "include" }),
+  ]);
+  const confirmed = new URL(fetcher.mock.calls[1]![0]);
+  expect(Object.fromEntries(confirmed.searchParams)).toMatchObject({
+    id: "textbook",
+    export: "download",
+    authuser: "1",
+    resourcekey: "share-key",
+    confirm: "token&confirmed",
+    uuid: "large-file-uuid",
+  });
+  expect(h.downloads.download.mock.calls[0]?.[0]).toMatchObject({ url: confirmed.href });
+  expect(output?.download?.url).toBe(driveUrl); // Confirmation tokens stay in the worker.
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+it("direct capture uses the same confirmed Drive response without a third request", async () => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(htmlResponse(virusForm))
+    .mockResolvedValueOnce(pdfResponse());
+  const file = await fetchDocument(
+    driveHint,
+    page,
+    budget(),
+    new AbortController().signal,
+    fetcher,
+  );
+  expect(new TextDecoder().decode(file?.bytes)).toBe("%PDF-original");
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  ["repeated warning", virusForm],
+  [
+    "untrusted action",
+    virusForm.replace(
+      "https://drive.usercontent.google.com/download",
+      "https://evil.test/download",
+    ),
+  ],
+  ["other file", virusForm.replace('value="textbook"', 'value="other-file"')],
+])("does not loop or send confirmation tokens to %s", async (_name, html) => {
+  const h = harness();
+  const fetcher = vi.fn(async () => htmlResponse(html));
+  await expect(
+    downloadDocument(
+      h.api,
+      driveHint,
+      page,
+      budget(),
+      new AbortController().signal,
+      "capture-id",
+      0,
+      [],
+      () => true,
+      { fetcher },
+    ),
+  ).rejects.toThrow(driveReasons.confirm);
+  expect(fetcher.mock.calls.length).toBeLessThanOrEqual(2);
+  expect(h.downloads.download).not.toHaveBeenCalled();
+});
+
+it("detects HTML quota even when Drive labels it application/pdf", async () => {
+  const fetcher = vi.fn(
+    async () =>
+      new Response("<html>Download quota exceeded</html>", {
+        headers: { "content-type": "application/pdf" },
+      }),
+  );
+  await expect(
+    fetchDocument(driveHint, page, budget(), new AbortController().signal, fetcher),
+  ).rejects.toThrow(driveReasons.quota);
+});
+
+it("probes a successful Drive download without buffering its body", async () => {
+  const h = harness();
+  h.update({ state: "complete" });
+  const cancel = vi.fn();
+  const fetcher = vi.fn(
+    async (_url: RequestInfo | URL) =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("%PDF-"));
+          },
+          cancel,
+        }),
+        { headers: { "content-type": "application/pdf" } },
+      ),
+  );
+  await downloadDocument(
+    h.api,
+    driveHint,
+    page,
+    budget(),
+    new AbortController().signal,
+    "capture-id",
+    0,
+    [],
+    () => true,
+    { fetcher },
+  );
+  expect(fetcher.mock.calls[0]?.[0]).toBe(driveUrl);
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(h.downloads.download.mock.calls[0]?.[0]).toMatchObject({ url: driveUrl });
+});
+
+it("diagnoses a Drive refusal that starts after the successful probe", async () => {
+  const h = harness();
+  h.update({ state: "interrupted", error: "SERVER_FORBIDDEN" });
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(pdfResponse())
+    .mockResolvedValueOnce(htmlResponse("<html>Download quota exceeded</html>", 403));
+  await expect(
+    downloadDocument(
+      h.api,
+      driveHint,
+      page,
+      budget(),
+      new AbortController().signal,
+      "capture-id",
+      0,
+      [],
+      () => true,
+      { fetcher },
+    ),
+  ).rejects.toThrow(driveReasons.quota);
+  expect(h.downloads.download).toHaveBeenCalledOnce();
+});
+
+it("reports non-Drive HTML instead of guessing login-required", async () => {
+  const h = harness();
+  h.update({ state: "complete", mime: "text/html" });
+  const fetcher = vi.fn(async () => htmlResponse("<html><form>Sign in</form></html>"));
+  const output = await captureTabs(driveApi(h), [{ ...driveTab, url: hint.url }], true, {
+    desktop: true,
+    captureId: "capture-id",
+    fetcher,
+  });
+  expect(output.skipped).toEqual([
+    {
+      tabId: 7,
+      reason:
+        "The site returned a web page instead of the file (you may need to sign in on school.test)",
+    },
+  ]);
+  expect(output.tabs[0]?.access).toBe("open");
+});
+
+it.each([
+  "SERVER_FORBIDDEN",
+  "SERVER_UNAUTHORIZED",
+  "NETWORK_FAILED",
+  "NETWORK_TIMEOUT",
+  "FILE_TOO_LARGE",
+  "USER_CANCELED",
+])("maps interruption %s to a plain sentence without an access label", async (error) => {
+  const h = harness();
+  h.update({ state: "interrupted", error });
+  await expect(
+    downloadDocument(
+      h.api,
+      hint,
+      page,
+      budget(),
+      new AbortController().signal,
+      "capture-id",
+      0,
+      [],
+      () => true,
+      { fetcher: vi.fn(async () => pdfResponse()) },
+    ),
+  ).rejects.toThrow(downloadInterruptedReason(error));
+  expect(downloadInterruptedReason(error)).not.toContain(error);
+});
+
+it("keeps a 256 MiB download alive past six seconds using polled bytes, reports progress, and removes timers", async () => {
+  vi.useFakeTimers();
+  const h = harness();
+  h.update({
+    bytesReceived: 0,
+    totalBytes: MAX_SOURCE_UPLOAD_BYTES,
+    fileSize: MAX_SOURCE_UPLOAD_BYTES,
+  });
+  const progress = vi.fn();
+  const work = captureTabs(driveApi(h), [driveTab], true, {
+    desktop: true,
+    captureId: "capture-id",
+    totalTimeoutMs: 20_000,
+    onProgress: progress,
+    fetcher: vi.fn(async () => pdfResponse()),
+  });
+  for (let i = 1; i <= 8; i++) {
+    await vi.advanceTimersByTimeAsync(1000);
+    // Chrome does NOT fire onChanged for bytesReceived; only search polling can see these.
+    h.item().bytesReceived = i * 20 * 1024 * 1024;
+    await vi.advanceTimersByTimeAsync(250);
+  }
+  expect(h.downloads.cancel).not.toHaveBeenCalled();
+  h.update({ state: "complete", bytesReceived: MAX_SOURCE_UPLOAD_BYTES });
+  const output = await work;
+  expect(output.pages[0]?.download?.sizeBytes).toBe(MAX_SOURCE_UPLOAD_BYTES);
+  expect(output.skipped).toEqual([]);
+  expect(progress).toHaveBeenCalled();
+  expect(h.listeners.size).toBe(0);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("handles uc-download-link confirmation using the original account and resource key", async () => {
+  const h = harness();
+  h.update({ state: "complete" });
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(
+      htmlResponse(
+        `<html><a id="uc-download-link" href="https://drive.google.com/uc?id=textbook&amp;export=download&amp;confirm=confirm-token">Download anyway</a></html>`,
+      ),
+    )
+    .mockResolvedValueOnce(pdfResponse());
+  await downloadDocument(
+    h.api,
+    driveHint,
+    page,
+    budget(),
+    new AbortController().signal,
+    "capture-id",
+    0,
+    [],
+    () => true,
+    { fetcher },
+  );
+  const confirmed = new URL(fetcher.mock.calls[1]![0]);
+  expect(confirmed.hostname).toBe("drive.usercontent.google.com");
+  expect(Object.fromEntries(confirmed.searchParams)).toMatchObject({
+    id: "textbook",
+    authuser: "1",
+    resourcekey: "share-key",
+    confirm: "confirm-token",
+  });
+});
+
+it.each(["NETWORK_FAILED", "USER_CANCELED"])(
+  "does not delay Drive %s with another network request",
+  async (error) => {
+    const h = harness();
+    h.update({ state: "interrupted", error });
+    const fetcher = vi.fn(async () => pdfResponse());
+    await expect(
+      downloadDocument(
+        h.api,
+        driveHint,
+        page,
+        budget(),
+        new AbortController().signal,
+        "capture-id",
+        0,
+        [],
+        () => true,
+        { fetcher },
+      ),
+    ).rejects.toThrow(downloadInterruptedReason(error));
+    expect(fetcher).toHaveBeenCalledOnce();
+  },
+);
+
+it("cuts off a previously progressing download once it stalls", async () => {
+  vi.useFakeTimers();
+  const h = harness();
+  const work = captureTabs(driveApi(h), [{ ...driveTab, url: hint.url }], true, {
+    desktop: true,
+    captureId: "capture-id",
+    tabTimeoutMs: 1000,
+    totalTimeoutMs: 10000,
+  });
+  await vi.advanceTimersByTimeAsync(500);
+  h.item().bytesReceived = 100;
+  await vi.advanceTimersByTimeAsync(250);
+  await vi.advanceTimersByTimeAsync(1001);
+  const output = await work;
+  expect(output.pages).toEqual([]);
+  expect(output.skipped.some((entry) => /timed out/i.test(entry.reason))).toBe(true);
+  expect(h.downloads.cancel).toHaveBeenCalledWith(3);
+  expect(h.listeners.size).toBe(0);
+});
+
+it("never extends an active download beyond the total capture budget", async () => {
+  vi.useFakeTimers();
+  const h = harness();
+  const work = captureTabs(driveApi(h), [{ ...driveTab, url: hint.url }], true, {
+    desktop: true,
+    captureId: "capture-id",
+    tabTimeoutMs: 1000,
+    totalTimeoutMs: 2500,
+  });
+  for (let i = 0; i < 5; i++) {
+    await vi.advanceTimersByTimeAsync(400);
+    h.item().bytesReceived = (i + 1) * 100;
+  }
+  await vi.advanceTimersByTimeAsync(501);
+  const output = await work;
+  expect(output.pages).toEqual([]);
+  expect(h.downloads.cancel).toHaveBeenCalledWith(3);
+  expect(vi.getTimerCount()).toBe(0);
 });

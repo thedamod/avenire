@@ -670,3 +670,37 @@ it("reuses owner-registry downloads after an authenticated browser reconnects", 
   });
   expect((await reused)[0]?.path).toBe(path);
 });
+
+it("reports download progress only for a live request's selected, unsettled tabs", async () => {
+  const h = await harness();
+  const c = await client(h.url);
+  await authenticate(c);
+  await report(c);
+  const progress = vi.fn();
+  const captured = h.channel.capture([tab], true, undefined, undefined, undefined, progress);
+  const request = await c.next("CaptureRequest");
+  const event = {
+    _tag: "CaptureProgress",
+    version: 1,
+    requestId: request.requestId,
+    tabId: tab.tabId,
+    bytesReceived: 1024,
+  };
+  c.send({ ...event, requestId: "unrelated-capture" });
+  c.send({ ...event, tabId: 999 });
+  c.send({ ...event, bytesReceived: 0 });
+  c.send(event);
+  await vi.waitFor(() => expect(progress).toHaveBeenCalledExactlyOnceWith(tab));
+  c.send({
+    _tag: "CaptureResult",
+    version: 1,
+    requestId: request.requestId,
+    pages: [],
+    skipped: [],
+  });
+  await captured;
+  c.send(event);
+  c.send({ _tag: "Ping", version: 1 });
+  await c.next("Pong");
+  expect(progress).toHaveBeenCalledOnce();
+});

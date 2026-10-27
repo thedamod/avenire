@@ -142,6 +142,18 @@ async function handleRequest(
       reusableDownloads: message.reusableDownloads ?? [],
       retainFiles: false,
       totalTimeoutMs: Math.max(0, deadline - Date.now() - 100),
+      onProgress: (tab, bytesReceived) => {
+        channel?.send(
+          {
+            _tag: "CaptureProgress",
+            version: 1,
+            requestId: message.requestId,
+            tabId: tab.tabId,
+            bytesReceived,
+          },
+          socket,
+        );
+      },
       onTab: (output) => {
         // Serialize metadata + frames so duplicates cannot steal another tab's binary stream.
         delivery = delivery.then(async () => {

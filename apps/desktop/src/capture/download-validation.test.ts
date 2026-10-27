@@ -61,3 +61,31 @@ it("accepts only a matching regular download within its capture directory and ti
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("rejects HTML saved with a PDF filename and MIME with an honest host-specific reason", async () => {
+  const root = await mkdtemp(join(tmpdir(), "capture-download-html-"));
+  const id = "capture-request";
+  const path = join(root, "Avenire", id, "notes.pdf");
+  try {
+    await mkdir(join(root, "Avenire", id), { recursive: true });
+    await writeFile(path, "<!doctype html><html><body>Please sign in</body></html>");
+    const info = await stat(path);
+    await expect(
+      validateBrowserDownload(
+        {
+          path,
+          captureId: id,
+          sizeBytes: info.size,
+          mimeType: "application/pdf",
+          url: "https://school.test/notes.pdf",
+        },
+        root,
+        { captureId: id, startedAt: info.mtimeMs - 1000, endedAt: info.mtimeMs + 1000 },
+      ),
+    ).rejects.toThrow(
+      "The site returned a web page instead of the file (you may need to sign in on school.test)",
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

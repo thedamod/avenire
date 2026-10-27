@@ -43,18 +43,23 @@ export function googleExportUrl(raw: string): string | undefined {
     const format = match[1] === "document" ? "docx" : match[1] === "presentation" ? "pdf" : "xlsx";
     result = new URL(`https://docs.google.com/${match[1]}/d/${match[3]}/export?format=${format}`);
   } else if (url.hostname === "drive.google.com" && drive) {
-    result = new URL(`https://drive.google.com/uc?export=download&id=${drive[2]}&confirm=t`);
+    result = new URL(
+      `https://drive.usercontent.google.com/download?id=${drive[2]}&export=download&confirm=t`,
+    );
   } else if (
-    url.hostname === "drive.google.com" &&
-    url.pathname === "/uc" &&
+    ((url.hostname === "drive.google.com" && url.pathname === "/uc") ||
+      (url.hostname === "drive.usercontent.google.com" && url.pathname === "/download")) &&
     url.searchParams.get("export") === "download" &&
     /^[\w-]+$/.test(url.searchParams.get("id") ?? "")
   ) {
-    result = new URL(url);
-    result.searchParams.set("confirm", "t");
+    result = new URL(
+      `https://drive.usercontent.google.com/download?id=${url.searchParams.get("id")}&export=download&confirm=t`,
+    );
   } else return undefined;
   const account = url.searchParams.get("authuser") ?? match?.[2] ?? drive?.[1];
-  if (account && /^\d{1,2}$/.test(account)) result.searchParams.set("authuser", account);
+  if (account) result.searchParams.set("authuser", account);
+  const resourceKey = url.searchParams.get("resourcekey");
+  if (resourceKey) result.searchParams.set("resourcekey", resourceKey);
   return result.href;
 }
 

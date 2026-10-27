@@ -450,7 +450,7 @@ it("skips unread Drive tabs with a Needs you reason and retains ordinary timed-o
     expect.objectContaining({
       key: tabKey(drive),
       status: "skipped",
-      reason: "Needs you · open in browser and capture again. Read in browser timed out",
+      reason: "Read in browser timed out",
     }),
   );
   expect(h.stream.events).toContainEqual(
@@ -528,4 +528,36 @@ it("uploads browser downloads as LocalFiles, records their private real path, an
   expect(result.snapshot.tabs).toEqual([]);
   expect(result.uploads?.files).toHaveLength(1);
   expect(JSON.stringify(result)).not.toContain("/Downloads");
+});
+
+it.each([
+  [
+    "login-required",
+    "Sign in to Google with the account that can open this file, then capture again.",
+  ],
+  [
+    "Google Drive won't download this file right now (too many downloads). Open it in Drive later and capture again.",
+    "Google Drive won't download this file right now (too many downloads). Open it in Drive later and capture again.",
+  ],
+  [
+    "The owner turned off downloads for this file, so Avenire can't save a copy.",
+    "The owner turned off downloads for this file, so Avenire can't save a copy.",
+  ],
+])("shows a readable Drive failure and downloading progress: %s", async (failure, expected) => {
+  const drive = { ...tab, url: "https://drive.google.com/file/d/textbook/view" };
+  const h = setup({ ...snapshot, tabs: [drive] }, []);
+  h.channel.capture = async (_tabs, _read, _signal, _page, ...callbacks: any[]) => {
+    callbacks[1](drive);
+    expect(h.stream.events.at(-1)).toMatchObject({ key: tabKey(drive), status: "uploading" });
+    callbacks[0](drive, failure);
+    return [];
+  };
+  const result = await runCapturePipeline(h);
+  expect(h.stream.events.at(-1)).toMatchObject({
+    key: tabKey(drive),
+    status: "skipped",
+    reason: expected,
+  });
+  expect(JSON.stringify(h.stream.events)).not.toContain("login-required");
+  expect(result.uploads?.skipped.every((item) => item.reason === expected)).toBe(true);
 });
