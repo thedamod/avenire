@@ -50,6 +50,7 @@ interface Peer {
   lastSeen: number;
   chain: Promise<void>;
   readonly requests: Map<string, Pending>;
+  readonly expired: Map<string, number>;
   readonly reopens: Map<string, { resolve: (ok: boolean) => void; timer: NodeJS.Timeout }>;
   readonly directories: Set<string>;
   queuedBytes: number;
@@ -127,6 +128,7 @@ export class ExtensionChannel {
       lastSeen: Date.now(),
       chain: Promise.resolve(),
       requests: new Map(),
+      expired: new Map(),
       reopens: new Map(),
       directories: new Set(),
       queuedBytes: 0,
@@ -157,6 +159,10 @@ export class ExtensionChannel {
           peer.queuedBytes -= buffer.length;
         });
     });
+  }
+  private expired(peer: Peer, id: string): boolean {
+    for (const [key, until] of peer.expired) if (until <= Date.now()) peer.expired.delete(key);
+    return peer.expired.has(id);
   }
   private async message(peer: Peer, value: unknown) {
     if (!peer.sender) {
@@ -219,6 +225,7 @@ export class ExtensionChannel {
         break;
       }
       case "CaptureResult": {
+        if (this.expired(peer, message.requestId)) return;
         const pending = peer.requests.get(message.requestId);
         if (
           !pending ||
@@ -272,6 +279,7 @@ export class ExtensionChannel {
     const decoded = decodeFileFrame(bytes);
     if (!decoded) throw new Error("Malformed file frame");
     const { header, payload } = decoded;
+    if (this.expired(peer, header.requestId)) return;
     const pending = peer.requests.get(header.requestId);
     const incoming = [...(pending?.files.values() ?? [])].find(
       (file) =>
@@ -311,6 +319,9 @@ export class ExtensionChannel {
     if (!pending) return;
     clearTimeout(pending.timer);
     peer.requests.delete(id);
+    this.expired(peer, id);
+    if (peer.expired.size >= 512) peer.expired.delete(peer.expired.keys().next().value!);
+    peer.expired.set(id, Date.now() + 30_000);
     pending.reject(new Error(reason));
     // Wait for an in-flight frame write before deleting its private spool.
     void peer.chain
@@ -378,6 +389,7 @@ export class ExtensionChannel {
       await Promise.all(
         [...groups].map(async ([peer, selected]) => {
           const requestId = randomUUID();
+          const deadlineMs = Math.max(1, Math.min(3000, deadline - Date.now()));
           const abort = () => this.fail(peer, requestId, "Capture cancelled");
           try {
             const extracted = await new Promise<BrowserPage[]>((resolve, reject) => {
@@ -388,7 +400,7 @@ export class ExtensionChannel {
                     requestId,
                     "Browser extraction timed out; try capturing this tab again.",
                   ),
-                Math.min(3000, deadline - Date.now()),
+                deadlineMs,
               );
               peer.requests.set(requestId, {
                 tabs: selected,
@@ -410,6 +422,7 @@ export class ExtensionChannel {
                 version: 1,
                 requestId,
                 tabIds: selected.map((tab) => tab.tabId),
+                deadlineMs,
                 readInBrowser,
               });
             });

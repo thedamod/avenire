@@ -135,15 +135,11 @@ else {
       createTray();
       startTabsReceiver(pairing, () => void capture().catch(reportCaptureError));
       stopForegroundPoll = startForegroundPoll(
-        () =>
-          (setup.completed && setup.foregroundCapture && setup.permissions.foregroundAvailable) ||
-          (setupTry && setupForeground),
+        () => (setup.completed && setup.foregroundCapture) || (setupTry && setupForeground),
       );
       void prewarmPowerShell().catch(() => {});
       stopNativePoll = startNativePoll(
-        () =>
-          (setup.completed && setup.foregroundCapture && setup.permissions.foregroundAvailable) ||
-          (setupTry && setupForeground),
+        () => (setup.completed && setup.foregroundCapture) || (setupTry && setupForeground),
       );
       if (setup.completed && setup.hotkeysEnabled !== false) {
         setupHotkeys = true;
@@ -599,7 +595,7 @@ async function captureSetup(): Promise<void> {
   try {
     stagedCapture = applyPolicy(
       await collectSnapshot(new Date().toISOString(), {
-        foreground: setupForeground && setup.permissions.foregroundAvailable,
+        foreground: setupForeground,
       }),
     );
     const sources = describeCapturedSources(stagedCapture.snapshot);
@@ -643,7 +639,7 @@ async function capture(): Promise<void> {
   const staged = stagedCapture;
   const instant = staged
     ? { snapshot: staged.snapshot, resolve: async () => staged.snapshot }
-    : instantCapture(capturedAt, setup.foregroundCapture && setup.permissions.foregroundAvailable);
+    : instantCapture(capturedAt, setup.foregroundCapture);
   const initial = staged ?? applyPolicy(instant.snapshot);
   const controller = new AbortController();
   pendingCaptureOwner = owner;

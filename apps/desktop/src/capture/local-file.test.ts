@@ -12,3 +12,14 @@ it("decodes the owner's exact Windows file URL with spaces using Windows fileURL
     "/home/student/My Notes.pdf",
   );
 });
+
+it("compares path identities using the capture platform while preserving Linux case", async () => {
+  const { localPathIdentity } = await import("./local-file.ts");
+  expect(localPathIdentity("C:/Users/Student/../Student/A.pdf", "win32")).toBe(
+    localPathIdentity("c:\\users\\student\\a.pdf", "win32"),
+  );
+  expect(localPathIdentity("/Users/U/A.pdf", "darwin")).toBe("/users/u/a.pdf");
+  expect(localPathIdentity("/home/u/A.pdf", "linux")).not.toBe(
+    localPathIdentity("/home/u/a.pdf", "linux"),
+  );
+});

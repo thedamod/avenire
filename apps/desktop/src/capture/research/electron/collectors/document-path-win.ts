@@ -150,6 +150,7 @@ export function listRecentTargets(
     try {
       const { stdout } = await execPowerShell(buildRecentScript(), {
         timeout: collectorTimeout(ctx, 1800),
+        deadline: ctx.deadline,
         maxBuffer: 1024 * 1024,
         notes: ctx.notes,
       });

@@ -354,3 +354,45 @@ it("bounds extraction to 3 seconds per batch and 8 seconds total, and reopen to 
   expect(await h.channel.reopen(tab.url)).toBe(false);
   expect(performance.now() - reopenStart).toBeLessThan(2300);
 }, 12000);
+
+it("drops an expired request's late result and file frames while a concurrent request completes", async () => {
+  const h = await harness();
+  const c = await client(h.url);
+  await authenticate(c);
+  await report(c);
+  const controller = new AbortController();
+  const expired = h.channel.capture([tab], true, controller.signal);
+  const first = await c.next("CaptureRequest");
+  expect(first.deadlineMs).toBeGreaterThan(0);
+  expect(first.deadlineMs).toBeLessThanOrEqual(8000);
+  const live = h.channel.capture([tab], true);
+  const second = await c.next("CaptureRequest");
+  // Exercise the timeout callback without advancing the socket heartbeat.
+  const peers = (h.channel as any).peers as Set<any>;
+  const pending = [...peers][0].requests.get(first.requestId);
+  pending.timer._onTimeout();
+  expect(await expired).toEqual([]);
+  c.send({
+    _tag: "CaptureResult",
+    version: 1,
+    requestId: first.requestId,
+    pages: [page],
+    skipped: [],
+  });
+  c.socket.send(
+    encodeFileFrame(
+      { requestId: first.requestId, tabId: 1, sha256: "a".repeat(64), seq: 0, final: true },
+      new Uint8Array([1]),
+    ),
+  );
+  c.send({
+    _tag: "CaptureResult",
+    version: 1,
+    requestId: second.requestId,
+    pages: [page],
+    skipped: [],
+  });
+  expect(await live).toEqual([{ tab, page }]);
+  expect(c.socket.readyState).toBe(WebSocket.OPEN);
+  expect(h.channel.connected()).toBe(true);
+});

@@ -61,3 +61,28 @@ it("prewarms the persistent Windows host and foreground type through the same ga
     Object.defineProperty(process, "platform", original);
   }
 });
+
+it("prioritizes enumeration and separates shared queue deadline from command execution caps", async () => {
+  vi.useFakeTimers();
+  const order: string[] = [];
+  mocks.run.mockImplementation(async (script, timeout) => {
+    order.push(script);
+    const duration = (
+      { Office: 1200, Recent: 500, SMTC: 1300, EnumWindows: 100 } as Record<string, number>
+    )[script]!;
+    expect(timeout).toBeGreaterThanOrEqual(duration);
+    await new Promise((resolve) => setTimeout(resolve, duration));
+    return { stdout: script === "EnumWindows" ? "::WIN:: 4\tReader\tStudy" : "", stderr: "" };
+  });
+  const deadline = Date.now() + 9000;
+  const jobs = [
+    execPowerShell("Office", { timeout: 2500, deadline }),
+    execPowerShell("Recent", { timeout: 1800, deadline }),
+    execPowerShell("SMTC", { timeout: 2500, deadline }),
+    execPowerShell("EnumWindows", { timeout: 2500, deadline, priority: 100 }),
+  ];
+  await vi.advanceTimersByTimeAsync(3200);
+  expect((await Promise.all(jobs))[3]?.stdout).toContain("Study");
+  expect(order[0]).toBe("EnumWindows");
+  vi.useRealTimers();
+});

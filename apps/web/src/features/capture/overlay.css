@@ -59,6 +59,9 @@ body {
 
 /* Enters from the bottom-right (offset + fade, never from scale 0); leaves faster. */
 .capture-overlay {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
   padding: var(--capture-overlay-gutter);
   transition:
     opacity var(--duration-moderate) var(--ease-out),

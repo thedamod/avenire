@@ -12,7 +12,7 @@ const PANEL_WIDTH = 380;
 const GUTTER = 12;
 const MARGIN = 16 - GUTTER;
 export function overlayBounds(area: Electron.Rectangle, height: number) {
-  const width = PANEL_WIDTH + GUTTER * 2;
+  const width = Math.max(1, Math.min(PANEL_WIDTH + GUTTER * 2, area.width - MARGIN * 2));
   const boundedHeight = Math.max(
     1,
     Math.min(Math.ceil(height), Math.max(1, area.height - MARGIN * 2)),
@@ -20,7 +20,7 @@ export function overlayBounds(area: Electron.Rectangle, height: number) {
   return {
     width,
     height: boundedHeight,
-    x: area.x + area.width - width - MARGIN,
+    x: Math.max(area.x, area.x + area.width - width - MARGIN),
     y: area.y + area.height - boundedHeight - MARGIN,
   };
 }
@@ -32,6 +32,7 @@ export class CaptureOverlay {
   state: CaptureOverlayState | undefined;
   owner: string | undefined;
   private hovered = false;
+  private hoverPoll: ReturnType<typeof setInterval> | undefined;
   private expires = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private area: Electron.Rectangle;
@@ -60,6 +61,8 @@ export class CaptureOverlay {
         backgroundThrottling: false,
       },
     });
+    this.window.on("hide", () => this.stopHoverPoll());
+    this.window.on("closed", () => this.stopHoverPoll());
     this.window.setMenu(null);
     this.window.setAlwaysOnTop(true, process.platform === "darwin" ? "screen-saver" : "floating");
     this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -100,17 +103,19 @@ export class CaptureOverlay {
     this.expires = 0;
     this.hovered = false;
     this.owner = owner;
+    this.area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
     this.state = {
+      maxHeight: overlayBounds(this.area, Infinity).height,
       id: started.id,
       phase: "collecting",
       items: started.items,
       ...(shortcut ? { shortcut } : {}),
     };
-    this.area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
     this.resize(this.window.getBounds().height);
     this.window.setIgnoreMouseEvents(true, { forward: true });
     this.push();
     this.window.showInactive();
+    this.startHoverPoll();
   }
   progress(owner: string, event: CaptureProgress) {
     if (owner !== this.owner || event.id !== this.state?.id || this.state.phase !== "collecting")
@@ -161,6 +166,29 @@ export class CaptureOverlay {
     );
     this.timer.unref?.();
   }
+  private stopHoverPoll() {
+    clearInterval(this.hoverPoll);
+    this.hoverPoll = undefined;
+  }
+  private startHoverPoll() {
+    this.stopHoverPoll();
+    if (process.platform !== "linux") return;
+    this.hoverPoll = setInterval(() => {
+      if (this.window.isDestroyed()) {
+        this.stopHoverPoll();
+        return;
+      }
+      const point = screen.getCursorScreenPoint();
+      const bounds = this.window.getBounds();
+      const hovered =
+        point.x >= bounds.x &&
+        point.x < bounds.x + bounds.width &&
+        point.y >= bounds.y &&
+        point.y < bounds.y + bounds.height;
+      if (hovered !== this.hovered) this.setHovered(hovered);
+    }, 100);
+    this.hoverPoll.unref?.();
+  }
   setHovered(hovered: boolean) {
     this.hovered = hovered;
     this.window.setIgnoreMouseEvents(!hovered, hovered ? {} : { forward: true });
@@ -176,6 +204,7 @@ export class CaptureOverlay {
       this.expires = 0;
       this.hovered = false;
       this.window.setIgnoreMouseEvents(true, { forward: true });
+      this.stopHoverPoll();
       this.window.hide();
     }
   }
@@ -183,6 +212,7 @@ export class CaptureOverlay {
     if (!this.window.isDestroyed()) this.window.setBounds(overlayBounds(this.area, height));
   }
   clear() {
+    this.stopHoverPoll();
     this.cancelTimer();
     this.owner = undefined;
     this.state = undefined;

@@ -258,6 +258,7 @@ export async function scanProcessFilesBatch(
   pids: number[] | (() => number[]),
   notes: string[],
   timeoutMs = 4000,
+  deadline?: number,
 ): Promise<Map<number, string[]>> {
   const out = new Map<number, string[]>();
   let taken: number[] = [];
@@ -269,7 +270,12 @@ export async function scanProcessFilesBatch(
         );
         return buildHandleScanScript(taken);
       },
-      { timeout: Math.min(timeoutMs, 4000), maxBuffer: 8 * 1024 * 1024, notes },
+      {
+        timeout: Math.min(timeoutMs, 4000),
+        ...(deadline === undefined ? {} : { deadline }),
+        maxBuffer: 8 * 1024 * 1024,
+        notes,
+      },
     );
     const { diag, perPid } = parseHandleScanOutput(stdout);
     notes.push(`win:scan:batch:pids=${taken.length} ${diag}`.trim());
@@ -292,6 +298,7 @@ export type BatchExec = (
   take: () => number[],
   notes: string[],
   timeoutMs: number,
+  deadline?: number,
 ) => Promise<Map<number, string[]>>;
 
 type Deferred = { resolve: (v: string[]) => void };
@@ -354,7 +361,7 @@ function startBatch(
     };
     let result = new Map<number, string[]>();
     try {
-      result = await exec(take, ctx.notes, collectorTimeout(ctx, batch.timeoutMs));
+      result = await exec(take, ctx.notes, collectorTimeout(ctx, batch.timeoutMs), ctx.deadline);
     } catch (e) {
       ctx.notes.push(`win:scan:fail:${describeExecError(e)}`);
     }

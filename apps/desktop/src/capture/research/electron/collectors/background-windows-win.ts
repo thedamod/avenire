@@ -35,14 +35,11 @@ export async function getBackgroundWindowsWindows(
   notes: string[] = [],
   ctx: CaptureContext = createCaptureContext(notes),
 ): Promise<BackgroundWindow[]> {
-  // Independent PowerShell work is issued up front so the ps-queue runs it
-  // back-to-back (Office COM, Recent links) instead of waiting on JS between
-  // steps; both are memoized/shared and never throw.
-  const officeP = ctx.memo("win:office", () => readOfficeDocs(notes, ctx));
-  const recentP = listRecentTargets(notes, ctx);
-  const out: { item: BackgroundWindow; pid: number }[] = [];
+  // Enumerate before queuing enrichments; retain titles even if those jobs exhaust the budget.
   const wins = await enumerateWindows(ctx, notes);
   if (!wins) return [];
+
+  const out: { item: BackgroundWindow; pid: number }[] = [];
   for (const w of wins) {
     if (!w.title || w.pid === fgPid || w.pid === process.pid) continue;
     if (isBrowserApp(w.proc) || isSelfApp(w.proc)) continue;
@@ -50,6 +47,10 @@ export async function getBackgroundWindowsWindows(
     if (out.length < MAX_WINDOWS)
       out.push({ item: { appName: w.proc, windowTitle: w.title }, pid: w.pid });
   }
+  ctx.partialWindows = out.map((entry) => entry.item);
+  if (Date.now() >= ctx.deadline) return ctx.partialWindows;
+  const officeP = ctx.memo("win:office", () => readOfficeDocs(notes, ctx));
+  const recentP = listRecentTargets(notes, ctx);
   // Office owns its own resolution (COM below); see app-catalog OFFICE_APP.
   const { isLocalFileApp } = await import("../../src/capture/app-catalog.ts");
   const routeForApp = (app: { appName: string; [key: string]: unknown }) =>
@@ -156,7 +157,9 @@ async function enumerateWindows(ctx: CaptureContext, notes: string[]): Promise<W
   }
   try {
     const { stdout } = await execPowerShell(buildWindowsScript(), {
+      priority: 100,
       timeout: collectorTimeout(ctx, 2500),
+      deadline: ctx.deadline,
       maxBuffer: 1024 * 1024,
       notes,
     });
@@ -190,6 +193,7 @@ async function readOfficeDocs(
   try {
     const { stdout } = await execPowerShell(buildOfficeDocsScript(), {
       timeout: collectorTimeout(ctx, 2500),
+      deadline: ctx.deadline,
       maxBuffer: 1024 * 1024,
       notes,
     });

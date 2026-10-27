@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import type { AvenireOverlayBridge } from "@avenire/desktop/bridge";
+import { cn } from "@avenire/ui/lib/utils";
 import { CapturePanel, type RenderCaptureLink } from "./CapturePanel";
 import { ShortcutKeycaps } from "./CaptureShortcutKeys";
 import { overlayRows, type CapturePhase } from "./liveCapture";
@@ -9,12 +10,16 @@ import { initialOverlayView, overlayView } from "./overlayView";
 
 /** `--duration-popover`: the exit (faster than the 200ms enter), then main hides the window. */
 const EXIT_MS = 150;
+/** Two 36px rows plus the list's bottom padding: what the list keeps on a short screen. */
+const LIST_FLOOR = "min-h-[78px]";
+const LIST_FLOOR_ONE = "min-h-[42px]";
 
 /**
  * The global capture overlay: the in-app capture panel in an always-on-top, transparent window
  * in the bottom-right corner. Main streams the state; this only animates, measures and forwards
  * clicks. The window is sized to `.capture-overlay`, whose transparent gutter gives the enter
- * offset room so the panel never clips against the window edge.
+ * offset room so the panel never clips against the window edge. On a short work area the panel
+ * caps at main's usable height: header and footer stay, the list scrolls in what's left.
  */
 export function CaptureOverlay({ bridge }: { bridge: AvenireOverlayBridge }) {
   const [view, dispatch] = useReducer(overlayView, initialOverlayView);
@@ -109,6 +114,9 @@ export function CaptureOverlay({ bridge }: { bridge: AvenireOverlayBridge }) {
       key={view.entry}
       ref={measure}
       className="capture-overlay"
+      // Gutter included, like the window. Without main's figure, the screen's (never the
+      // window's own height, which is only as tall as the last measure).
+      style={{ maxHeight: state.maxHeight ?? window.screen.availHeight }}
       data-closing={closing ? "" : undefined}
       inert={closing}
     >
@@ -124,8 +132,8 @@ export function CaptureOverlay({ bridge }: { bridge: AvenireOverlayBridge }) {
         onUndo={receipt?.files.length ? undo : undefined}
         renderLink={renderLink}
         favicons={false}
-        listClassName="max-h-[300px]"
-        className="w-full"
+        listClassName={cn("max-h-[300px]", rows.length > 1 ? LIST_FLOOR : LIST_FLOOR_ONE)}
+        className="min-h-0 w-full"
         onPointerEnter={() => hover(true)}
         onPointerLeave={() => hover(false)}
       />

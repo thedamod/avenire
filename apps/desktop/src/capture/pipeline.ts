@@ -1,6 +1,6 @@
 import { captureFailureReason } from "./failure.ts";
 import { createHash, randomUUID } from "node:crypto";
-import { localFilePath, localBasename as basename } from "./local-file.ts";
+import { localFilePath, displayTitle, localPathIdentity } from "./local-file.ts";
 import { applyPolicy } from "@avenire/capture/policy";
 import { classifyAccess } from "@avenire/capture/access";
 import { normalizeUrl } from "@avenire/capture/url";
@@ -29,17 +29,15 @@ const tabFilePath = (tab: CapturedTab, platform: CaptureSnapshot["platform"]) =>
     return undefined;
   }
 };
-const localKey = (path: string) => `local:${hash(path).slice(0, 20)}`;
+const localKey = (path: string, platform: CaptureSnapshot["platform"]) =>
+  `local:${hash(localPathIdentity(path, platform)).slice(0, 20)}`;
 export function captureItems(snapshot: CaptureSnapshot): CaptureStarted["items"] {
   const items = new Map<string, CaptureStarted["items"][number]>();
   for (const tab of snapshot.tabs) {
     const key = tabKey(tab);
     items.set(key, {
       key,
-      title: (tabFilePath(tab, snapshot.platform)
-        ? basename(tabFilePath(tab, snapshot.platform)!)
-        : tab.title
-      ).slice(0, 200),
+      title: displayTitle(tab.title, tabFilePath(tab, snapshot.platform)),
       kind: tab.likelyPdf ? "pdf" : "web-page",
       status: "pending",
     });
@@ -47,13 +45,17 @@ export function captureItems(snapshot: CaptureSnapshot): CaptureStarted["items"]
   snapshot.windows.forEach((entry, index) => {
     if (
       entry.filePath &&
-      snapshot.tabs.some((tab) => tabFilePath(tab, snapshot.platform) === entry.filePath)
+      snapshot.tabs.some(
+        (tab) =>
+          localPathIdentity(tabFilePath(tab, snapshot.platform) ?? "", snapshot.platform) ===
+          localPathIdentity(entry.filePath!, snapshot.platform),
+      )
     )
       return;
-    const key = entry.filePath ? localKey(entry.filePath) : `window:${index}`;
+    const key = entry.filePath ? localKey(entry.filePath, snapshot.platform) : `window:${index}`;
     items.set(key, {
       key,
-      title: (entry.filePath ? basename(entry.filePath) : entry.title).slice(0, 200),
+      title: displayTitle(entry.title, entry.filePath),
       kind: "document",
       status: "pending",
     });
@@ -67,7 +69,7 @@ const webOrigin = (
 ): CaptureOrigin => ({
   _tag: "Web",
   url: normalizeUrl(tab.url),
-  title: page.title || tab.title,
+  title: displayTitle(page.title || tab.title),
   browser: tab.browser,
   capturedAt,
   ...(tab.finalUrl ? { finalUrl: normalizeUrl(tab.finalUrl) } : {}),
@@ -115,12 +117,16 @@ export async function runCapturePipeline(options: {
       stream.progress({
         key,
         status: "pending",
-        title: page.file.fileName || page.title,
+        title: displayTitle(page.file.fileName || page.title),
         kind: fileKind(page.file.mimeType) ?? "document",
       });
     try {
       signal.throwIfAborted();
-      if ([page.url, page.canonicalUrl, page.file?.url].some((url) => url && /^file:/i.test(url))) {
+      if (
+        [page.url, page.canonicalUrl, page.file?.url, page.file?.originUrl].some(
+          (url) => url && /^file:/i.test(url),
+        )
+      ) {
         stream.progress({
           key,
           status: "skipped",
@@ -142,7 +148,7 @@ export async function runCapturePipeline(options: {
             ...initial.snapshot,
             windows: [],
             media: [],
-            tabs: [{ ...tab, url: page.file.url, finalUrl: page.file.url }],
+            tabs: [{ ...tab, url: page.file.url, finalUrl: page.file.originUrl ?? page.file.url }],
           })
         : undefined;
       if (checkedFile && !checkedFile.snapshot.tabs.length) {
@@ -189,7 +195,11 @@ export async function runCapturePipeline(options: {
         );
       const fetch = await options.session;
       const sourceTab = page.file
-        ? { ...tab, url: page.file.url, finalUrl: page.url }
+        ? {
+            ...tab,
+            url: page.file.originUrl ?? page.file.url,
+            finalUrl: page.file.originUrl ?? page.url,
+          }
         : { ...tab, finalUrl: page.url };
       const origin = webOrigin(sourceTab, page, initial.snapshot.capturedAt);
       const file = await gate.run(async () => {
@@ -202,7 +212,7 @@ export async function runCapturePipeline(options: {
             : { type: "browser-blob", blob: new Blob([page.text], { type: "text/markdown" }) },
           {
             idempotencyKey: randomUUID(),
-            title: (page.title || tab.title || "Captured page").slice(0, 200),
+            title: displayTitle(page.title || tab.title || "Captured page"),
             kind,
             mimeType: page.file?.mimeType ?? "text/markdown",
             sourceUrl: page.file?.url ?? tab.url,
@@ -218,7 +228,10 @@ export async function runCapturePipeline(options: {
       if (page.file) stream.progress({ key: baseKey, status: "saved", file });
     } catch (error) {
       const reason = captureFailureReason(error);
-      skipped.push({ title: tab.title.slice(0, 200), reason });
+      skipped.push({
+        title: displayTitle(tab.title, tabFilePath(tab, initial.snapshot.platform)),
+        reason,
+      });
       stream.progress({ key, status: "failed", reason });
     } finally {
       await options.channel?.release(result);
@@ -231,10 +244,18 @@ export async function runCapturePipeline(options: {
     signal.throwIfAborted();
     const keyForPath = (path: string) => {
       const fileTab = resolved.snapshot.tabs.find(
-        (tab) => tabFilePath(tab, resolved.snapshot.platform) === path,
+        (tab) =>
+          localPathIdentity(
+            tabFilePath(tab, resolved.snapshot.platform) ?? "",
+            resolved.snapshot.platform,
+          ) === localPathIdentity(path, resolved.snapshot.platform),
       );
       if (fileTab) return tabKey(fileTab);
-      const index = resolved.snapshot.windows.findIndex((entry) => entry.filePath === path);
+      const index = resolved.snapshot.windows.findIndex(
+        (entry) =>
+          localPathIdentity(entry.filePath ?? "", resolved.snapshot.platform) ===
+          localPathIdentity(path, resolved.snapshot.platform),
+      );
       const resolvedWindow = resolved.snapshot.windows[index];
       const initialIndex = initial.snapshot.windows.findIndex(
         (entry) =>
@@ -242,12 +263,14 @@ export async function runCapturePipeline(options: {
       );
       const initialWindow = initial.snapshot.windows[initialIndex];
       const key =
-        initialWindow && !initialWindow.filePath ? `window:${initialIndex}` : localKey(path);
+        initialWindow && !initialWindow.filePath
+          ? `window:${initialIndex}`
+          : localKey(path, resolved.snapshot.platform);
       if (!stream.started.items.some((item) => item.key === key))
         stream.progress({
           key,
           status: "pending",
-          title: basename(path).slice(0, 200),
+          title: displayTitle(path),
           kind: "document",
         });
       return key;
@@ -278,13 +301,18 @@ export async function runCapturePipeline(options: {
   const results = await Promise.allSettled([
     nativeWork,
     options.channel?.capture(
-      initial.snapshot.tabs,
+      initial.snapshot.tabs.filter(
+        (tab) => !/^file:/i.test(tab.url) && !/^file:/i.test(tab.finalUrl ?? tab.url),
+      ),
       options.readInBrowser,
       signal,
       browser,
       (tab, reason) => {
         stream.progress({ key: tabKey(tab), status: "failed", reason });
-        skipped.push({ title: tab.title.slice(0, 200), reason });
+        skipped.push({
+          title: displayTitle(tab.title, tabFilePath(tab, initial.snapshot.platform)),
+          reason,
+        });
       },
     ) ?? Promise.resolve([]),
   ]);

@@ -7,7 +7,7 @@ import type {
   DesktopSetupCapture,
   FileKind,
 } from "@avenire/contracts";
-import { localBasename as basename } from "./local-file.ts";
+import { localBasename as basename, displayTitle, localPathIdentity } from "./local-file.ts";
 import { hostname } from "node:os";
 import { HashLru, mapConcurrent, UploadGate } from "./hash-cache.ts";
 import type { LocalOriginRegistry } from "./registry.ts";
@@ -43,21 +43,30 @@ export const formats: Record<string, readonly [FileKind, string]> = {
 
 /** Mirrors the sources that can actually enter ingestion; never includes absolute device paths. */
 export function describeCapturedSources(snapshot: CaptureSnapshot): DesktopSetupCapture["sources"] {
-  const paths = new Set(
+  const paths = new Map(
     [...snapshot.windows, ...snapshot.media]
       .map((entry) => entry.filePath)
-      .filter((path): path is string => Boolean(path)),
+      .filter((path): path is string => Boolean(path))
+      .map((path) => [localPathIdentity(path, snapshot.platform), path]),
   );
-  const files = [...paths].flatMap((path) => {
+  const files = [...paths.values()].flatMap((path) => {
     const format = formats[extname(path).slice(1).toLowerCase()];
-    return format ? [{ title: basename(path).slice(0, 200), kind: format[0] }] : [];
+    return format ? [{ title: displayTitle(path), kind: format[0] }] : [];
   });
   const urls = new Set<string>();
   const tabs = snapshot.tabs.flatMap((tab) => {
     const url = tab.finalUrl ?? tab.url;
     if (urls.has(url)) return [];
     urls.add(url);
-    return [{ title: tab.title.slice(0, 200), kind: tab.likelyPdf ? "pdf" : "web-page" }];
+    return [
+      {
+        title: displayTitle(
+          tab.title,
+          /^file:/i.test(tab.finalUrl ?? tab.url) ? (tab.finalUrl ?? tab.url) : undefined,
+        ),
+        kind: tab.likelyPdf ? "pdf" : "web-page",
+      },
+    ];
   });
   return [...files, ...tabs];
 }
@@ -86,16 +95,18 @@ export async function uploadCapturedFiles(
 ): Promise<DesktopCaptureUploads> {
   const files: DesktopCaptureUploads["files"][number][] = [];
   const skipped: DesktopCaptureUploads["skipped"][number][] = [];
-  const paths = new Set(
+  const paths = new Map(
     [
       ...snapshot.windows.map((entry) => entry.filePath),
       ...snapshot.media.map((entry) => entry.filePath),
-    ].filter((path): path is string => Boolean(path)),
+    ]
+      .filter((path): path is string => Boolean(path))
+      .map((path) => [localPathIdentity(path, snapshot.platform), path]),
   );
   const gate = options?.gate ?? new UploadGate();
-  await mapConcurrent([...paths], 3, async (path) => {
+  await mapConcurrent([...paths.values()], 3, async (path) => {
     const key = options?.keyForPath(path) ?? path;
-    const title = basename(path).slice(0, 200) || "Captured source";
+    const title = displayTitle(path) || "Captured source";
     const format = formats[extname(path).slice(1).toLowerCase()];
     if (!format) {
       skipped.push({ title, reason: "This file type is not supported by server ingestion yet." });
@@ -107,10 +118,15 @@ export async function uploadCapturedFiles(
       );
       return;
     }
-    const hex = createHash("sha256").update(`${snapshot.id}\0${path}`).digest("hex").slice(0, 32);
+    const hex = createHash("sha256")
+      .update(`${snapshot.id}\0${localPathIdentity(path, snapshot.platform)}`)
+      .digest("hex")
+      .slice(0, 32);
     const idempotencyKey = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     const native = [...snapshot.media, ...snapshot.windows].find(
-      (entry) => entry.filePath === path,
+      (entry) =>
+        localPathIdentity(entry.filePath ?? "", snapshot.platform) ===
+        localPathIdentity(path, snapshot.platform),
     );
     try {
       const file = await gate.run(async () => {

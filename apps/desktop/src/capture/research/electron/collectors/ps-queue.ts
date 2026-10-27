@@ -19,24 +19,41 @@ const execFileAsync = promisify(execFile);
 // throttling, AV/EDR heuristics, or compile stampedes starving timeouts,
 // serial execution removes the entire class. Wall time grows; the toast's
 // loading pill covers it. See Failures.md.
-let tail: Promise<void> = Promise.resolve();
-
-export async function runPsQueue<T>(task: () => Promise<T>): Promise<T> {
-  const prev = tail;
-  let release!: () => void;
-  tail = new Promise<void>((res) => {
-    release = res;
-  });
-  await prev;
+const queue: Array<{ priority: number; run: () => Promise<void> }> = [];
+let running = false;
+async function drainQueue() {
+  if (running) return;
+  running = true;
   try {
-    return await task();
+    while (queue.length) {
+      queue.sort((a, b) => b.priority - a.priority);
+      await queue.shift()!.run();
+    }
   } finally {
-    release();
+    running = false;
   }
+}
+export function runPsQueue<T>(task: () => Promise<T>, priority = 0): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    queue.push({
+      priority,
+      run: async () => {
+        try {
+          resolve(await task());
+        } catch (error) {
+          reject(error);
+        }
+      },
+    });
+    // Let all collectors submit work before selecting the next command.
+    void Promise.resolve().then(drainQueue);
+  });
 }
 
 export type PsOpts = {
   timeout?: number;
+  deadline?: number;
+  priority?: number;
   maxBuffer?: number;
   // Capture notes: host-level events (respawn after a kill, fallback to
   // one-shot) are reported here so last-capture.json shows which mode ran.
@@ -63,7 +80,7 @@ const RETRY_DELAYS_MS = [500, 1500];
 
 export async function execPowerShell(command: PsCommand, opts: PsOpts = {}): Promise<PsResult> {
   const timeout = opts.timeout ?? 8000;
-  const deadline = Date.now() + timeout;
+  const deadline = Number.isFinite(opts.deadline) ? opts.deadline! : Date.now() + timeout;
   const remaining = () => {
     const ms = deadline - Date.now();
     if (ms <= 0) throw new Error("PowerShell operation deadline exceeded");
@@ -76,7 +93,7 @@ export async function execPowerShell(command: PsCommand, opts: PsOpts = {}): Pro
       const script = typeof command === "function" ? command() : command;
       if (psHostManager.usable) {
         try {
-          return await psHostManager.run(script, remaining(), maxBuffer);
+          return await psHostManager.run(script, Math.min(timeout, remaining()), maxBuffer);
         } catch (e) {
           // This very death just disabled the host: don't burn a retry,
           // run THIS command one-shot right now.
@@ -86,8 +103,8 @@ export async function execPowerShell(command: PsCommand, opts: PsOpts = {}): Pro
         }
       }
       psHostManager.drainNotes(opts.notes);
-      return runOneShot(script, remaining(), maxBuffer);
-    });
+      return runOneShot(script, Math.min(timeout, remaining()), maxBuffer);
+    }, opts.priority);
   let lastErr: unknown;
   let bestErr: unknown; // on exhaustion, throw the most informative failure:
   // an attempt carrying stderr text beats a bare exit-1, even if older.

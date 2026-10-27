@@ -22,7 +22,7 @@ export async function getBackgroundMedia(
       return await getBackgroundMediaLinux(notes, ctx);
     }
   } catch {
-    // intentional fallthrough to []
+    notes.push(`${process.platform}:bgmedia:collector-failed`);
   }
   return [];
 }

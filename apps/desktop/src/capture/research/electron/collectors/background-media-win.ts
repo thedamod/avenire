@@ -79,6 +79,7 @@ export function getSmtcSessions(ctx: CaptureContext): Promise<SmtcSnapshot> {
     try {
       const { stdout, stderr } = await execPowerShell(buildSmtcScript(), {
         timeout: collectorTimeout(ctx, 8000),
+        deadline: ctx.deadline,
         maxBuffer: 1024 * 1024,
         notes: ctx.notes,
       });

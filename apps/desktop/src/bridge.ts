@@ -57,6 +57,7 @@ export interface CaptureReceiptSummary {
  * `items`, then the app window's receipt (or failure) moves `phase` to done/failed.
  */
 export interface CaptureOverlayState {
+  readonly maxHeight?: number;
   readonly id: string;
   readonly phase: "collecting" | "submitting" | "done" | "failed";
   readonly closing?: boolean;

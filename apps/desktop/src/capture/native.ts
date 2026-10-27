@@ -15,12 +15,15 @@ export type NativeObservation = {
   readonly windows: readonly CapturedWindow[];
   readonly media: readonly CapturedMedia[];
   readonly notes: readonly string[];
+  readonly observedAt?: number;
+  readonly failed?: readonly string[];
 };
 const empty = (): NativeObservation => ({ windows: [], media: [], notes: [] });
 let cached = empty();
 let flight: Promise<NativeObservation> | undefined;
 let generation = 0;
-export const cachedNative = () => cached;
+export const cachedNative = () =>
+  Date.now() - (cached.observedAt ?? 0) <= 30_000 ? cached : empty();
 export function clearNativeCache() {
   generation++;
   cached = empty();
@@ -32,12 +35,14 @@ export async function collectNative(
   ctx: CaptureContext = createCaptureContext([], 9000),
 ): Promise<NativeObservation> {
   const notes = ctx.notes;
+  const failed: string[] = [];
   const run = async <A>(name: string, work: Promise<A>, ms: number, fallback: A): Promise<A> => {
     try {
       return await bounded(work, ms);
     } catch {
       notes.push(`${name}:budget-exhausted`);
-      return fallback;
+      failed.push(name);
+      return name === "background-windows" ? ((ctx.partialWindows ?? fallback) as A) : fallback;
     }
   };
   const [background, sessions, obsidian] = await Promise.all([
@@ -82,7 +87,13 @@ export async function collectNative(
         filePath: entry.filePath,
         foreground: false,
       });
-  return { windows, media, notes: [...notes] };
+  for (const [name, pattern] of [
+    ["background-windows", /bgwin:.*(?:fail|unavailable)/],
+    ["background-media", /(?:bgmedia|mpris|smtc):.*(?:fail|unavailable|no-playerctl|err:)/],
+    ["obsidian", /obsidian:.*(?:fail|unavailable)/],
+  ] as const)
+    if (notes.some((note) => pattern.test(note))) failed.push(name);
+  return { windows, media, notes: [...notes], failed, observedAt: Date.now() };
 }
 
 /** Correlate only one unambiguous permitted browser tab; never invent a media URL. */
@@ -126,7 +137,7 @@ export function refreshNative(foreground?: ForegroundApp): Promise<NativeObserva
   const epoch = generation;
   flight = collectNative(foreground)
     .then((value) => {
-      if (generation === epoch) cached = value;
+      if (generation === epoch) cached = retainNative(value, cachedNative());
       return value;
     })
     .finally(() => {
@@ -181,4 +192,26 @@ export function mergeNativeWindows(
       };
   }
   return result;
+}
+
+/** A successful empty enumeration closes sources; a failed one retains fresh owner-bound facts. */
+export function retainNative(
+  value: NativeObservation,
+  previous: NativeObservation,
+): NativeObservation {
+  if (!value.failed?.length || Date.now() - (previous.observedAt ?? 0) > 30_000) return value;
+  const windows = previous.windows.filter(
+    (entry) =>
+      value.failed!.includes(entry.appName === "Obsidian" ? "obsidian" : "background-windows") ||
+      (value.failed!.includes("background-media") &&
+        previous.media.some((media) => media.filePath === entry.filePath)),
+  );
+  return {
+    ...value,
+    windows: mergeNativeWindows(windows, value.windows),
+    media: value.failed.includes("background-media")
+      ? [...previous.media, ...value.media]
+      : value.media,
+    observedAt: previous.observedAt!,
+  };
 }

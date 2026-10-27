@@ -5,6 +5,7 @@ import {
   collectNative,
   correlateBrowserMedia,
   mergeNativeWindows,
+  retainNative,
 } from "./native.ts";
 import { createCaptureContext } from "./research/electron/collectors/capture-context.ts";
 import { CaptureId } from "@avenire/contracts";
@@ -125,10 +126,8 @@ export async function collectSnapshot(
 /** The hotkey never waits on an OS call, session lookup, disk read, or extraction. */
 export function instantCapture(capturedAt: string, foreground: boolean) {
   const observation = foreground ? cachedForeground() : { windows: [], notes: [] };
-  const native = correlateBrowserMedia(
-    foreground ? cachedNative() : { windows: [], media: [], notes: [] },
-    latestTabs(),
-  );
+  const cached = foreground ? cachedNative() : { windows: [], media: [], notes: [] };
+  const native = correlateBrowserMedia(cached, latestTabs());
   const tabs = native.tabs;
   const browserFiles: CapturedWindow[] = [];
   for (const tab of tabs) {
@@ -153,7 +152,7 @@ export function instantCapture(capturedAt: string, foreground: boolean) {
     windows: mergeNativeWindows(observation.windows, native.windows, browserFiles),
     tabs,
     media: native.media,
-    collectorNotes: native.notes,
+    collectorNotes: [...observation.notes, ...native.notes],
   };
   return {
     snapshot,
@@ -166,7 +165,7 @@ export function instantCapture(capturedAt: string, foreground: boolean) {
           ? collectNative(observation.app, ctx)
           : Promise.resolve({ windows: [], media: [], notes: [] }),
       ]);
-      const correlated = correlateBrowserMedia(filled, tabs);
+      const correlated = correlateBrowserMedia(retainNative(filled, cached), tabs);
       return {
         ...snapshot,
         tabs: correlated.tabs,

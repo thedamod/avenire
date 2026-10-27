@@ -280,3 +280,143 @@ it("includes every idle tab instantly and uploads a file tab as a private local 
     expect.objectContaining({ key: tabKey(fileTab), status: "saved" }),
   );
 });
+
+it.each([
+  "DiscordCanary",
+  "DiscordDevelopment",
+  "vendor.slackclient",
+  "SIGNALDESKTOP",
+  "PayPal",
+  "WellsFargo",
+  "discordcanary.exe",
+  "slack.exe",
+  "WhatsApp.Root",
+  "Teams",
+  "ms-teams",
+  "Telegram Desktop",
+  "1Password 7",
+  "Bitwarden",
+  "Thunderbird",
+  "Outlook",
+  "olk",
+  "HxOutlook",
+  "LastPass",
+  "KeePassXC",
+  "RoboForm",
+  "iMessage",
+  "WeChat",
+])("excludes %s before started, progress and receipt", async (appName) => {
+  const { applyPolicy } = await import("@avenire/capture/policy");
+  const filtered = applyPolicy({
+    ...snapshot,
+    tabs: [],
+    windows: [{ appName, title: "Private conversation with secret", foreground: true }],
+    media: [{ appName, title: "Private conversation with secret" }],
+  });
+  expect(filtered.snapshot.windows).toEqual([]);
+  const h = setup(filtered.snapshot, []);
+  const result = await runCapturePipeline({ ...h, initial: filtered });
+  expect(h.stream.started.items).toEqual([]);
+  expect(h.stream.events).toEqual([]);
+  expect(JSON.stringify([result, h.send.mock.calls])).not.toMatch(/Private conversation|secret/);
+});
+it("redacts file-tab failure receipts and never requests browser extraction for local files", async () => {
+  const path = "C:\\Users\\student\\Downloads\\Private Course.pdf";
+  const fileTab = {
+    ...tab,
+    url: "file:///C:/Users/student/Downloads/Private%20Course.pdf",
+    title: path,
+  };
+  const h = setup(
+    {
+      ...snapshot,
+      platform: "win32",
+      tabs: [fileTab],
+      windows: [
+        {
+          appName: "Browser",
+          title: path,
+          filePath: path,
+          foreground: true,
+        },
+      ],
+    },
+    [],
+  );
+  mocks.acquire.mockRejectedValueOnce(new Error(path));
+  const capture = vi.fn(async (tabs, _read, _signal, _page, failure) => {
+    expect(tabs).toEqual([]);
+    // A stale channel callback still uses the shared sanitized title.
+    failure(fileTab, "Browser timed out");
+    return [];
+  });
+  const result = await runCapturePipeline({ ...h, channel: { ...h.channel, capture } });
+  expect(capture).toHaveBeenCalledOnce();
+  const serialized = JSON.stringify([result, h.stream.started, ...h.stream.events]);
+  expect(serialized).not.toMatch(/student|Downloads|C:|file:/);
+  expect(result.uploads?.skipped).toContainEqual({
+    title: "Private Course.pdf",
+    reason: "Browser timed out",
+  });
+});
+it("matches Windows path aliases to one tab item and uploads one original", async () => {
+  const fileTab = { ...tab, url: "file:///C:/Users/Student/Study.pdf", title: "Study" };
+  const initial = {
+    ...snapshot,
+    platform: "win32" as const,
+    tabs: [fileTab],
+    windows: [
+      {
+        appName: "Browser",
+        title: "Study",
+        filePath: "c:/users/student/STUDY.pdf",
+        foreground: true,
+      },
+      {
+        appName: "Reader",
+        title: "Study",
+        filePath: "C:\\Users\\Student\\Study.pdf",
+        foreground: false,
+      },
+    ],
+  };
+  const h = setup(initial, []);
+  mocks.acquire.mockResolvedValueOnce(uploaded());
+  const result = await runCapturePipeline(h);
+  expect(h.stream.started.items).toHaveLength(1);
+  expect(result.uploads?.files).toHaveLength(1);
+  expect(
+    h.stream.events.filter((event) => event.status === "saved").map((event) => event.key),
+  ).toEqual([tabKey(fileTab)]);
+});
+
+it("uses embedded frame provenance for browser originals and reapplies policy to that frame", async () => {
+  const filePage = {
+    ...page,
+    file: {
+      url: "https://school.test/notes.pdf",
+      originUrl: "https://school.test/embedded-viewer?lecture=1",
+      mimeType: "application/pdf",
+      fileName: "notes.pdf",
+      sizeBytes: 10,
+      sha256: "a".repeat(64),
+    },
+  };
+  mocks.acquire.mockResolvedValue(uploaded());
+  const h = setup(snapshot, [{ tab, page: filePage, path: "/private/spool" }]);
+  await runCapturePipeline(h);
+  expect(mocks.acquire.mock.calls[0]?.[1].origin).toMatchObject({
+    _tag: "Web",
+    url: "https://school.test/embedded-viewer?lecture=1",
+  });
+  const calls = mocks.acquire.mock.calls.length;
+  const blocked = setup(snapshot, [
+    {
+      tab,
+      page: { ...filePage, file: { ...filePage.file, originUrl: "https://mail.google.com/inbox" } },
+      path: "/private/spool",
+    },
+  ]);
+  await runCapturePipeline(blocked);
+  expect(mocks.acquire).toHaveBeenCalledTimes(calls);
+});

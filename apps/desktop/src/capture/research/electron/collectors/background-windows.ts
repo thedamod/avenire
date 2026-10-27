@@ -25,7 +25,7 @@ export async function getBackgroundWindows(
       return await getBackgroundWindowsLinux(fgPid, notes, ctx);
     }
   } catch {
-    // intentional fallthrough to []
+    notes.push(`${process.platform}:bgwin:enumeration-failed`);
   }
-  return [];
+  return ctx.partialWindows ?? [];
 }

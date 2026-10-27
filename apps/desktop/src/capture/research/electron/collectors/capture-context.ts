@@ -12,6 +12,7 @@ const execFileAsync = promisify(execFile);
 // for ONE snapshot only — never cache across snapshots (state goes stale).
 export type CaptureContext = {
   notes: string[];
+  partialWindows?: import("../../src/capture/types.ts").BackgroundWindow[];
   deadline: number;
   // Memoize an async computation for the lifetime of ONE snapshot, so
   // collectors running in parallel share one spawn/FS read instead of

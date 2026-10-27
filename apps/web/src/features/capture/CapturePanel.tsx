@@ -59,6 +59,7 @@ export function CapturePanel({
   renderLink: RenderCaptureLink;
   /** Remote favicons for web rows; off where the CSP allows only bundled images. */
   favicons?: boolean;
+  /** The list is what gives way (and scrolls) when the panel's height is capped. */
   listClassName?: string;
   className?: string;
   onPointerEnter?: PointerEventHandler<HTMLDivElement>;
@@ -69,14 +70,14 @@ export function CapturePanel({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-[10px] border border-sheet-border bg-[#131313] text-foreground",
+        "flex flex-col overflow-hidden rounded-[10px] border border-sheet-border bg-[#131313] text-foreground",
         className,
       )}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
     >
-      <div className="flex h-11 items-center gap-2 px-3.5">
-        {keys}
+      <div className="flex h-11 shrink-0 items-center gap-2 px-3.5">
+        {keys ? <span className="flex shrink-0">{keys}</span> : null}
         <span aria-live="polite" className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">
           {captureHeading(rows, phase)}
         </span>
@@ -91,7 +92,7 @@ export function CapturePanel({
         ) : null}
       </div>
       {phase === "failed" ? (
-        <p className="enter-fade -mt-1.5 px-3.5 pb-2.5 text-xs leading-4 text-muted-foreground">
+        <p className="enter-fade -mt-1.5 shrink-0 px-3.5 pb-2.5 text-xs leading-4 text-muted-foreground">
           {error ? <span className="text-destructive/85">{error}. </span> : null}
           Press the capture shortcut to retry.
         </p>
@@ -106,12 +107,13 @@ export function CapturePanel({
         </ScrollFade>
       ) : null}
       {phase !== "failed" || saved ? (
-        <div className="flex items-center gap-3 border-t border-border px-3.5 py-2.5 text-xs text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-3 border-t border-border px-3.5 py-2.5 text-xs text-muted-foreground">
           <span className="min-w-0 flex-1">In Sources · Unfiled. Ruth can sort them tonight.</span>
           {renderLink(
             { type: "sources" },
             {
-              className: "font-medium text-foreground-soft transition-colors hover:text-foreground",
+              className:
+                "shrink-0 font-medium text-foreground-soft transition-colors hover:text-foreground",
               children: "Sources",
             },
           )}

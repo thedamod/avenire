@@ -114,3 +114,26 @@ it("keeps local media positions when other players also expose sessions", () => 
   expect(items[0]).toMatchObject({ filePath: "/home/u/lecture.mp4", positionSec: 42 });
   expect(items[1]?.filePath).toBeUndefined();
 });
+
+it("retains a fresh owner-bound PDF after enumeration times out, but removes it on successful empty enumeration", async () => {
+  const { retainNative } = await import("./native.ts");
+  const previous = {
+    windows: [
+      { appName: "Preview", title: "Study", filePath: "/private/Study.pdf", foreground: false },
+    ],
+    media: [],
+    notes: [],
+    observedAt: Date.now(),
+  };
+  vi.useFakeTimers();
+  mocks.windows.mockImplementationOnce(() => new Promise(() => {}));
+  const work = collectNative();
+  await vi.advanceTimersByTimeAsync(9001);
+  const failed = await work;
+  expect(retainNative(failed, previous).windows).toContainEqual(previous.windows[0]);
+  expect(retainNative({ windows: [], media: [], notes: [] }, previous).windows).toEqual([]);
+  expect(
+    retainNative(failed, { ...previous, observedAt: Date.now() - 30_001 }).windows,
+  ).not.toContainEqual(previous.windows[0]);
+  vi.useRealTimers();
+});
