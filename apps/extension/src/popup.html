@@ -9,13 +9,17 @@
   <body>
     <header>
       <h1>Avenire</h1>
-      <p id="status" role="status">Checking connection…</p>
+      <p class="status">
+        <span id="status" role="status">Checking connection…</span>
+        <a id="sign-in" hidden target="_blank" rel="noopener">Sign in to Avenire</a>
+      </p>
     </header>
     <main>
-      <button id="capture" type="button">Capture this page</button>
+      <button id="capture" class="primary" type="button">Capture this page</button>
+      <p id="result" role="status" aria-live="polite"></p>
       <form id="pairing" hidden>
-        <label for="code">Pair with desktop</label>
-        <p id="code-help">Enter the six-digit code shown in Avenire desktop.</p>
+        <label for="code">Pair with Avenire desktop</label>
+        <p id="code-help">Enter the 6-digit code from the Avenire menu in your tray.</p>
         <div class="pairing-row">
           <input
             id="code"
@@ -26,14 +30,13 @@
             pattern="[0-9]{6}"
             maxlength="6"
             required
+            spellcheck="false"
             aria-describedby="code-help"
             placeholder="000000"
           />
-          <button type="submit">Pair</button>
+          <button type="submit" class="secondary">Pair</button>
         </div>
       </form>
-      <p id="result" role="status" aria-live="polite"></p>
-      <a id="sign-in" hidden target="_blank" rel="noopener">Sign in to Avenire</a>
     </main>
     <script type="module" src="popup.js"></script>
   </body>

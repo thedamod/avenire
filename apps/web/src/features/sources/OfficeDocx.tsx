@@ -1,10 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  DocxEditorViewer,
-  useDocxEditor,
-  type DocxEditorController,
-} from "@extend-ai/react-docx";
+import { DocxEditorViewer, useDocxEditor, type DocxEditorController } from "@extend-ai/react-docx";
 import { ReadableDocument } from "./ReadableDocument";
 import { ViewerDock, useScrollActivatedDock } from "./ViewerDock";
 import { OfficeFailure, OfficeLoading, type OfficeViewProps } from "./office-shared";
@@ -30,7 +26,10 @@ function revealPage(viewport: HTMLElement | null, n: number, total: number, smoo
   if (exact()) return;
   // Offscreen pages are virtualised placeholders: jump to the estimate, then settle on the page
   // once the virtualiser has mounted it.
-  viewport.scrollTo({ top: (index / Math.max(1, total)) * viewport.scrollHeight, behavior: "auto" });
+  viewport.scrollTo({
+    top: (index / Math.max(1, total)) * viewport.scrollHeight,
+    behavior: "auto",
+  });
   let tries = 0;
   const settle = () => {
     if (exact() || ++tries > 8) return;

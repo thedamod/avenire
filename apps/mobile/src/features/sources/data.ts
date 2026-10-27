@@ -4,6 +4,7 @@ import { call, invalidateLibrary, type ClientRuntime } from "@avenire/client-run
 import type { ChatScope, FileId, FolderId, LibraryFile, ThreadId } from "@avenire/contracts";
 import { useQuery } from "../../lib/useRpc";
 import { useApi } from "../../state/api";
+import { originLabel } from "./reopen";
 
 // Chat's typed route currently has no fileIds. The chat owner can consume this once,
 // before sending its initial q, and pass it as RuthChatRequest.scope.
@@ -96,14 +97,11 @@ export function useSourceActions() {
       }),
   };
 }
-export function sourceHost(file: Pick<LibraryFile, "sourceUrl" | "kind">) {
-  if (file.sourceUrl) {
-    try {
-      return new URL(file.sourceUrl).hostname.replace(/^www\./, "");
-    } catch {
-      return "Captured source";
-    }
-  }
+/** "arxiv.org", "Preview · lecture-3.pdf", or what kind of thing it is. */
+export function sourceHost(file: Pick<LibraryFile, "id" | "sourceUrl" | "kind" | "origin">) {
+  const label = originLabel(file);
+  if (label) return label;
+  if (file.sourceUrl) return "Captured source";
   return file.kind === "image" ? "Photo" : "Downloads";
 }
 export function fileIconType(file: LibraryFile) {

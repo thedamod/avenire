@@ -26,41 +26,54 @@ async function refresh(): Promise<void> {
     const value = Schema.decodeUnknownSync(Status)(
       await chrome.runtime.sendMessage({ type: "avenire-status" }),
     );
+    // Signed out with no desktop: the status line is the way to sign in.
+    const signedOut = !value.connected && value.signedIn === false;
     status.textContent = value.connected
-      ? "Connected to desktop"
-      : value.signedIn === false
-        ? "Not signed in"
-        : "Direct mode";
+      ? "Connected to Avenire desktop"
+      : signedOut
+        ? ""
+        : "Capturing directly to Avenire";
+    status.hidden = signedOut;
+    signIn.hidden = !signedOut;
     pairing.hidden = !value.needsCode;
-    signIn.hidden = value.signedIn !== false;
     if (value.error) result.textContent = value.error;
   } catch {
-    status.textContent = "Direct mode";
+    status.textContent = "Capturing directly to Avenire";
   }
 }
 capture.addEventListener("click", () => {
   capture.disabled = true;
-  result.textContent = "Capturing…";
+  capture.textContent = "Capturing…";
+  result.textContent = "";
   void chrome.runtime
     .sendMessage({ type: "avenire-capture" })
     .then((raw: unknown) => {
       const value = Schema.decodeUnknownSync(Result)(raw);
+      const saved = value.saved ?? 0;
       result.textContent = value.ok
-        ? (value.note ?? `Saved ${value.saved ?? 0} source(s).`)
-        : (value.error ?? "Capture failed");
+        ? (value.note ??
+          (saved
+            ? `Saved ${saved} source${saved === 1 ? "" : "s"} to Avenire.`
+            : "Nothing new to save."))
+        : (value.error ?? "Capture failed. Try again.");
     })
     .catch(() => {
       result.textContent = "Could not reach the extension. Try again.";
     })
     .finally(() => {
       capture.disabled = false;
+      capture.textContent = "Capture this page";
     });
+});
+const code = element<HTMLInputElement>("code");
+// Digits only, so a pasted "123 456" still pairs.
+code.addEventListener("input", () => {
+  code.value = code.value.replace(/\D/g, "").slice(0, 6);
 });
 pairing.addEventListener("submit", (event) => {
   event.preventDefault();
-  const code = element<HTMLInputElement>("code").value;
   void chrome.runtime
-    .sendMessage({ type: "avenire-pair", code })
+    .sendMessage({ type: "avenire-pair", code: code.value })
     .then((raw: unknown) => {
       const value = Schema.decodeUnknownSync(Result)(raw);
       result.textContent = value.ok ? "Pairing with desktop…" : (value.error ?? "Pairing failed");

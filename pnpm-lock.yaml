@@ -203,6 +203,9 @@ importers:
       '@ai-sdk/react':
         specifier: 'catalog:'
         version: 4.0.130(react@19.2.3)(zod@4.6.5)
+      '@avenire/capture':
+        specifier: workspace:*
+        version: link:../../packages/capture
       '@avenire/client-runtime':
         specifier: workspace:*
         version: link:../../packages/client-runtime

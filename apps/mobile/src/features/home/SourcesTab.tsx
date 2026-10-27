@@ -1,6 +1,9 @@
 import { Fragment, useState } from "react";
 import { Alert, Linking, ScrollView, StyleSheet, View } from "react-native";
 import type { FileId, Folder, LibraryFile } from "@avenire/contracts";
+import { call } from "@avenire/client-runtime/rpc";
+import { useApi } from "../../state/api";
+import { originLabel, phoneReopen, savedOn } from "../sources/reopen";
 import {
   Button,
   Chip,
@@ -111,6 +114,7 @@ export function SourcesTab({
   const [kept, setKept] = useState<ReadonlySet<FileId>>(() => new Set());
   const [actionError, setActionError] = useState<unknown>();
   const [busy, setBusy] = useState<FileId>();
+  const api = useApi();
   const ingestion = useSourceJobs(sources);
   const visible = sources.filter(
     (file) =>
@@ -125,7 +129,7 @@ export function SourcesTab({
   const needsYou: { file: LibraryFile; state: SourceState }[] = [];
   const rest: LibraryFile[] = [];
   for (const file of visible) {
-    const state = sourceState(ingestion.jobs.get(file.id));
+    const state = sourceState(ingestion.jobs.get(file.id), file);
     if (state?.kind === "processing") processing.push({ file, state });
     else if (state && !(state.kind === "paywall" && kept.has(file.id)))
       needsYou.push({ file, state });
@@ -156,47 +160,39 @@ export function SourcesTab({
       : undefined;
     const processingState = state?.kind === "processing";
     const needsAction = state && !processingState;
-    const openUrl = () =>
-      file.sourceUrl
-        ? Linking.openURL(file.sourceUrl)
-        : ingestion.retry(file.id);
+    // The page in the browser, so the student can log in there and capture it again.
+    const openOriginal = async () => {
+      const plan = phoneReopen(file);
+      if (plan._tag !== "OpenUrl") return onOpen(file);
+      await Linking.openURL(plan.url);
+      void call(api, (client) =>
+        client["library.recordFileEvent"]({ fileId: file.id, kind: "opened" }),
+      ).catch(() => {});
+    };
     const primary =
       state?.kind === "password"
         ? "Enter password"
-        : state?.kind === "paywall"
-          ? "Open in browser"
-          : state?.kind === "login"
-            ? "Remind me there"
-            : state?.kind === "paused"
-              ? "Resume"
-              : "Try again";
+        : state?.kind === "paywall" || state?.kind === "login"
+          ? "Open original"
+          : state?.kind === "paused"
+            ? "Resume"
+            : "Try again";
     const fix = () => {
       if (state?.kind === "password")
         Alert.alert(
           "Open it on your computer",
           "Unlock the PDF on your computer, then capture it again. Password entry isn't available on your phone yet.",
         );
-      else if (state?.kind === "login")
-        Alert.alert(
-          "Capture it on your computer",
-          "Open this page in Avenire on your computer with logged-in capture on. Desktop reminders aren't available yet.",
-        );
       else
         void run(
           file.id,
-          state?.kind === "paywall" ? openUrl : () => ingestion.retry(file.id),
+          state?.kind === "paywall" || state?.kind === "login"
+            ? openOriginal
+            : () => ingestion.retry(file.id),
         );
     };
-    let host: string | undefined;
-    try {
-      host = file.sourceUrl
-        ? new URL(file.sourceUrl).hostname.replace(/^www\./, "")
-        : undefined;
-    } catch {
-      /* The type icon is the fallback. */
-    }
     const subtitle = [
-      host ??
+      originLabel(file) ??
         (file.kind === "image"
           ? "Photo"
           : file.source === "capture"
@@ -205,6 +201,7 @@ export function SourcesTab({
       file.mediaPositionSec !== null
         ? `saved at ${timestamp(file.mediaPositionSec)}`
         : null,
+      savedOn(file),
     ]
       .filter(Boolean)
       .join(" · ");

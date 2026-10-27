@@ -140,7 +140,7 @@ export function SourceUploadProvider({ children }: { children: React.ReactNode }
   const watching = entries.some(
     (entry) =>
       entry.stage === "processing" &&
-      (!entry.job || ingestionState(entry.job)?.kind === "processing"),
+      (!entry.job || ingestionState(entry.job, null)?.kind === "processing"),
   );
 
   useEffect(() => {
@@ -214,7 +214,7 @@ function entryStatus(entry: Entry) {
     return { label: entry.error ?? "Upload failed", failed: true, done: true };
   if (entry.stage === "processing") {
     if (!entry.job) return { label: "Waiting to read", failed: false, done: false };
-    const state = ingestionState(entry.job);
+    const state = ingestionState(entry.job, entry.source ?? null);
     if (state?.kind === "processing") return { label: state.label, failed: false, done: false };
     if (entry.job.status === "indexed" || isPublishedPartialRetry(entry.job))
       return {

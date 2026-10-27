@@ -42,7 +42,7 @@ export function TimelineRail({
     >
       <div
         className="pointer-events-auto absolute top-1/2 left-3 w-8 -translate-y-1/2"
-          style={{ height: `min(45dvh, ${Math.max(36, (items.length - 1) * 8)}px)` }}
+        style={{ height: `min(45dvh, ${Math.max(36, (items.length - 1) * 8)}px)` }}
         onMouseLeave={() => setActiveId(null)}
       >
         <button

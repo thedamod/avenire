@@ -54,8 +54,8 @@ export function useIngestionJobs(files: readonly LibraryFile[] | undefined) {
         // A job we watched finish changes counts and placement (clustering files it).
         if (
           before &&
-          ingestionState(before)?.kind === "processing" &&
-          ingestionState(job)?.kind !== "processing"
+          ingestionState(before, null)?.kind === "processing" &&
+          ingestionState(job, null)?.kind !== "processing"
         )
           scheduleRefresh();
         return next;

@@ -49,6 +49,9 @@ const PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
  */
 const PortalTarget = createContext<HTMLElement | null>(null);
 
+/** "Open original" through `reopenFile`, provided by the source viewer around its body. */
+export const OpenOriginalContext = createContext<(() => void) | null>(null);
+
 /**
  * Visible until the reader scrolls, then fades out 1s after scrolling stops; comes back on
  * scroll, a tap, or a mouse near the bottom edge. Off (always visible) when `active` is false.
@@ -218,6 +221,7 @@ export function ViewerDock({
   /** PDF dark mode toggle, shown in the zoom menu. */
   invert?: { checked: boolean; onChange: (checked: boolean) => void } | undefined;
 }) {
+  const openOriginal = useContext(OpenOriginalContext);
   const [fullscreen, setFullscreen] = useState(false);
   const [engaged, setEngaged] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -411,11 +415,15 @@ export function ViewerDock({
                     <Download />
                   </DockLink>
                 )}
-                {(original ?? url) && (
+                {openOriginal ? (
+                  <ViewerButton label="Open original" onClick={openOriginal}>
+                    <ExternalLink />
+                  </ViewerButton>
+                ) : (original ?? url) ? (
                   <DockLink href={(original ?? url)!} label="Open original">
                     <ExternalLink />
                   </DockLink>
-                )}
+                ) : null}
                 <ViewerButton
                   label={fullscreen ? "Exit fullscreen" : "Fullscreen"}
                   onClick={toggleFullscreen}

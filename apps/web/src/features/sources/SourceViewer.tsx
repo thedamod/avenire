@@ -8,7 +8,7 @@ import { ArrowUpRight } from "lucide-react";
 import { Button } from "@avenire/ui/components/button";
 import { Skeleton } from "@avenire/ui/components/skeleton";
 import { cn } from "@avenire/ui/lib/utils";
-import { FileKindIcon, RelativeTime, urlHost } from "~/components/app";
+import { FileKindIcon, RelativeTime } from "~/components/app";
 import { ErrorRow } from "~/features/home/states";
 import { useLibrary } from "~/features/library/LibraryProvider";
 import {
@@ -23,6 +23,9 @@ import { ImageView } from "./ImageView";
 import { MediaView, YouTubeView } from "./MediaView";
 import { officeType } from "./office-type";
 import { Aside, CitedChip } from "./parts";
+import { hasOriginal, originLabel, savedOn } from "./reopen";
+import { useIsDesktop, useReopenFile } from "./useReopenFile";
+import { OpenOriginalContext } from "./ViewerDock";
 import { TextView, isReadableText } from "./TextView";
 import { ViewerLoading } from "./ViewerLoading";
 
@@ -120,7 +123,7 @@ export function SourceViewerBody({
   const api = useApi();
   const files = useMemo(() => [file], [file]);
   const { jobs, retry } = useIngestionJobs(files);
-  const state = ingestionState(jobs.get(file.id));
+  const state = ingestionState(jobs.get(file.id), file);
   const stored = file.storageKey !== null;
   const content = useContentUrl(file.id, stored);
   const url = content.data?.url;
@@ -149,7 +152,13 @@ export function SourceViewerBody({
     ).catch(() => {});
   }, [api, file.id]);
 
-  const original = file.sourceUrl ?? url ?? null;
+  const desktop = useIsDesktop();
+  const reopen = useReopenFile();
+  // The stored bytes stand in for the original when there is nothing else to reopen.
+  const openOriginal = useMemo(
+    () => (hasOriginal(file, desktop) || url ? () => reopen(file, url) : null),
+    [file, desktop, url, reopen],
+  );
   const youtube = youtubeId(file.sourceUrl);
   const waitingForUrl = stored && !content.data && !content.error;
   const urlError = stored && content.error ? content.error : null;
@@ -244,7 +253,7 @@ export function SourceViewerBody({
     body = (
       <SourceCardFallback
         file={file}
-        original={original}
+        onOpenOriginal={openOriginal}
         compact={compact}
         showIdentity={showIdentity}
       />
@@ -266,7 +275,7 @@ export function SourceViewerBody({
         <div className={cn("flex min-h-8 shrink-0 items-center gap-2", gutter)}>
           {page || q ? <CitedChip>Cited in Ruth's answer</CitedChip> : null}
           <span className="flex-1" />
-          {compact && original ? <OpenOriginal href={original} /> : null}
+          {compact && openOriginal ? <OpenOriginal onClick={openOriginal} /> : null}
         </div>
       ) : null}
 
@@ -283,6 +292,7 @@ export function SourceViewerBody({
             file={file}
             state={pdfError ? { kind: "failed", reason: pdfError } : state!}
             onRetry={pdfError ? reloadContent : () => void retry(file.id)}
+            onOpenOriginal={openOriginal}
           />
         </div>
       ) : null}
@@ -297,24 +307,23 @@ export function SourceViewerBody({
           stage && !framed && "mx-auto w-full max-w-[944px] px-4 pt-6 md:px-8",
         )}
       >
-        {body}
+        <OpenOriginalContext.Provider value={openOriginal}>{body}</OpenOriginalContext.Provider>
       </div>
 
-      {compact && original && !framed ? (
+      {compact && openOriginal && !framed ? (
         <div className="flex justify-end px-5 pb-2">
-          <OpenOriginal href={original} />
+          <OpenOriginal onClick={openOriginal} />
         </div>
       ) : null}
     </div>
   );
 }
 
-export function OpenOriginal({ href, className }: { href: string; className?: string }) {
+export function OpenOriginal({ onClick, className }: { onClick: () => void; className?: string }) {
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
+    <button
+      type="button"
+      onClick={onClick}
       className={cn(
         "inline-flex h-8 shrink-0 items-center gap-1 text-[13px] whitespace-nowrap text-foreground-soft transition-colors hover:text-foreground",
         className,
@@ -322,7 +331,7 @@ export function OpenOriginal({ href, className }: { href: string; className?: st
     >
       Open original
       <ArrowUpRight className="size-3.5" aria-hidden="true" />
-    </a>
+    </button>
   );
 }
 
@@ -342,14 +351,17 @@ function StateNotice({
   file,
   state,
   onRetry,
+  onOpenOriginal,
 }: {
   file: LibraryFile;
   state: IngestionState;
   onRetry: () => void;
+  onOpenOriginal: (() => void) | null;
 }) {
   const [kept, setKept] = useState(false);
   if (kept) return null;
-  const open = file.sourceUrl ? () => window.open(file.sourceUrl!, "_blank", "noopener") : null;
+  // Logging in on the original and capturing it again replaces this stub.
+  const open = onOpenOriginal ? { label: "Open original", run: onOpenOriginal } : undefined;
   const copy = (() => {
     switch (state.kind) {
       case "processing":
@@ -377,7 +389,7 @@ function StateNotice({
           text: "Behind a paywall. Saved the title and abstract only.",
           tone: "text-warning",
           rule: "border-warning/50",
-          action: open ? { label: "Open in browser", run: open } : undefined,
+          action: open,
           secondary: { label: "Keep", run: () => (keepSource(file.id), setKept(true)) },
         };
       case "login":
@@ -385,7 +397,7 @@ function StateNotice({
           text: `Needs your ${state.site ?? "site"} login. Capture it again on your computer with logged-in capture on.`,
           tone: "text-warning",
           rule: "border-warning/50",
-          action: open ? { label: "Open in browser", run: open } : undefined,
+          action: open,
         };
       case "failed":
         return {
@@ -430,16 +442,16 @@ function StateNotice({
 /** Nothing to render inline: title, address, what we know, and the way out. */
 function SourceCardFallback({
   file,
-  original,
+  onOpenOriginal,
   compact,
   showIdentity = compact,
 }: {
   file: LibraryFile;
-  original: string | null;
+  onOpenOriginal: (() => void) | null;
   compact: boolean;
   showIdentity?: boolean;
 }) {
-  const host = urlHost(file.sourceUrl);
+  const meta = [originLabel(file), savedOn(file)].filter(Boolean).join(" · ");
   return (
     <div
       className={cn("flex flex-col gap-4 border-y border-border py-6 md:py-8", compact && "mx-5")}
@@ -451,10 +463,8 @@ function SourceCardFallback({
             <span className="text-[16px] leading-[22px] font-semibold md:text-[15px]">
               {file.title}
             </span>
-            {file.sourceUrl ? (
-              <span className="truncate text-[13px] text-muted-foreground">
-                {host ?? file.sourceUrl}
-              </span>
+            {meta ? (
+              <span className="truncate text-[13px] text-muted-foreground">{meta}</span>
             ) : null}
           </div>
         </div>
@@ -464,16 +474,15 @@ function SourceCardFallback({
           {file.preview}
         </p>
       ) : null}
-      {original ? (
-        <a
-          href={original}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex h-11 w-fit items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[15px] font-medium text-primary-foreground md:h-8 md:px-3 md:text-[13px]"
+      {onOpenOriginal ? (
+        <button
+          type="button"
+          onClick={onOpenOriginal}
+          className="motion-press inline-flex h-11 w-fit items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[15px] font-medium text-primary-foreground md:h-8 md:px-3 md:text-[13px]"
         >
           Open original
           <ArrowUpRight className="size-3.5" aria-hidden="true" />
-        </a>
+        </button>
       ) : (
         <p className="text-[13px] text-muted-foreground">
           There's nothing more to show for this source yet.
