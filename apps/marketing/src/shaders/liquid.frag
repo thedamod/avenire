@@ -1,11 +1,13 @@
 #version 300 es
-// The rocket's exhaust as liquid: a GLSL port of design/landing-v4/tools/hero_flow.py.
-// One ribbon leaves the nozzle, flows down behind the product window and rises up the
-// left edge. Each pixel finds its nearest point on the path (arc position t, signed
-// distance u), then layers colour bands across the ribbon. Animated terms: the domain
-// warp shimmers, the bands travel outward along t, the ribbon pours out on load
-// (uFront), and the pointer drags and parts the liquid.
-// The palette is the plume's art palette, built from the dawn tokens.
+// Liquid light: a GLSL port of design/landing-v4/tools/hero_flow.py, driven by src/lib/liquid.ts.
+// A ribbon follows a path. Each pixel finds its nearest point on the path (arc position t,
+// signed distance u), then layers colour bands across the ribbon. Animated terms: the domain
+// warp shimmers, the bands travel along t, the ribbon pours out (uFront), and the pointer
+// drags and parts the liquid slightly.
+// Two shapes: the hero exhaust (uPool 0: widens from the nozzle, dies out at the far end)
+// and the final-CTA pool (uPool 1: an even ribbon faded at both ends).
+// The palette is night only (ice, periwinkle, indigo, violet, purple; no warm stops), built
+// from the dawn-1..3 tokens.
 precision highp float;
 
 const int N = 96;
@@ -17,7 +19,9 @@ uniform float uTime;     // seconds
 uniform float uFront;    // how far the liquid has poured, in t (> 1 once done)
 uniform vec2 uMouse;     // pointer in hero CSS pixels
 uniform vec2 uVel;       // smoothed pointer velocity, CSS pixels per frame
-uniform float uHover;    // 0..1, pointer over the hero
+uniform float uHover;    // 0..1, pointer over the canvas
+uniform float uPool;     // 1 for the even, two-ended pool shape
+uniform vec2 uFade;      // bottom fade: margin and span in CSS pixels
 
 out vec4 outColor;
 
@@ -95,7 +99,9 @@ void main() {
   float pouring = 1.0 - ss(0.98, 1.06, uFront);
   float head = 0.4 * exp(-pow((t - uFront) / 0.035, 2.0)) * pouring;
 
-  float width = 20.0 + 50.0 * ss(0.0, 0.12, t) + 260.0 * pow(ss(0.3, 0.95, t), 1.1) + 40.0 * ss(0.6, 1.0, t);
+  float width = uPool > 0.5
+    ? 70.0 + 50.0 * sin(3.14159 * t)
+    : 20.0 + 50.0 * ss(0.0, 0.12, t) + 260.0 * pow(ss(0.3, 0.95, t), 1.1) + 40.0 * ss(0.6, 1.0, t);
   width *= (1.0 + 0.05 * sin(t * 9.0 - tau * 0.8)) * (1.0 + head);
   float u = signedDist / width;
   // Bands drift across the ribbon and travel outward from the nozzle.
@@ -103,10 +109,10 @@ void main() {
 
   float sa[6] = float[6](0.0, 0.1, 0.3, 0.5, 0.7, 1.0);
   vec3 sc[6] = vec3[6](c255(244.0, 246.0, 255.0), c255(220.0, 228.0, 255.0), c255(169.0, 188.0, 255.0),
-                       c255(194.0, 156.0, 242.0), c255(255.0, 169.0, 135.0), c255(255.0, 179.0, 107.0));
+                       c255(194.0, 156.0, 242.0), c255(217.0, 184.0, 255.0), c255(230.0, 204.0, 255.0));
   float ma[6] = float[6](0.0, 0.1, 0.3, 0.55, 0.75, 1.0);
   vec3 mc[6] = vec3[6](c255(232.0, 237.0, 255.0), c255(171.0, 196.0, 255.0), c255(127.0, 123.0, 238.0),
-                       c255(200.0, 101.0, 214.0), c255(255.0, 95.0, 134.0), c255(255.0, 79.0, 123.0));
+                       c255(168.0, 107.0, 230.0), c255(176.0, 91.0, 224.0), c255(200.0, 101.0, 214.0));
   float ia[6] = float[6](0.0, 0.12, 0.4, 0.62, 1.0, 1.0);
   vec3 ic[6] = vec3[6](c255(200.0, 215.0, 255.0), c255(122.0, 108.0, 240.0), c255(106.0, 91.0, 224.0),
                        c255(168.0, 91.0, 234.0), c255(123.0, 91.0, 230.0), c255(123.0, 91.0, 230.0));
@@ -120,13 +126,13 @@ void main() {
   col = mix(col, ramp(t, sa, sc), ss(0.42, 0.62, ub));
 
   float alpha = ss(1.02, 0.86, u) * ss(-1.7, -0.1, u); // crisp crest, long soft tail
-  alpha *= ss(0.0, 0.006, t);                           // born at the nozzle
-  alpha *= 1.0 - ss(0.86, 1.0, t);                      // dies out up the left edge
+  alpha *= uPool > 0.5 ? ss(0.0, 0.08, t) : ss(0.0, 0.006, t); // born at the start
+  alpha *= 1.0 - (uPool > 0.5 ? ss(0.92, 1.0, t) : ss(0.86, 1.0, t)); // dies out at the end
   alpha *= 0.86;
   // Pour: nothing past the front yet; the front itself is a little uneven.
   alpha *= ss(uFront + 0.012, uFront - 0.02, t + 0.01 * sin(u * 7.0 + tau * 3.0));
-  // Fade before the hero's bottom edge so nothing is cut where the next section starts.
-  alpha *= clamp((uSize.y - 60.0 - screen.y) / 260.0, 0.0, 1.0);
+  // Fade before the bottom edge so nothing is cut where the next section starts.
+  alpha *= clamp((uSize.y - uFade.x - screen.y) / uFade.y, 0.0, 1.0);
 
   float g = hash(floor(gl_FragCoord.xy)) - 0.5;          // film grain
   col = clamp(col + g * 0.05, 0.0, 1.0); // half of hero_flow.py: the canvas is half resolution

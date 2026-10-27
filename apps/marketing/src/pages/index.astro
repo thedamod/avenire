@@ -2,6 +2,7 @@
 import cartpolePoster from "../assets/poster-cartpole.webp";
 import reportPoster from "../assets/poster-ruth-cloud.webp";
 import { Capture } from "../components/Capture.tsx";
+import CtaGlow from "../components/CtaGlow.tsx";
 import { FinalCta } from "../components/FinalCta.tsx";
 import { Files } from "../components/Files.tsx";
 import { Footer } from "../components/Footer.tsx";
@@ -52,7 +53,9 @@ const explainer = ruth.answers[2];
     </Ruth>
     <Files />
     <Trust />
-    <FinalCta />
+    <FinalCta>
+      <CtaGlow slot="glow" client:visible />
+    </FinalCta>
   </main>
   <Footer />
 </Base>

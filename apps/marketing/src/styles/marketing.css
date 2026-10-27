@@ -20,7 +20,6 @@
   --color-dawn-1: #abc4ff;
   --color-dawn-2: #7a6cf0;
   --color-dawn-3: #b05be0;
-  --color-dawn-4: #ff4f7b;
 
   --text-display: clamp(44px, 2rem + 3.6vw, 72px);
   --text-display--line-height: 1.06;
@@ -109,13 +108,13 @@
   translate: 0 var(--reveal-distance);
 }
 
-/* The hero art (Base.astro's HeroArt island) takes over the static plume and rocket. */
-.js [data-hero-fallback]:not([data-visible]),
+/* The liquid islands (HeroArt, CtaGlow) take over the static art and the rocket. */
+.js [data-liquid-fallback]:not([data-visible]),
 .js [data-hero-rocket] {
   opacity: 0;
 }
 
-[data-hero-fallback] {
+[data-liquid-fallback] {
   transition: opacity var(--duration-reveal) var(--ease-out);
 }
 

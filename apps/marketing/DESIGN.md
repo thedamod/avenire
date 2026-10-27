@@ -50,11 +50,11 @@ App tokens (dark theme):
 
 Marketing additions:
 
-| Token               | Value                                 | Use                                              |
-| ------------------- | ------------------------------------- | ------------------------------------------------ |
-| `foreground-subtle` | #8A8A8A                               | Eyebrows, secondary copy, table cells            |
-| `ghost`             | white 7%                              | Footer watermark only                            |
-| `dawn-1…4`          | #ABC4FF → #7A6CF0 → #B05BE0 → #FF4F7B | Glows (as images), play-button shadow, selection |
+| Token               | Value                       | Use                                                                |
+| ------------------- | --------------------------- | ------------------------------------------------------------------ |
+| `foreground-subtle` | #8A8A8A                     | Eyebrows, secondary copy, table cells                              |
+| `ghost`             | white 7%                    | Footer watermark only                                              |
+| `dawn-1…3`          | #ABC4FF → #7A6CF0 → #B05BE0 | The liquid (hero exhaust, CTA glow), play-button shadow, selection |
 
 Rules: text never uses `dawn` or `ruth`. A two-tone headline is always
 `muted-foreground` then `foreground`.
@@ -105,29 +105,35 @@ marketing tokens in `marketing.css`: `--duration-reveal` (700ms) and `--reveal-d
   70ms. The hero uses the same mechanism, so it floats in on load. Never nest
   `data-reveal` (`Eyebrow` takes `reveal={false}` inside an element that already floats).
   The script is inline in `Base.astro`; without it (`html:not(.js)`) nothing is hidden.
-- **Hero art.** `HeroArt` (`client:load`) draws the exhaust as liquid in WebGL2
-  (`src/shaders/hero-flow.frag`, a port of `design/landing-v4/tools/hero_flow.py`). It pours out of the
-  nozzle on load, its bands keep flowing outward, and the pointer drags and parts it. The rocket
-  flies in along its heading, then hovers and leans toward the pointer on a spring; the
-  stream's source follows the nozzle. The art lives in the `hero-frame` utility (a 1440px
-  frame centred on wide screens, pinned right below 1440); the stream's far end always
-  rides the viewport's left edge. It renders at half resolution and pauses offscreen and in
-  background tabs.
+- **Liquid.** One WebGL2 shader (`src/shaders/liquid.frag`, a port of
+  `design/landing-v4/tools/hero_flow.py`) run by `src/lib/liquid.ts`, in two places:
+  - `HeroArt` (`client:load`): the rocket's exhaust. It pours out of the nozzle on load and
+    its bands keep flowing outward. The rocket flies in along its heading, then hovers and
+    leans toward the pointer on a spring, and the stream's source follows the nozzle. The art lives in the
+    `hero-frame` utility (a 1440px frame centred on wide screens, pinned right below
+    1440); the stream's far end always rides the viewport's left edge.
+  - `CtaGlow` (`client:visible`): the same liquid as a low arc of light under the final
+    CTA, like a horizon at night. It pours in from the right the first time it's on screen. Its crest
+    stays below the email field, never behind the headline.
+
+  The pointer moves the liquid only slightly (at most ~11px of drag, 6px of parting).
+  Both render at half resolution and pause offscreen and in background tabs.
+
 - **Fallbacks.** No WebGL2, a lost context, or a GPU that can't draw a frame within 16ms
-  (timed once at startup) gets the static `hero-flow.webp` and a resting rocket. Below `lg`
-  the hero has no art.
+  (timed once at startup) gets a still of the same liquid (`hero-flow.webp`,
+  `cta-glow.webp`) and a resting rocket. Below `lg` the hero has no art.
 - **Reduced motion.** Gentler, not zero: reveals keep the fade and drop the travel; the
-  hero renders one still frame of the full stream with the rocket at rest and ignores the pointer.
+  liquid renders one still frame (the full stream, the rocket at rest) and ignores the pointer.
 - **Hover.** Colour transitions only. The video poster fades out over `duration-moderate`
   when playback starts.
 
-The plume's palette lives in the shader. It is illustration, built from the dawn tokens,
-not UI colour.
+The liquid's palette lives in the shader. It is night only (ice, periwinkle, indigo,
+violet, purple, with no warm or orange stops), built from `dawn-1…3`. It is illustration, not UI colour.
 
 ## Components
 
-React, in `src/components`, rendered to static HTML by Astro. Two islands hydrate:
-`HeroArt` (`client:load`) and `VideoFrame` (`client:visible`). Copy and links live in
+React, in `src/components`, rendered to static HTML by Astro. Three islands hydrate:
+`HeroArt` (`client:load`), `CtaGlow` and `VideoFrame` (`client:visible`). Copy and links live in
 `src/content.ts`.
 
 ## Rules the checker enforces (in `src/`)
