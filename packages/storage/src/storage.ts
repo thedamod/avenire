@@ -111,6 +111,27 @@ const idempotent = <A>(effect: Effect.Effect<A, StorageError>) =>
     }),
   );
 
+/** `{ name, message, code }` down the cause chain; Error objects otherwise log as `{}`. */
+const describeCause = (cause: unknown) => {
+  const chain: Array<{ name: string | undefined; message: string | undefined; code: unknown }> = [];
+  for (let current = cause, depth = 0; current && depth < 5; depth += 1) {
+    const error = current as {
+      name?: string;
+      _tag?: string;
+      message?: string;
+      code?: unknown;
+      cause?: unknown;
+    };
+    chain.push({
+      name: error._tag ?? error.name,
+      message: error.message?.slice(0, 300),
+      code: error.code,
+    });
+    current = error.cause;
+  }
+  return chain;
+};
+
 const readAll = async (files: Files, prefix: StorageKey) => {
   const objects: Array<{ readonly key: StorageKey; readonly size: number }> = [];
   for await (const file of files.listAll({ prefix })) {
@@ -127,8 +148,16 @@ const notFound =
 const makeStorage = (files: Files): Storage["Service"] =>
   Storage.of({
     files,
-    put: (key, body, options) =>
-      attempt("put", key, () => files.upload(key, body, options)).pipe(Effect.asVoid),
+    put: (key, body, options) => {
+      const upload = attempt("put", key, () => files.upload(key, body, options)).pipe(
+        Effect.tapError((error) =>
+          Effect.logWarning("Storage put failed", { key, cause: describeCause(error.cause) }),
+        ),
+      );
+      // A stream can't be replayed; bytes, strings and (file-backed) Blobs can, so a transient
+      // provider or network failure retries instead of failing the whole upload.
+      return (body instanceof ReadableStream ? upload : idempotent(upload)).pipe(Effect.asVoid);
+    },
     get: (key) =>
       idempotent(
         attempt("get", key, async () => {
