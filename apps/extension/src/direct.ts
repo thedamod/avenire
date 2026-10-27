@@ -8,9 +8,9 @@ import {
   type CapturedTab,
   type PageSnapshot,
 } from "@avenire/contracts";
-import { normalizeUrl } from "@avenire/capture/url";
+import { normalizeUrl, requiresBrowserSession } from "@avenire/capture/url";
 import * as Schema from "effect/Schema";
-import type { CaptureOutput } from "./capture.ts";
+import { captureTabs, type CaptureOutput } from "./capture.ts";
 import { sha256 } from "./files.ts";
 import { apiJson } from "./wire.ts";
 import { resolveDocumentUrl } from "./documents.ts";
@@ -32,15 +32,14 @@ function webOrigin(tab: CapturedTab, page: PageSnapshot, capturedAt: string): Ca
   };
 }
 
-export async function uploadCapture(
+export function createCaptureUpload(
   appUrl: string,
   snapshot: CaptureSnapshot,
-  output: CaptureOutput,
   fetcher: typeof fetch = fetch,
-): Promise<{ readonly saved: number; readonly skipped: number }> {
+) {
   const uploadedTabs = new Set<number>();
   let saved = 0;
-  const uploadPage = async (page: PageSnapshot): Promise<void> => {
+  const uploadPage = async (page: PageSnapshot, output: CaptureOutput): Promise<void> => {
     const tab = output.tabs.find((item) => item.tabId === page.tabId);
     if (!tab || (tab.access !== undefined && tab.access !== "open")) return;
     const original = output.files.find(
@@ -112,29 +111,99 @@ export async function uploadCapture(
     )
       uploadedTabs.add(tab.tabId);
   };
-  let next = 0;
-  const uploads = await Promise.allSettled(
-    Array.from({ length: Math.min(3, output.pages.length) }, async () => {
-      while (next < output.pages.length) await uploadPage(output.pages[next++]!);
-    }),
-  );
-  const failed = uploads.find((result) => result.status === "rejected");
-  if (failed?.status === "rejected") throw failed.reason;
-  const remaining = output.tabs.filter(
+  // A shared three-upload queue across tab deliveries, not three uploads per tab.
+  const lanes: Promise<void>[] = Array.from({ length: 3 }, () => Promise.resolve());
+  let lane = 0;
+  const consume = async (output: CaptureOutput): Promise<void> => {
+    await Promise.all(
+      output.pages.map((page) => {
+        const index = lane++ % lanes.length;
+        const work = lanes[index]!.then(() => uploadPage(page, output));
+        lanes[index] = work.catch(() => {});
+        return work;
+      }),
+    );
+  };
+  const finish = async (output: CaptureOutput): Promise<{ saved: number; skipped: number }> => {
+    const remaining = output.tabs.filter(
+      (tab) =>
+        !uploadedTabs.has(tab.tabId) &&
+        /^https?:/i.test(tab.url) &&
+        /^https?:/i.test(tab.finalUrl ?? tab.url) &&
+        !needsBrowser(tab),
+    );
+    let skipped =
+      output.skipped.length +
+      output.tabs.filter(
+        (tab) =>
+          !uploadedTabs.has(tab.tabId) &&
+          needsBrowser(tab) &&
+          !output.skipped.some((item) => item.tabId === tab.tabId),
+      ).length;
+    if (remaining.length) {
+      const receipt = await apiJson(
+        fetcher,
+        `${appUrl}/api/library/captures`,
+        SubmitCaptureResult,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ snapshot: { ...snapshot, tabs: remaining } }),
+        },
+      );
+      saved += receipt.files.length;
+      skipped += receipt.skipped.length;
+    }
+    return { saved, skipped };
+  };
+  return { consume, finish };
+}
+
+const needsBrowser = (tab: CapturedTab): boolean =>
+  [tab.url, tab.finalUrl].some(requiresBrowserSession);
+
+export async function uploadCapture(
+  appUrl: string,
+  snapshot: CaptureSnapshot,
+  output: CaptureOutput,
+  fetcher: typeof fetch = fetch,
+): Promise<{ saved: number; skipped: number }> {
+  const uploader = createCaptureUpload(appUrl, snapshot, fetcher);
+  await uploader.consume(output);
+  return uploader.finish(output);
+}
+
+/** Shortcut and popup share the all-tabs reader and stream uploads as tabs finish. */
+export async function captureOpenTabs(
+  api: typeof chrome,
+  tabs: readonly CapturedTab[],
+  readInBrowser: boolean,
+  appUrl: string,
+  snapshot: CaptureSnapshot,
+  fetcher: typeof fetch = fetch,
+): Promise<{ saved: number; skipped: number; note?: string }> {
+  const uploader = createCaptureUpload(appUrl, snapshot, fetcher);
+  const output = await captureTabs(api, tabs, readInBrowser, {
+    fetcher,
+    retainFiles: false,
+    onTab: uploader.consume,
+  });
+  const result = await uploader.finish(output);
+  const unread = output.tabs.find(
     (tab) =>
-      !uploadedTabs.has(tab.tabId) &&
-      /^https?:/i.test(tab.url) &&
-      /^https?:/i.test(tab.finalUrl ?? tab.url),
+      needsBrowser(tab) &&
+      !output.pages.some(
+        (page) =>
+          page.tabId === tab.tabId &&
+          (!resolveDocumentUrl(tab.finalUrl ?? tab.url) || page.file?.primary),
+      ),
   );
-  let skipped = output.skipped.length;
-  if (remaining.length) {
-    const receipt = await apiJson(fetcher, `${appUrl}/api/library/captures`, SubmitCaptureResult, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ snapshot: { ...snapshot, tabs: remaining } }),
-    });
-    saved += receipt.files.length;
-    skipped += receipt.skipped.length;
-  }
-  return { saved, skipped };
+  if (!unread) return result;
+  const reason =
+    output.skipped.find((item) => item.tabId === unread.tabId)?.reason ??
+    "Read in browser timed out";
+  return {
+    ...result,
+    note: `Saved ${result.saved} source(s). Needs you · open in browser and capture again. ${reason}`,
+  };
 }

@@ -167,7 +167,7 @@ it("enforces extension Origin, JSON size, socket cleanup and account isolation",
   expect((await unpaired.next("Rejected")).reason).toBe("account-mismatch");
 });
 
-it("correlates requests, extracts six tabs per batch, and passes readInBrowser", async () => {
+it("sends one request containing every tab and passes readInBrowser", async () => {
   const h = await harness();
   const c = await client(h.url);
   await authenticate(c);
@@ -179,22 +179,13 @@ it("correlates requests, extracts six tabs per batch, and passes readInBrowser",
   await report(c, tabs);
   const captured = h.channel.capture(tabs, false);
   const first = await c.next("CaptureRequest");
-  expect(first.tabIds).toEqual([1, 2, 3, 4, 5, 6]);
+  expect(first.tabIds).toEqual([1, 2, 3, 4, 5, 6, 7]);
   expect(first.readInBrowser).toBe(false);
   c.send({
     _tag: "CaptureResult",
     version: 1,
     requestId: first.requestId,
     pages: first.tabIds.map((tabId: number) => ({ ...page, tabId })),
-    skipped: [],
-  });
-  const second = await c.next("CaptureRequest");
-  expect(second.tabIds).toEqual([7]);
-  c.send({
-    _tag: "CaptureResult",
-    version: 1,
-    requestId: second.requestId,
-    pages: second.tabIds.map((tabId: number) => ({ ...page, tabId })),
     skipped: [],
   });
   expect(await captured).toHaveLength(7);
@@ -250,7 +241,7 @@ it("spools multiple original files privately, verifies their bytes, and retains 
     );
   }
   const results = await captured;
-  expect(results).toHaveLength(4);
+  expect(results).toHaveLength(3);
   c.socket.close();
   await once(c.socket, "close");
   for (const [index, result] of results.filter((result) => result.path).entries()) {
@@ -261,8 +252,8 @@ it("spools multiple original files privately, verifies their bytes, and retains 
   }
 });
 
-it("rejects malformed frames, wrong sequence, hash mismatch and unsolicited capture results", async () => {
-  for (const failure of ["frame", "sequence", "hash", "request"]) {
+it("rejects malformed frames, wrong sequence and hash mismatch", async () => {
+  for (const failure of ["frame", "sequence", "hash"]) {
     const h = await harness();
     const c = await client(h.url);
     await authenticate(c);
@@ -309,51 +300,75 @@ it("rejects malformed frames, wrong sequence, hash mismatch and unsolicited capt
   }
 });
 
-it("enforces the 256 MiB per-file and aggregate contract limit before receiving bytes", async () => {
-  for (const sizes of [[256 * 1024 * 1024 + 1], Array(5).fill(64 * 1024 * 1024)]) {
-    const h = await harness();
-    const c = await client(h.url);
-    await authenticate(c);
-    await report(c);
-    const capture = h.channel.capture([tab], true);
-    const request = await c.next("CaptureRequest");
-    c.send({
-      _tag: "CaptureResult",
-      version: 1,
-      requestId: request.requestId,
-      pages: sizes.map((sizeBytes, index) => ({
-        ...page,
-        file: {
-          url: tab.url,
-          fileName: "study.pdf",
-          mimeType: "application/pdf",
-          sizeBytes,
-          sha256: String(index).repeat(64),
-        },
-      })),
-      skipped: [],
-    });
-    expect(await capture).toEqual([]);
-    await vi.waitFor(() => expect(c.socket.readyState).toBe(WebSocket.CLOSED));
-    stopTabsReceiver();
-  }
-});
-
-it("bounds extraction to 3 seconds per batch and 8 seconds total, and reopen to 2 seconds", async () => {
+it("skips oversized files without disconnecting and reserves up to 1 GiB across tabs", async () => {
   const h = await harness();
   const c = await client(h.url);
   await authenticate(c);
-  const tabs = Array.from({ length: 18 }, (_, index) => ({ ...tab, tabId: index + 1 }));
+  const tabs = Array.from({ length: 6 }, (_, i) => ({ ...tab, tabId: i + 1 }));
   await report(c, tabs);
-  const start = performance.now();
-  expect(await h.channel.capture(tabs, true)).toEqual([]);
-  expect(performance.now() - start).toBeLessThan(8400);
-  const requests = c.messages.filter((message) => message._tag === "CaptureRequest");
-  expect(requests).toHaveLength(3);
+  const failures = vi.fn();
+  const captured = h.channel.capture(tabs, true, undefined, undefined, failures);
+  const request = await c.next("CaptureRequest");
+  c.send({
+    _tag: "CaptureResult",
+    version: 1,
+    requestId: request.requestId,
+    final: false,
+    pages: tabs.map((tab, i) => ({
+      ...page,
+      tabId: tab.tabId,
+      file: {
+        url: tab.url,
+        primary: true,
+        fileName: "study.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: i === 0 ? 256 * 1024 * 1024 + 1 : 256 * 1024 * 1024,
+        sha256: String(i).repeat(64),
+      },
+    })),
+    skipped: [],
+  });
+  await vi.waitFor(() => expect(failures).toHaveBeenCalledTimes(2));
+  const peer = [...(h.channel as any).peers][0];
+  const pending = peer.requests.get(request.requestId);
+  expect(pending.budget.bytes).toBe(1024 * 1024 * 1024);
+  expect(pending.files.size).toBe(4);
+  // Binary frames for rejected files are quietly discarded.
+  c.socket.send(
+    encodeFileFrame(
+      { requestId: request.requestId, tabId: 1, sha256: "0".repeat(64), seq: 0, final: true },
+      new Uint8Array([1]),
+    ),
+  );
+  c.send({ _tag: "Ping", version: 1 });
+  await c.next("Pong");
+  expect(c.socket.readyState).toBe(WebSocket.OPEN);
+  pending.timer._onTimeout();
+  expect(await captured).toEqual([]);
+});
+
+it("uses one 20 second reading deadline and keeps reopen bounded to 2 seconds", async () => {
+  const h = await harness();
+  const c = await client(h.url);
+  await authenticate(c);
+  const tabs = Array.from({ length: 30 }, (_, index) => ({ ...tab, tabId: index + 1 }));
+  await report(c, tabs);
+  const failures = vi.fn();
+  const captured = h.channel.capture(tabs, true, undefined, undefined, failures);
+  const request = await c.next("CaptureRequest");
+  expect(request.tabIds).toHaveLength(30);
+  expect(request.deadlineMs).toBeGreaterThan(19_000);
+  expect(request.deadlineMs).toBeLessThanOrEqual(20_000);
+  const pending = [...(h.channel as any).peers][0].requests.get(request.requestId);
+  expect(pending.timer._idleTimeout).toBe(request.deadlineMs);
+  pending.timer._onTimeout();
+  expect(await captured).toEqual([]);
+  expect(failures).toHaveBeenCalledTimes(30);
+  expect(failures.mock.calls[0]![1]).toBe("Read in browser timed out");
   const reopenStart = performance.now();
   expect(await h.channel.reopen(tab.url)).toBe(false);
   expect(performance.now() - reopenStart).toBeLessThan(2300);
-}, 12000);
+});
 
 it("drops an expired request's late result and file frames while a concurrent request completes", async () => {
   const h = await harness();
@@ -364,7 +379,7 @@ it("drops an expired request's late result and file frames while a concurrent re
   const expired = h.channel.capture([tab], true, controller.signal);
   const first = await c.next("CaptureRequest");
   expect(first.deadlineMs).toBeGreaterThan(0);
-  expect(first.deadlineMs).toBeLessThanOrEqual(8000);
+  expect(first.deadlineMs).toBeLessThanOrEqual(20_000);
   const live = h.channel.capture([tab], true);
   const second = await c.next("CaptureRequest");
   // Exercise the timeout callback without advancing the socket heartbeat.
@@ -395,4 +410,122 @@ it("drops an expired request's late result and file frames while a concurrent re
   expect(await live).toEqual([{ tab, page }]);
   expect(c.socket.readyState).toBe(WebSocket.OPEN);
   expect(h.channel.connected()).toBe(true);
+});
+
+it("streams 30 tabs and ten primary documents progressively, deduping partials and ignoring unknown tabs", async () => {
+  const h = await harness();
+  const c = await client(h.url);
+  await authenticate(c);
+  const tabs = Array.from({ length: 30 }, (_, i) => ({ ...tab, tabId: i + 1 }));
+  await report(c, tabs);
+  const saved: number[] = [];
+  let final = false;
+  const captured = h.channel.capture(tabs, true, undefined, async (result) => {
+    if (result.path) expect((await readFile(result.path)).length).toBeGreaterThan(0);
+    expect(final).toBe(false);
+    saved.push(result.tab.tabId);
+    await h.channel.release(result);
+  });
+  const request = await c.next("CaptureRequest");
+  const partial = (pages: PageSnapshot[]) =>
+    c.send({
+      _tag: "CaptureResult",
+      version: 1,
+      requestId: request.requestId,
+      pages,
+      skipped: [],
+      final: false,
+    });
+  partial([{ ...page, tabId: 999 }]);
+  for (const tab of tabs) {
+    const bytes = Buffer.from(`%PDF-${tab.tabId}`);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const result = {
+      ...page,
+      tabId: tab.tabId,
+      ...(tab.tabId <= 10
+        ? {
+            file: {
+              url: tab.url,
+              primary: true,
+              fileName: "document.pdf",
+              mimeType: "application/pdf",
+              sizeBytes: bytes.length,
+              sha256,
+            },
+          }
+        : {}),
+    };
+    partial([result]);
+    if (result.file)
+      c.socket.send(
+        encodeFileFrame(
+          { requestId: request.requestId, tabId: tab.tabId, sha256, seq: 0, final: true },
+          bytes,
+        ),
+      );
+    await vi.waitFor(() => expect(saved).toContain(tab.tabId));
+    partial([result]);
+  }
+  expect(saved).toHaveLength(30);
+  // Late duplicate metadata does not register a new spool or call onPage again.
+  c.send({ _tag: "Ping", version: 1 });
+  await c.next("Pong");
+  final = true;
+  c.send({
+    _tag: "CaptureResult",
+    version: 1,
+    requestId: request.requestId,
+    pages: [],
+    skipped: [],
+    final: true,
+  });
+  expect(await captured).toHaveLength(30);
+  expect(saved).toHaveLength(30);
+  expect(c.socket.readyState).toBe(WebSocket.OPEN);
+});
+
+it("caps discovered files per tab while exempting primary documents and preserving other tabs", async () => {
+  const h = await harness();
+  const c = await client(h.url);
+  await authenticate(c);
+  const other = { ...tab, tabId: 2 };
+  await report(c, [tab, other]);
+  const failures = vi.fn();
+  const captured = h.channel.capture([tab, other], true, undefined, undefined, failures);
+  const request = await c.next("CaptureRequest");
+  const bytes = Array.from({ length: 13 }, (_, i) => Buffer.from(`%PDF-${i}`));
+  const pages = bytes.map((data, i) => ({
+    ...page,
+    tabId: i === 12 ? 2 : 1,
+    file: {
+      url: `${tab.url}/${i}.pdf`,
+      primary: i === 0 || i === 12,
+      fileName: `${i}.pdf`,
+      mimeType: "application/pdf",
+      sizeBytes: data.length,
+      sha256: createHash("sha256").update(data).digest("hex"),
+    },
+  }));
+  c.send({ _tag: "CaptureResult", version: 1, requestId: request.requestId, pages, skipped: [] });
+  for (const [i, data] of bytes.entries())
+    c.socket.send(
+      encodeFileFrame(
+        {
+          requestId: request.requestId,
+          tabId: pages[i]!.tabId,
+          sha256: pages[i]!.file.sha256,
+          seq: 0,
+          final: true,
+        },
+        data,
+      ),
+    );
+  const results = await captured;
+  expect(results).toHaveLength(12);
+  expect(results.filter((result) => result.page.file?.primary)).toHaveLength(2);
+  expect(failures).toHaveBeenCalledTimes(1);
+  expect(failures.mock.calls[0]![1]).toContain("limit");
+  expect(c.socket.readyState).toBe(WebSocket.OPEN);
+  await Promise.all(results.map((result) => h.channel.release(result)));
 });

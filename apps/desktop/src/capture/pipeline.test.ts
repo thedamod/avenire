@@ -420,3 +420,49 @@ it("uses embedded frame provenance for browser originals and reapplies policy to
   await runCapturePipeline(blocked);
   expect(mocks.acquire).toHaveBeenCalledTimes(calls);
 });
+
+it("skips unread Drive tabs with a Needs you reason and retains ordinary timed-out URL candidates", async () => {
+  const drive = {
+    ...tab,
+    tabId: 2,
+    selection: undefined,
+    url: "https://drive.google.com/file/d/abc/view",
+  };
+  const docs = {
+    ...tab,
+    tabId: 3,
+    selection: undefined,
+    url: "https://docs.google.com/document/d/abc/edit",
+  };
+  const h = setup({ ...snapshot, tabs: [drive, docs, { ...tab, selection: undefined }] }, []);
+  h.channel.capture = async (_tabs, _read, _signal, _page, ...args: any[]) => {
+    const failure = args[0];
+    failure(drive, "Read in browser timed out");
+    failure(docs, "Document returned a login or HTML page");
+    failure(tab, "Read in browser timed out");
+    return [];
+  };
+  const result = await runCapturePipeline(h);
+  expect(result.snapshot.tabs.map((tab) => tab.url)).toEqual([tab.url]);
+  expect(h.stream.events).toContainEqual(
+    expect.objectContaining({
+      key: tabKey(drive),
+      status: "skipped",
+      reason: "Needs you · open in browser and capture again. Read in browser timed out",
+    }),
+  );
+  expect(h.stream.events).toContainEqual(
+    expect.objectContaining({
+      key: tabKey(docs),
+      status: "skipped",
+      reason: expect.stringContaining("Document returned a login or HTML page"),
+    }),
+  );
+  expect(h.stream.events).toContainEqual(
+    expect.objectContaining({
+      key: tabKey(tab),
+      status: "skipped",
+      reason: "Read in browser timed out",
+    }),
+  );
+});

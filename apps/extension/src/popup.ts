@@ -62,7 +62,7 @@ capture.addEventListener("click", () => {
     })
     .finally(() => {
       capture.disabled = false;
-      capture.textContent = "Capture this page";
+      capture.textContent = "Capture open tabs";
     });
 });
 const code = element<HTMLInputElement>("code");

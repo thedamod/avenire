@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { CaptureOrigin } from "@avenire/contracts";
-import { dedupeKeyFor, normalizeUrl } from "./url.ts";
+import { dedupeKeyFor, normalizeUrl, requiresBrowserSession } from "./url.ts";
 
 const web = (url: string): CaptureOrigin => ({
   _tag: "Web",
@@ -68,4 +68,16 @@ describe("URL identity", () => {
       "https://example.com/f?id=1",
     );
   });
+});
+
+it.each([
+  ["https://drive.google.com/file/d/abc/view", true],
+  ["https://docs.google.com/document/d/abc/edit", true],
+  ["https://drive.google.com.evil.test/file/d/abc", false],
+  ["https://school.test/paper.pdf", false],
+  ["file:///private/notes.pdf", false],
+  ["invalid", false],
+  [undefined, false],
+])("identifies anonymous-fetch exclusions for %s", (url, expected) => {
+  expect(requiresBrowserSession(url)).toBe(expected);
 });

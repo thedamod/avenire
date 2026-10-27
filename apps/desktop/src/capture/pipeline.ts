@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { localFilePath, displayTitle, localPathIdentity } from "./local-file.ts";
 import { applyPolicy } from "@avenire/capture/policy";
 import { classifyAccess } from "@avenire/capture/access";
-import { normalizeUrl } from "@avenire/capture/url";
+import { normalizeUrl, requiresBrowserSession } from "@avenire/capture/url";
 import type {
   CaptureSnapshot,
   CapturedTab,
@@ -102,6 +102,7 @@ export async function runCapturePipeline(options: {
   const skipped: Array<{ title: string; reason: string }> = [];
   const gate = new UploadGate(3);
   const processed = new Set<string>();
+  const browserFailures = new Map<string, string>();
   const blockedTabs = new Set<string>();
   const annotations = new Map<
     string,
@@ -173,6 +174,10 @@ export async function runCapturePipeline(options: {
       }
       const access = classifyAccess(page.signals);
       if (access !== "open") {
+        if ([tab.url, tab.finalUrl].some(requiresBrowserSession)) {
+          browserFailures.set(baseKey, access);
+          return;
+        }
         annotations.set(baseKey, {
           access,
           summary: (page.abstract || page.description).slice(0, 10000),
@@ -308,7 +313,7 @@ export async function runCapturePipeline(options: {
       signal,
       browser,
       (tab, reason) => {
-        stream.progress({ key: tabKey(tab), status: "failed", reason });
+        browserFailures.set(tabKey(tab), reason);
         skipped.push({
           title: displayTitle(tab.title, tabFilePath(tab, initial.snapshot.platform)),
           reason,
@@ -334,6 +339,7 @@ export async function runCapturePipeline(options: {
         access: tab.access,
         summary: tab.summary?.slice(0, 10000) ?? "",
       });
+      if ([tab.url, tab.finalUrl].some(requiresBrowserSession)) continue;
       stream.progress({
         key: tabKey(tab),
         status: "skipped",
@@ -344,14 +350,30 @@ export async function runCapturePipeline(options: {
       });
     }
   }
+  for (const tab of initial.snapshot.tabs) {
+    const key = tabKey(tab);
+    if (processed.has(key) || blockedTabs.has(key)) continue;
+    const google = [tab.url, tab.finalUrl].some(requiresBrowserSession);
+    const reason =
+      browserFailures.get(key) ??
+      (options.readInBrowser
+        ? "Read in browser timed out"
+        : "Turn on “Capture pages you're logged into” in Settings to read this in your browser.");
+    if (google) {
+      blockedTabs.add(key);
+      const detail = `Needs you · open in browser and capture again. ${reason}`;
+      stream.progress({ key, status: "skipped", reason: detail });
+      skipped.push({ title: displayTitle(tab.title), reason: detail });
+    } else if (!stream.settled(key)) {
+      stream.progress({ key, status: "skipped", reason });
+    }
+  }
   for (const item of stream.started.items) {
     if (!stream.settled(item.key))
       stream.progress({
         key: item.key,
         status: "skipped",
-        reason: item.key.startsWith("tab:")
-          ? "Queued for server capture; browser content was unavailable."
-          : "No supported document path was found. Open the file and capture again.",
+        reason: "No supported document path was found. Open the file and capture again.",
       });
   }
   return {

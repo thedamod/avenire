@@ -85,6 +85,7 @@ export function resolveDocumentUrl(raw: string, base?: string): string | undefin
 }
 
 export interface DocumentHint {
+  readonly primary?: boolean;
   readonly url: string;
   readonly name: string;
   readonly rank: number;
@@ -213,13 +214,18 @@ export function discoverLinks(doc?: Document, win?: Window): DocumentHint[] {
   return result.sort((a, b) => a.rank - b.rank).slice(0, 420);
 }
 
-export function selectDocuments(hints: readonly DocumentHint[], tabUrl: string): DocumentHint[] {
+export function selectDocuments(
+  hints: readonly DocumentHint[],
+  tabUrl: string,
+  maxDiscovered = 10,
+): DocumentHint[] {
   const direct = resolveDocumentUrl(tabUrl);
   const candidates = [
-    ...(direct ? [{ url: direct, name: "", rank: 0, explicit: true }] : []),
+    ...(direct ? [{ url: direct, name: "", rank: 0, explicit: true, primary: true }] : []),
     ...hints,
   ];
   const seen = new Set<string>();
+  let discovered = 0;
   return candidates
     .flatMap((hint) => {
       const url = resolveDocumentUrl(hint.url, tabUrl) ?? (hint.explicit ? hint.url : undefined);
@@ -229,7 +235,7 @@ export function selectDocuments(hints: readonly DocumentHint[], tabUrl: string):
       seen.add(key);
       return [{ ...hint, url }];
     })
-    .slice(0, 10);
+    .filter((hint) => hint.primary || discovered++ < maxDiscovered);
 }
 
 export interface PdfViewer {

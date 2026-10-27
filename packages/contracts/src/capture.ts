@@ -105,6 +105,8 @@ export const PageSnapshot = Schema.Struct({
   file: Schema.optional(
     Schema.Struct({
       url: Url,
+      /** The tab itself is this document; excluded from discovered-link counts. */
+      primary: Schema.optional(Schema.Boolean),
       /** HTTP(S) frame containing this document, when discovered in an embedded viewer. */
       originUrl: Schema.optional(Url),
       fileName: Schema.String.check(Schema.isMaxLength(255)),
@@ -272,6 +274,8 @@ export const ExtensionMessage = Schema.Union([
     readInBrowser: Schema.Boolean,
   }),
   Schema.TaggedStruct("CaptureResult", {
+    /** Absent means final for v1 peers. Binary frames follow their page metadata. */
+    final: Schema.optional(Schema.Boolean),
     version: Version,
     requestId: RequestId,
     pages: Schema.Array(PageSnapshot).check(Schema.isMaxLength(200)),

@@ -12,6 +12,7 @@ import {
   MAX_SOURCE_UPLOAD_BYTES,
   type CapturePosition,
 } from "@avenire/contracts";
+import { isEngaged } from "@avenire/capture/candidates";
 import { normalizeUrl } from "@avenire/capture/url";
 import { decodeFileFrame } from "@avenire/capture/frames";
 import { PairingAuthority } from "./pairing.ts";
@@ -33,13 +34,19 @@ interface IncomingFile {
 }
 interface Pending {
   readonly tabs: readonly CapturedTab[];
-  readonly budget: { bytes: number; count: number };
+  readonly budget: { bytes: number };
+  readonly counts: Map<number, number>;
+  readonly seen: Set<number>;
+  readonly ignoredFiles: Set<string>;
+  readonly delivered: Set<BrowserPage>;
+  readonly onPage: (page: BrowserPage) => void;
+  readonly onFailure: (tab: CapturedTab, reason: string) => void;
   readonly timer: NodeJS.Timeout;
   readonly resolve: (pages: BrowserPage[]) => void;
   readonly reject: (cause: Error) => void;
   readonly files: Map<string, IncomingFile>;
   readonly pages: BrowserPage[];
-  received: boolean;
+  final: boolean;
 }
 interface Peer {
   readonly socket: WebSocket;
@@ -227,30 +234,44 @@ export class ExtensionChannel {
       case "CaptureResult": {
         if (this.expired(peer, message.requestId)) return;
         const pending = peer.requests.get(message.requestId);
-        if (
-          !pending ||
-          pending.received ||
-          message.pages.some((page) => !pending.tabs.some((tab) => tab.tabId === page.tabId)) ||
-          message.skipped.some((item) => !pending.tabs.some((tab) => tab.tabId === item.tabId))
-        )
-          throw new Error("Uncorrelated capture result");
-        pending.received = true;
+        if (!pending || pending.final) return;
+        // A partial settles a tab, with all its page/file metadata in the same message.
+        // Unknown tabs and duplicate partials are ignored without disturbing this peer.
+        const accepted = new Set<number>();
+        for (const item of [...message.pages, ...message.skipped])
+          if (pending.tabs.some((tab) => tab.tabId === item.tabId) && !pending.seen.has(item.tabId))
+            accepted.add(item.tabId);
+        if ((message.pages.length || message.skipped.length) && !accepted.size) return;
+        for (const id of accepted) pending.seen.add(id);
+        for (const item of message.skipped) {
+          const tab = pending.tabs.find((tab) => tab.tabId === item.tabId);
+          if (tab && accepted.has(tab.tabId)) pending.onFailure(tab, item.reason);
+        }
+        pending.final = message.final !== false;
         for (const page of message.pages) {
+          if (!accepted.has(page.tabId)) continue;
           const tab = pending.tabs.find((tab) => tab.tabId === page.tabId)!;
           if (!page.file) {
-            pending.pages.push({ tab, page });
+            const result = { tab, page };
+            pending.pages.push(result);
+            this.deliver(peer, pending, result);
             continue;
           }
-          const key = `${page.tabId}:${page.file.sha256}:${pending.files.size}`;
+          const key = `${page.tabId}:${page.file.sha256}`;
+          if (pending.files.has(key)) continue;
+          const count = pending.counts.get(page.tabId) ?? 0;
           if (
             page.file.sizeBytes < 1 ||
             page.file.sizeBytes > MAX_SOURCE_UPLOAD_BYTES ||
-            pending.budget.bytes + page.file.sizeBytes > MAX_SOURCE_UPLOAD_BYTES ||
-            pending.budget.count >= 10
-          )
-            throw new Error("Capture file limit exceeded");
+            pending.budget.bytes + page.file.sizeBytes > 1024 * 1024 * 1024 ||
+            (!page.file.primary && count >= 10)
+          ) {
+            pending.ignoredFiles.add(key);
+            pending.onFailure(tab, "Capture file limit exceeded; document skipped");
+            continue;
+          }
           pending.budget.bytes += page.file.sizeBytes;
-          pending.budget.count++;
+          if (!page.file.primary) pending.counts.set(page.tabId, count + 1);
           const directory = await mkdtemp(join(tmpdir(), "avenire-browser-source-"));
           peer.directories.add(directory);
           const path = join(directory, "original");
@@ -265,9 +286,10 @@ export class ExtensionChannel {
           };
           pending.files.set(key, incoming);
           incoming.file = await open(path, "wx", 0o600);
+          if (!this.valid(peer) || peer.requests.get(message.requestId) !== pending) return;
           pending.pages.push({ tab, page, path });
         }
-        if (!pending.files.size) this.complete(peer, message.requestId, pending);
+        this.maybeComplete(peer, message.requestId, pending);
         break;
       }
       default:
@@ -281,7 +303,15 @@ export class ExtensionChannel {
     const { header, payload } = decoded;
     if (this.expired(peer, header.requestId)) return;
     const pending = peer.requests.get(header.requestId);
-    const incoming = [...(pending?.files.values() ?? [])].find(
+    if (!pending) return;
+    if (
+      !pending.tabs.some((tab) => tab.tabId === header.tabId) ||
+      pending.ignoredFiles.has(`${header.tabId}:${header.sha256}`)
+    )
+      return;
+    const previous = pending.files.get(`${header.tabId}:${header.sha256}`);
+    if (previous?.done) return;
+    const incoming = [...pending.files.values()].find(
       (file) =>
         !file.done && file.page.tabId === header.tabId && file.page.file?.sha256 === header.sha256,
     );
@@ -302,16 +332,32 @@ export class ExtensionChannel {
         incoming.hash.digest("hex") !== incoming.page.file!.sha256
       )
         throw new Error("File integrity check failed");
+      if (!this.valid(peer) || peer.requests.get(header.requestId) !== pending) return;
       incoming.done = true;
-      if ([...pending!.files.values()].every((file) => file.done))
-        this.complete(peer, header.requestId, pending!);
+      const result = pending.pages.find((page) => page.path === incoming.path)!;
+      this.deliver(peer, pending, result);
+      this.maybeComplete(peer, header.requestId, pending);
     }
+  }
+  private deliver(peer: Peer, pending: Pending, page: BrowserPage) {
+    if (pending.delivered.has(page)) return;
+    pending.delivered.add(page);
+    if (page.path) peer.directories.delete(join(page.path, ".."));
+    pending.onPage(page); // The pipeline now owns verified spools, including on timeout/disconnect.
+  }
+  private maybeComplete(peer: Peer, id: string, pending: Pending) {
+    if (pending.final && [...pending.files.values()].every((file) => file.done))
+      this.complete(peer, id, pending);
   }
   private complete(peer: Peer, id: string, pending: Pending) {
     if (!this.valid(peer) || peer.requests.get(id) !== pending) return;
     clearTimeout(pending.timer);
     peer.requests.delete(id);
-    for (const file of pending.files.values()) peer.directories.delete(file.directory);
+    this.expired(peer, id);
+    if (peer.expired.size >= 512) peer.expired.delete(peer.expired.keys().next().value!);
+    peer.expired.set(id, Date.now() + 30_000);
+    for (const tab of pending.tabs)
+      if (!pending.seen.has(tab.tabId)) pending.onFailure(tab, "Read in browser timed out");
     pending.resolve(pending.pages); // Ownership of verified spools passes to the pipeline.
   }
   private fail(peer: Peer, id: string, reason: string) {
@@ -327,6 +373,7 @@ export class ExtensionChannel {
     void peer.chain
       .then(async () => {
         for (const file of pending.files.values()) {
+          if (file.done) continue;
           await file.file?.close().catch(() => {});
           peer.directories.delete(file.directory);
           await rm(file.directory, { recursive: true, force: true });
@@ -359,87 +406,97 @@ export class ExtensionChannel {
     onPage?: (page: BrowserPage) => Promise<void>,
     onFailure?: (tab: CapturedTab, reason: string) => void,
   ): Promise<BrowserPage[]> {
-    const deadline = Date.now() + 8000;
-    const budget = { bytes: 0, count: 0 };
+    const deadline = Date.now() + 20_000;
+    const budget = { bytes: 0 };
     const work: Promise<void>[] = [];
     const pages: BrowserPage[] = [];
-    // One request per peer per batch, at most six tabs globally. The extension also bounds
-    // its six extraction workers; concurrent requests must not trip its single-flight guard.
-    for (
-      let offset = 0;
-      offset < tabs.length && Date.now() < deadline && !signal?.aborted;
-      offset += 6
-    ) {
-      const groups = new Map<Peer, CapturedTab[]>();
-      for (const tab of tabs.slice(offset, offset + 6)) {
-        const peer = [...this.peers].find(
-          (peer) =>
-            peer.sender &&
-            peer.tabs.some(
-              (entry) =>
-                entry === tab ||
-                (entry.tabId === tab.tabId &&
-                  entry.windowId === tab.windowId &&
-                  entry.browser === tab.browser &&
-                  entry.url === tab.url),
-            ),
-        );
-        if (peer) groups.set(peer, [...(groups.get(peer) ?? []), tab]);
-      }
-      await Promise.all(
-        [...groups].map(async ([peer, selected]) => {
-          const requestId = randomUUID();
-          const deadlineMs = Math.max(1, Math.min(3000, deadline - Date.now()));
-          const abort = () => this.fail(peer, requestId, "Capture cancelled");
-          try {
-            const extracted = await new Promise<BrowserPage[]>((resolve, reject) => {
-              const timer = setTimeout(
-                () =>
-                  this.fail(
-                    peer,
-                    requestId,
-                    "Browser extraction timed out; try capturing this tab again.",
-                  ),
-                deadlineMs,
-              );
-              peer.requests.set(requestId, {
-                tabs: selected,
-                budget,
-                timer,
-                resolve,
-                reject,
-                files: new Map(),
-                pages: [],
-                received: false,
-              });
-              signal?.addEventListener("abort", abort, { once: true });
-              if (signal?.aborted) {
-                abort();
-                return;
-              }
-              this.send(peer, {
-                _tag: "CaptureRequest",
-                version: 1,
-                requestId,
-                tabIds: selected.map((tab) => tab.tabId),
-                deadlineMs,
-                readInBrowser,
-              });
+    const groups = new Map<Peer, CapturedTab[]>();
+    const ordered = [...tabs].sort(
+      (a, b) =>
+        Number(b.activeInWindow) - Number(a.activeInWindow) ||
+        Number(isEngaged(b)) - Number(isEngaged(a)),
+    );
+    for (const tab of ordered) {
+      const peer = [...this.peers].find(
+        (peer) =>
+          peer.sender &&
+          peer.tabs.some(
+            (entry) =>
+              entry.tabId === tab.tabId &&
+              entry.windowId === tab.windowId &&
+              entry.browser === tab.browser &&
+              entry.url === tab.url,
+          ),
+      );
+      if (peer) groups.set(peer, [...(groups.get(peer) ?? []), tab]);
+      else
+        onFailure?.(tab, "Browser content unavailable; reconnect the extension and capture again");
+    }
+    await Promise.all(
+      [...groups].map(async ([peer, selected]) => {
+        const requestId = randomUUID();
+        const deadlineMs = Math.max(1, deadline - Date.now());
+        const delivered = new Set<number>();
+        const abort = () => this.fail(peer, requestId, "Capture cancelled");
+        try {
+          await new Promise<BrowserPage[]>((resolve, reject) => {
+            const timer = setTimeout(
+              () => this.fail(peer, requestId, "Read in browser timed out"),
+              deadlineMs,
+            );
+            peer.requests.set(requestId, {
+              tabs: selected,
+              budget,
+              timer,
+              resolve,
+              reject,
+              files: new Map(),
+              pages: [],
+              final: false,
+              counts: new Map(),
+              seen: new Set(),
+              ignoredFiles: new Set(),
+              delivered: new Set(),
+              onFailure: (tab, reason) => onFailure?.(tab, reason),
+              onPage: (page) => {
+                pages.push(page);
+                delivered.add(page.tab.tabId);
+                if (onPage)
+                  work.push(
+                    Promise.resolve()
+                      .then(() => onPage(page))
+                      .catch(() => {
+                        onFailure?.(page.tab, "Browser source upload failed; capture again");
+                      }),
+                  );
+              },
             });
-            pages.push(...extracted);
-            if (onPage) work.push(...extracted.map(onPage));
-          } catch {
-            for (const tab of selected)
+            signal?.addEventListener("abort", abort, { once: true });
+            if (signal?.aborted) {
+              abort();
+              return;
+            }
+            this.send(peer, {
+              _tag: "CaptureRequest",
+              version: 1,
+              requestId,
+              tabIds: selected.map((tab) => tab.tabId),
+              deadlineMs,
+              readInBrowser,
+            });
+          });
+        } catch (error) {
+          for (const tab of selected)
+            if (!delivered.has(tab.tabId))
               onFailure?.(
                 tab,
-                "Browser capture could not finish. Reconnect the extension and capture again.",
+                error instanceof Error ? error.message : "Read in browser timed out",
               );
-          } finally {
-            signal?.removeEventListener("abort", abort);
-          }
-        }),
-      );
-    }
+        } finally {
+          signal?.removeEventListener("abort", abort);
+        }
+      }),
+    );
     await Promise.all(work);
     return pages;
   }

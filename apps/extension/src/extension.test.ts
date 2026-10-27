@@ -5,7 +5,7 @@ import { decodeFileFrame, FILE_FRAME_BYTES } from "@avenire/capture/frames";
 import { extractPage } from "@avenire/capture/extract";
 import * as Schema from "effect/Schema";
 import { captureTabs, type CaptureOutput } from "./capture.ts";
-import { uploadCapture } from "./direct.ts";
+import { captureOpenTabs, uploadCapture } from "./direct.ts";
 import {
   discoverLinks,
   googleExportUrl,
@@ -323,15 +323,15 @@ describe("file transfer", () => {
         fetcher,
       ),
     ).rejects.toThrow("limit");
-    expect(
-      await fetchDocument(
+    await expect(
+      fetchDocument(
         { url: "https://school.example/b.pdf", name: "", rank: 0, explicit: true },
         page(),
         { count: 10, bytes: 0, urls: new Set() },
         new AbortController().signal,
         fetcher,
       ),
-    ).toBeUndefined();
+    ).rejects.toThrow("limit");
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });
@@ -443,7 +443,8 @@ describe("capture boundaries and access", () => {
     );
     await vi.advanceTimersByTimeAsync(41);
     const output = await pending;
-    expect(max).toBeLessThanOrEqual(6);
+    // Injection cannot be cancelled, but timed-out slots still attempt the next tab.
+    expect(max).toBeLessThanOrEqual(9);
     expect(execute.mock.calls.slice(0, 6)).toHaveLength(6);
     expect(output.pages).toEqual([]);
     expect(output.skipped).toHaveLength(9);
@@ -847,22 +848,22 @@ describe("v1 capture regressions", () => {
     await uploadCapture("https://avenire.example", snapshot(denied.tabs), denied, upload);
     expect(requests).toEqual([]);
   });
-  it("keeps unread URLs for server fallback on the 8 second deadline", async () => {
+  it("attempts queued tabs after timeouts and keeps unread URLs on the 20 second deadline", async () => {
     vi.useFakeTimers();
     const api = {
       scripting: { executeScript: vi.fn(() => new Promise(() => {})) },
     } as unknown as typeof chrome;
-    const tabs = Array.from({ length: 20 }, (_, i) => ({
+    const tabs = Array.from({ length: 30 }, (_, i) => ({
       ...report(i + 1, `https://school.test/${i}`),
       activeInWindow: false,
     }));
     const pending = captureTabs(api, tabs, true);
-    await vi.advanceTimersByTimeAsync(8001);
+    await vi.advanceTimersByTimeAsync(20_001);
     const result = await pending;
-    expect(result.tabs).toHaveLength(20);
+    expect(result.tabs).toHaveLength(30);
     expect(result.pages).toEqual([]);
-    expect(result.skipped).toHaveLength(20);
-    expect(api.scripting.executeScript).toHaveBeenCalledTimes(6);
+    expect(result.skipped).toHaveLength(30);
+    expect(api.scripting.executeScript).toHaveBeenCalledTimes(30);
     vi.useRealTimers();
   });
 });
@@ -1112,4 +1113,181 @@ it("keeps top-level linked originals at their own URL and embedded discoveries a
   expect(discoverLinks(doc, frame).find((hint) => hint.url.endsWith("/notes.pdf"))?.originUrl).toBe(
     "https://school.test/frame",
   );
+});
+
+describe("all-tabs streaming regression", () => {
+  it("attempts 30 slow tabs, uploads ten primary PDF/Drive documents and saves before reading finishes in direct mode", async () => {
+    vi.useFakeTimers();
+    // WebCrypto runs outside the fake clock; keep hashing deterministic in this scheduler test.
+    vi.spyOn(crypto.subtle, "digest").mockResolvedValue(new Uint8Array(32).buffer);
+    const tabs = Array.from({ length: 30 }, (_, i) =>
+      report(
+        i + 1,
+        i < 5
+          ? `https://school.test/${i}.pdf`
+          : i < 10
+            ? `https://drive.google.com/file/d/file${i}/view`
+            : `https://school.test/page${i}`,
+      ),
+    );
+    const attempted: number[] = [];
+    let reading = 0,
+      max = 0,
+      uploaded = 0,
+      firstSavedAfterAttempts = 0;
+    const execute = vi.fn(async (input: any): Promise<any[]> => {
+      if (input.func !== extractPage) return [];
+      attempted.push(input.target.tabId);
+      reading++;
+      max = Math.max(max, reading);
+      await new Promise((done) => setTimeout(done, 1800));
+      reading--;
+      const tab = tabs.find((tab) => tab.tabId === input.target.tabId)!;
+      return [
+        {
+          result: page({
+            tabId: tab.tabId,
+            url: tab.url,
+            text: tab.tabId <= 10 ? "" : "Readable content",
+          }),
+        },
+      ];
+    });
+    const uploadInputs: any[] = [];
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(url).startsWith("https://avenire.example")) {
+        await new Promise((done) => setTimeout(done, 500));
+        return new Response("%PDF-original", { headers: { "content-type": "application/pdf" } });
+      }
+      if (String(url).endsWith("/uploads")) {
+        uploadInputs.push(JSON.parse(String(init?.body)));
+        uploaded++;
+        if (uploaded === 1) firstSavedAfterAttempts = attempted.length;
+        return Response.json({
+          ...ticket,
+          status: "completed",
+          file: libraryFile,
+        });
+      }
+      throw new Error(`Unexpected anonymous fallback: ${url}`);
+    });
+    const pending = captureOpenTabs(
+      { scripting: { executeScript: execute } } as unknown as typeof chrome,
+      tabs,
+      true,
+      "https://avenire.example",
+      snapshot(tabs),
+      fetcher,
+    );
+    await vi.advanceTimersByTimeAsync(20_001);
+    const result = await pending;
+    expect(new Set(attempted).size).toBe(30);
+    expect(max).toBe(6);
+    expect(uploadInputs.filter((input) => input.kind === "pdf")).toHaveLength(10);
+    expect(result.saved).toBe(30);
+    expect(firstSavedAfterAttempts).toBeLessThan(30);
+  });
+
+  it("uploads a tab's own document plus ten of its fifteen discovered links", async () => {
+    const url = "https://school.test/original.pdf";
+    const execute = vi.fn(async (input: any): Promise<any[]> => {
+      if (input.func === extractPage) return [{ result: page({ url, text: "" }) }];
+      if (input.func === discoverLinks)
+        return [
+          {
+            result: Array.from({ length: 15 }, (_, i) => ({
+              url: `https://school.test/link${i}.pdf`,
+              name: "",
+              rank: 3,
+              explicit: true,
+            })),
+          },
+        ];
+      return [];
+    });
+    const output = await captureTabs(
+      { scripting: { executeScript: execute } } as unknown as typeof chrome,
+      [report(1, url)],
+      true,
+      {
+        fetcher: async () =>
+          new Response("%PDF-original", { headers: { "content-type": "application/pdf" } }),
+      },
+    );
+    expect(output.files).toHaveLength(11);
+    expect(output.files.filter((file) => file.page.file?.primary)).toHaveLength(1);
+  });
+
+  it("never submits unread Drive or Docs tabs to anonymous capture", async () => {
+    const tabs = [
+      report(1, "https://drive.google.com/file/d/abc/view"),
+      report(2, "https://docs.google.com/document/d/abc/edit"),
+    ];
+    const fetcher = vi.fn();
+    const result = await uploadCapture(
+      "https://avenire.example",
+      snapshot(tabs),
+      {
+        tabs,
+        pages: [],
+        files: [],
+        skipped: tabs.map((tab) => ({ tabId: tab.tabId, reason: "Read in browser timed out" })),
+      },
+      fetcher,
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(result).toEqual({ saved: 0, skipped: 2 });
+  });
+});
+
+it("uses the per-file contract limit even below 1 GiB and redacts private network errors", async () => {
+  const { MAX_SOURCE_UPLOAD_BYTES } = await import("@avenire/contracts");
+  const fetcher = vi.fn(
+    async () =>
+      new Response("x", {
+        headers: {
+          "content-length": String(MAX_SOURCE_UPLOAD_BYTES + 1),
+          "content-type": "application/pdf",
+        },
+      }),
+  );
+  const api = {
+    scripting: {
+      executeScript: vi.fn(async () => {
+        throw new Error("Cannot inject");
+      }),
+    },
+  } as unknown as typeof chrome;
+  const oversized = await captureTabs(api, [report(1, "https://school.test/a.pdf")], true, {
+    fetcher,
+  });
+  expect(oversized.files).toHaveLength(0);
+  expect(oversized.skipped).toContainEqual({ tabId: 1, reason: "Capture file limit exceeded" });
+  const unread = await captureTabs(api, [report(1, "https://school.test/a.pdf")], true, {
+    fetcher: async () => {
+      throw new Error("C:\\Users\\student\\private.pdf?token=secret");
+    },
+  });
+  expect(JSON.stringify(unread.skipped)).not.toMatch(/student|private|secret/);
+});
+
+it("shows a Needs you reason for unread Drive tabs in direct mode", async () => {
+  vi.useFakeTimers();
+  const tabs = [report(1, "https://drive.google.com/file/d/abc/view")];
+  const fetcher = vi.fn();
+  const pending = captureOpenTabs(
+    { scripting: { executeScript: () => new Promise(() => {}) } } as unknown as typeof chrome,
+    tabs,
+    true,
+    "https://avenire.example",
+    snapshot(tabs),
+    fetcher,
+  );
+  await vi.advanceTimersByTimeAsync(6001);
+  expect(await pending).toEqual({
+    saved: 0,
+    skipped: 1,
+    note: "Saved 0 source(s). Needs you · open in browser and capture again. Read in browser timed out",
+  });
+  expect(fetcher).not.toHaveBeenCalled();
 });

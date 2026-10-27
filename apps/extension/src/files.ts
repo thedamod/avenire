@@ -1,9 +1,9 @@
-import type { PageSnapshot, SourceAccess } from "@avenire/contracts";
+import { MAX_SOURCE_UPLOAD_BYTES, type PageSnapshot, type SourceAccess } from "@avenire/contracts";
 import { encodeFileFrame, FILE_FRAME_BYTES } from "@avenire/capture/frames";
 import { classifyAccess } from "@avenire/capture/access";
 import { DOCUMENT_MIMES, documentExtension, type DocumentHint } from "./documents.ts";
 
-export const MAX_CAPTURE_BYTES = 256 * 1024 * 1024;
+export const MAX_CAPTURE_BYTES = 1024 * 1024 * 1024;
 export interface FileBudget {
   count: number;
   bytes: number;
@@ -60,9 +60,11 @@ export async function fetchDocument(
   permitted: (url: string) => boolean = () => true,
 ): Promise<CapturedFile | undefined> {
   const key = hint.url.split("#")[0]!;
-  if (signal.aborted || budget.count >= 10 || budget.urls.has(key)) return undefined;
+  if (signal.aborted || budget.urls.has(key)) return undefined;
+  if (!hint.primary && budget.count >= 10)
+    throw new Error("Discovered-link limit reached (10 per tab)");
   budget.urls.add(key);
-  budget.count++;
+  if (!hint.primary) budget.count++;
   // Count failed attempts too: a page cannot turn capture into an unbounded download crawler.
   const response = await fetcher(hint.url, { credentials: "include", signal });
   if (response.url && !permitted(response.url)) {
@@ -81,7 +83,7 @@ export async function fetchDocument(
     throw new Error(`Document request failed (${response.status})`);
   }
   const length = Number(response.headers.get("content-length"));
-  if (length > MAX_CAPTURE_BYTES - budget.bytes) {
+  if (length > MAX_SOURCE_UPLOAD_BYTES || length > MAX_CAPTURE_BYTES - budget.bytes) {
     await response.body?.cancel();
     throw new Error("Capture file limit exceeded");
   }
@@ -100,7 +102,7 @@ export async function fetchDocument(
       if (part.done) break;
       budget.bytes += part.value.byteLength;
       size += part.value.byteLength;
-      if (signal.aborted || budget.bytes > MAX_CAPTURE_BYTES)
+      if (signal.aborted || size > MAX_SOURCE_UPLOAD_BYTES || budget.bytes > MAX_CAPTURE_BYTES)
         throw new Error("Capture file limit exceeded");
       chunks.push(part.value);
     }
@@ -167,6 +169,7 @@ export async function fetchDocument(
       textLength: 0,
       file: {
         url: hint.url,
+        ...(hint.primary ? { primary: true } : {}),
         ...(hint.originUrl ? { originUrl: hint.originUrl } : {}),
         fileName,
         mimeType,

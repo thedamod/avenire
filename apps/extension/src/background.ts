@@ -1,7 +1,7 @@
 import type { CapturedTab, ExtensionMessage } from "@avenire/contracts";
 import { captureResult, captureTabs } from "./capture.ts";
 import { DesktopChannel } from "./channel.ts";
-import { uploadCapture } from "./direct.ts";
+import { captureOpenTabs } from "./direct.ts";
 import { sendFileFrames } from "./files.ts";
 import { fetchPairing, pairingToken, type PairingState } from "./pairing.ts";
 import { reopen } from "./reopen.ts";
@@ -111,7 +111,7 @@ async function handleRequest(
   }
   capturing = true;
   const startedAt = Date.now();
-  const deadline = startedAt + Math.min(8000, message.deadlineMs ?? 8000);
+  const deadline = startedAt + Math.min(20_000, message.deadlineMs ?? 20_000);
   try {
     let tabs = tabCache;
     try {
@@ -123,22 +123,39 @@ async function handleRequest(
       /* Use pushed tab state when renderers are busy. */
     }
     if (message.tabIds) tabs = tabs.filter((tab) => message.tabIds!.includes(tab.tabId));
-    const output = await captureTabs(chrome, tabs, message.readInBrowser, {
+    let delivery = Promise.resolve();
+    await captureTabs(chrome, tabs, message.readInBrowser, {
       desktop: true,
+      retainFiles: false,
       totalTimeoutMs: Math.max(0, deadline - Date.now() - 100),
+      onTab: (output) => {
+        // Serialize metadata + frames so duplicates cannot steal another tab's binary stream.
+        delivery = delivery.then(async () => {
+          const observations = new Map(output.tabs.map((tab) => [tab.tabId, tab]));
+          tabCache = tabCache.map((tab) => observations.get(tab.tabId) ?? tab);
+          channel?.send({ _tag: "TabsReport", version: 1, tabs: tabCache.map(publicTab) }, socket);
+          if (!channel?.send(captureResult(message.requestId, output, false), socket)) return;
+          await sendFileFrames(
+            message.requestId,
+            output.files,
+            socket,
+            deadline,
+            () => channel?.state.connected ?? false,
+          );
+        });
+        return delivery;
+      },
     });
-    // Access observations must reach desktop before it consumes CaptureResult.
-    const observations = new Map(output.tabs.map((tab) => [tab.tabId, tab]));
-    tabCache = tabCache.map((tab) => observations.get(tab.tabId) ?? tab);
-    channel?.send({ _tag: "TabsReport", version: 1, tabs: tabCache.map(publicTab) }, socket);
-    if (Date.now() >= deadline || !channel?.send(captureResult(message.requestId, output), socket))
-      return;
-    await sendFileFrames(
-      message.requestId,
-      output.files,
+    channel?.send(
+      {
+        _tag: "CaptureResult",
+        version: 1,
+        requestId: message.requestId,
+        pages: [],
+        skipped: [],
+        final: true,
+      },
       socket,
-      deadline,
-      () => channel?.state.connected ?? false,
     );
   } catch {
     channel?.send(
@@ -159,7 +176,11 @@ async function handleRequest(
   }
 }
 
-async function captureCurrentPage(): Promise<{ saved: number; skipped: number; note?: string }> {
+async function captureOpenBrowserTabs(): Promise<{
+  saved: number;
+  skipped: number;
+  note?: string;
+}> {
   if (capturing) throw new Error("Another capture is running");
   // With the desktop connected, it owns the capture: one toast, local files and the same pipeline.
   if (channel?.state.connected && channel.send({ _tag: "CaptureNow", version: 1 }))
@@ -167,17 +188,13 @@ async function captureCurrentPage(): Promise<{ saved: number; skipped: number; n
   capturing = true;
   lastError = undefined;
   try {
-    const active = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
-    if (active?.incognito || active?.id === undefined)
-      throw new Error("This page cannot be captured");
     const pairing = await fetchPairing(appUrl);
     if (!pairing) throw new Error("Not signed in to Avenire");
     const tabs = await pollTabs(chrome, browser, redirects, pairing.readInBrowser);
-    if (!tabs.length) throw new Error("This page is excluded by capture policy");
-    const output = await captureTabs(chrome, tabs, pairing.readInBrowser);
+    if (!tabs.length) throw new Error("Open tabs are excluded by capture policy");
     const stored = await chrome.storage.local.get("senderId");
-    const snapshot = snapshotFor(output.tabs, String(stored.senderId));
-    const result = await uploadCapture(appUrl, snapshot, output);
+    const snapshot = snapshotFor(tabs.map(publicTab), String(stored.senderId));
+    const result = await captureOpenTabs(chrome, tabs, pairing.readInBrowser, appUrl, snapshot);
     signedIn = true;
     return result;
   } catch (error) {
@@ -236,7 +253,7 @@ chrome.runtime.onStartup.addListener(() => {
 });
 chrome.commands.onCommand.addListener((command) => {
   if (command === "capture")
-    void captureCurrentPage()
+    void captureOpenBrowserTabs()
       .then((result) => {
         void chrome.storage.session.set({
           captureNotice: result.note ?? `Saved ${result.saved} source(s).`,
@@ -275,7 +292,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, reply) => {
     return;
   }
   if (message.type === "avenire-capture") {
-    void captureCurrentPage().then(
+    void captureOpenBrowserTabs().then(
       (result) => reply({ ok: true, ...result }),
       () => reply({ ok: false, error: lastError }),
     );

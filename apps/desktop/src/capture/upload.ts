@@ -86,6 +86,14 @@ export interface NativeUploadOptions {
 }
 
 /** Only accepts paths produced by policy-filtered native collectors, never renderer input. */
+/** SMTC/MPRIS can report an unknown position as NaN or a negative; only a real one is kept. */
+const mediaPosition = (native: object | undefined) => {
+  const seconds = native && "positionSec" in native ? native.positionSec : undefined;
+  return typeof seconds === "number" && Number.isFinite(seconds) && seconds >= 0
+    ? { position: { mediaSec: seconds } }
+    : {};
+};
+
 export async function uploadCapturedFiles(
   snapshot: CaptureSnapshot,
   appUrl: string,
@@ -148,10 +156,7 @@ export async function uploadCapturedFiles(
               fileName: basename(path).slice(0, 255),
               capturedAt: snapshot.capturedAt,
               ...(native?.appName ? { appName: native.appName.slice(0, 255) } : {}),
-              ...("positionSec" in (native ?? {}) &&
-              typeof (native as { positionSec?: number }).positionSec === "number"
-                ? { position: { mediaSec: (native as { positionSec: number }).positionSec } }
-                : {}),
+              ...mediaPosition(native),
             },
             ...(options
               ? {

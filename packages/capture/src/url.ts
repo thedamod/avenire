@@ -41,3 +41,17 @@ export function dedupeKeyFor(origin: CaptureOrigin): string {
   // The same bytes are the same source, whichever device or folder they were captured from.
   return `content:${origin.sha256}`;
 }
+
+/** These signed-in browser surfaces cannot be recovered by the anonymous server fetcher. */
+export function requiresBrowserSession(raw: string | undefined): boolean {
+  if (!raw) return false;
+  try {
+    const url = new URL(raw);
+    return (
+      /^https?:$/.test(url.protocol) &&
+      (url.hostname === "drive.google.com" || url.hostname === "docs.google.com")
+    );
+  } catch {
+    return false;
+  }
+}
