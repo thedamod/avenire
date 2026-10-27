@@ -15,6 +15,7 @@ const nav = navigator as Navigator & {
 };
 const browser = detectBrowser(nav.userAgentData?.brands ?? [], navigator.userAgent);
 const redirects = new Map<number, string>();
+const pageOpenedAt = new Map<number, number>();
 let channel: DesktopChannel | undefined;
 let tabCache: readonly CapturedTab[] = [];
 let polling: Promise<void> | undefined;
@@ -45,7 +46,10 @@ async function report(): Promise<void> {
   if (polling) return polling;
   polling = (async () => {
     const fresh = await pollTabs(chrome, browser, redirects);
+    const openIds = new Set(fresh.map((tab) => tab.tabId));
+    for (const id of pageOpenedAt.keys()) if (!openIds.has(id)) pageOpenedAt.delete(id);
     tabCache = fresh.map((tab) => {
+      if (!pageOpenedAt.has(tab.tabId)) pageOpenedAt.set(tab.tabId, Date.now());
       const previous = tabCache.find(
         (entry) =>
           entry.tabId === tab.tabId &&
@@ -133,6 +137,9 @@ async function handleRequest(
     let delivery = Promise.resolve();
     await captureTabs(chrome, tabs, message.readInBrowser, {
       desktop: true,
+      captureId: message.requestId,
+      pageOpenedAt: (tabId) => pageOpenedAt.get(tabId) ?? startedAt,
+      reusableDownloads: message.reusableDownloads ?? [],
       retainFiles: false,
       totalTimeoutMs: Math.max(0, deadline - Date.now() - 100),
       onTab: (output) => {
@@ -233,6 +240,7 @@ async function boot(): Promise<void> {
 
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (tab.incognito) return;
+  if (info.status === "loading" || info.url) pageOpenedAt.set(tabId, Date.now());
   if (tab.pendingUrl && tab.pendingUrl !== tab.url) redirects.set(tabId, tab.pendingUrl);
   if (info.status === "loading" && !tab.pendingUrl) redirects.delete(tabId);
   scheduleReport();
@@ -241,6 +249,7 @@ chrome.tabs.onActivated.addListener(scheduleReport);
 chrome.tabs.onCreated.addListener(scheduleReport);
 chrome.tabs.onRemoved.addListener((tabId) => {
   redirects.delete(tabId);
+  pageOpenedAt.delete(tabId);
   scheduleReport();
 });
 chrome.windows.onFocusChanged.addListener(scheduleReport);

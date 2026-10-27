@@ -43,7 +43,15 @@ export function googleExportUrl(raw: string): string | undefined {
     const format = match[1] === "document" ? "docx" : match[1] === "presentation" ? "pdf" : "xlsx";
     result = new URL(`https://docs.google.com/${match[1]}/d/${match[3]}/export?format=${format}`);
   } else if (url.hostname === "drive.google.com" && drive) {
-    result = new URL(`https://drive.google.com/uc?export=download&id=${drive[2]}`);
+    result = new URL(`https://drive.google.com/uc?export=download&id=${drive[2]}&confirm=t`);
+  } else if (
+    url.hostname === "drive.google.com" &&
+    url.pathname === "/uc" &&
+    url.searchParams.get("export") === "download" &&
+    /^[\w-]+$/.test(url.searchParams.get("id") ?? "")
+  ) {
+    result = new URL(url);
+    result.searchParams.set("confirm", "t");
   } else return undefined;
   const account = url.searchParams.get("authuser") ?? match?.[2] ?? drive?.[1];
   if (account && /^\d{1,2}$/.test(account)) result.searchParams.set("authuser", account);
@@ -77,6 +85,20 @@ export function resolveDocumentUrl(raw: string, base?: string): string | undefin
         !unwrapped.password
       )
         return googleExportUrl(unwrapped.href) ?? unwrapped.href;
+    }
+    if (url.protocol !== "file:") {
+      if (/\/pluginfile\.php\//.test(url.pathname)) {
+        url.searchParams.set("forcedownload", "1");
+        return url.href;
+      }
+      if (
+        /\/files\/\d+\/download\b|\/webapps\/blackboard\/execute\/content\/file|\/bbcswebdav\/|\/d2l\/.*(?:download|DirectFileTopicDownload)/i.test(
+          url.pathname,
+        ) ||
+        url.searchParams.get("download") === "1" ||
+        url.searchParams.get("forcedownload") === "1"
+      )
+        return url.href;
     }
     return DOCUMENT_MIMES[documentExtension(url.href)] ? url.href : undefined;
   } catch {
@@ -114,6 +136,37 @@ export function discoverLinks(doc?: Document, win?: Window): DocumentHint[] {
       /* Malformed publisher links are ignored. */
     }
   };
+  // Drive folders render tiles without ordinary anchors. File IDs still come from the DOM.
+  if (base.hostname === "drive.google.com" && /\/folders\//.test(base.pathname)) {
+    for (const tile of [...d.querySelectorAll<HTMLElement>("[data-id]")].slice(0, 400)) {
+      const id = tile.dataset.id ?? "";
+      const mime = tile.getAttribute("data-mime-type") ?? "";
+      if (!mime && !/^(?:row|option|gridcell)$/.test(tile.getAttribute("role") ?? "")) continue;
+      if (
+        !/^[\w-]+$/.test(id) ||
+        mime === "application/vnd.google-apps.folder" ||
+        tile.querySelector('[aria-label*="Folder"], [data-tooltip*="Folder"]')
+      )
+        continue;
+      const native =
+        mime === "application/vnd.google-apps.document"
+          ? "document"
+          : mime === "application/vnd.google-apps.presentation"
+            ? "presentation"
+            : mime === "application/vnd.google-apps.spreadsheet"
+              ? "spreadsheets"
+              : undefined;
+      const url = native
+        ? `https://docs.google.com/${native}/d/${id}/edit`
+        : `https://drive.google.com/file/d/${id}/view`;
+      const name =
+        tile.getAttribute("data-tooltip") ||
+        tile.getAttribute("aria-label") ||
+        tile.textContent ||
+        "";
+      add(url, name, 3, true);
+    }
+  }
   const root = d.querySelector('#region-main, [role="main"], main') ?? d.body;
   if (!root) return [];
   for (const node of [...root.querySelectorAll("embed[src], object[data], iframe[src]")].slice(
@@ -192,12 +245,17 @@ export function discoverLinks(doc?: Document, win?: Window): DocumentHint[] {
     } catch {
       /* Malformed escapes keep their literal path. */
     }
+    if (/\/pluginfile\.php\//.test(url.pathname)) url.searchParams.set("forcedownload", "1");
     const docPath = /\.(pdf|docx?|pptx?|xlsx?|od[pts]|rtf|txt|md|epub)$/i.test(path);
     if (url.pathname.includes("/pluginfile.php/") && !docPath && !name) continue;
     const explicit =
       !!name ||
       anchor.hasAttribute("download") ||
       url.searchParams.get("forcedownload") === "1" ||
+      url.searchParams.get("download") === "1" ||
+      /\/webapps\/blackboard\/execute\/content\/file|\/bbcswebdav\/|\/d2l\/.*(?:download|DirectFileTopicDownload)/i.test(
+        url.pathname,
+      ) ||
       /\/files\/\d+\/download\b/.test(url.pathname);
     if (/\/mod\/resource\/view\.php$/.test(url.pathname) && name)
       url.searchParams.set("redirect", "1");

@@ -167,7 +167,7 @@ describe("document discovery", () => {
       '<main><nav><a href="/privacy.pdf">Privacy</a></nav><a href="/pluginfile.php/1/notes.pdf">Notes.pdf</a><a href="/pluginfile.php/1/notes.pdf">duplicate</a><a href="/pluginfile.php/1/logo.png?forcedownload=1">logo</a><a href="/mod/resource/view.php?id=1">Resource</a></main>',
     );
     expect(found.map((file) => file.url)).toEqual([
-      "https://school.example/pluginfile.php/1/notes.pdf",
+      "https://school.example/pluginfile.php/1/notes.pdf?forcedownload=1",
     ]);
   });
   it("includes download hints, embedded viewers, and Moodle file activity URLs", () => {
@@ -219,7 +219,7 @@ describe("document discovery", () => {
     ],
     [
       "https://drive.google.com/file/d/abc123/view?authuser=1",
-      "https://drive.google.com/uc?export=download&id=abc123&authuser=1",
+      "https://drive.google.com/uc?export=download&id=abc123&confirm=t&authuser=1",
     ],
   ])("maps Google exports %s", (input, expected) => {
     expect(googleExportUrl(input)).toBe(expected);
@@ -455,7 +455,7 @@ describe("direct upload requests", () => {
   it.each([
     [
       "https://drive.google.com/file/d/abc/view",
-      "https://drive.google.com/uc?export=download&id=abc",
+      "https://drive.google.com/uc?export=download&id=abc&confirm=t",
     ],
     [
       "https://docs.google.com/document/d/abc/edit",
@@ -777,7 +777,7 @@ describe("v1 capture regressions", () => {
     ],
     [
       "https://drive.google.com/file/d/drive-file/view",
-      "https://drive.google.com/uc?export=download&id=drive-file",
+      "https://drive.google.com/uc?export=download&id=drive-file&confirm=t",
     ],
     [
       "https://docs.google.com/document/d/doc/edit",
@@ -1312,4 +1312,45 @@ it("reads a Drive original without waiting for a stalled viewer renderer", async
   expect(fetcher).toHaveBeenCalledTimes(1);
   expect(onTab).toHaveBeenCalledTimes(1);
   expect((await work).files).toHaveLength(1);
+});
+
+it("discovers Drive folder tiles and LMS download links with native browser download URLs", () => {
+  const discover = (html: string, url: string) =>
+    selectDocuments(
+      discoverLinks(new DOMParser().parseFromString(html, "text/html"), {
+        location: { href: url },
+      } as Window),
+      url,
+    );
+  expect(
+    discover(
+      `<main><div data-id="pdf-id" data-mime-type="application/pdf" aria-label="Lecture.pdf"></div><div data-id="doc-id" data-mime-type="application/vnd.google-apps.document" aria-label="Essay"></div><div data-id="folder-id" data-mime-type="application/vnd.google-apps.folder"></div></main>`,
+      "https://drive.google.com/drive/folders/folder",
+    ).map((hint) => hint.url),
+  ).toEqual([
+    "https://drive.google.com/uc?export=download&id=pdf-id&confirm=t",
+    "https://docs.google.com/document/d/doc-id/export?format=docx",
+  ]);
+  const links = discover(
+    `<main><a href="/files/123/download">Canvas</a><a href="/pluginfile.php/3/handout.pdf">Moodle</a><a href="/bbcswebdav/pid-1/content.pdf">Blackboard</a><a href="/d2l/le/content/1/topics/files/download/2/DirectFileTopicDownload">D2L</a><a href="/resource?download=1">Download</a></main>`,
+    "https://school.test/course",
+  );
+  expect(links).toHaveLength(5);
+  expect(links.some((hint) => hint.url.includes("forcedownload=1"))).toBe(true);
+});
+
+it("resolves direct LMS downloads and Drive confirmation links without renderer extraction", () => {
+  for (const url of [
+    "https://canvas.school.test/files/123/download",
+    "https://school.test/webapps/blackboard/execute/content/file?content_id=1",
+    "https://school.test/d2l/le/content/1/topics/files/download/2/DirectFileTopicDownload",
+    "https://school.test/resource?download=1",
+  ])
+    expect(resolveDocumentUrl(url)).toBe(url);
+  expect(resolveDocumentUrl("https://school.test/pluginfile.php/12/content")).toBe(
+    "https://school.test/pluginfile.php/12/content?forcedownload=1",
+  );
+  expect(resolveDocumentUrl("https://drive.google.com/uc?export=download&id=file-id")).toBe(
+    "https://drive.google.com/uc?export=download&id=file-id&confirm=t",
+  );
 });

@@ -1,3 +1,4 @@
+import { downloadDocument, hideCaptureDownloads } from "./downloads.ts";
 import {
   CapturedTab,
   PageSnapshot,
@@ -53,6 +54,17 @@ export function safePage(page: PageSnapshot): PageSnapshot {
     ...page,
     url: normalizeUrl(page.url),
     ...(page.canonicalUrl ? { canonicalUrl: normalizeUrl(page.canonicalUrl) } : {}),
+    ...(page.download
+      ? {
+          download: {
+            ...page.download,
+            url: normalizeUrl(page.download.url),
+            ...(page.download.originUrl
+              ? { originUrl: normalizeUrl(page.download.originUrl) }
+              : {}),
+          },
+        }
+      : {}),
     ...(page.file
       ? {
           file: {
@@ -73,7 +85,11 @@ const readFailureReason = (error: unknown): string => {
     message,
   )
     ? message
-    : "Document could not be read in this browser session";
+    : /^(?:Browser download (?:interrupted: [A-Z_]+|timed out|was saved outside Avenire))$/.test(
+          message,
+        )
+      ? message
+      : "Document could not be read in this browser session";
 };
 
 export async function captureTabs(
@@ -86,6 +102,10 @@ export async function captureTabs(
     readonly fetcher?: typeof fetch;
     /** Desktop reads local files itself and records their private paths. */
     readonly desktop?: boolean;
+    readonly captureId?: string;
+    readonly reusableDownloads?: readonly string[];
+    /** Browser-observed navigation time for protected viewers that reject script injection. */
+    readonly pageOpenedAt?: (tabId: number) => number | undefined;
     /** Called once per completed tab; lets both transports consume and release originals early. */
     readonly onTab?: (output: CaptureOutput) => Promise<void>;
     readonly retainFiles?: boolean;
@@ -101,6 +121,8 @@ export async function captureTabs(
     (options.desktop || !tabs.some((tab) => /^file:/i.test(tab.finalUrl ?? tab.url)))
   )
     return { tabs: tabs.map(publicTab), pages: [], files: [], skipped: [] };
+  const restoreDownloads = options.desktop ? await hideCaptureDownloads(api) : undefined;
+  const captureId = options.captureId ?? crypto.randomUUID();
   const deadline = Date.now() + (options.totalTimeoutMs ?? 20_000);
   const pages: PageSnapshot[] = [];
   const files: CapturedFile[] = [];
@@ -199,6 +221,22 @@ export async function captureTabs(
         if ((!local && !readInBrowser) || (local && options.desktop)) return;
         if (local && !(await api.extension.isAllowedFileSchemeAccess()))
           throw new Error("Open Avenire desktop to capture files from this computer");
+        let pageSince = options.pageOpenedAt?.(tab.tabId) ?? Date.now();
+        if (options.desktop) {
+          try {
+            const times = await within(
+              api.scripting.executeScript({
+                target: { tabId: tab.tabId },
+                func: () => performance.timeOrigin,
+              }),
+              Math.min(200, remaining),
+            );
+            const value = times[0]?.result;
+            if (typeof value === "number" && Number.isFinite(value) && value > 0) pageSince = value;
+          } catch {
+            /* Restricted PDF viewers can only reuse a copy from this capture. */
+          }
+        }
         const knownDocument = resolveDocumentUrl(tab.finalUrl ?? tab.url);
         let page = emptyPage(tab);
         if (!knownDocument) {
@@ -253,6 +291,21 @@ export async function captureTabs(
               if (options.desktop) return false;
               if (!(await api.extension.isAllowedFileSchemeAccess()))
                 throw new Error("Open Avenire desktop to capture files from this computer");
+            }
+            if (options.desktop && /^https?:/i.test(hint.url)) {
+              const downloaded = await downloadDocument(
+                api,
+                hint,
+                page,
+                budget,
+                controller.signal,
+                captureId,
+                pageSince,
+                options.reusableDownloads,
+                (url) => permittedTabs([{ ...current, url, finalUrl: url }]).length > 0,
+              );
+              if (downloaded && !controller.signal.aborted) accept(downloaded);
+              return false;
             }
             const file = await fetchDocument(
               hint,
@@ -326,7 +379,12 @@ export async function captureTabs(
                 .length
             )
               continue;
-            if (frame.frameId === 0 && tabFiles.some((file) => file.page.file?.primary)) continue;
+            if (
+              frame.frameId === 0 &&
+              (tabFiles.some((file) => file.page.file?.primary) ||
+                tabPages.some((page) => page.download?.primary))
+            )
+              continue;
             if (!viewer.memory) {
               hints.push({
                 url: viewer.url,
@@ -455,7 +513,8 @@ export async function captureTabs(
       // A document tab's editor/viewer shell is not a substitute for its original.
       if (
         resolveDocumentUrl(tab.finalUrl ?? tab.url) &&
-        !tabFiles.some((file) => file.page.file?.primary)
+        !tabFiles.some((file) => file.page.file?.primary) &&
+        !tabPages.some((page) => page.download?.primary)
       ) {
         for (let index = tabPages.length - 1; index >= 0; index--)
           if (!tabPages[index]!.file) tabPages.splice(index, 1);
@@ -471,8 +530,12 @@ export async function captureTabs(
       });
     }
   };
-  await Promise.all(Array.from({ length: Math.min(6, tabs.length) }, worker));
-  await Promise.all(deliveries);
+  try {
+    await Promise.all(Array.from({ length: Math.min(6, tabs.length) }, worker));
+    await Promise.all(deliveries);
+  } finally {
+    await restoreDownloads?.();
+  }
   if (deliveryErrors.length) throw deliveryErrors[0];
   for (const tab of tabs.slice(next))
     skipped.push({ tabId: tab.tabId, reason: "Read in browser timed out" });
