@@ -1,4 +1,3 @@
-import { isEngaged } from "@avenire/capture/candidates";
 import * as Http from "node:http";
 
 import { CapturedTab, ExtensionAuth } from "@avenire/contracts";
@@ -135,5 +134,5 @@ export function latestTabs(): readonly CapturedTab[] {
     }
     tabs.push(...report.tabs);
   }
-  return tabs.filter((tab) => tab.activeInWindow || isEngaged(tab) || tab.selection).slice(0, 200);
+  return tabs.slice(0, 200);
 }

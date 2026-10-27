@@ -1,6 +1,6 @@
 import { pickBestPath, rankCandidatePaths } from "../../src/capture/path-ranking.ts";
 import { SCANNABLE_EXTENSIONS } from "../../src/capture/scannable-files.ts";
-import type { CaptureContext } from "./capture-context.ts";
+import { collectorTimeout, type CaptureContext } from "./capture-context.ts";
 import { describeExecError } from "./exec-note.ts";
 import { execPowerShell } from "./ps-queue.ts";
 
@@ -311,7 +311,8 @@ export function requestProcessScan(
   exec: BatchExec = scanProcessFilesBatch,
   windowMs = 10,
 ): Promise<string[]> {
-  if (!Number.isInteger(pid) || pid <= 0) return Promise.resolve([]);
+  if (!Number.isInteger(pid) || pid <= 0 || Date.now() >= ctx.deadline) return Promise.resolve([]);
+  timeoutMs = collectorTimeout(ctx, timeoutMs);
   let st = batchers.get(ctx);
   if (!st) {
     st = { results: new Map() };
@@ -353,7 +354,7 @@ function startBatch(
     };
     let result = new Map<number, string[]>();
     try {
-      result = await exec(take, ctx.notes, batch.timeoutMs);
+      result = await exec(take, ctx.notes, collectorTimeout(ctx, batch.timeoutMs));
     } catch (e) {
       ctx.notes.push(`win:scan:fail:${describeExecError(e)}`);
     }

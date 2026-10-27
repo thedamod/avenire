@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { basename } from "node:path";
-import { captureCandidates } from "@avenire/capture/candidates";
+import { localFilePath, localBasename as basename } from "./local-file.ts";
 import { applyPolicy } from "@avenire/capture/policy";
 import { classifyAccess } from "@avenire/capture/access";
 import { normalizeUrl } from "@avenire/capture/url";
@@ -22,22 +21,34 @@ import type { ExtensionChannel, BrowserPage } from "./channel.ts";
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 export const tabKey = (tab: CapturedTab) =>
   `tab:${tab.browser}:${tab.windowId}:${tab.tabId}:${hash(normalizeUrl(tab.url)).slice(0, 16)}`;
+const tabFilePath = (tab: CapturedTab, platform: CaptureSnapshot["platform"]) => {
+  try {
+    return localFilePath(tab.finalUrl ?? tab.url, platform);
+  } catch {
+    return undefined;
+  }
+};
 const localKey = (path: string) => `local:${hash(path).slice(0, 20)}`;
 export function captureItems(snapshot: CaptureSnapshot): CaptureStarted["items"] {
   const items = new Map<string, CaptureStarted["items"][number]>();
-  const { candidates } = captureCandidates(snapshot, hash);
   for (const tab of snapshot.tabs) {
-    if (!candidates.some((candidate) => candidate.url === normalizeUrl(tab.finalUrl ?? tab.url)))
-      continue;
     const key = tabKey(tab);
     items.set(key, {
       key,
-      title: tab.title.slice(0, 200),
+      title: (tabFilePath(tab, snapshot.platform)
+        ? basename(tabFilePath(tab, snapshot.platform)!)
+        : tab.title
+      ).slice(0, 200),
       kind: tab.likelyPdf ? "pdf" : "web-page",
       status: "pending",
     });
   }
   snapshot.windows.forEach((entry, index) => {
+    if (
+      entry.filePath &&
+      snapshot.tabs.some((tab) => tabFilePath(tab, snapshot.platform) === entry.filePath)
+    )
+      return;
     const key = entry.filePath ? localKey(entry.filePath) : `window:${index}`;
     items.set(key, {
       key,
@@ -94,6 +105,7 @@ export async function runCapturePipeline(options: {
     { access: "paywalled" | "login-required"; summary: string }
   >();
   let blocked = [...initial.blocked];
+  let resolvedSnapshot = initial.snapshot;
   const browser = async (result: BrowserPage) => {
     const { tab, page } = result;
     const baseKey = tabKey(tab);
@@ -107,6 +119,14 @@ export async function runCapturePipeline(options: {
       });
     try {
       signal.throwIfAborted();
+      if ([page.url, page.canonicalUrl, page.file?.url].some((url) => url && /^file:/i.test(url))) {
+        stream.progress({
+          key,
+          status: "skipped",
+          reason: "Local files are captured by Avenire desktop.",
+        });
+        return;
+      }
       // Treat extraction metadata as untrusted, including navigations after the instant report.
       const checked = applyPolicy({
         ...initial.snapshot,
@@ -206,8 +226,14 @@ export async function runCapturePipeline(options: {
   };
   const nativeWork = (async () => {
     const resolved = applyPolicy(await options.resolve());
+    resolvedSnapshot = resolved.snapshot;
+    blocked.push(...resolved.blocked);
     signal.throwIfAborted();
     const keyForPath = (path: string) => {
+      const fileTab = resolved.snapshot.tabs.find(
+        (tab) => tabFilePath(tab, resolved.snapshot.platform) === path,
+      );
+      if (fileTab) return tabKey(fileTab);
       const index = resolved.snapshot.windows.findIndex((entry) => entry.filePath === path);
       const resolvedWindow = resolved.snapshot.windows[index];
       const initialIndex = initial.snapshot.windows.findIndex(
@@ -304,10 +330,14 @@ export async function runCapturePipeline(options: {
     snapshot: {
       ...initial.snapshot,
       windows: [],
-      media: initial.snapshot.media.filter((entry) => !entry.filePath),
-      tabs: initial.snapshot.tabs
+      media: resolvedSnapshot.media.filter((entry) => !entry.filePath),
+      tabs: resolvedSnapshot.tabs
         .filter(
-          (tab) => (!processed.has(tabKey(tab)) || tab.selection) && !blockedTabs.has(tabKey(tab)),
+          (tab) =>
+            /^https?:/i.test(tab.url) &&
+            /^https?:/i.test(tab.finalUrl ?? tab.url) &&
+            (!processed.has(tabKey(tab)) || tab.selection) &&
+            !blockedTabs.has(tabKey(tab)),
         )
         .map((tab) => ({
           ...tab,

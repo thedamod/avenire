@@ -167,7 +167,7 @@ it("enforces extension Origin, JSON size, socket cleanup and account isolation",
   expect((await unpaired.next("Rejected")).reason).toBe("account-mismatch");
 });
 
-it("correlates requests, extracts four tabs per batch, and passes readInBrowser", async () => {
+it("correlates requests, extracts six tabs per batch, and passes readInBrowser", async () => {
   const h = await harness();
   const c = await client(h.url);
   await authenticate(c);
@@ -179,7 +179,7 @@ it("correlates requests, extracts four tabs per batch, and passes readInBrowser"
   await report(c, tabs);
   const captured = h.channel.capture(tabs, false);
   const first = await c.next("CaptureRequest");
-  expect(first.tabIds).toEqual([1, 2, 3, 4]);
+  expect(first.tabIds).toEqual([1, 2, 3, 4, 5, 6]);
   expect(first.readInBrowser).toBe(false);
   c.send({
     _tag: "CaptureResult",
@@ -189,7 +189,7 @@ it("correlates requests, extracts four tabs per batch, and passes readInBrowser"
     skipped: [],
   });
   const second = await c.next("CaptureRequest");
-  expect(second.tabIds).toEqual([5, 6, 7]);
+  expect(second.tabIds).toEqual([7]);
   c.send({
     _tag: "CaptureResult",
     version: 1,
@@ -339,18 +339,18 @@ it("enforces the 256 MiB per-file and aggregate contract limit before receiving 
   }
 });
 
-it("bounds extraction to 2.5 seconds per batch and 4 seconds total, and reopen to 2 seconds", async () => {
+it("bounds extraction to 3 seconds per batch and 8 seconds total, and reopen to 2 seconds", async () => {
   const h = await harness();
   const c = await client(h.url);
   await authenticate(c);
-  const tabs = Array.from({ length: 12 }, (_, index) => ({ ...tab, tabId: index + 1 }));
+  const tabs = Array.from({ length: 18 }, (_, index) => ({ ...tab, tabId: index + 1 }));
   await report(c, tabs);
   const start = performance.now();
   expect(await h.channel.capture(tabs, true)).toEqual([]);
-  expect(performance.now() - start).toBeLessThan(4400);
+  expect(performance.now() - start).toBeLessThan(8400);
   const requests = c.messages.filter((message) => message._tag === "CaptureRequest");
-  expect(requests).toHaveLength(2);
+  expect(requests).toHaveLength(3);
   const reopenStart = performance.now();
   expect(await h.channel.reopen(tab.url)).toBe(false);
   expect(performance.now() - reopenStart).toBeLessThan(2300);
-}, 8000);
+}, 12000);

@@ -46,6 +46,51 @@ export interface ReopenResult {
   readonly note?: "changed-since-capture" | "missing" | "other-device";
 }
 
+export interface CaptureReceiptSummary {
+  readonly files: readonly LibraryFile[];
+  readonly skipped: ReadonlyArray<{ readonly title: string; readonly reason: string }>;
+  readonly blocked: ReadonlyArray<{ readonly title: string; readonly category: BlockedCategory }>;
+}
+
+/**
+ * Everything the global capture overlay renders. Main owns it: started/progress events fill
+ * `items`, then the app window's receipt (or failure) moves `phase` to done/failed.
+ */
+export interface CaptureOverlayState {
+  readonly id: string;
+  readonly phase: "collecting" | "submitting" | "done" | "failed";
+  readonly closing?: boolean;
+  readonly items: ReadonlyArray<Omit<CaptureProgress, "id" | "seq"> & { readonly title: string }>;
+  readonly receipt?: CaptureReceiptSummary;
+  readonly error?: string;
+  /** The capture accelerator, for the keycaps in the header. */
+  readonly shortcut?: string;
+}
+
+/** Exposed on `window.avenireOverlay` in the bundled, always-on-top capture overlay only. */
+export interface AvenireOverlayBridge {
+  readonly platform: NodeJS.Platform;
+  readonly onState: (callback: (state: CaptureOverlayState) => void) => () => void;
+  /** Ask the app window to trash this capture's files. */
+  readonly undo: (captureId: string) => Promise<void>;
+  /** Reopen a saved file through the desktop reopen executor, else show it in Avenire. */
+  readonly open: (fileId: string) => Promise<void>;
+  readonly openSources: () => Promise<void>;
+  /** While hovered, main keeps the overlay up and lets it take clicks. */
+  readonly setHovered: (hovered: boolean) => Promise<void>;
+  /** The overlay finished its exit animation; main hides the window. */
+  readonly dismissed: () => Promise<void>;
+  /** Content height in CSS px; main resizes the window and keeps it anchored bottom-right. */
+  readonly resize: (height: number) => Promise<void>;
+}
+
+/** What the overlay asks the signed-in app window to do on its behalf. */
+export type CaptureOverlayAction = {
+  readonly type: "undo";
+  readonly captureId: string;
+  readonly fileIds: readonly string[];
+};
+
 /** Exposed on `window.avenire` in the desktop shell; absent in a normal browser. */
 export interface AvenireWindowBridge {
   readonly getWindowChrome: () => Promise<DesktopWindowChrome | null>;
@@ -66,6 +111,15 @@ export interface AvenireDesktopBridge extends AvenireWindowBridge {
     options?: { readonly readInBrowser: boolean },
   ) => Promise<void>;
   readonly acknowledgeCapture: (captureId: string) => Promise<void>;
+  /** True when the global overlay shows captures; the app then shows no toast of its own. */
+  readonly captureOverlay: boolean;
+  /** The app window submitted the capture: forwards the receipt to the overlay. */
+  readonly reportCaptureReceipt: (
+    captureId: string,
+    receipt: CaptureReceiptSummary,
+  ) => Promise<void>;
+  readonly reportCaptureFailed: (captureId: string, message: string) => Promise<void>;
+  readonly onCaptureAction: (callback: (action: CaptureOverlayAction) => void) => () => void;
   readonly setCaptureShortcut: (accelerator: string) => Promise<boolean>;
   readonly getCaptureShortcut: () => Promise<string | null>;
   readonly getOnboardingPreferences: () => Promise<UserSettingsPatch | null>;

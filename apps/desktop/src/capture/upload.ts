@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { basename, extname } from "node:path";
+import { extname } from "node:path";
 import type {
   CaptureSnapshot,
   DesktopCaptureUploads,
   DesktopSetupCapture,
   FileKind,
 } from "@avenire/contracts";
+import { localBasename as basename } from "./local-file.ts";
 import { hostname } from "node:os";
 import { HashLru, mapConcurrent, UploadGate } from "./hash-cache.ts";
 import type { LocalOriginRegistry } from "./registry.ts";
@@ -107,7 +108,7 @@ export async function uploadCapturedFiles(
     }
     const hex = createHash("sha256").update(`${snapshot.id}\0${path}`).digest("hex").slice(0, 32);
     const idempotencyKey = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-    const native = [...snapshot.windows, ...snapshot.media].find(
+    const native = [...snapshot.media, ...snapshot.windows].find(
       (entry) => entry.filePath === path,
     );
     try {
@@ -130,7 +131,8 @@ export async function uploadCapturedFiles(
               fileName: basename(path).slice(0, 255),
               capturedAt: snapshot.capturedAt,
               ...(native?.appName ? { appName: native.appName.slice(0, 255) } : {}),
-              ...("positionSec" in (native ?? {})
+              ...("positionSec" in (native ?? {}) &&
+              typeof (native as { positionSec?: number }).positionSec === "number"
                 ? { position: { mediaSec: (native as { positionSec: number }).positionSec } }
                 : {}),
             },

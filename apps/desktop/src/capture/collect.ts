@@ -1,5 +1,12 @@
 import * as Crypto from "node:crypto";
-import { fileURLToPath } from "node:url";
+import { localFilePath } from "./local-file.ts";
+import {
+  cachedNative,
+  collectNative,
+  correlateBrowserMedia,
+  mergeNativeWindows,
+} from "./native.ts";
+import { createCaptureContext } from "./research/electron/collectors/capture-context.ts";
 import { CaptureId } from "@avenire/contracts";
 import type {
   CaptureSnapshot,
@@ -80,18 +87,20 @@ export async function collectSnapshot(
   // Browser file URLs are device paths, not URLs the server can fetch.
   // Preserve them as native upload candidates; private tabs never become candidates.
   for (const tab of tabs) {
-    if (tab.incognito || !tab.url.startsWith("file:")) continue;
+    if (tab.incognito || !(tab.finalUrl ?? tab.url).startsWith("file:")) continue;
     try {
       browserFiles.push({
         appName: "Browser",
         title: tab.title,
-        filePath: fileURLToPath(tab.url),
+        filePath: localFilePath(tab.finalUrl ?? tab.url),
         foreground: tab.activeInWindow,
       });
     } catch {
       notes.push("A browser file URL could not be resolved on this device.");
     }
   }
+  const native = options.foreground ? await collectNative() : { windows: [], media: [], notes: [] };
+  const correlated = correlateBrowserMedia(native, tabs);
   const platform =
     process.platform === "darwin" || process.platform === "win32" || process.platform === "linux"
       ? process.platform
@@ -101,26 +110,34 @@ export async function collectSnapshot(
     capturedAt,
     deviceId: installId,
     platform,
-    windows: [...values.flatMap((value) => value.windows ?? []), ...browserFiles],
-    tabs,
-    media: values.flatMap((value) => value.media ?? []),
+    windows: mergeNativeWindows(
+      values.flatMap((value) => value.windows ?? []),
+      correlated.windows,
+      browserFiles,
+    ),
+    tabs: correlated.tabs,
+    media: correlated.media,
     ...(selectionText === undefined ? {} : { selectionText }),
-    collectorNotes: notes,
+    collectorNotes: [...notes, ...correlated.notes],
   };
 }
 
 /** The hotkey never waits on an OS call, session lookup, disk read, or extraction. */
 export function instantCapture(capturedAt: string, foreground: boolean) {
   const observation = foreground ? cachedForeground() : { windows: [], notes: [] };
-  const tabs = latestTabs();
+  const native = correlateBrowserMedia(
+    foreground ? cachedNative() : { windows: [], media: [], notes: [] },
+    latestTabs(),
+  );
+  const tabs = native.tabs;
   const browserFiles: CapturedWindow[] = [];
   for (const tab of tabs) {
-    if (tab.incognito || !tab.url.startsWith("file:")) continue;
+    if (tab.incognito || !(tab.finalUrl ?? tab.url).startsWith("file:")) continue;
     try {
       browserFiles.push({
         appName: "Browser",
         title: tab.title,
-        filePath: fileURLToPath(tab.url),
+        filePath: localFilePath(tab.finalUrl ?? tab.url),
         foreground: tab.activeInWindow,
       });
     } catch {
@@ -133,16 +150,30 @@ export function instantCapture(capturedAt: string, foreground: boolean) {
     deviceId: installId,
     platform:
       process.platform === "darwin" || process.platform === "win32" ? process.platform : "linux",
-    windows: [...observation.windows, ...browserFiles],
+    windows: mergeNativeWindows(observation.windows, native.windows, browserFiles),
     tabs,
-    media: [],
-    collectorNotes: [],
+    media: native.media,
+    collectorNotes: native.notes,
   };
   return {
     snapshot,
     resolve: async () => {
-      const resolved = await resolveForeground(observation);
-      return { ...snapshot, windows: [...resolved.windows, ...browserFiles] };
+      const notes: string[] = [];
+      const ctx = createCaptureContext(notes, 9000);
+      const [resolved, filled] = await Promise.all([
+        resolveForeground(observation, ctx),
+        foreground
+          ? collectNative(observation.app, ctx)
+          : Promise.resolve({ windows: [], media: [], notes: [] }),
+      ]);
+      const correlated = correlateBrowserMedia(filled, tabs);
+      return {
+        ...snapshot,
+        tabs: correlated.tabs,
+        windows: mergeNativeWindows(resolved.windows, correlated.windows, browserFiles),
+        media: correlated.media,
+        collectorNotes: [...resolved.notes, ...notes],
+      };
     },
   };
 }

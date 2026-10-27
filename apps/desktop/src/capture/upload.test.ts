@@ -81,3 +81,39 @@ it("previews only unique sources supported by ingestion, without exposing device
   ]);
   expect(JSON.stringify(sources)).not.toContain("/home/student");
 });
+
+it("uses the media session position in LocalFile metadata and records the owner's private origin", async () => {
+  const { LocalOriginRegistry } = await import("./registry.ts");
+  const { UploadGate } = await import("./hash-cache.ts");
+  const registry = new LocalOriginRegistry("/unused");
+  const record = vi.spyOn(registry, "record").mockResolvedValue();
+  const path = "C:\\Users\\<user>\\Downloads\\MATH U113 Course Handout.pdf";
+  const local = { path, sizeBytes: 100, sha256: "a".repeat(64), mtimeMs: 1 };
+  mocks.acquire.mockImplementationOnce(async (...args: unknown[]) => {
+    await (
+      args[2] as { onLocalUploaded: (file: { id: string }, origin: typeof local) => Promise<void> }
+    ).onLocalUploaded({ id: "uploaded" }, local);
+    return { id: "uploaded" };
+  });
+  const native = {
+    ...snapshot,
+    platform: "win32" as const,
+    windows: [{ appName: "Browser", title: "Course handout", foreground: false, filePath: path }],
+    media: [{ appName: "Browser", title: "Course handout", filePath: path, positionSec: 42 }],
+  };
+  await uploadCapturedFiles(native, "https://app.test", vi.fn(), undefined, {
+    owner: "alice",
+    registry,
+    gate: new UploadGate(),
+    keyForPath: () => "local",
+    progress: vi.fn(),
+  });
+  const options = (mocks.acquire.mock.calls.at(-1) as unknown as [unknown, unknown, any])[2];
+  expect(options.localOrigin).toMatchObject({
+    _tag: "LocalFile",
+    fileName: "MATH U113 Course Handout.pdf",
+    position: { mediaSec: 42 },
+  });
+  expect(JSON.stringify(options.localOrigin)).not.toMatch(/C:|Users|Downloads/);
+  expect(record).toHaveBeenCalledWith("alice", "uploaded", local);
+});

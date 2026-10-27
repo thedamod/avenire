@@ -3,6 +3,19 @@ import type { AvenireDesktopBridge, CapturePayload } from "./bridge.ts";
 
 const bridge: AvenireDesktopBridge = {
   platform: process.platform,
+  captureOverlay: process.argv?.includes("--avenire-capture-overlay") ?? false,
+  reportCaptureReceipt: (id, receipt) =>
+    ipcRenderer.invoke("avenire:capture-receipt", id, receipt).then(() => undefined),
+  reportCaptureFailed: (id, message) =>
+    ipcRenderer.invoke("avenire:capture-failed", id, message).then(() => undefined),
+  onCaptureAction(callback) {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      action: import("./bridge.ts").CaptureOverlayAction,
+    ) => callback(action);
+    ipcRenderer.on("avenire:capture-action", listener);
+    return () => ipcRenderer.removeListener("avenire:capture-action", listener);
+  },
   getWindowChrome: () => ipcRenderer.invoke("avenire:window-chrome"),
   setWindowTheme: (theme) =>
     ipcRenderer.invoke("avenire:window-theme", theme).then(() => undefined),

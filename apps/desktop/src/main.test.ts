@@ -77,6 +77,10 @@ vi.mock("./capture/collect.ts", async (importOriginal) => ({
     };
   },
 }));
+vi.mock("./capture/native.ts", () => ({
+  startNativePoll: () => () => {},
+  clearNativeCache: vi.fn(),
+}));
 vi.mock("./capture/foreground.ts", () => ({ startForegroundPoll: () => () => {} }));
 vi.mock("./capture/research/electron/collectors/ps-queue.ts", () => ({
   prewarmPowerShell: async () => {},
@@ -174,6 +178,9 @@ vi.mock("electron", () => ({
     setBounds = vi.fn();
     setAlwaysOnTop = vi.fn();
     setVisibleOnAllWorkspaces = vi.fn();
+    setMenu = vi.fn();
+    setIgnoreMouseEvents = vi.fn();
+    getBounds = () => ({ width: 380, height: 180 });
     isMinimized = () => false;
     restore = vi.fn();
     destroy = vi.fn();
@@ -218,7 +225,7 @@ it("opens authenticated assets without preload and rejects iframe/foreign IPC", 
   const main = mocks.windows[0]!;
   const open = main.webContents.setWindowOpenHandler.mock.calls[0]![0];
   expect(open({ url: "https://app.avenire.space/a/token.signature" })).toEqual({ action: "deny" });
-  const asset = mocks.windows[1]!;
+  const asset = mocks.windows.at(-1)!;
   expect(asset.options.webPreferences.session).toBe(main.webContents.session);
   expect(asset.options.webPreferences.preload).toBeUndefined();
   expect(asset.options.webPreferences).toMatchObject({
@@ -228,7 +235,7 @@ it("opens authenticated assets without preload and rejects iframe/foreign IPC", 
   });
   open({ url: "https://app.avenire.space/settings" });
   open({ url: "file:///private/secret" });
-  expect(mocks.windows).toHaveLength(2);
+  expect(mocks.windows).toHaveLength(3);
   expect(mocks.openExternal).not.toHaveBeenCalled();
   open({ url: "https://example.com/notes" });
   expect(mocks.openExternal).toHaveBeenCalledWith("https://example.com/notes");
@@ -563,13 +570,105 @@ it("drops an in-flight receipt on an account switch and rejects foreign reopen I
   expect(() => mocks.ipc.get("avenire:extension-connected")!(foreign)).toThrow("Untrusted");
 });
 
+it("keeps capture global, guards overlay actions and replays its state after a renderer reload", async () => {
+  const main = mocks.windows[0]! as any;
+  const overlay = mocks.windows.find((target) =>
+    String(target.options.webPreferences?.preload).endsWith("overlay-preload.cjs"),
+  )! as any;
+  overlay.webContents.mainFrame.url = pathToFileURL(
+    overlay.options.webPreferences.preload.replace("overlay-preload.cjs", "capture-overlay.html"),
+  ).href;
+  const trusted = { sender: main.webContents, senderFrame: main.webContents.mainFrame };
+  const overlayEvent = { sender: overlay.webContents, senderFrame: overlay.webContents.mainFrame };
+  const ready = mocks.ipc.get("avenire:capture-ready")!;
+  ready(trusted, true, "overlay-owner");
+  main.showInactive.mockClear();
+  main.show.mockClear();
+  main.focus.mockClear();
+  await mocks.ipc.get("avenire:capture-now")!(trusted);
+  expect(main.showInactive).not.toHaveBeenCalled();
+  expect(main.show).not.toHaveBeenCalled();
+  expect(main.focus).not.toHaveBeenCalled();
+  const state = () =>
+    overlay.webContents.send.mock.calls
+      .filter(([channel]: [string]) => channel === "avenire:overlay-state")
+      .at(-1)![1];
+  expect(state().phase).toBe("submitting");
+  ready(trusted, false);
+  ready(trusted, true, "overlay-owner");
+  expect(state().phase).toBe("submitting");
+  for (const channel of ["ready", "hovered", "resize", "dismissed", "undo", "open", "sources"]) {
+    await expect(
+      Promise.resolve().then(() =>
+        mocks.ipc.get(`avenire:overlay-${channel}`)!({
+          ...overlayEvent,
+          senderFrame: { url: overlayEvent.senderFrame.url },
+        }),
+      ),
+    ).rejects.toThrow("Untrusted");
+  }
+  const file = {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    title: "Lecture",
+    kind: "pdf",
+    placement: "inbox",
+    source: "capture",
+    tags: [],
+    folderIds: [],
+    contentModifiedAt: null,
+    archivedAt: null,
+    sourceUrl: null,
+    origin: null,
+    access: "open",
+    storageKey: null,
+    mimeType: null,
+    sizeBytes: null,
+    captureId: null,
+    mediaPositionSec: null,
+    preview: null,
+    purgeAt: null,
+    createdAt: "now",
+    updatedAt: "now",
+  };
+  const receipt = { files: [file], skipped: [], blocked: [] };
+  mocks.ipc.get("avenire:capture-receipt")!(
+    { ...trusted, senderFrame: { url: trusted.senderFrame.url } },
+    "capture",
+    receipt,
+  );
+  expect(state().phase).toBe("submitting");
+  mocks.ipc.get("avenire:capture-failed")!(trusted, "capture", "Retry");
+  expect(state().phase).toBe("failed");
+  await mocks.ipc.get("avenire:capture-now")!(trusted);
+  expect(state().phase).toBe("submitting");
+  mocks.ipc.get("avenire:capture-receipt")!(trusted, "capture", receipt);
+  expect(state().phase).toBe("done");
+  main.webContents.send.mockClear();
+  mocks.ipc.get("avenire:overlay-undo")!(overlayEvent, "wrong");
+  expect(main.webContents.send).not.toHaveBeenCalled();
+  mocks.ipc.get("avenire:overlay-undo")!(overlayEvent, "capture");
+  expect(main.webContents.send).toHaveBeenLastCalledWith("avenire:capture-action", {
+    type: "undo",
+    captureId: "capture",
+    fileIds: [file.id],
+  });
+  await mocks.ipc.get("avenire:overlay-open")!(overlayEvent, file.id);
+  expect(main.loadURL).toHaveBeenLastCalledWith(`https://app.avenire.space/sources/${file.id}`);
+  await mocks.ipc.get("avenire:overlay-sources")!(overlayEvent);
+  expect(main.loadURL).toHaveBeenLastCalledWith("https://app.avenire.space/?tab=sources");
+  ready(trusted, true, "different-owner");
+  main.webContents.send.mockClear();
+  mocks.ipc.get("avenire:overlay-undo")!(overlayEvent, "capture");
+  expect(main.webContents.send).not.toHaveBeenCalled();
+});
+
 it("first launch stays in bundled setup and validates its exact frame before completing", async () => {
   mocks.completed = false;
   mocks.windows.length = 0;
   mocks.shortcuts.clear();
   vi.resetModules();
   await import("./main.ts");
-  await vi.waitFor(() => expect(mocks.windows.length).toBe(1));
+  await vi.waitFor(() => expect(mocks.windows.length).toBe(2));
   const setup = mocks.windows[0] as any;
   expect(setup.options.webPreferences.preload).toContain("setup-preload.cjs");
   expect(setup.loadURL).not.toHaveBeenCalled();
@@ -584,7 +683,7 @@ it("first launch stays in bundled setup and validates its exact frame before com
   ).toThrow("Untrusted");
   const complete = mocks.ipc.get("avenire:setup-complete")!;
   await expect(complete(trusted, { foregroundCapture: "yes" })).rejects.toThrow();
-  expect(mocks.windows).toHaveLength(1);
+  expect(mocks.windows).toHaveLength(2);
   expect(mocks.ipc.get("avenire:setup-hotkeys")!(trusted, true)).toMatchObject({
     hotkeysEnabled: true,
   });
@@ -603,9 +702,9 @@ it("first launch stays in bundled setup and validates its exact frame before com
   expect(mocks.collect).toHaveBeenCalledWith(expect.any(String), { foreground: false });
   mocks.collect.mockClear();
   await complete(trusted, { foregroundCapture: false });
-  expect(mocks.windows[1]!.loadURL).toHaveBeenCalledWith("https://app.avenire.space");
+  expect(mocks.windows.at(-1)!.loadURL).toHaveBeenCalledWith("https://app.avenire.space");
   expect(setup.close).toHaveBeenCalledOnce();
-  const main = mocks.windows[1]!;
+  const main = mocks.windows.at(-1)!;
   const appSender = { sender: main.webContents, senderFrame: main.webContents.mainFrame };
   mocks.ipc.get("avenire:capture-ready")!(appSender, true, "onboarding-owner");
   await vi.waitFor(() =>

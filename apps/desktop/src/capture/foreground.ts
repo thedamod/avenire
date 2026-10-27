@@ -3,6 +3,10 @@ import { promisify } from "node:util";
 import type { CapturedWindow } from "@avenire/contracts";
 import type { ForegroundApp } from "./research/src/capture/types.ts";
 import { WINDOWS_FOREGROUND_SCRIPT } from "./foreground-windows.ts";
+import {
+  createCaptureContext,
+  type CaptureContext,
+} from "./research/electron/collectors/capture-context.ts";
 import { resolveDocumentPath } from "./document-path.ts";
 
 const execFile = promisify(ChildProcess.execFile);
@@ -68,13 +72,16 @@ export async function readForeground(): Promise<{
   }
 }
 
-export async function resolveForeground(observation: Awaited<ReturnType<typeof readForeground>>) {
+export async function resolveForeground(
+  observation: Awaited<ReturnType<typeof readForeground>>,
+  ctx?: CaptureContext,
+) {
   if (!observation.app || observation.app.isPrivateWindow) return observation;
   const notes = [...observation.notes];
   const { bounded } = await import("./timing.ts");
   try {
     const filePath = await bounded(
-      resolveDocumentPath(observation.app, notes),
+      resolveDocumentPath(observation.app, notes, ctx ?? createCaptureContext(notes)),
       process.platform === "win32" ? 4000 : 3000,
     );
     return {

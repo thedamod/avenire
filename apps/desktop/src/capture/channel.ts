@@ -348,19 +348,19 @@ export class ExtensionChannel {
     onPage?: (page: BrowserPage) => Promise<void>,
     onFailure?: (tab: CapturedTab, reason: string) => void,
   ): Promise<BrowserPage[]> {
-    const deadline = Date.now() + 4000;
+    const deadline = Date.now() + 8000;
     const budget = { bytes: 0, count: 0 };
     const work: Promise<void>[] = [];
     const pages: BrowserPage[] = [];
-    // One request per peer per batch, at most four tabs globally. The extension also bounds
-    // its four extraction workers; concurrent requests must not trip its single-flight guard.
+    // One request per peer per batch, at most six tabs globally. The extension also bounds
+    // its six extraction workers; concurrent requests must not trip its single-flight guard.
     for (
       let offset = 0;
       offset < tabs.length && Date.now() < deadline && !signal?.aborted;
-      offset += 4
+      offset += 6
     ) {
       const groups = new Map<Peer, CapturedTab[]>();
-      for (const tab of tabs.slice(offset, offset + 4)) {
+      for (const tab of tabs.slice(offset, offset + 6)) {
         const peer = [...this.peers].find(
           (peer) =>
             peer.sender &&
@@ -388,7 +388,7 @@ export class ExtensionChannel {
                     requestId,
                     "Browser extraction timed out; try capturing this tab again.",
                   ),
-                Math.min(2500, deadline - Date.now()),
+                Math.min(3000, deadline - Date.now()),
               );
               peer.requests.set(requestId, {
                 tabs: selected,

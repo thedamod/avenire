@@ -232,3 +232,51 @@ it("keeps the blocklist during navigation and never uploads when reading in the 
   expect(mocks.acquire).not.toHaveBeenCalled();
   expect(badOriginal.channel.release).toHaveBeenCalledOnce();
 });
+
+it("includes every idle tab instantly and uploads a file tab as a private local source", async () => {
+  const path = "C:\\Users\\<user>\\Downloads\\MATH U113 Course Handout.pdf";
+  const fileTab = {
+    ...tab,
+    tabId: 2,
+    url: "file:///C:/Users/<user>/Downloads/MATH%20U113%20Course%20Handout.pdf",
+    title: path,
+    activeInWindow: false,
+    selection: undefined,
+    position: undefined,
+  };
+  const native = {
+    ...snapshot,
+    platform: "win32" as const,
+    tabs: [
+      {
+        ...tab,
+        activeInWindow: false,
+        engagement: { dwellMs: 0, scrollDepthPct: 0, mediaPlaying: false },
+      },
+      fileTab,
+    ],
+    windows: [{ appName: "Browser", title: path, filePath: path, foreground: false }],
+  };
+  const h = setup(native, []);
+  expect(h.stream.started.items).toHaveLength(2);
+  expect(h.stream.started.items.map((item) => item.title)).not.toContain(path);
+  mocks.acquire.mockResolvedValue(uploaded("MATH U113 Course Handout.pdf"));
+  const result = await runCapturePipeline(h);
+  expect(mocks.acquire).toHaveBeenCalledWith(
+    { type: "local-file", path },
+    expect.anything(),
+    expect.objectContaining({
+      localOrigin: expect.objectContaining({
+        _tag: "LocalFile",
+        fileName: "MATH U113 Course Handout.pdf",
+      }),
+      onLocalUploaded: expect.any(Function),
+    }),
+  );
+  expect(result.snapshot.tabs).toHaveLength(1);
+  expect(result.snapshot.windows).toEqual([]);
+  expect(JSON.stringify(result)).not.toMatch(/file:\/|C:|Downloads/);
+  expect(h.stream.events).toContainEqual(
+    expect.objectContaining({ key: tabKey(fileTab), status: "saved" }),
+  );
+});

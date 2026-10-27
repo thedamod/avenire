@@ -6,6 +6,15 @@ const mocks = vi.hoisted(() => ({
     notes: [],
   })),
 }));
+vi.mock("../config.ts", () => ({
+  captureAppData: "",
+  captureConfigHome: "",
+  powerShellOneShot: false,
+}));
+vi.mock("./native.ts", async (original) => ({
+  ...(await original<typeof import("./native.ts")>()),
+  collectNative: async () => ({ windows: [], media: [], notes: [] }),
+}));
 vi.mock("./foreground.ts", () => ({ collectForeground: mocks.foreground }));
 vi.mock("./tabs.ts", () => ({
   latestTabs: () => [
