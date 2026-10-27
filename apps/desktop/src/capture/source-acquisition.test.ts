@@ -247,6 +247,37 @@ describe("device source byte acquisition backend", () => {
     expect(await readdir(tempRoot)).toEqual([]);
   });
 
+  it("never hand-sets headers Electron's network layer rejects (net::ERR_INVALID_ARGUMENT)", async () => {
+    const directory = await temp();
+    const path = join(directory, "lecture.pdf");
+    await writeFile(path, bytes);
+    const app = await appHarness();
+    // Electron's net.fetch throws for these instead of letting the request through.
+    const restricted = [
+      "content-length",
+      "host",
+      "trailer",
+      "te",
+      "upgrade",
+      "cookie2",
+      "keep-alive",
+      "transfer-encoding",
+    ];
+    const electronLike: AvenireUploadFetch = (url, init) => {
+      const headers = new Headers(init.headers);
+      for (const name of restricted)
+        if (headers.has(name)) return Promise.reject(new TypeError("net::ERR_INVALID_ARGUMENT"));
+      return app.avenireFetch(url, init);
+    };
+    const result = await acquireAndUploadSource({ type: "local-file", path }, metadata, {
+      ...app,
+      avenireFetch: electronLike,
+    });
+    expect(result.id).toBe(id);
+    expect(app.requests.map((request) => request.method)).toEqual(["POST", "PUT"]);
+    expect(app.requests[1]!.body).toEqual(bytes);
+  });
+
   it("uses the authorized device session only for source GET and strips URL tokens from provenance", async () => {
     const tempRoot = await temp();
     let sourceCookie: string | undefined;

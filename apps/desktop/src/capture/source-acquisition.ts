@@ -391,7 +391,9 @@ export const acquireAndUploadSource = async (
     uploadStream = file.createReadStream();
     const uploaded = await request(target.href, {
       method: "PUT",
-      headers: { "content-type": payload.mimeType, "content-length": String(sizeBytes) },
+      // Electron's network layer rejects a hand-set Content-Length (net::ERR_INVALID_ARGUMENT);
+      // the stream goes chunked and the server verifies size and hash as it spools.
+      headers: { "content-type": payload.mimeType },
       body: Readable.toWeb(uploadStream) as ReadableStream<Uint8Array>,
       duplex: "half",
     } as RequestInit);
