@@ -83,3 +83,20 @@ it("never proposes an external executable scheme or URL credentials", () => {
     ]);
   }
 });
+
+it("opens the browser page for downloaded LocalFiles on every device, retaining a local fallback", () => {
+  const origin = { ...local, originUrl: "https://school.test/course/handout?token=secret" };
+  expect(planReopen(origin, context).map((plan) => plan._tag)).toEqual([
+    "FocusTab",
+    "OpenUrl",
+    "OpenLocal",
+    "OpenInLibrary",
+  ]);
+  expect(
+    planReopen(origin, { ...context, desktop: false, extension: false }).map((plan) => plan._tag),
+  ).toEqual(["OpenUrl", "OpenInLibrary"]);
+  expect(JSON.stringify(planReopen(origin, context))).not.toContain("token=");
+  expect(planReopen({ ...local, originUrl: "file:///private/run.exe" }, context)[0]?._tag).toBe(
+    "OpenLocal",
+  );
+});

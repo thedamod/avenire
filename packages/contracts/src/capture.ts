@@ -59,6 +59,8 @@ export const CaptureOrigin = Schema.Union([
     deviceId: Identifier,
     deviceName: Schema.String.check(Schema.isMaxLength(255)),
     platform: Schema.Literals(["darwin", "win32", "linux"]),
+    /** Original browser page for downloaded local files; device paths still stay local. */
+    originUrl: Schema.optional(Url),
     /** Basename only: absolute paths stay in the desktop's local origin registry. */
     fileName: Schema.NonEmptyString.check(Schema.isMaxLength(255)),
     appName: Schema.optional(Schema.String.check(Schema.isMaxLength(255))),
@@ -98,6 +100,18 @@ export const PageSnapshot = Schema.Struct({
   textLength: NonNegativeInt,
   truncated: Schema.Boolean,
   signals: AccessSignals,
+  /** Desktop-connected only: browser download; never forwarded as server metadata. */
+  download: Schema.optional(
+    Schema.Struct({
+      path: Schema.String.check(Schema.isMaxLength(32768)),
+      captureId: Identifier,
+      mimeType: Schema.String.check(Schema.isMaxLength(255)),
+      sizeBytes: NonNegativeInt,
+      url: Url,
+      originUrl: Schema.optional(Url),
+      primary: Schema.optional(Schema.Boolean),
+    }),
+  ),
   /**
    * The original file (PDF, Office document) read with the browser session. Its bytes follow as
    * binary frames on the same socket, or go straight to the upload API in direct mode.
@@ -274,6 +288,8 @@ export const ExtensionMessage = Schema.Union([
     tabIds: Schema.optional(Schema.Array(NonNegativeInt).check(Schema.isMaxLength(200))),
     /** The owner's `captureLoggedInPages`: read page text and files in the browser session. */
     readInBrowser: Schema.Boolean,
+    /** Previously validated downloads eligible for reuse on this authenticated connection. */
+    reusableDownloads: Schema.optional(Schema.Array(Schema.String)),
   }),
   Schema.TaggedStruct("CaptureResult", {
     /** Absent means final for v1 peers. Binary frames follow their page metadata. */

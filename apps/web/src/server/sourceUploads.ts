@@ -117,18 +117,23 @@ export const normalizeUploadMetadata = (input: CreateSourceUpload): CreateSource
     const origin = input.origin;
     if (!Number.isFinite(Date.parse(origin.capturedAt)))
       throw reject(400, "Capture provenance requires a valid timestamp.");
-    if (origin._tag === "Web") {
-      for (const value of [origin.url, origin.finalUrl, origin.canonicalUrl]) {
-        if (value === undefined) continue;
-        const url = URL.parse(value);
-        if (!url || !["http:", "https:"].includes(url.protocol) || url.username || url.password)
-          throw reject(400, "Capture provenance must be an HTTP URL without credentials.");
-      }
-    } else if (
-      /[\\/]/.test(origin.fileName) ||
-      [".", ".."].includes(origin.fileName) ||
-      origin.sha256 !== input.sha256.toLowerCase() ||
-      origin.sizeBytes !== input.sizeBytes
+    const urls =
+      origin._tag === "Web"
+        ? [origin.url, origin.finalUrl, origin.canonicalUrl]
+        : // A browser-downloaded file keeps the page it came from for reopening.
+          [origin.originUrl];
+    for (const value of urls) {
+      if (value === undefined) continue;
+      const url = URL.parse(value);
+      if (!url || !["http:", "https:"].includes(url.protocol) || url.username || url.password)
+        throw reject(400, "Capture provenance must be an HTTP URL without credentials.");
+    }
+    if (
+      origin._tag === "LocalFile" &&
+      (/[\\/]/.test(origin.fileName) ||
+        [".", ".."].includes(origin.fileName) ||
+        origin.sha256 !== input.sha256.toLowerCase() ||
+        origin.sizeBytes !== input.sizeBytes)
     ) {
       throw reject(400, "Local provenance must match the bytes and contain only a file basename.");
     }

@@ -58,6 +58,17 @@ export function planReopen(
 ): ReopenPlan[] {
   const plans: ReopenPlan[] = [];
   const position = origin?.position === undefined ? {} : { position: origin.position };
+  if (origin?._tag === "LocalFile" && origin.originUrl) {
+    try {
+      const url = new URL(normalizeUrl(origin.originUrl));
+      if (/^https?:$/.test(url.protocol) && !url.username && !url.password) {
+        if (context.extension) plans.push({ _tag: "FocusTab", url: url.href, ...position });
+        plans.push({ _tag: "OpenUrl", url: positionUrl(url.href, origin.position) });
+      }
+    } catch {
+      /* Keep local/library fallback for malformed provenance. */
+    }
+  }
   if (origin?._tag === "Web") {
     const url = normalizeUrl(origin.finalUrl ?? origin.url);
     // Stored origins are data, not permission to execute another URL scheme.

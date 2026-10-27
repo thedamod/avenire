@@ -16,7 +16,9 @@ export const captureCitationUrl = (origin: CaptureOrigin): string | null => {
 
 export const normalizeCaptureOrigin = (origin: CaptureOrigin): CaptureOrigin =>
   origin._tag === "LocalFile"
-    ? origin
+    ? origin.originUrl === undefined
+      ? origin
+      : { ...origin, originUrl: normalizeUrl(origin.originUrl) }
     : {
         ...origin,
         url: normalizeUrl(origin.url),
