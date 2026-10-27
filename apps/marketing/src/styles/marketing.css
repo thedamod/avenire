@@ -87,3 +87,50 @@
     background-color: color-mix(in srgb, var(--color-dawn-2) 60%, transparent);
   }
 }
+
+/* ───────────── Motion ─────────────
+   Marketing-only additions to the app's motion tokens (--ease-out, --duration-*).
+   Elements marked `data-reveal` float in once when they enter the viewport; the inline
+   script in Base.astro sets `data-revealed` and staggers each batch by 70ms. Without
+   JavaScript (`html:not(.js)`) nothing is hidden. */
+:root {
+  --duration-reveal: 700ms;
+  --reveal-distance: 24px;
+}
+
+.js [data-reveal] {
+  transition:
+    opacity var(--duration-reveal) var(--ease-out),
+    translate var(--duration-reveal) var(--ease-out);
+}
+
+.js [data-reveal]:not([data-revealed]) {
+  opacity: 0;
+  translate: 0 var(--reveal-distance);
+}
+
+/* The hero art (Base.astro's HeroArt island) takes over the static plume and rocket. */
+.js [data-hero-fallback]:not([data-visible]),
+.js [data-hero-rocket] {
+  opacity: 0;
+}
+
+[data-hero-fallback] {
+  transition: opacity var(--duration-reveal) var(--ease-out);
+}
+
+/* The 1440px art frame the rocket and trail are drawn in: centred on wide screens,
+   pinned to the right edge below 1440 so the rocket never leaves the viewport. */
+@utility hero-frame {
+  position: absolute;
+  top: 0;
+  width: 1440px;
+  right: max(0px, calc((100% - 1440px) / 2));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Gentler, not zero: keep the fade, drop the travel. */
+  .js [data-reveal]:not([data-revealed]) {
+    translate: none;
+  }
+}

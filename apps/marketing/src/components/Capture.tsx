@@ -25,7 +25,7 @@ export function Capture() {
       <Column className="flex flex-col gap-14">
         <SectionHeader {...capture} />
         <div className="flex flex-col gap-6 lg:flex-row">
-          <Frame className="lg:w-200 lg:shrink-0">
+          <Frame data-reveal="" className="lg:w-200 lg:shrink-0">
             <img
               src={capturePoster.src}
               alt={capture.screenshotAlt}

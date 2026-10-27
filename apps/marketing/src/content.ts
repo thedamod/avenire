@@ -25,7 +25,6 @@ export const hero = {
   lead: "Avenire organizes what you study and has it ready by morning.",
   screenshotAlt:
     "Avenire home: the morning toast above your notebooks, chats and tasks, ready when you open the app.",
-  rocketAlt: "A student riding a rocket through the dawn.",
 };
 
 export const statement = {

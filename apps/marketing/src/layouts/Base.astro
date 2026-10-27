@@ -25,8 +25,33 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
+    <script is:inline>
+      // Opt in to motion only when the reveal script below can run; otherwise nothing hides.
+      if ("IntersectionObserver" in window) document.documentElement.classList.add("js");
+    </script>
   </head>
   <body>
     <slot />
+    <script is:inline>
+      // Float each [data-reveal] element in once, the first time it enters the viewport.
+      // Elements arriving in the same batch stagger by 70ms (Emil: 30–80ms).
+      (() => {
+        if (!("IntersectionObserver" in window)) return;
+        const observer = new IntersectionObserver(
+          (entries) => {
+            let index = 0;
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue;
+              const element = entry.target;
+              element.style.transitionDelay = `${Math.min(index++, 8) * 70}ms`;
+              element.setAttribute("data-revealed", "");
+              observer.unobserve(element);
+            }
+          },
+          { rootMargin: "0% 0% -8% 0%" },
+        );
+        for (const element of document.querySelectorAll("[data-reveal]")) observer.observe(element);
+      })();
+    </script>
   </body>
 </html>

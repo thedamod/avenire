@@ -8,7 +8,9 @@ export function Trust() {
       <Column className="flex flex-col gap-14">
         <div className="flex flex-col gap-5">
           <Eyebrow>{trust.eyebrow}</Eyebrow>
-          <h2 className="text-foreground text-headline text-balance">{trust.heading}</h2>
+          <h2 data-reveal="" className="text-foreground text-headline text-balance">
+            {trust.heading}
+          </h2>
         </div>
         <div className="border-border grid border-t md:grid-cols-3">
           {trust.points.map((point) => (

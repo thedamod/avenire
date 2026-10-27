@@ -6,6 +6,7 @@ import { FinalCta } from "../components/FinalCta.tsx";
 import { Files } from "../components/Files.tsx";
 import { Footer } from "../components/Footer.tsx";
 import { Hero } from "../components/Hero.tsx";
+import HeroArt from "../components/HeroArt.tsx";
 import { MorningReport } from "../components/MorningReport.tsx";
 import { Ruth } from "../components/Ruth.tsx";
 import { Statement } from "../components/Statement.tsx";
@@ -18,7 +19,9 @@ const explainer = ruth.answers[2];
 ---
 
 <Base title="Avenire · Wake up to your study material, already worked on" description={hero.lead}>
-  <Hero />
+  <Hero>
+    <HeroArt slot="art" client:load />
+  </Hero>
   <main>
     <Statement />
     <Capture />

@@ -1,10 +1,19 @@
 import type { ReactNode } from "react";
 import { cn } from "@avenire/ui/lib/utils";
 
-/** Mono caps label above a heading: "01 · CAPTURE". */
-export function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
+/** Mono caps label above a heading: "01 · CAPTURE". Floats in unless its parent does. */
+export function Eyebrow({
+  children,
+  className,
+  reveal = true,
+}: {
+  children: ReactNode;
+  className?: string;
+  reveal?: boolean;
+}) {
   return (
     <p
+      data-reveal={reveal ? "" : undefined}
       className={cn(
         "text-foreground-subtle font-mono text-xs tracking-eyebrow uppercase",
         className,
@@ -32,11 +41,13 @@ export function TwoTone({ dim, bright, size, as: Tag = "h2", className }: TwoTon
   return (
     <Tag className={cn(sizes[size], "text-balance", className)}>
       {dimLines.map((line) => (
-        <span key={line} className="text-muted-foreground block">
+        <span key={line} data-reveal="" className="text-muted-foreground block">
           {line}
         </span>
       ))}
-      <span className="text-foreground block">{bright}</span>
+      <span data-reveal="" className="text-foreground block">
+        {bright}
+      </span>
     </Tag>
   );
 }

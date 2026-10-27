@@ -34,9 +34,14 @@ export function Files() {
         <div className="flex flex-col gap-5 lg:w-115">
           <Eyebrow>{files.eyebrow}</Eyebrow>
           <TwoTone size="subhead" dim={files.dim} bright={files.bright} />
-          <p className="text-foreground-soft text-body-lg">{files.copy}</p>
+          <p data-reveal="" className="text-foreground-soft text-body-lg">
+            {files.copy}
+          </p>
         </div>
-        <div className="border-input bg-surface-2 overflow-clip rounded-sm border lg:w-160">
+        <div
+          data-reveal=""
+          className="border-input bg-surface-2 overflow-clip rounded-sm border lg:w-160"
+        >
           <Breadcrumb className="border-border bg-surface-3 flex h-10 items-center border-b px-4">
             <BreadcrumbList>
               <BreadcrumbItem>{root}</BreadcrumbItem>

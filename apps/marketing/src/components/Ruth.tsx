@@ -16,7 +16,7 @@ function Answer({
 }) {
   if (!item) return null;
   return (
-    <figure className="flex flex-col gap-4">
+    <figure data-reveal="" className="flex flex-col gap-4">
       <div className="flex h-7 items-center gap-2.5">
         <Kbd>{ruth.shortcut}</Kbd>
         <span className="text-foreground-soft truncate text-sm">{item.question}</span>

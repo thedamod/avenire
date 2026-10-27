@@ -14,13 +14,18 @@ export function Footer() {
         Avenire
       </p>
       <Column className="relative grid gap-12 md:grid-cols-4">
-        <div className="flex flex-col gap-4">
+        <div data-reveal="" className="flex flex-col gap-4">
           <Logo />
           <p className="text-foreground-subtle max-w-68 text-sm">{footer.tagline}</p>
         </div>
         {footer.columns.map((column) => (
-          <nav key={column.heading} aria-label={column.heading} className="flex flex-col gap-3">
-            <Eyebrow>{column.heading}</Eyebrow>
+          <nav
+            key={column.heading}
+            data-reveal=""
+            aria-label={column.heading}
+            className="flex flex-col gap-3"
+          >
+            <Eyebrow reveal={false}>{column.heading}</Eyebrow>
             {column.links.map((link) => (
               <a
                 key={link.label}
@@ -32,7 +37,7 @@ export function Footer() {
             ))}
           </nav>
         ))}
-        <div className="flex flex-col gap-4 md:items-end">
+        <div data-reveal="" className="flex flex-col gap-4 md:items-end">
           <a
             href={footer.contact.href}
             aria-label={footer.contact.label}

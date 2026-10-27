@@ -8,7 +8,9 @@ export function MorningReport({ video }: { video?: ReactNode }) {
     <Section id={morningReport.id}>
       <Column className="flex flex-col gap-14">
         <SectionHeader {...morningReport} />
-        <Frame className="aspect-report">{video}</Frame>
+        <Frame data-reveal="" className="aspect-report">
+          {video}
+        </Frame>
       </Column>
     </Section>
   );

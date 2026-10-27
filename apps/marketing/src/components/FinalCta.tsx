@@ -20,7 +20,9 @@ export function FinalCta() {
       />
       <Column className="relative flex flex-col items-center gap-8 text-center">
         <TwoTone size="display" dim={finalCta.dim} bright={finalCta.bright} />
-        <EmailCta id="cta-email" />
+        <div data-reveal="" className="flex w-full justify-center">
+          <EmailCta id="cta-email" />
+        </div>
       </Column>
     </section>
   );

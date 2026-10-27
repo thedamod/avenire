@@ -97,14 +97,38 @@ Type tokens carry their own weight and tracking; don't override them.
 
 ## Motion
 
-The app's tokens and Emil Kowalski's rules: colour transitions on hover only, the
-video poster fades out over `duration-moderate` with `ease-out` when playback starts,
-nothing scroll-triggered. The app's CSS already honours `prefers-reduced-motion`.
+Emil Kowalski's rules on the app's tokens (`--ease-out`, `--duration-*`), plus two
+marketing tokens in `marketing.css`: `--duration-reveal` (700ms) and `--reveal-distance` (24px).
+
+- **Float in.** Put `data-reveal` on an element and it floats in (opacity + `translate`)
+  once, the first time it enters the viewport. Elements arriving together stagger by
+  70ms. The hero uses the same mechanism, so it floats in on load. Never nest
+  `data-reveal` (`Eyebrow` takes `reveal={false}` inside an element that already floats).
+  The script is inline in `Base.astro`; without it (`html:not(.js)`) nothing is hidden.
+- **Hero art.** `HeroArt` (`client:load`) draws the exhaust as liquid in WebGL2
+  (`src/shaders/hero-flow.frag`, a port of `design/landing-v4/tools/hero_flow.py`). It pours out of the
+  nozzle on load, its bands keep flowing outward, and the pointer drags and parts it. The rocket
+  flies in along its heading, then hovers and leans toward the pointer on a spring; the
+  stream's source follows the nozzle. The art lives in the `hero-frame` utility (a 1440px
+  frame centred on wide screens, pinned right below 1440); the stream's far end always
+  rides the viewport's left edge. It renders at half resolution and pauses offscreen and in
+  background tabs.
+- **Fallbacks.** No WebGL2, a lost context, or a GPU that can't draw a frame within 16ms
+  (timed once at startup) gets the static `hero-flow.webp` and a resting rocket. Below `lg`
+  the hero has no art.
+- **Reduced motion.** Gentler, not zero: reveals keep the fade and drop the travel; the
+  hero renders one still frame of the full stream with the rocket at rest and ignores the pointer.
+- **Hover.** Colour transitions only. The video poster fades out over `duration-moderate`
+  when playback starts.
+
+The plume's palette lives in the shader. It is illustration, built from the dawn tokens,
+not UI colour.
 
 ## Components
 
-React, in `src/components`, rendered to static HTML by Astro. Only `VideoFrame`
-hydrates (`client:visible`). Copy and links live in `src/content.ts`.
+React, in `src/components`, rendered to static HTML by Astro. Two islands hydrate:
+`HeroArt` (`client:load`) and `VideoFrame` (`client:visible`). Copy and links live in
+`src/content.ts`.
 
 ## Rules the checker enforces (in `src/`)
 

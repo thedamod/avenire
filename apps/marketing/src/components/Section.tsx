@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@avenire/ui/lib/utils";
 import { Eyebrow, TwoTone } from "./Type.tsx";
 
@@ -42,22 +42,23 @@ export function SectionHeader({
         <Eyebrow>{eyebrow}</Eyebrow>
         <TwoTone dim={dim} bright={bright} size="headline" />
       </div>
-      <p className="text-foreground-soft max-w-aside text-body-lg shrink-0">{aside}</p>
+      <p data-reveal="" className="text-foreground-soft max-w-aside text-body-lg shrink-0">
+        {aside}
+      </p>
     </div>
   );
 }
 
 /** Bordered container for screenshots and video. */
-export function Frame({ children, className }: { children: ReactNode; className?: string }) {
+export function Frame({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
+      {...props}
       className={cn(
         "border-input bg-surface-2 relative overflow-clip rounded-sm border",
         className,
       )}
-    >
-      {children}
-    </div>
+    />
   );
 }
 
@@ -72,7 +73,7 @@ export function Feature({
   className?: string;
 }) {
   return (
-    <div className={cn("flex flex-col gap-2", className)}>
+    <div data-reveal="" className={cn("flex flex-col gap-2", className)}>
       <h3 className="text-foreground text-label">{title}</h3>
       {children}
     </div>
