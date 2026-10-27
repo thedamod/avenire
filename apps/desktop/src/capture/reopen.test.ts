@@ -123,6 +123,27 @@ it("derives URLs from the owned LibraryFile and falls back after a failed extens
   expect((await executeReopen(id, undefined, { ...h, stillOwner: () => false })).ok).toBe(false);
 });
 
+it("distinguishes a file captured on another device from a missing local file", async () => {
+  const h = await harness();
+  const origin = {
+    _tag: "LocalFile" as const,
+    deviceId: "another-install",
+    deviceName: "Other computer",
+    platform: "win32" as const,
+    fileName: "study.pdf",
+    sizeBytes: 8,
+    sha256: "a".repeat(64),
+    capturedAt: "2026-10-25T00:00:00Z",
+  };
+  h.getFile.mockResolvedValue({ id, origin } as LibraryFile);
+  expect(await executeReopen(id, undefined, h)).toEqual({ ok: false, note: "other-device" });
+  h.getFile.mockResolvedValue({ id, origin: { ...origin, deviceId: h.deviceId } } as LibraryFile);
+  expect(await executeReopen(id, undefined, h)).toEqual({ ok: false, note: "missing" });
+  expect(h.openPath).not.toHaveBeenCalled();
+  expect(h.openExternal).not.toHaveBeenCalled();
+  expect(h.opened).not.toHaveBeenCalled();
+});
+
 it("refuses non-http origins returned by the server and never opens the renderer URL", async () => {
   const h = await harness();
   for (const url of [

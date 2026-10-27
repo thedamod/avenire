@@ -140,6 +140,8 @@ export async function executeReopen(
       const file = await options.getFile(fileId);
       if (file.id !== fileId || options.stillOwner?.() === false)
         return { ok: false, note: "missing" };
+      if (file.origin?._tag === "LocalFile" && file.origin.deviceId !== options.deviceId)
+        return { ok: false, note: "other-device" };
       const plans = planReopen(file.origin ?? null, {
         fileId: file.id,
         desktop: true,

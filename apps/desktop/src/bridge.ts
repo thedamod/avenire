@@ -42,7 +42,8 @@ export interface CaptureProgress {
 }
 export interface ReopenResult {
   readonly ok: boolean;
-  readonly note?: "changed-since-capture" | "missing";
+  /** `other-device`: captured on another computer, so only the library copy can open here. */
+  readonly note?: "changed-since-capture" | "missing" | "other-device";
 }
 
 /** Exposed on `window.avenire` in the desktop shell; absent in a normal browser. */
