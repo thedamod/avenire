@@ -25,8 +25,13 @@ const buttonVariants = cva(
         icon: "size-8 px-0",
         "icon-sm": "size-7 rounded-[7px] px-0",
       },
+      /** `pill` overrides the size's corner radius; used for marketing calls to action. */
+      shape: {
+        default: "",
+        pill: "rounded-full",
+      },
     },
-    defaultVariants: { variant: "default", size: "default" },
+    defaultVariants: { variant: "default", size: "default", shape: "default" },
   },
 );
 
@@ -34,12 +39,13 @@ function Button({
   className,
   variant,
   size,
+  shape,
   ...props
 }: React.ComponentProps<"button"> & VariantProps<typeof buttonVariants>) {
   return (
     <button
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(buttonVariants({ variant, size, shape, className }))}
       {...props}
     />
   );
