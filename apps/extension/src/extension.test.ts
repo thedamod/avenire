@@ -424,7 +424,7 @@ describe("capture boundaries and access", () => {
       1024 * 1024,
     );
   });
-  it("bounds concurrency to four and returns on the total deadline", async () => {
+  it("bounds concurrency to six and returns on the total deadline", async () => {
     vi.useFakeTimers();
     let active = 0,
       max = 0;
@@ -443,14 +443,50 @@ describe("capture boundaries and access", () => {
     );
     await vi.advanceTimersByTimeAsync(41);
     const output = await pending;
-    expect(max).toBeLessThanOrEqual(4);
-    expect(execute.mock.calls.slice(0, 4)).toHaveLength(4);
+    expect(max).toBeLessThanOrEqual(6);
+    expect(execute.mock.calls.slice(0, 6)).toHaveLength(6);
     expect(output.pages).toEqual([]);
     expect(output.skipped).toHaveLength(9);
   });
 });
 
 describe("direct upload requests", () => {
+  it.each([
+    [
+      "https://drive.google.com/file/d/abc/view",
+      "https://drive.google.com/uc?export=download&id=abc",
+    ],
+    [
+      "https://docs.google.com/document/d/abc/edit",
+      "https://docs.google.com/document/d/abc/export?format=docx",
+    ],
+  ])(
+    "does not submit an uploaded primary Google document as a URL again: %s",
+    async (url, exported) => {
+      const bytes = new TextEncoder().encode("original-document");
+      const original = page({
+        url,
+        file: {
+          url: exported,
+          fileName: "document.docx",
+          mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          sizeBytes: bytes.length,
+          sha256: await sha256(bytes),
+        },
+      });
+      const output: CaptureOutput = {
+        tabs: [report(1, url)],
+        pages: [original],
+        files: [{ page: original, bytes }],
+        skipped: [],
+      };
+      const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) =>
+        Response.json(init?.method === "PUT" ? libraryFile : ticket),
+      );
+      await uploadCapture("https://avenire.example", snapshot(output.tabs), output, fetcher);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    },
+  );
   it("uploads original PDF bytes with provenance and never substitutes rendered text", async () => {
     const bytes = new TextEncoder().encode("%PDF-original-bytes");
     const original = page({
@@ -678,5 +714,155 @@ describe("reopen and content", () => {
     restorePosition({ textQuote: { exact: "missing" }, scrollPct: 50, mediaSec: 42 });
     expect(scrollTo).toHaveBeenCalledWith({ top: 500 });
     expect(media.currentTime).toBe(42);
+  });
+});
+
+describe("v1 capture regressions", () => {
+  const ownerUrl = "file:///C:/Users/<user>/Downloads/MATH%20U113%20Course%20Handout.pdf";
+  const pdf = () =>
+    new Response(new TextEncoder().encode("%PDF-1.7 original bytes"), {
+      headers: { "content-type": "application/pdf" },
+    });
+  const restricted = (allowed = false) =>
+    ({
+      scripting: {
+        executeScript: vi.fn(async () => {
+          throw new Error("Cannot access PDF viewer");
+        }),
+      },
+      extension: { isAllowedFileSchemeAccess: vi.fn(async () => allowed) },
+    }) as unknown as typeof chrome;
+
+  it("keeps idle, discarded, PDF and file tabs across all normal windows", async () => {
+    const tabs = buildTabReport(
+      [
+        nativeTab(1, "https://school.test/a", { active: false, discarded: true }),
+        nativeTab(2, "https://school.test/a.pdf", { active: false, windowId: 4 }),
+        nativeTab(3, ownerUrl, { active: false, windowId: 5 }),
+        nativeTab(4, ownerUrl, { incognito: true }),
+      ],
+      "chrome",
+    );
+    const output = await captureTabs(restricted(), tabs, false, { desktop: true });
+    expect(output.tabs.map((tab) => tab.tabId)).toEqual([1, 2, 3]);
+    expect(output.tabs[2]?.url).toContain("MATH%20U113");
+  });
+  it("injects the bundled content script into existing HTTP(S) tabs and tolerates denied hosts", async () => {
+    const { injectOpenTabs } = await import("./tabs.ts");
+    const executeScript = vi.fn(async () => {
+      throw new Error("Restricted host");
+    });
+    const query = vi.fn(async () => [
+      nativeTab(1),
+      nativeTab(2, "https://school.test/b"),
+      nativeTab(3, ownerUrl),
+      nativeTab(4, undefined, { incognito: true }),
+    ]);
+    await injectOpenTabs({
+      tabs: { query },
+      scripting: { executeScript },
+    } as unknown as typeof chrome);
+    expect(query).toHaveBeenCalledWith({ windowType: "normal" });
+    expect(executeScript.mock.calls).toEqual([
+      [{ target: { tabId: 1 }, files: ["content.js"] }],
+      [{ target: { tabId: 2 }, files: ["content.js"] }],
+    ]);
+  });
+  it.each([
+    ["https://school.test/lecture.pdf", "https://school.test/lecture.pdf"],
+    [
+      "chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/index.html?file=https%3A%2F%2Fschool.test%2Flecture.pdf",
+      "https://school.test/lecture.pdf",
+    ],
+    [
+      "https://drive.google.com/file/d/drive-file/view",
+      "https://drive.google.com/uc?export=download&id=drive-file",
+    ],
+    [
+      "https://docs.google.com/document/d/doc/edit",
+      "https://docs.google.com/document/d/doc/export?format=docx",
+    ],
+    [
+      "https://docs.google.com/presentation/d/slides/edit",
+      "https://docs.google.com/presentation/d/slides/export?format=pdf",
+    ],
+    [
+      "https://docs.google.com/spreadsheets/d/sheet/edit",
+      "https://docs.google.com/spreadsheets/d/sheet/export?format=xlsx",
+    ],
+  ])("reads original bytes from %s without a content script", async (url, download) => {
+    const fetcher = vi.fn(async () => pdf());
+    const output = await captureTabs(restricted(), [report(1, url)], true, { fetcher });
+    expect(output.files).toHaveLength(1);
+    expect(output.files[0]?.page.file?.url).toBe(download);
+    expect(fetcher).toHaveBeenCalledWith(
+      download,
+      expect.objectContaining({ credentials: "include", signal: expect.any(AbortSignal) }),
+    );
+    expect(output.skipped).toEqual([]);
+  });
+  it("gives a clear reason when a Drive folder exposes no downloadable files", async () => {
+    const url = "https://drive.google.com/drive/u/0/folders/folder-id";
+    const api = {
+      scripting: {
+        executeScript: vi.fn(async (arg: { func: unknown }) => [
+          { result: arg.func === extractPage ? page({ url, text: "Folder contents" }) : [] },
+        ]),
+      },
+    } as unknown as typeof chrome;
+    const output = await captureTabs(api, [report(1, url)], true);
+    expect(output.skipped).toContainEqual({
+      tabId: 1,
+      reason:
+        "No downloadable files were found in this Drive folder. Open a file and capture again.",
+    });
+  });
+  it("reads the owner's file URL with file access, otherwise gives the desktop hint", async () => {
+    const fetcher = vi.fn(async () => pdf());
+    const denied = await captureTabs(restricted(), [report(1, ownerUrl)], true, { fetcher });
+    expect(denied.skipped).toEqual([
+      { tabId: 1, reason: "Open Avenire desktop to capture files from this computer" },
+    ]);
+    expect(fetcher).not.toHaveBeenCalled();
+    const allowed = await captureTabs(restricted(true), [report(1, ownerUrl)], true, { fetcher });
+    expect(allowed.files).toHaveLength(1);
+    expect(allowed.files[0]?.page.file?.fileName).toBe("MATH U113 Course Handout.pdf");
+    const requests: Array<{ url: string; body: string }> = [];
+    const upload = vi.fn(async (raw: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(raw);
+      requests.push({ url, body: typeof init?.body === "string" ? init.body : "" });
+      return Response.json(
+        url.endsWith("/uploads")
+          ? { ...ticket, file: libraryFile }
+          : { files: [], skipped: [], blocked: [] },
+      );
+    });
+    await uploadCapture("https://avenire.example", snapshot(allowed.tabs), allowed, upload);
+    expect(requests).toHaveLength(1);
+    expect(JSON.parse(requests[0]!.body)).toMatchObject({
+      origin: { _tag: "LocalFile", fileName: "MATH U113 Course Handout.pdf" },
+    });
+    expect(JSON.stringify(requests)).not.toMatch(/file:|C:|Users|Downloads/);
+    requests.length = 0;
+    await uploadCapture("https://avenire.example", snapshot(denied.tabs), denied, upload);
+    expect(requests).toEqual([]);
+  });
+  it("keeps unread URLs for server fallback on the 8 second deadline", async () => {
+    vi.useFakeTimers();
+    const api = {
+      scripting: { executeScript: vi.fn(() => new Promise(() => {})) },
+    } as unknown as typeof chrome;
+    const tabs = Array.from({ length: 20 }, (_, i) => ({
+      ...report(i + 1, `https://school.test/${i}`),
+      activeInWindow: false,
+    }));
+    const pending = captureTabs(api, tabs, true);
+    await vi.advanceTimersByTimeAsync(8001);
+    const result = await pending;
+    expect(result.tabs).toHaveLength(20);
+    expect(result.pages).toEqual([]);
+    expect(result.skipped).toHaveLength(20);
+    expect(api.scripting.executeScript).toHaveBeenCalledTimes(6);
+    vi.useRealTimers();
   });
 });

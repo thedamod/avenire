@@ -56,7 +56,7 @@ export function resolveDocumentUrl(raw: string, base?: string): string | undefin
     // Chromium's built-in PDF viewer sometimes exposes an extension URL with ?file=.
     const builtin =
       url.protocol === "chrome-extension:" && url.hostname === "mhjfbmdgcfjbbpaeojofohoefgiehjai";
-    if ((!/^https?:$/.test(url.protocol) && !builtin) || url.username || url.password)
+    if ((!/^(?:https?|file):$/.test(url.protocol) && !builtin) || url.username || url.password)
       return undefined;
     const exported = googleExportUrl(url.href);
     if (exported) return exported;
@@ -71,7 +71,11 @@ export function resolveDocumentUrl(raw: string, base?: string): string | undefin
             : null;
     if (inner) {
       const unwrapped = new URL(inner, url);
-      if (/^https?:$/.test(unwrapped.protocol) && !unwrapped.username && !unwrapped.password)
+      if (
+        /^(?:https?|file):$/.test(unwrapped.protocol) &&
+        !unwrapped.username &&
+        !unwrapped.password
+      )
         return googleExportUrl(unwrapped.href) ?? unwrapped.href;
     }
     return DOCUMENT_MIMES[documentExtension(url.href)] ? url.href : undefined;

@@ -38,7 +38,7 @@ it("preserves source queries, identity, browser and position across policy", () 
     },
   });
 });
-it("deduplicates tracked URLs and drops idle tabs below the engagement thresholds", () => {
+it("deduplicates tracked URLs and retains idle tabs across every window", () => {
   const tabs = [
     tab,
     { ...tab, tabId: 2, url: `${tab.url}&fbclid=second` },
@@ -56,7 +56,7 @@ it("deduplicates tracked URLs and drops idle tabs below the engagement threshold
     })),
   ];
   const result = captureCandidates({ ...snapshot, tabs }, hash);
-  expect(result.candidates).toHaveLength(4);
+  expect(result.candidates).toHaveLength(5);
   expect(result.skipped).toEqual([]);
 });
 it("keys verified selections by source and injected hash, omitting legacy clipboard text", () => {
@@ -124,4 +124,12 @@ it("filters blocked sources before hashing selections or exposing titles", () =>
   );
   expect(result.candidates).toEqual([]);
   expect(JSON.stringify(result)).not.toContain("secret");
+});
+it("never turns a local file tab into a server URL candidate", () => {
+  const local = {
+    ...tab,
+    url: "file:///C:/Users/<user>/Downloads/MATH%20U113%20Course%20Handout.pdf",
+    activeInWindow: false,
+  };
+  expect(captureCandidates({ ...snapshot, tabs: [local] }, hash).candidates).toEqual([]);
 });

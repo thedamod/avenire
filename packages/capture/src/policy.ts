@@ -24,20 +24,38 @@ const hostRule = (category: BlockedCategory, hosts: readonly string[]): Rule => 
   },
 });
 const urlRules: readonly Rule[] = [
-  hostRule("email", ["mail.google.com", "outlook.live.com", "outlook.office.com"]),
+  hostRule("email", [
+    "mail.google.com",
+    "outlook.live.com",
+    "outlook.office.com",
+    "mail.yahoo.com",
+    "proton.me",
+    "fastmail.com",
+    "hey.com",
+  ]),
   {
     category: "banking",
     test: (value) =>
-      /(?:^|[/.])(?:chase|bankofamerica|wellsfargo|citi|citibank|capitalone|barclays|hsbc|revolut|wise)(?:[/.]|$)/i.test(
+      /(?:^|[/.])(?:chase|bankofamerica|wellsfargo|citi|citibank|capitalone|barclays|hsbc|revolut|wise|paypal|coinbase|robinhood)(?:[/.]|$)/i.test(
         value,
       ),
   },
-  hostRule("messaging", ["web.whatsapp.com", "messenger.com", "slack.com"]),
+  hostRule("messaging", [
+    "web.whatsapp.com",
+    "web.telegram.org",
+    "teams.microsoft.com",
+    "messages.google.com",
+    "messenger.com",
+    "slack.com",
+  ]),
   {
     category: "messaging",
     test: (value) => /^https?:\/\/(?:[^/]+\.)?discord\.com\/channels(?:[/?#]|$)/i.test(value),
   },
-  { category: "password-manager", test: (value) => /1password|bitwarden|lastpass/i.test(value) },
+  {
+    category: "password-manager",
+    test: (value) => /1password|bitwarden|lastpass|dashlane|keepass|roboform|enpass/i.test(value),
+  },
   {
     category: "checkout",
     test: (value) =>
@@ -50,22 +68,42 @@ const urlRules: readonly Rule[] = [
         value,
       ),
   },
-  hostRule("drm-stream", ["netflix.com", "primevideo.com", "disneyplus.com", "hulu.com"]),
+  hostRule("drm-stream", [
+    "netflix.com",
+    "primevideo.com",
+    "disneyplus.com",
+    "hulu.com",
+    "hbomax.com",
+    "crunchyroll.com",
+  ]),
+  {
+    category: "drm-stream",
+    test: (value) => /spotify\.com\/(?:track|episode)(?:[/?#]|$)/i.test(value),
+  },
 ];
 const appRules: readonly Rule[] = [
-  { category: "password-manager", test: (value) => /1password|bitwarden|lastpass/i.test(value) },
+  {
+    category: "password-manager",
+    test: (value) => /1password|bitwarden|lastpass|dashlane|keepass|roboform|enpass/i.test(value),
+  },
   {
     category: "email",
-    test: (value) => /(?:^|\b)(?:outlook|mail|gmail|thunderbird)(?:\b|$)/i.test(value),
+    test: (value) =>
+      /(?:^|\b)(?:outlook|olk(?:\.exe)?|mail|gmail|thunderbird|spark|mailspring|mailclient)(?:\b|$)/i.test(
+        value,
+      ),
   },
   {
     category: "messaging",
     test: (value) =>
-      /(?:^|\b)(?:slack|discord|whatsapp|messenger|messages|telegram|signal)(?:\b|$)/i.test(value),
+      /(?:^|\b)(?:slack|discord|whatsapp|messenger|messages|telegram|signal|teams|skype|wechat|imessage|line)(?:\b|$)/i.test(
+        value,
+      ),
   },
   {
     category: "banking",
-    test: (value) => /(?:^|\b)(?:bank|chase|wells fargo|revolut|wise)(?:\b|$)/i.test(value),
+    test: (value) =>
+      /(?:^|\b)(?:bank|chase|wells fargo|bank of america|revolut|wise|paypal)(?:\b|$)/i.test(value),
   },
 ];
 
@@ -93,7 +131,13 @@ function blockedCategory(
   }
   if (urls.length > 64) return "private-window"; // Unverifiable redirect chain: fail closed.
   for (const rule of appRules) if (rule.test(appName)) return rule.category;
-  if (/netflix|prime video|disney\+?|hulu/i.test(`${appName} ${title}`)) return "drm-stream";
+  if (
+    /^(?:spotify|netflix|hulu|disney\+|prime video|crunchyroll)(?:\.exe)?$/i.test(appName) ||
+    /netflix|prime video|disney\+?|hulu|hbo\s?(?:max)?|crunchyroll|peacock|paramount\s?\+/i.test(
+      `${appName} ${title}`,
+    )
+  )
+    return "drm-stream";
   return undefined;
 }
 
@@ -118,8 +162,15 @@ export function applyPolicy(snapshot: CaptureSnapshot): PolicyResult {
   const permittedUrl = (value: string) => {
     try {
       const url = new URL(value);
+      if (
+        /^https?:$/.test(url.protocol) &&
+        [...url.searchParams.values()].some((value) => /^file:|^[a-z]:[\\/]|^\\\\/i.test(value))
+      )
+        return false;
       return (
-        (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password
+        (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "file:") &&
+        !url.username &&
+        !url.password
       );
     } catch {
       return false;

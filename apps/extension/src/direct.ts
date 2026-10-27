@@ -13,6 +13,7 @@ import * as Schema from "effect/Schema";
 import type { CaptureOutput } from "./capture.ts";
 import { sha256 } from "./files.ts";
 import { apiJson } from "./wire.ts";
+import { resolveDocumentUrl } from "./documents.ts";
 
 function webOrigin(tab: CapturedTab, page: PageSnapshot, capturedAt: string): CaptureOrigin {
   return {
@@ -60,8 +61,24 @@ export async function uploadCapture(
       mimeType: page.file?.mimeType ?? "text/markdown",
       sizeBytes: bytes.byteLength,
       sha256: page.file?.sha256 ?? (await sha256(bytes)),
-      sourceUrl: new URL(page.url).origin + new URL(page.url).pathname,
-      origin: webOrigin(tab, page, snapshot.capturedAt),
+      ...(/^file:/i.test(page.file?.url ?? page.url)
+        ? {
+            origin: {
+              _tag: "LocalFile",
+              deviceId: snapshot.deviceId,
+              deviceName: "Browser",
+              platform: snapshot.platform,
+              fileName: page.file?.fileName ?? "Captured file",
+              sizeBytes: bytes.byteLength,
+              sha256: page.file?.sha256 ?? (await sha256(bytes)),
+              capturedAt: snapshot.capturedAt,
+              ...(tab.position ? { position: tab.position } : {}),
+            },
+          }
+        : {
+            sourceUrl: new URL(page.url).origin + new URL(page.url).pathname,
+            origin: webOrigin(tab, page, snapshot.capturedAt),
+          }),
       access: tab.access ?? "open",
     });
     const ticket = await apiJson(fetcher, `${appUrl}/api/library/uploads`, SourceUploadTicket, {
@@ -87,7 +104,12 @@ export async function uploadCapture(
     }
     saved++;
     // A linked attachment must not suppress the parent page's URL capture.
-    if (!page.file || normalizeUrl(page.file.url) === normalizeUrl(tab.finalUrl ?? tab.url))
+    const primaryUrl = tab.finalUrl ?? tab.url;
+    if (
+      !page.file ||
+      normalizeUrl(page.file.url) === normalizeUrl(primaryUrl) ||
+      normalizeUrl(page.file.url) === normalizeUrl(resolveDocumentUrl(primaryUrl) ?? primaryUrl)
+    )
       uploadedTabs.add(tab.tabId);
   };
   let next = 0;
@@ -98,7 +120,12 @@ export async function uploadCapture(
   );
   const failed = uploads.find((result) => result.status === "rejected");
   if (failed?.status === "rejected") throw failed.reason;
-  const remaining = output.tabs.filter((tab) => !uploadedTabs.has(tab.tabId));
+  const remaining = output.tabs.filter(
+    (tab) =>
+      !uploadedTabs.has(tab.tabId) &&
+      /^https?:/i.test(tab.url) &&
+      /^https?:/i.test(tab.finalUrl ?? tab.url),
+  );
   let skipped = output.skipped.length;
   if (remaining.length) {
     const receipt = await apiJson(fetcher, `${appUrl}/api/library/captures`, SubmitCaptureResult, {

@@ -60,8 +60,8 @@ export function captureCandidates(snapshot: CaptureSnapshot, hash: (text: string
     return origin;
   };
   for (const tab of policy.snapshot.tabs) {
-    // Tabs the student never engaged with are background noise, not skipped sources.
-    if (!tab.activeInWindow && !isEngaged(tab) && !tab.selection) continue;
+    // Local paths are handled by device uploads, never by a server URL fetch.
+    if (!/^https?:/i.test(tab.url) || !/^https?:/i.test(tab.finalUrl ?? tab.url)) continue;
     const origin = addTab(tab, tab.likelyPdf ? "pdf" : "web-page", tab.position);
     if (tab.selection) {
       const text = tab.selection.exact.trim();

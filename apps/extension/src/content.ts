@@ -103,7 +103,13 @@ export function restorePosition(
   }
 }
 
-if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+const contentGlobal = globalThis as typeof globalThis & { __avenireCaptureContent?: boolean };
+if (
+  typeof chrome !== "undefined" &&
+  chrome.runtime?.onMessage &&
+  !contentGlobal.__avenireCaptureContent
+) {
+  contentGlobal.__avenireCaptureContent = true;
   let dwellMs = 0;
   let scrollDepthPct = 0;
   let lastTick = Date.now();

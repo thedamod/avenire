@@ -45,13 +45,22 @@ export async function captureTabs(
     readonly tabTimeoutMs?: number;
     readonly totalTimeoutMs?: number;
     readonly fetcher?: typeof fetch;
+    /** Desktop reads local files itself and records their private paths. */
+    readonly desktop?: boolean;
   } = {},
 ): Promise<CaptureOutput> {
-  const tabs = permittedTabs(input).filter(
-    (tab) => tab.activeInWindow || isEngaged(tab) || tab.selection,
+  const tabs = permittedTabs(input).sort(
+    (a, b) =>
+      Number(!!b.selection) - Number(!!a.selection) ||
+      Number(b.activeInWindow) - Number(a.activeInWindow) ||
+      Number(isEngaged(b)) - Number(isEngaged(a)),
   );
-  if (!readInBrowser) return { tabs: tabs.map(publicTab), pages: [], files: [], skipped: [] };
-  const deadline = Date.now() + (options.totalTimeoutMs ?? 4000);
+  if (
+    !readInBrowser &&
+    (options.desktop || !tabs.some((tab) => /^file:/i.test(tab.finalUrl ?? tab.url)))
+  )
+    return { tabs: tabs.map(publicTab), pages: [], files: [], skipped: [] };
+  const deadline = Date.now() + (options.totalTimeoutMs ?? 8000);
   const pages: PageSnapshot[] = [];
   const files: CapturedFile[] = [];
   const skipped: { tabId: number; reason: string }[] = [];
@@ -107,6 +116,10 @@ export async function captureTabs(
       const tabDeadline = Date.now() + remaining;
       const timer = setTimeout(() => controller.abort(), remaining);
       const read = async () => {
+        const local = (tab.finalUrl ?? tab.url).startsWith("file:");
+        if ((!local && !readInBrowser) || (local && options.desktop)) return;
+        if (local && !(await api.extension.isAllowedFileSchemeAccess()))
+          throw new Error("Open Avenire desktop to capture files from this computer");
         let page: PageSnapshot;
         try {
           const extracted = await api.scripting.executeScript({
@@ -155,10 +168,25 @@ export async function captureTabs(
           /* A built-in PDF viewer still has its tab URL. */
         }
         if (controller.signal.aborted) return;
-        for (const hint of selectDocuments(hints, page.url)) {
+        const documents = selectDocuments(hints, page.url);
+        if (
+          /^https:\/\/drive\.google\.com\/(?:drive\/(?:u\/\d+\/)?)?folders\//.test(page.url) &&
+          !documents.length
+        )
+          skipped.push({
+            tabId: tab.tabId,
+            reason:
+              "No downloadable files were found in this Drive folder. Open a file and capture again.",
+          });
+        for (const hint of documents) {
           if (controller.signal.aborted) break;
           if (!permittedTabs([{ ...current, url: hint.url, finalUrl: hint.url }]).length) continue;
           try {
+            if (/^file:/i.test(hint.url)) {
+              if (options.desktop) continue;
+              if (!(await api.extension.isAllowedFileSchemeAccess()))
+                throw new Error("Open Avenire desktop to capture files from this computer");
+            }
             const file = await fetchDocument(
               hint,
               page,
@@ -210,7 +238,7 @@ export async function captureTabs(
       if (Date.now() >= tabDeadline) return;
     }
   };
-  await Promise.all(Array.from({ length: Math.min(4, tabs.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(6, tabs.length) }, worker));
   for (const tab of tabs.slice(next))
     skipped.push({ tabId: tab.tabId, reason: "Capture timed out" });
   return {

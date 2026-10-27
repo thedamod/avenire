@@ -5,7 +5,7 @@ import { uploadCapture } from "./direct.ts";
 import { fileFrames } from "./files.ts";
 import { fetchPairing, pairingToken, type PairingState } from "./pairing.ts";
 import { reopen } from "./reopen.ts";
-import { detectBrowser, pollTabs, publicTab, snapshotFor } from "./tabs.ts";
+import { detectBrowser, injectOpenTabs, pollTabs, publicTab, snapshotFor } from "./tabs.ts";
 import { within } from "./wire.ts";
 
 declare const __AVENIRE_APP_URL__: string;
@@ -120,7 +120,8 @@ async function handleRequest(
     }
     if (message.tabIds) tabs = tabs.filter((tab) => message.tabIds!.includes(tab.tabId));
     const output = await captureTabs(chrome, tabs, message.readInBrowser, {
-      totalTimeoutMs: Math.max(0, 4000 - (Date.now() - startedAt)),
+      desktop: true,
+      totalTimeoutMs: Math.max(0, 8000 - (Date.now() - startedAt)),
     });
     // Access observations must reach desktop before it consumes CaptureResult.
     const observations = new Map(output.tabs.map((tab) => [tab.tabId, tab]));
@@ -167,9 +168,7 @@ async function captureCurrentPage(): Promise<{ saved: number; skipped: number; n
       throw new Error("This page cannot be captured");
     const pairing = await fetchPairing(appUrl);
     if (!pairing) throw new Error("Not signed in to Avenire");
-    const tabs = (await pollTabs(chrome, browser, redirects, pairing.readInBrowser)).filter(
-      (tab) => tab.tabId === active.id,
-    );
+    const tabs = await pollTabs(chrome, browser, redirects, pairing.readInBrowser);
     if (!tabs.length) throw new Error("This page is excluded by capture policy");
     const output = await captureTabs(chrome, tabs, pairing.readInBrowser);
     const stored = await chrome.storage.local.get("senderId");
@@ -200,6 +199,7 @@ async function boot(): Promise<void> {
     changed,
   });
   channel.connect();
+  await injectOpenTabs(chrome);
   await report();
 }
 
@@ -224,11 +224,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 chrome.runtime.onInstalled.addListener(() => {
   channel?.connect();
-  void report();
+  void injectOpenTabs(chrome).then(report);
 });
 chrome.runtime.onStartup.addListener(() => {
   channel?.connect();
-  void report();
+  void injectOpenTabs(chrome).then(report);
 });
 chrome.commands.onCommand.addListener((command) => {
   if (command === "capture")

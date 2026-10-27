@@ -142,3 +142,17 @@ export async function pollTabs(
   );
   return buildTabReport(tabs, browser, polls, redirects);
 }
+
+/** Existing documents need a content script after install/update/startup, without a reload. */
+export async function injectOpenTabs(api: typeof chrome): Promise<void> {
+  const tabs = await api.tabs.query({ windowType: "normal" });
+  await Promise.allSettled(
+    tabs
+      .filter(
+        (tab) => !tab.incognito && tab.id !== undefined && /^https?:\/\//i.test(tab.url ?? ""),
+      )
+      .map((tab) =>
+        api.scripting.executeScript({ target: { tabId: tab.id! }, files: ["content.js"] }),
+      ),
+  );
+}
