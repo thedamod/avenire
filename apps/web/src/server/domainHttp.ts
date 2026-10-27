@@ -18,18 +18,41 @@ import {
 } from "@avenire/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as SchemaIssue from "effect/SchemaIssue";
 import { AssetsHandlers, CloudHandlers, RuthHandlers, SearchHandlers } from "./domainRpc.ts";
 import { HttpRequestError, readJsonBody } from "./http.ts";
 import { assertMutationOrigin } from "./session.ts";
+
+const issueFormatter = SchemaIssue.makeFormatterStandardSchemaV1();
+/** The offending field paths (`origin.position.mediaSec`), never the submitted values. */
+const issuePaths = (issue: SchemaIssue.Issue): string[] => [
+  ...new Set(
+    issueFormatter(issue).issues.flatMap(({ path }) =>
+      path?.length
+        ? [path.map((part) => String(typeof part === "object" ? part.key : part)).join(".")]
+        : [],
+    ),
+  ),
+];
 
 export const decodeRequest = <S extends Schema.Top & { readonly DecodingServices: never }>(
   schema: S,
   value: unknown,
 ) =>
   Schema.decodeUnknownEffect(schema)(value, { onExcessProperty: "error" }).pipe(
-    Effect.mapError(
-      () => new HttpRequestError({ status: 400, message: "Invalid request parameters." }),
-    ),
+    Effect.catch((error) => {
+      const paths = issuePaths(error.issue).slice(0, 3);
+      return Effect.logWarning("Request failed schema decoding", { paths }).pipe(
+        Effect.andThen(
+          Effect.fail(
+            new HttpRequestError({
+              status: 400,
+              message: `Invalid request parameters${paths.length ? ` (${paths.join(", ")})` : ""}.`,
+            }),
+          ),
+        ),
+      );
+    }),
   );
 const jsonBody = Effect.fn("DomainHttp.jsonBody")(function* (request: Request) {
   if (
