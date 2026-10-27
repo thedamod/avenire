@@ -41,7 +41,10 @@ export const decodeRequest = <S extends Schema.Top & { readonly DecodingServices
 ) =>
   Schema.decodeUnknownEffect(schema)(value, { onExcessProperty: "error" }).pipe(
     Effect.catch((error) => {
-      const paths = issuePaths(error.issue).slice(0, 3);
+      const paths: string[] = issuePaths(error.issue).slice(0, 3);
+      // A root-level mismatch (a malformed id, a non-object body) has no field path.
+      if (!paths.length)
+        paths.push(issueFormatter(error.issue).issues[0]?.message.slice(0, 120) ?? "");
       return Effect.logWarning("Request failed schema decoding", { paths }).pipe(
         Effect.andThen(
           Effect.fail(
