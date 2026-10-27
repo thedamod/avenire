@@ -30,6 +30,34 @@ export class DeviceAcquisitionError extends Schema.TaggedError<DeviceAcquisition
   }
 }
 
+/** Avenire answered an upload request with an error status; `detail` is its own message. */
+export class UploadRejected extends Error {
+  readonly status: number;
+  readonly detail: string | undefined;
+  constructor(status: number, detail: string | undefined) {
+    super(`Avenire rejected the upload with HTTP ${status}${detail ? `: ${detail}` : ""}`);
+    this.name = "UploadRejected";
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+/** The server's `{ error }`/`{ message }` text, bounded; never the request or a local path. */
+const rejection = async (response: Response, signal: AbortSignal): Promise<UploadRejected> => {
+  let detail: string | undefined;
+  try {
+    const body = (await readJson(response, signal)) as {
+      error?: unknown;
+      message?: unknown;
+    } | null;
+    const text = typeof body?.error === "string" ? body.error : body?.message;
+    if (typeof text === "string") detail = text.slice(0, 300);
+  } catch {
+    void response.body?.cancel().catch(() => {});
+  }
+  return new UploadRejected(response.status, detail);
+};
+
 export type DeviceSource =
   | { readonly type: "local-file"; readonly path: string }
   | { readonly type: "session-url"; readonly url: string }
@@ -311,10 +339,7 @@ export const acquireAndUploadSource = async (
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!created.ok) {
-      void created.body?.cancel().catch(() => {});
-      throw new Error(`Upload creation returned HTTP ${created.status}`);
-    }
+    if (!created.ok) throw await rejection(created, signal);
     const ticket = Schema.decodeUnknownSync(SourceUploadTicket)(await readJson(created, signal));
     const target = httpUrl(new URL(ticket.uploadUrl, app).href);
     if (
@@ -342,10 +367,7 @@ export const acquireAndUploadSource = async (
       body: Readable.toWeb(uploadStream) as ReadableStream<Uint8Array>,
       duplex: "half",
     } as RequestInit);
-    if (!uploaded.ok) {
-      void uploaded.body?.cancel().catch(() => {});
-      throw new Error(`Source upload returned HTTP ${uploaded.status}`);
-    }
+    if (!uploaded.ok) throw await rejection(uploaded, signal);
     // A successful PUT has finalized the server upload even if response decoding fails.
     completed = true;
     const result = Schema.decodeUnknownSync(LibraryFile)(await readJson(uploaded, signal));

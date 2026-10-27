@@ -1,3 +1,4 @@
+import { captureFailureReason } from "./failure.ts";
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
 import type {
@@ -147,19 +148,11 @@ export async function uploadCapturedFiles(
       });
       files.push(file);
       options?.progress(key, "saved", file);
-    } catch {
-      options?.progress(
-        key,
-        "failed",
-        undefined,
-        "Could not upload this file. Check your connection, sign-in and file access, then capture again.",
-      );
-      // Infrastructure errors can contain local paths; give the renderer an actionable summary.
-      skipped.push({
-        title,
-        reason:
-          "Could not upload this file. Check your connection, sign-in and file access, then capture again.",
-      });
+    } catch (error) {
+      // Mapped to fixed wording plus server text: local error messages can contain paths.
+      const reason = captureFailureReason(error);
+      options?.progress(key, "failed", undefined, reason);
+      skipped.push({ title, reason });
     }
   });
   return { files, skipped };

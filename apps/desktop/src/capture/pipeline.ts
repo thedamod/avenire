@@ -1,3 +1,4 @@
+import { captureFailureReason } from "./failure.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { localFilePath, localBasename as basename } from "./local-file.ts";
 import { applyPolicy } from "@avenire/capture/policy";
@@ -208,16 +209,15 @@ export async function runCapturePipeline(options: {
             origin,
             access,
           },
-          { appUrl: options.appUrl, avenireFetch: fetch, signal, maxBytes: 64 * 1024 * 1024 },
+          { appUrl: options.appUrl, avenireFetch: fetch, signal },
         );
       });
       files.push(file);
       processed.add(baseKey);
       stream.progress({ key, status: "saved", file });
       if (page.file) stream.progress({ key: baseKey, status: "saved", file });
-    } catch {
-      const reason =
-        "Could not save this browser source. Reconnect the extension, check sign-in and capture again.";
+    } catch (error) {
+      const reason = captureFailureReason(error);
       skipped.push({ title: tab.title.slice(0, 200), reason });
       stream.progress({ key, status: "failed", reason });
     } finally {
