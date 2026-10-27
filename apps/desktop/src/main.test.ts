@@ -24,6 +24,14 @@ const mocks = vi.hoisted(() => {
   const ipc = new Map<string, (...args: any[]) => unknown>();
   return {
     completed: true,
+    instantError: undefined as Error | undefined,
+    browserTabs: [] as import("@avenire/contracts").CapturedTab[],
+    extensionChannel: undefined as
+      | Pick<
+          import("./capture/channel.ts").ExtensionChannel,
+          "connected" | "refreshTabs" | "capture" | "latestTabs" | "release"
+        >
+      | undefined,
     trayMenu: [] as any[],
     trayEvents: new Map<string, () => void>(),
     saveShortcuts: vi.fn(async () => {}),
@@ -61,7 +69,9 @@ vi.mock("./capture/collect.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./capture/collect.ts")>()),
   collectSnapshot: mocks.collect,
   instantCapture: (capturedAt: string, foreground: boolean) => {
+    if (mocks.instantError) throw mocks.instantError;
     const promise = mocks.collect(capturedAt, { foreground });
+    const tabs = [...mocks.browserTabs];
     return {
       snapshot: {
         id: "capture",
@@ -69,11 +79,11 @@ vi.mock("./capture/collect.ts", async (importOriginal) => ({
         deviceId: "test",
         platform: "linux",
         windows: [],
-        tabs: [],
+        tabs,
         media: [],
         collectorNotes: [],
       },
-      resolve: () => promise,
+      resolve: async () => ({ ...(await promise), tabs }),
     };
   },
 }));
@@ -86,7 +96,9 @@ vi.mock("./capture/research/electron/collectors/ps-queue.ts", () => ({
   prewarmPowerShell: async () => {},
 }));
 vi.mock("./capture/tabs.ts", () => ({
-  extensionChannel: undefined,
+  get extensionChannel() {
+    return mocks.extensionChannel;
+  },
   resetTabsOwner: vi.fn(),
   startTabsReceiver: vi.fn(),
   stopTabsReceiver: vi.fn(),
@@ -660,6 +672,104 @@ it("keeps capture global, guards overlay actions and replays its state after a r
   main.webContents.send.mockClear();
   mocks.ipc.get("avenire:overlay-undo")!(overlayEvent, "capture");
   expect(main.webContents.send).not.toHaveBeenCalled();
+});
+
+it("reenables capture after snapshot startup throws and allows the next tray capture", async () => {
+  const main = mocks.windows[0]!;
+  const trusted = { sender: main.webContents, senderFrame: main.webContents.mainFrame };
+  mocks.ipc.get("avenire:capture-ready")!(trusted, true, "startup-error-owner");
+  mocks.showError.mockClear();
+  mocks.instantError = new Error("Snapshot startup failed");
+  try {
+    await mocks.ipc.get("avenire:capture-now")!(trusted);
+    expect(mocks.trayMenu.find((item) => item.id === "capture").enabled).toBe(true);
+    expect(mocks.showError).toHaveBeenCalled();
+  } finally {
+    mocks.instantError = undefined;
+  }
+  main.webContents.send.mockClear();
+  await mocks.ipc.get("avenire:capture-now")!(trusted);
+  expect(main.webContents.send.mock.calls.some(([channel]) => channel === "avenire:capture")).toBe(
+    true,
+  );
+  mocks.ipc.get("avenire:capture-ack")!(trusted, "capture");
+});
+
+it("delivers the capture and releases single flight even when the overlay cannot update", async () => {
+  const main = mocks.windows[0]!;
+  const trusted = { sender: main.webContents, senderFrame: main.webContents.mainFrame };
+  mocks.ipc.get("avenire:capture-ready")!(trusted, true, "overlay-error-owner");
+  const overlay = mocks.windows.find((target) =>
+    String(target.options.webPreferences?.preload).endsWith("overlay-preload.cjs"),
+  )!;
+  overlay.setBounds.mockImplementation(() => {
+    throw new Error("Overlay window unavailable");
+  });
+  main.webContents.send.mockClear();
+  try {
+    await mocks.ipc.get("avenire:capture-now")!(trusted);
+    expect(
+      main.webContents.send.mock.calls.some(([channel]) => channel === "avenire:capture-started"),
+    ).toBe(true);
+    expect(
+      main.webContents.send.mock.calls.some(([channel]) => channel === "avenire:capture"),
+    ).toBe(true);
+    expect(mocks.trayMenu.find((item) => item.id === "capture").enabled).toBe(true);
+    mocks.ipc.get("avenire:capture-ack")!(trusted, "capture");
+  } finally {
+    overlay.setBounds.mockReset();
+  }
+});
+
+it("refreshes an empty browser cache after starting the overlay and reads newly reported permitted tabs", async () => {
+  const main = mocks.windows[0]!;
+  const trusted = { sender: main.webContents, senderFrame: main.webContents.mainFrame };
+  mocks.ipc.get("avenire:capture-ready")!(trusted, true, "cold-browser-owner");
+  main.webContents.send.mockClear();
+  const tab: import("@avenire/contracts").CapturedTab = {
+    tabId: 7,
+    windowId: 1,
+    browser: "chrome",
+    url: "https://school.test/paper.pdf",
+    title: "Paper",
+    activeInWindow: true,
+    engagement: { dwellMs: 0, scrollDepthPct: 0, mediaPlaying: false },
+  };
+  const refreshTabs = vi.fn(async () => {
+    expect(main.webContents.send.mock.calls[0]![0]).toBe("avenire:capture-started");
+    mocks.browserTabs = [
+      tab,
+      { ...tab, tabId: 8, incognito: true },
+      { ...tab, tabId: 9, url: "https://mail.google.com/mail" },
+    ];
+  });
+  const read = vi.fn(async (tabs: readonly import("@avenire/contracts").CapturedTab[]) => {
+    expect(tabs).toEqual([tab]);
+    return [];
+  });
+  mocks.extensionChannel = {
+    connected: () => true,
+    refreshTabs,
+    capture: read,
+    latestTabs: () => [],
+    release: async () => {},
+  };
+  try {
+    await mocks.ipc.get("avenire:capture-now")!(trusted);
+    expect(refreshTabs).toHaveBeenCalledWith(300, expect.any(AbortSignal));
+    expect(read).toHaveBeenCalledOnce();
+    const result = main.webContents.send.mock.calls.find(
+      ([channel]) => channel === "avenire:capture",
+    )![1];
+    expect(result.snapshot.tabs).toEqual([tab]);
+    expect(
+      main.webContents.send.mock.calls.some(([channel]) => channel === "avenire:capture-progress"),
+    ).toBe(true);
+    mocks.ipc.get("avenire:capture-ack")!(trusted, "capture");
+  } finally {
+    mocks.browserTabs = [];
+    mocks.extensionChannel = undefined;
+  }
 });
 
 it("first launch stays in bundled setup and validates its exact frame before completing", async () => {

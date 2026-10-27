@@ -1156,6 +1156,8 @@ describe("all-tabs streaming regression", () => {
     const uploadInputs: any[] = [];
     const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (!String(url).startsWith("https://avenire.example")) {
+        const doc = tabs.find((tab) => resolveDocumentUrl(tab.url) === String(url));
+        if (doc && !attempted.includes(doc.tabId)) attempted.push(doc.tabId);
         await new Promise((done) => setTimeout(done, 500));
         return new Response("%PDF-original", { headers: { "content-type": "application/pdf" } });
       }
@@ -1274,7 +1276,7 @@ it("uses the per-file contract limit even below 1 GiB and redacts private networ
 it("shows a Needs you reason for unread Drive tabs in direct mode", async () => {
   vi.useFakeTimers();
   const tabs = [report(1, "https://drive.google.com/file/d/abc/view")];
-  const fetcher = vi.fn();
+  const fetcher = vi.fn(() => new Promise<Response>(() => {}));
   const pending = captureOpenTabs(
     { scripting: { executeScript: () => new Promise(() => {}) } } as unknown as typeof chrome,
     tabs,
@@ -1289,5 +1291,25 @@ it("shows a Needs you reason for unread Drive tabs in direct mode", async () => 
     skipped: 1,
     note: "Saved 0 source(s). Needs you · open in browser and capture again. Read in browser timed out",
   });
-  expect(fetcher).not.toHaveBeenCalled();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it("reads a Drive original without waiting for a stalled viewer renderer", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(crypto.subtle, "digest").mockResolvedValue(new Uint8Array(32).buffer);
+  const execute = vi.fn(() => new Promise<any[]>(() => {}));
+  const fetcher = vi.fn(
+    async () => new Response("%PDF-original", { headers: { "content-type": "application/pdf" } }),
+  );
+  const onTab = vi.fn(async () => {});
+  const work = captureTabs(
+    { scripting: { executeScript: execute } } as unknown as typeof chrome,
+    [report(1, "https://drive.google.com/file/d/abc/view")],
+    true,
+    { fetcher, onTab },
+  );
+  await vi.advanceTimersByTimeAsync(1100);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(onTab).toHaveBeenCalledTimes(1);
+  expect((await work).files).toHaveLength(1);
 });

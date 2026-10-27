@@ -54,7 +54,8 @@ import { captureItems, runCapturePipeline } from "./capture/pipeline.ts";
 import { executeReopen } from "./capture/reopen.ts";
 import { captureLibraryClient } from "./capture/library-client.ts";
 import { planReopen } from "@avenire/capture/reopen";
-import { CaptureOverlay } from "./capture-overlay.ts";
+import { CaptureOverlay, captureOverlayAssetsAvailable } from "./capture-overlay.ts";
+import { captureFailureReason } from "./capture/failure.ts";
 import { startNativePoll, clearNativeCache } from "./capture/native.ts";
 import { DesktopAuth, isProviderAuthUrl } from "./auth.ts";
 
@@ -269,7 +270,9 @@ function createWindow(): void {
     title: "Avenire",
     webPreferences: {
       preload: Path.join(__dirname, "preload.cjs"),
-      additionalArguments: ["--avenire-capture-overlay"],
+      additionalArguments: captureOverlayAssetsAvailable(__dirname)
+        ? ["--avenire-capture-overlay"]
+        : [],
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
@@ -610,6 +613,31 @@ async function captureSetup(): Promise<void> {
   }
 }
 
+/** Packaged Windows GUI processes may have no terminal; mirror safe stage counts to DevTools. */
+function captureDiagnostic(
+  stage: string,
+  details: Readonly<Record<string, string | number | boolean>> = {},
+) {
+  console.info(`[capture] ${stage}`, details);
+  if (window && !window.isDestroyed()) {
+    try {
+      window.webContents.send("avenire:capture-diagnostic", { stage, ...details });
+    } catch {
+      /* Closing the app's renderer must not interrupt capture. */
+    }
+  }
+}
+
+/** The overlay is a view of the capture; a native window failure must not cancel saving. */
+function updateCaptureOverlay(update: (overlay: CaptureOverlay) => void): void {
+  if (!captureOverlay) return;
+  try {
+    update(captureOverlay);
+  } catch {
+    console.warn("[capture] Overlay could not update; capture is continuing.");
+  }
+}
+
 async function capture(): Promise<void> {
   if (captureRunning) return;
   if (setupTry && setupWindow) {
@@ -626,45 +654,76 @@ async function capture(): Promise<void> {
   }
   if (!captureOwner) return;
   if (pendingCapture) {
+    captureDiagnostic("Retrying submission of the previous capture");
     restoreCaptureOverlay(captureOwner, pendingStream);
-    if (captureOwner) captureOverlay?.submitting(captureOwner, pendingCapture.snapshot.id);
+    const owner = captureOwner;
+    const id = pendingCapture.snapshot.id;
+    updateCaptureOverlay((overlay) => overlay.submitting(owner, id));
     window.webContents.send("avenire:capture", pendingCapture);
     return;
   }
-  captureRunning = true;
-  rebuildTray();
   const owner = captureOwner;
-  const capturedAt = new Date().toISOString();
-  // Fix the id, owner and replayable placeholder before the first asynchronous operation.
-  const staged = stagedCapture;
-  const instant = staged
-    ? { snapshot: staged.snapshot, resolve: async () => staged.snapshot }
-    : instantCapture(capturedAt, setup.foregroundCapture);
-  const initial = staged ?? applyPolicy(instant.snapshot);
   const controller = new AbortController();
-  pendingCaptureOwner = owner;
-  const stream = new CaptureProgressStream(
-    { id: initial.snapshot.id, items: captureItems(initial.snapshot) },
-    (channel, payload) => {
-      if (captureOwner === owner && lastOwner === owner) {
-        if (channel === "avenire:capture-started")
-          captureOverlay?.begin(owner, payload as CaptureStarted, captureShortcut);
-        else captureOverlay?.progress(owner, payload as CaptureProgress);
-      }
-      if (
-        captureReady &&
-        captureOwner === owner &&
-        lastOwner === owner &&
-        window &&
-        !window.isDestroyed()
-      )
-        window.webContents.send(channel, payload);
-    },
-  );
-  activeCapture = { owner, controller, stream };
-  const session = captureUploadSession(window.webContents.session, appUrl, owner);
-  void session.catch(() => {}); // The pipeline observes and reports session failure after resolution.
+  let initial: CapturePayload | undefined;
+  captureRunning = true;
   try {
+    rebuildTray();
+    const capturedAt = new Date().toISOString();
+    // All preparation belongs to the same single-flight lifetime as reading and uploading.
+    const staged = stagedCapture;
+    let instant = staged
+      ? { snapshot: staged.snapshot, resolve: async () => staged.snapshot }
+      : instantCapture(capturedAt, setup.foregroundCapture);
+    initial = staged ?? applyPolicy(instant.snapshot);
+
+    pendingCaptureOwner = owner;
+    const stream = new CaptureProgressStream(
+      { id: initial.snapshot.id, items: captureItems(initial.snapshot) },
+      (channel, payload) => {
+        if (captureOwner === owner && lastOwner === owner) {
+          updateCaptureOverlay((overlay) => {
+            if (channel === "avenire:capture-started")
+              overlay.begin(owner, payload as CaptureStarted, captureShortcut);
+            else overlay.progress(owner, payload as CaptureProgress);
+          });
+        }
+        if (
+          captureReady &&
+          captureOwner === owner &&
+          lastOwner === owner &&
+          window &&
+          !window.isDestroyed()
+        )
+          window.webContents.send(channel, payload);
+      },
+    );
+    activeCapture = { owner, controller, stream };
+    captureDiagnostic("Started", {
+      tabs: initial.snapshot.tabs.length,
+      windows: initial.snapshot.windows.length,
+      extension: extensionChannel?.connected() ?? false,
+      readInBrowser,
+    });
+    // Cached reports can be absent after wake/reconnect or miss a just-opened tab. Show the
+    // overlay first, then give the paired browser 300ms to report all current permitted tabs.
+    if (!staged && extensionChannel?.connected()) {
+      await extensionChannel.refreshTabs(300, controller.signal);
+      controller.signal.throwIfAborted();
+      if (lastOwner !== owner) return;
+      const refreshed = instantCapture(capturedAt, setup.foregroundCapture);
+      const id = initial.snapshot.id;
+      initial = applyPolicy({ ...refreshed.snapshot, id });
+      instant = {
+        snapshot: initial.snapshot,
+        resolve: async () => ({ ...(await refreshed.resolve()), id }),
+      };
+      captureDiagnostic("Browser refreshed", { tabs: initial.snapshot.tabs.length });
+      const existing = new Set(stream.started.items.map((item) => item.key));
+      for (const item of captureItems(initial.snapshot))
+        if (!existing.has(item.key)) stream.progress(item);
+    }
+    const session = captureUploadSession(window.webContents.session, appUrl, owner);
+    void session.catch(() => {}); // The pipeline observes and reports session failure after resolution.
     const payload = await runCapturePipeline({
       initial,
       resolve: instant.resolve,
@@ -677,23 +736,35 @@ async function capture(): Promise<void> {
       readInBrowser,
       signal: controller.signal,
     });
-    if (lastOwner !== owner || controller.signal.aborted) return;
+    if (lastOwner !== owner || controller.signal.aborted) {
+      console.info("[capture] Cancelled after account or session change");
+      return;
+    }
     stagedCapture = undefined;
+    captureDiagnostic("Collected", {
+      saved: payload.uploads?.files.length ?? 0,
+      skipped: payload.uploads?.skipped.length ?? 0,
+      queuedTabs: payload.snapshot.tabs.length,
+    });
     pendingCapture = payload;
     pendingStream = stream;
     pendingCaptureOwner = owner;
     activeCapture = undefined;
     if (window && !window.isDestroyed() && captureReady && captureOwner === owner) {
-      captureOverlay?.submitting(owner, pendingCapture.snapshot.id);
+      updateCaptureOverlay((overlay) => overlay.submitting(owner, payload.snapshot.id));
       window.webContents.send("avenire:capture", pendingCapture);
+      captureDiagnostic("Sent to the app for submission");
     }
-  } catch {
-    if (!controller.signal.aborted) {
-      captureOverlay?.failed(
-        owner,
-        initial.snapshot.id,
-        "Capture could not finish. Check your sign-in and connection, then capture again.",
-      );
+  } catch (error) {
+    if (!controller.signal.aborted && lastOwner === owner) {
+      const reason = captureFailureReason(error);
+      console.warn("[capture] Failed", { reason });
+      if (initial) {
+        const id = initial.snapshot.id;
+        updateCaptureOverlay((overlay) => overlay.failed(owner, id, reason));
+      } else {
+        dialog.showErrorBox("Capture could not start", reason);
+      }
     }
   } finally {
     if (activeCapture?.controller === controller) activeCapture = undefined;
@@ -756,7 +827,9 @@ ipcMain.handle(
     if (captureReady && pendingCaptureOwner !== captureOwner) pendingCapture = undefined;
     if (captureReady && pendingCapture) {
       restoreCaptureOverlay(captureOwner, pendingStream);
-      captureOverlay?.submitting(captureOwner!, pendingCapture.snapshot.id);
+      const owner = captureOwner!;
+      const id = pendingCapture.snapshot.id;
+      updateCaptureOverlay((overlay) => overlay.submitting(owner, id));
       window!.webContents.send("avenire:capture", pendingCapture);
     } else if (captureReady && activeCapture && activeCapture.owner === captureOwner) {
       restoreCaptureOverlay(captureOwner, activeCapture.stream);
@@ -824,8 +897,10 @@ function restoreCaptureOverlay(
 ) {
   if (!owner || !stream || !captureOverlay || captureOverlay.state?.id === stream.started.id)
     return;
-  captureOverlay.begin(owner, stream.started, captureShortcut);
-  for (const event of stream.events) captureOverlay.progress(owner, event);
+  updateCaptureOverlay((overlay) => {
+    overlay.begin(owner, stream.started, captureShortcut);
+    for (const event of stream.events) overlay.progress(owner, event);
+  });
 }
 async function showAppRoute(path: string): Promise<void> {
   const url = new URL(path, appUrl).href;
@@ -860,7 +935,12 @@ ipcMain.handle("avenire:capture-receipt", (event, id: unknown, receipt: unknown)
   )
     return;
   const decoded: CaptureReceiptSummary = Schema.decodeUnknownSync(receiptSchema)(receipt);
-  captureOverlay.receipt(captureOwner, String(id), decoded);
+  captureDiagnostic("Receipt", {
+    saved: decoded.files.length,
+    skipped: decoded.skipped.length,
+    blocked: decoded.blocked.length,
+  });
+  updateCaptureOverlay((overlay) => overlay.receipt(captureOwner!, String(id), decoded));
 });
 ipcMain.handle("avenire:capture-failed", (event, id: unknown, message: unknown) => {
   if (
@@ -871,7 +951,8 @@ ipcMain.handle("avenire:capture-failed", (event, id: unknown, message: unknown) 
     typeof message !== "string"
   )
     return;
-  captureOverlay?.failed(captureOwner, id, message.slice(0, 500));
+  console.warn("[capture] App submission failed");
+  updateCaptureOverlay((overlay) => overlay.failed(captureOwner!, id, message.slice(0, 500)));
 });
 function overlaySender(event: Electron.IpcMainInvokeEvent): CaptureOverlay {
   if (!captureOverlay?.trusted(event)) throw new Error("Untrusted capture overlay IPC sender");

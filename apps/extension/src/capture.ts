@@ -199,18 +199,21 @@ export async function captureTabs(
         if ((!local && !readInBrowser) || (local && options.desktop)) return;
         if (local && !(await api.extension.isAllowedFileSchemeAccess()))
           throw new Error("Open Avenire desktop to capture files from this computer");
-        let page: PageSnapshot;
-        try {
-          const extracted = await api.scripting.executeScript({
-            target: { tabId: tab.tabId },
-            func: extractPage,
-            args: [tab.tabId],
-          });
-          page = Schema.decodeUnknownSync(PageSnapshot)(extracted[0]?.result);
-        } catch {
-          if (!resolveDocumentUrl(tab.finalUrl ?? tab.url))
+        const knownDocument = resolveDocumentUrl(tab.finalUrl ?? tab.url);
+        let page = emptyPage(tab);
+        if (!knownDocument) {
+          // Document viewers and canvas editors can leave executeScript pending indefinitely.
+          // Their original can be read directly through the credentialed service-worker fetch.
+          try {
+            const extracted = await api.scripting.executeScript({
+              target: { tabId: tab.tabId },
+              func: extractPage,
+              args: [tab.tabId],
+            });
+            page = Schema.decodeUnknownSync(PageSnapshot)(extracted[0]?.result);
+          } catch {
             throw new Error("Page content unavailable");
-          page = emptyPage(tab); // Browser PDF viewers cannot run scripts; fetch the original URL.
+          }
         }
         if (controller.signal.aborted) return;
         const current: CapturedTab = {
@@ -291,10 +294,13 @@ export async function captureTabs(
         if (primary && (await captureDocument(primary))) return;
         let hints: ReturnType<typeof discoverLinks> = [];
         try {
-          const found = await api.scripting.executeScript({
-            target: { tabId: tab.tabId, allFrames: true },
-            func: discoverLinks,
-          });
+          const found = await within(
+            api.scripting.executeScript({
+              target: { tabId: tab.tabId, allFrames: true },
+              func: discoverLinks,
+            }),
+            Math.max(0, Math.min(500, tabDeadline - Date.now())),
+          );
           hints = found.flatMap((frame) => frame.result ?? []);
         } catch {
           /* A built-in PDF viewer still has its tab URL. */
@@ -302,11 +308,14 @@ export async function captureTabs(
         if (controller.signal.aborted) return;
         // Probe every frame before fetching: an LMS shell may hold a blob-backed PDF.js viewer.
         try {
-          const viewers = await api.scripting.executeScript({
-            target: { tabId: tab.tabId, allFrames: true },
-            world: "MAIN",
-            func: probePdfViewer,
-          });
+          const viewers = await within(
+            api.scripting.executeScript({
+              target: { tabId: tab.tabId, allFrames: true },
+              world: "MAIN",
+              func: probePdfViewer,
+            }),
+            Math.max(0, Math.min(500, tabDeadline - Date.now())),
+          );
           for (const frame of viewers) {
             if (controller.signal.aborted) break;
             const viewer = frame.result;

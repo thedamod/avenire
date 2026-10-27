@@ -1,11 +1,20 @@
 import { BrowserWindow, screen } from "electron";
 import { pathToFileURL } from "node:url";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type {
   CaptureOverlayState,
   CaptureStarted,
   CaptureProgress,
   CaptureReceiptSummary,
 } from "./bridge.ts";
+
+/** A partial or older installation must leave the in-app toast enabled. */
+export function captureOverlayAssetsAvailable(directory: string): boolean {
+  return ["capture-overlay.html", "capture-overlay.js", "capture-overlay.css"].every((name) =>
+    existsSync(join(directory, name)),
+  );
+}
 
 /** A 380px panel inside a 12px transparent gutter (room for its slide-in), 16px off the corner. */
 const PANEL_WIDTH = 380;
@@ -71,12 +80,25 @@ export class CaptureOverlay {
     this.window.webContents.on("will-navigate", (event) => event.preventDefault());
     this.window.webContents.on("will-redirect", (event) => event.preventDefault());
     this.window.webContents.on("will-attach-webview", (event) => event.preventDefault());
+    this.window.webContents.on("did-fail-load", (_event, code, _description, _url, mainFrame) => {
+      if (mainFrame) console.warn("[capture] Overlay page failed to load", { code });
+    });
+    this.window.webContents.on("render-process-gone", (_event, details) => {
+      console.warn("[capture] Overlay renderer stopped", { reason: details.reason });
+    });
+    this.window.webContents.on("console-message", (event) => {
+      if (event.level !== "error") return;
+      // Forward the bundled renderer's errors; redact URLs, including private bundle paths.
+      const message = event.message.replace(/(?:https?|file):\/\/[^\s]+/gi, "[url]").slice(0, 500);
+      console.warn("[capture] Overlay renderer error", { message });
+    });
     this.window.webContents.on("did-finish-load", () => {
+      console.info("[capture] Overlay page loaded");
       this.push();
       if (this.state) this.window.showInactive();
     });
     void this.window.loadFile(path).catch(() => {
-      /* No focus-stealing fallback on overlay load failure. */
+      console.warn("[capture] Overlay could not open its bundled page");
     });
   }
   trusted(event: Electron.IpcMainInvokeEvent): boolean {

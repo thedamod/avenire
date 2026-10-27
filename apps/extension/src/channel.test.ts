@@ -107,6 +107,16 @@ describe("desktop channel lifecycle", () => {
     await settle();
     expect(request).toHaveBeenCalledTimes(1);
   });
+  it("refreshes metadata on desktop request without needing cached tab IDs", async () => {
+    const { socket, request } = setup();
+    socket.open();
+    await settle();
+    socket.message({ _tag: "Welcome", version: 1 });
+    await settle();
+    socket.message({ _tag: "TabsRequest", version: 1 });
+    await settle();
+    expect(request).toHaveBeenCalledWith({ _tag: "TabsRequest", version: 1 }, socket);
+  });
   it("preserves reconnect backoff when heartbeat or wake calls connect again", async () => {
     const { channel, socket } = setup();
     socket.close();

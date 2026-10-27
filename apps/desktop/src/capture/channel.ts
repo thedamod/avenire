@@ -57,6 +57,7 @@ interface Peer {
   lastSeen: number;
   chain: Promise<void>;
   readonly requests: Map<string, Pending>;
+  readonly refreshes: Set<() => void>;
   readonly expired: Map<string, number>;
   readonly reopens: Map<string, { resolve: (ok: boolean) => void; timer: NodeJS.Timeout }>;
   readonly directories: Set<string>;
@@ -135,6 +136,7 @@ export class ExtensionChannel {
       lastSeen: Date.now(),
       chain: Promise.resolve(),
       requests: new Map(),
+      refreshes: new Set(),
       expired: new Map(),
       reopens: new Map(),
       directories: new Set(),
@@ -214,6 +216,7 @@ export class ExtensionChannel {
       case "TabsReport":
         peer.tabs = message.tabs.filter((tab) => !tab.incognito);
         peer.at = Date.now();
+        for (const done of peer.refreshes) done();
         break;
       case "CaptureNow":
         this.onCaptureNow();
@@ -383,6 +386,7 @@ export class ExtensionChannel {
   }
   private drop(peer: Peer) {
     if (!this.peers.delete(peer)) return;
+    for (const done of peer.refreshes) done();
     for (const id of peer.requests.keys())
       this.fail(peer, id, "Browser disconnected; reconnect the extension and capture again.");
     for (const pending of peer.reopens.values()) {
@@ -398,6 +402,29 @@ export class ExtensionChannel {
         peer.directories.clear();
       })
       .catch(() => {});
+  }
+  /** Wake MV3 and refresh pushed metadata, even when the current tab cache is empty. */
+  async refreshTabs(timeoutMs = 300, signal?: AbortSignal): Promise<void> {
+    await Promise.all(
+      [...this.peers]
+        .filter((peer) => peer.sender)
+        .map(
+          (peer) =>
+            new Promise<void>((resolve) => {
+              const done = () => {
+                clearTimeout(timer);
+                peer.refreshes.delete(done);
+                signal?.removeEventListener("abort", done);
+                resolve();
+              };
+              const timer = setTimeout(done, Math.max(0, timeoutMs));
+              peer.refreshes.add(done);
+              signal?.addEventListener("abort", done, { once: true });
+              if (signal?.aborted) done();
+              else this.send(peer, { _tag: "TabsRequest", version: 1 });
+            }),
+        ),
+    );
   }
   async capture(
     tabs: readonly CapturedTab[],

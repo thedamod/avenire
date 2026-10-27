@@ -8,6 +8,7 @@ import { Readable, Transform } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { pipeline } from "node:stream/promises";
 import * as Schema from "effect/Schema";
+import * as SchemaIssue from "effect/SchemaIssue";
 import {
   CreateSourceUpload,
   LibraryFile,
@@ -339,7 +340,17 @@ export const acquireAndUploadSource = async (
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (!created.ok) throw await rejection(created, signal);
+    if (!created.ok) {
+      const error = await rejection(created, signal);
+      console.warn("[capture] Upload rejected", {
+        stage: "create",
+        status: error.status,
+        fields: Object.keys(payload),
+        origin: payload.origin?._tag ?? "none",
+        detail: error.detail,
+      });
+      throw error;
+    }
     const ticket = Schema.decodeUnknownSync(SourceUploadTicket)(await readJson(created, signal));
     const target = httpUrl(new URL(ticket.uploadUrl, app).href);
     if (
@@ -367,12 +378,38 @@ export const acquireAndUploadSource = async (
       body: Readable.toWeb(uploadStream) as ReadableStream<Uint8Array>,
       duplex: "half",
     } as RequestInit);
-    if (!uploaded.ok) throw await rejection(uploaded, signal);
+    if (!uploaded.ok) {
+      const error = await rejection(uploaded, signal);
+      console.warn("[capture] Upload rejected", {
+        stage: "put",
+        status: error.status,
+        detail: error.detail,
+      });
+      throw error;
+    }
     // A successful PUT has finalized the server upload even if response decoding fails.
     completed = true;
     const result = Schema.decodeUnknownSync(LibraryFile)(await readJson(uploaded, signal));
     return await finish(result);
   } catch (cause) {
+    // Only kinds and schema field names leave the device-only error, never its input values/path.
+    if (!(cause instanceof UploadRejected)) {
+      const fields = Schema.isSchemaError(cause)
+        ? SchemaIssue.makeFormatterStandardSchemaV1()(cause.issue).issues.map(
+            (issue) =>
+              issue.path
+                ?.map((part) => (typeof part === "object" ? String(part.key) : String(part)))
+                .join(".") || "response",
+          )
+        : [];
+      const code = (cause as NodeJS.ErrnoException | null)?.code;
+      console.warn("[capture] Source failed", {
+        operation,
+        kind: cause instanceof Error ? cause.name : "Error",
+        ...(typeof code === "string" && /^(?:E[A-Z0-9_]+|ABORT_ERR)$/.test(code) ? { code } : {}),
+        ...(fields.length ? { fields: fields.slice(0, 5) } : {}),
+      });
+    }
     throw new DeviceAcquisitionError({ operation, cause });
   } finally {
     clearTimeout(timer);

@@ -78,9 +78,16 @@ function scheduleReport(): void {
 }
 
 async function handleRequest(
-  message: Extract<ExtensionMessage, { readonly _tag: "CaptureRequest" | "Reopen" }>,
+  message: Extract<
+    ExtensionMessage,
+    { readonly _tag: "CaptureRequest" | "Reopen" | "TabsRequest" }
+  >,
   socket: WebSocket,
 ): Promise<void> {
+  if (message._tag === "TabsRequest") {
+    await report();
+    return;
+  }
   if (message._tag === "Reopen") {
     channel?.send(
       {

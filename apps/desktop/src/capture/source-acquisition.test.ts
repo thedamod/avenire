@@ -1,3 +1,5 @@
+import * as Schema from "effect/Schema";
+import { CreateSourceUpload } from "@avenire/contracts";
 import { HashLru } from "./hash-cache.ts";
 import { LocalOriginRegistry } from "./registry.ts";
 import { createHash } from "node:crypto";
@@ -93,6 +95,19 @@ const appHarness = async (
         body: Buffer.concat(chunks),
       });
       if (request.method === "POST") {
+        // Exercise the server's strict JSON boundary, not just a fixture which accepts any body.
+        try {
+          Schema.decodeUnknownSync(CreateSourceUpload)(
+            JSON.parse(Buffer.concat(chunks).toString("utf8")),
+            {
+              onExcessProperty: "error",
+            },
+          );
+        } catch {
+          response.writeHead(400, { "content-type": "application/json" });
+          response.end(JSON.stringify({ error: "Invalid request parameters." }));
+          return;
+        }
         response.setHeader("content-type", "application/json");
         response.end(
           JSON.stringify({

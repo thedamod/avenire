@@ -529,3 +529,18 @@ it("caps discovered files per tab while exempting primary documents and preservi
   expect(c.socket.readyState).toBe(WebSocket.OPEN);
   await Promise.all(results.map((result) => h.channel.release(result)));
 });
+
+it("refreshes metadata from a paired browser with an empty cache and bounds an unanswered refresh", async () => {
+  const h = await harness();
+  const c = await client(h.url);
+  await authenticate(c);
+  expect(h.channel.latestTabs()).toEqual([]);
+  const refresh = h.channel.refreshTabs();
+  await c.next("TabsRequest");
+  c.send({ _tag: "TabsReport", version: 1, tabs: [tab] });
+  await refresh;
+  expect(h.channel.latestTabs()).toEqual([tab]);
+  const start = performance.now();
+  await h.channel.refreshTabs(25);
+  expect(performance.now() - start).toBeLessThan(200);
+});

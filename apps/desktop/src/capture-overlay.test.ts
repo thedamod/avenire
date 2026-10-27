@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import type { CaptureReceiptSummary } from "./bridge.ts";
 const mocks = vi.hoisted(() => ({ windows: [] as any[], cursor: { x: -50, y: 100 } }));
@@ -32,7 +35,7 @@ vi.mock("electron", () => ({
     loadFile = vi.fn(async () => {});
   },
 }));
-import { CaptureOverlay, overlayBounds } from "./capture-overlay.ts";
+import { CaptureOverlay, overlayBounds, captureOverlayAssetsAvailable } from "./capture-overlay.ts";
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -183,4 +186,18 @@ it("polls Linux cursor bounds only while visible and toggles click-through", asy
   expect(target.setIgnoreMouseEvents).toHaveBeenCalledTimes(calls);
   overlay.dispose();
   vi.restoreAllMocks();
+});
+
+it("keeps the in-app toast available when any installed overlay asset is missing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "avenire-overlay-assets-"));
+  try {
+    expect(captureOverlayAssetsAvailable(directory)).toBe(false);
+    for (const name of ["capture-overlay.html", "capture-overlay.js", "capture-overlay.css"])
+      await writeFile(join(directory, name), "fixture");
+    expect(captureOverlayAssetsAvailable(directory)).toBe(true);
+    await rm(join(directory, "capture-overlay.js"));
+    expect(captureOverlayAssetsAvailable(directory)).toBe(false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

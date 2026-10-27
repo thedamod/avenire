@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { AvenireDesktopBridge, CapturePayload } from "./bridge.ts";
 
+ipcRenderer.on("avenire:capture-diagnostic", (_event, diagnostic: unknown) => {
+  console.info("[capture]", diagnostic);
+});
+
 const bridge: AvenireDesktopBridge = {
   platform: process.platform,
   captureOverlay: process.argv?.includes("--avenire-capture-overlay") ?? false,

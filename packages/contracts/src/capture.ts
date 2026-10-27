@@ -260,6 +260,8 @@ export const ExtensionMessage = Schema.Union([
     version: Version,
     reason: Schema.Literals(["unpaired", "account-mismatch", "unsupported-version"]),
   }),
+  /** Desktop asks the paired extension to refresh metadata before choosing tabs to read. */
+  Schema.TaggedStruct("TabsRequest", { version: Version }),
   Schema.TaggedStruct("TabsReport", {
     version: Version,
     tabs: Schema.Array(CapturedTab).check(Schema.isMaxLength(200)),

@@ -14,7 +14,10 @@ export interface ChannelOptions {
   readonly browser: BrowserKind;
   readonly storage: chrome.storage.StorageArea;
   readonly onRequest: (
-    message: Extract<ExtensionMessage, { readonly _tag: "CaptureRequest" | "Reopen" }>,
+    message: Extract<
+      ExtensionMessage,
+      { readonly _tag: "CaptureRequest" | "Reopen" | "TabsRequest" }
+    >,
     socket: WebSocket,
   ) => Promise<void>;
   readonly changed: (state: PairingState) => void;
@@ -79,6 +82,10 @@ export class DesktopChannel {
         this.code = undefined;
         socket.close();
       } else if (this.state.connected) {
+        if (message._tag === "TabsRequest") {
+          void this.options.onRequest(message, socket).catch(() => {});
+          return;
+        }
         if (message._tag === "Ping") this.send({ _tag: "Pong", version: 1 });
         if (
           (message._tag === "CaptureRequest" || message._tag === "Reopen") &&
