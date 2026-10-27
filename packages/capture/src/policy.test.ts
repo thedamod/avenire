@@ -157,3 +157,35 @@ it.each(["Olk.exe", "ms-teams", "KeePassXC", "Spotify", "Mailspring"])(
     expect(result.blocked).toHaveLength(1);
   },
 );
+
+it("matches blocked app variants by whole words, not substrings of study apps", () => {
+  const app = (appName: string) =>
+    applyPolicy({
+      ...snapshot,
+      tabs: [],
+      media: [],
+      windows: [{ appName, title: "Topic", foreground: false }],
+    }).blocked.length;
+  for (const blocked of [
+    "DiscordCanary",
+    "slack.exe",
+    "WhatsApp.Root",
+    "ms-teams",
+    "Telegram Desktop",
+    "1Password 7",
+    "olk",
+    "KeePassXC",
+    "PayPal",
+    "Signal",
+    "Messages",
+  ])
+    expect(app(blocked)).toBe(1);
+  for (const allowed of [
+    "Purchase Planner",
+    "Otherwise Notes",
+    "SignalProcessingLab",
+    "Pipeline Studio",
+    "Acrobat",
+  ])
+    expect(app(allowed)).toBe(0);
+});

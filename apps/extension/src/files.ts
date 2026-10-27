@@ -165,7 +165,37 @@ export async function fetchDocument(
       title: fileName,
       text: "",
       textLength: 0,
-      file: { url: hint.url, fileName, mimeType, sizeBytes: size, sha256: await sha256(bytes) },
+      file: {
+        url: hint.url,
+        ...(hint.originUrl ? { originUrl: hint.originUrl } : {}),
+        fileName,
+        mimeType,
+        sizeBytes: size,
+        sha256: await sha256(bytes),
+      },
     },
   };
+}
+
+/** Extraction and socket backpressure share the caller's local deadline. */
+export async function sendFileFrames(
+  requestId: string,
+  files: readonly CapturedFile[],
+  socket: Pick<WebSocket, "readyState" | "bufferedAmount" | "send">,
+  deadline: number,
+  connected: () => boolean,
+): Promise<void> {
+  for (const file of files)
+    for (const frame of fileFrames(requestId, file)) {
+      while (
+        Date.now() < deadline &&
+        socket.bufferedAmount > 2 * 1024 * 1024 &&
+        socket.readyState === 1
+      )
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, Math.min(10, deadline - Date.now())),
+        );
+      if (Date.now() >= deadline || !connected() || socket.readyState !== 1) return;
+      socket.send(new Uint8Array(frame));
+    }
 }

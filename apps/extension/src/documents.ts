@@ -89,6 +89,7 @@ export interface DocumentHint {
   readonly name: string;
   readonly rank: number;
   readonly explicit: boolean;
+  readonly originUrl?: string;
 }
 
 /** executeScript-safe. Bounded main-region links, embeds and LMS adapters, adapted from v1. */
@@ -97,11 +98,17 @@ export function discoverLinks(doc?: Document, win?: Window): DocumentHint[] {
   const w = win ?? window;
   const base = new URL(w.location.href);
   const result: DocumentHint[] = [];
-  const add = (raw: string | null, name: string, rank: number, explicit = false) => {
+  const add = (raw: string | null, name: string, rank: number, explicit = false, frame = false) => {
     try {
       const url = new URL(raw ?? "", base);
       if (!raw || !/^https?:$/.test(url.protocol) || url.username || url.password) return;
-      result.push({ url: url.href, name: name.trim().slice(0, 255), rank, explicit });
+      result.push({
+        url: url.href,
+        name: name.trim().slice(0, 255),
+        rank,
+        explicit,
+        ...(frame || (w.top && w.top !== w) ? { originUrl: frame ? url.href : base.href } : {}),
+      });
     } catch {
       /* Malformed publisher links are ignored. */
     }
@@ -117,6 +124,7 @@ export function discoverLinks(doc?: Document, win?: Window): DocumentHint[] {
       "",
       1,
       /pdf|officedocument|msword|ms-excel|ms-powerpoint/.test(node.getAttribute("type") ?? ""),
+      node.tagName === "IFRAME",
     );
   const canvas = /^(\/courses\/\d+)?\/files\/(\d+)(?:\/(?:preview|download))?\/?$/.exec(
     base.pathname,
@@ -194,6 +202,14 @@ export function discoverLinks(doc?: Document, win?: Window): DocumentHint[] {
       url.searchParams.set("redirect", "1");
     add(url.href, name, docPath || name ? 3 : 4, explicit);
   }
+  add(base.href, "", 0);
+  try {
+    for (const entry of w.performance.getEntriesByType("resource").slice(-500))
+      if (/\.(pdf|docx?|pptx?|xlsx?|od[pts]|rtf|txt|md|epub)(?:[?#]|$)/i.test(entry.name))
+        add(entry.name, "", 5);
+  } catch {
+    /* Timing API may be restricted. */
+  }
   return result.sort((a, b) => a.rank - b.rank).slice(0, 420);
 }
 
@@ -214,4 +230,70 @@ export function selectDocuments(hints: readonly DocumentHint[], tabUrl: string):
       return [{ ...hint, url }];
     })
     .slice(0, 10);
+}
+
+export interface PdfViewer {
+  readonly url: string;
+  readonly frameUrl: string;
+  readonly name: string;
+  readonly memory: boolean;
+}
+/** MAIN-world probe; no bytes are read until the worker approves the frame URL. */
+export function probePdfViewer(win?: Window): PdfViewer | null {
+  try {
+    const w = win ?? window;
+    const app = (
+      w as Window & {
+        PDFViewerApplication?: {
+          url?: string;
+          baseUrl?: string;
+          _contentDispositionFilename?: string;
+          _title?: string;
+          pdfDocument?: { getData?: unknown };
+        };
+      }
+    ).PDFViewerApplication;
+    if (!app) return null;
+    const url = String(app.url || app.baseUrl || "");
+    const memory =
+      !/^https?:/i.test(url) &&
+      (!url || /^(blob:|data:)/i.test(url)) &&
+      typeof app.pdfDocument?.getData === "function";
+    if (!memory && !/^https?:/i.test(url)) return null;
+    return {
+      url,
+      frameUrl: w.location.href,
+      name: String(
+        app._contentDispositionFilename || app._title || w.document.title || "document.pdf",
+      ),
+      memory,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Bounded JSON chunks avoid copying a whole PDF through executeScript in one result. */
+export async function readPdfChunk(offset: number, maxBytes: number, expectedUrl: string) {
+  if (location.href !== expectedUrl) throw new Error("Viewer navigated");
+  const app = (
+    window as Window & {
+      PDFViewerApplication?: {
+        pdfDocument?: { getData(): Promise<Uint8Array> };
+      };
+    }
+  ).PDFViewerApplication;
+  const bytes = await app?.pdfDocument?.getData();
+  if (
+    !bytes?.length ||
+    bytes.length > maxBytes ||
+    location.href !== expectedUrl ||
+    new TextDecoder().decode(bytes.subarray(0, 5)) !== "%PDF-"
+  )
+    throw new Error("Invalid PDF bytes");
+  const end = Math.min(bytes.length, offset + 192 * 1024);
+  let binary = "";
+  for (let at = offset; at < end; at += 8192)
+    binary += String.fromCharCode(...bytes.subarray(at, Math.min(end, at + 8192)));
+  return { size: bytes.length, data: btoa(binary) };
 }

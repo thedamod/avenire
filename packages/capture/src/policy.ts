@@ -81,29 +81,41 @@ const urlRules: readonly Rule[] = [
     test: (value) => /spotify\.com\/(?:track|episode)(?:[/?#]|$)/i.test(value),
   },
 ];
+// Process names vary across channels, bundles and platforms.
+const canonicalAppName = (value: string) =>
+  value
+    .replace(/\.exe$/i, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+    .replace(/[^a-z0-9]+/gi, " ")
+    .trim()
+    .toLowerCase();
 const appRules: readonly Rule[] = [
   {
     category: "password-manager",
-    test: (value) => /1password|bitwarden|lastpass|dashlane|keepass|roboform|enpass/i.test(value),
+    test: (value) =>
+      /\b(?:1 ?password|bit ?warden|last ?pass|dashlane|kee ?pass|robo ?form|enpass)/i.test(value),
   },
   {
     category: "email",
     test: (value) =>
-      /(?:^|\b)(?:outlook|olk(?:\.exe)?|mail|gmail|thunderbird|spark|mailspring|mailclient)(?:\b|$)/i.test(
+      /(?:^|\b)(?:outlook|hx outlook|olk|mail|g ?mail|thunder ?bird|spark|mail ?spring|mail ?client)(?:\b|$)/i.test(
         value,
       ),
   },
   {
     category: "messaging",
     test: (value) =>
-      /(?:^|\b)(?:slack|discord|whatsapp|messenger|messages|telegram|signal|teams|skype|wechat|imessage|line)(?:\b|$)/i.test(
+      // Distinctive brands match at a word start, since process names run words together
+      // (slackclient, discordcanary); generic words must be the whole app name.
+      /\b(?:slack|discord|whats ?app|messenger|telegram|ms ?teams|teams|skype|we ?chat|i ?message)/i.test(
         value,
-      ),
+      ) || /^(?:signal(?: ?beta| ?desktop)?|line|messages)$/i.test(value),
   },
   {
     category: "banking",
     test: (value) =>
-      /(?:^|\b)(?:bank|chase|wells fargo|bank of america|revolut|wise|paypal)(?:\b|$)/i.test(value),
+      /\b(?:bank|chase|wells fargo|bank ?of ?america|revolut|wise|pay ?pal)\b/i.test(value),
   },
 ];
 
@@ -130,7 +142,7 @@ function blockedCategory(
     }
   }
   if (urls.length > 64) return "private-window"; // Unverifiable redirect chain: fail closed.
-  for (const rule of appRules) if (rule.test(appName)) return rule.category;
+  for (const rule of appRules) if (rule.test(canonicalAppName(appName))) return rule.category;
   if (
     /^(?:spotify|netflix|hulu|disney\+|prime video|crunchyroll)(?:\.exe)?$/i.test(appName) ||
     /netflix|prime video|disney\+?|hulu|hbo\s?(?:max)?|crunchyroll|peacock|paramount\s?\+/i.test(

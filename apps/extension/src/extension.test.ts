@@ -866,3 +866,250 @@ describe("v1 capture regressions", () => {
     vi.useRealTimers();
   });
 });
+
+describe("v1 frame, timing and PDF.js document discovery", () => {
+  it("discovers resource timing PDFs, ignores non-documents and deduplicates URLs", () => {
+    const doc = new DOMParser().parseFromString(
+      '<main><a href="/a.pdf">A.pdf</a></main>',
+      "text/html",
+    );
+    const win = {
+      location: { href: "https://school.test/course" },
+      performance: {
+        getEntriesByType: () => [
+          { name: "https://school.test/a.pdf" },
+          { name: "https://school.test/xhr/b.docx" },
+          { name: "https://school.test/logo.png" },
+        ],
+      },
+    } as unknown as Window;
+    expect(
+      selectDocuments(discoverLinks(doc, win), win.location.href).map((hint) => hint.url),
+    ).toEqual(["https://school.test/a.pdf", "https://school.test/xhr/b.docx"]);
+  });
+  it("captures a blob-backed PDF.js handout in an iframe with the frame as origin", async () => {
+    const { probePdfViewer, readPdfChunk } = await import("./documents.ts");
+    const frameUrl = "https://lms.test/viewer.html?id=lecture";
+    const bytes = new TextEncoder().encode("%PDF-handout");
+    const execute = vi.fn(async (input: any): Promise<any[]> => {
+      if (input.func === extractPage) return [{ frameId: 0, result: page() }];
+      if (input.func === discoverLinks) {
+        expect(input.target.allFrames).toBe(true);
+        return [
+          { frameId: 0, result: [] },
+          {
+            frameId: 7,
+            result: [
+              {
+                url: "https://lms.test/slides.pptx",
+                name: "slides.pptx",
+                rank: 3,
+                explicit: true,
+                originUrl: frameUrl,
+              },
+            ],
+          },
+        ];
+      }
+      if (input.func === probePdfViewer) {
+        expect(input.target.allFrames).toBe(true);
+        expect(input.world).toBe("MAIN");
+        return [
+          {
+            frameId: 7,
+            result: {
+              url: "blob:https://lms.test/handout",
+              frameUrl,
+              name: "Handout.pdf",
+              memory: true,
+            },
+          },
+        ];
+      }
+      expect(input.func).toBe(readPdfChunk);
+      expect(input.target.frameIds).toEqual([7]);
+      expect(input.args[2]).toBe(frameUrl);
+      return [
+        { frameId: 7, result: { size: bytes.length, data: btoa(String.fromCharCode(...bytes)) } },
+      ];
+    });
+    const fetcher = vi.fn(
+      async () =>
+        new Response("slides", {
+          headers: {
+            "content-type":
+              "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          },
+        }),
+    );
+    const output = await captureTabs(
+      { scripting: { executeScript: execute } } as unknown as typeof chrome,
+      [report()],
+      true,
+      { fetcher },
+    );
+    expect(output.files).toHaveLength(2);
+    expect(output.files[0]?.bytes).toEqual(bytes);
+    expect(output.files.map((file) => file.page.file?.originUrl)).toEqual([frameUrl, frameUrl]);
+    expect(output.files[0]?.page.file).toMatchObject({
+      url: frameUrl,
+      fileName: "Handout.pdf",
+      mimeType: "application/pdf",
+      sha256: await sha256(bytes),
+    });
+  });
+  it("does not read PDF.js bytes from a blocked frame", async () => {
+    const { probePdfViewer, readPdfChunk } = await import("./documents.ts");
+    const execute = vi.fn(async (input: any): Promise<any[]> => {
+      if (input.func === extractPage) return [{ result: page() }];
+      if (input.func === probePdfViewer)
+        return [
+          {
+            frameId: 7,
+            result: {
+              url: "blob:https://mail.google.com/x",
+              frameUrl: "https://mail.google.com/inbox",
+              name: "Private.pdf",
+              memory: true,
+            },
+          },
+        ];
+      if (input.func === readPdfChunk) throw new Error("must not read");
+      return [{ result: [] }];
+    });
+    const output = await captureTabs(
+      { scripting: { executeScript: execute } } as unknown as typeof chrome,
+      [report()],
+      true,
+    );
+    expect(output.files).toEqual([]);
+    expect(execute.mock.calls.some(([input]) => input.func === readPdfChunk)).toBe(false);
+  });
+  it("caps memory PDFs at ten files and rejects oversized PDF.js data", async () => {
+    const { probePdfViewer, readPdfChunk } = await import("./documents.ts");
+    let oversized = true;
+    const execute = vi.fn(async (input: any): Promise<any[]> => {
+      if (input.func === extractPage) return [{ result: page() }];
+      if (input.func === probePdfViewer)
+        return Array.from({ length: 12 }, (_, frameId) => ({
+          frameId,
+          result: {
+            url: "blob:https://school.test/x",
+            frameUrl: `https://school.test/viewer/${frameId}`,
+            name: "Handout.pdf",
+            memory: true,
+          },
+        }));
+      if (input.func === readPdfChunk)
+        return [{ result: { size: oversized ? MAX_CAPTURE_BYTES + 1 : 6, data: btoa("%PDF-x") } }];
+      return [{ result: [] }];
+    });
+    const api = { scripting: { executeScript: execute } } as unknown as typeof chrome;
+    expect((await captureTabs(api, [report()], true)).files).toHaveLength(0);
+    expect(execute.mock.calls.filter(([input]) => input.func === readPdfChunk)).toHaveLength(10);
+    oversized = false;
+    expect((await captureTabs(api, [report()], true)).files).toHaveLength(10);
+  });
+  it("keeps other discovery stages when all-frame DOM injection fails", async () => {
+    const { probePdfViewer } = await import("./documents.ts");
+    const execute = vi.fn(async (input: any): Promise<any[]> => {
+      if (input.func === extractPage) return [{ result: page() }];
+      if (input.func === discoverLinks) throw new Error("frame inaccessible");
+      if (input.func === probePdfViewer)
+        return [
+          {
+            frameId: 3,
+            result: {
+              url: "https://school.test/handout.pdf",
+              frameUrl: "https://school.test/viewer",
+              name: "Handout.pdf",
+              memory: false,
+            },
+          },
+        ];
+      return [];
+    });
+    const fetcher = vi.fn(
+      async () => new Response("%PDF-handout", { headers: { "content-type": "application/pdf" } }),
+    );
+    const output = await captureTabs(
+      { scripting: { executeScript: execute } } as unknown as typeof chrome,
+      [report()],
+      true,
+      { fetcher },
+    );
+    expect(output.files).toHaveLength(1);
+    expect(output.files[0]?.page.file?.originUrl).toBe("https://school.test/viewer");
+  });
+  it("probes PDF.js URL and memory variants using a self-contained function", async () => {
+    const { probePdfViewer } = await import("./documents.ts");
+    const probe = new Function(`return (${probePdfViewer.toString()})`)() as typeof probePdfViewer;
+    const win = (app: unknown) =>
+      ({
+        location: { href: "https://school.test/viewer" },
+        document: { title: "Lecture" },
+        PDFViewerApplication: app,
+      }) as unknown as Window;
+    expect(probe(win({ url: "https://school.test/a.pdf" }))).toMatchObject({
+      memory: false,
+      url: "https://school.test/a.pdf",
+    });
+    for (const url of ["blob:https://school.test/x", "data:application/pdf;base64,eA==", ""])
+      expect(probe(win({ url, pdfDocument: { getData: vi.fn() } }))).toMatchObject({
+        memory: true,
+      });
+    expect(probe(win({ url: "blob:https://school.test/x" }))).toBeNull();
+  });
+});
+
+it("includes socket transfer and backpressure in the remaining capture deadline", async () => {
+  const { sendFileFrames } = await import("./files.ts");
+  vi.useFakeTimers();
+  try {
+    const bytes = new TextEncoder().encode("%PDF-x");
+    const file = {
+      bytes,
+      page: page({
+        file: {
+          url: "https://school.test/a.pdf",
+          fileName: "a.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: bytes.length,
+          sha256: "a".repeat(64),
+        },
+      }),
+    };
+    const socket = { readyState: 1 as const, bufferedAmount: 3 * 1024 * 1024, send: vi.fn() };
+    const work = sendFileFrames("request", [file], socket, Date.now() + 25, () => true);
+    await vi.advanceTimersByTimeAsync(25);
+    await work;
+    expect(socket.send).not.toHaveBeenCalled();
+    socket.bufferedAmount = 0;
+    await sendFileFrames("request", [file], socket, Date.now() + 100, () => true);
+    expect(socket.send).toHaveBeenCalledOnce();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps top-level linked originals at their own URL and embedded discoveries at their frame URL", () => {
+  const doc = new DOMParser().parseFromString(
+    '<main><a href="/notes.pdf">Notes.pdf</a><iframe src="about:blank"></iframe></main>',
+    "text/html",
+  );
+  // Give discovery a frame URL without making happy-dom perform a network load.
+  vi.spyOn(doc.querySelector("iframe")!, "getAttribute").mockImplementation((name) =>
+    name === "src" ? "/viewer.html?file=notes.pdf" : null,
+  );
+  const top = { location: { href: "https://school.test/course" } } as unknown as Window;
+  Object.defineProperty(top, "top", { value: top });
+  const main = discoverLinks(doc, top);
+  expect(main.find((hint) => hint.url.endsWith("/notes.pdf"))?.originUrl).toBeUndefined();
+  expect(main.find((hint) => hint.url.includes("viewer.html"))?.originUrl).toBe(
+    "https://school.test/viewer.html?file=notes.pdf",
+  );
+  const frame = { location: { href: "https://school.test/frame" }, top } as unknown as Window;
+  expect(discoverLinks(doc, frame).find((hint) => hint.url.endsWith("/notes.pdf"))?.originUrl).toBe(
+    "https://school.test/frame",
+  );
+});

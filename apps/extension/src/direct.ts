@@ -18,7 +18,7 @@ import { resolveDocumentUrl } from "./documents.ts";
 function webOrigin(tab: CapturedTab, page: PageSnapshot, capturedAt: string): CaptureOrigin {
   return {
     _tag: "Web",
-    url: normalizeUrl(page.file ? page.file.url : tab.url),
+    url: normalizeUrl(page.file ? (page.file.originUrl ?? page.file.url) : tab.url),
     title: page.title,
     browser: tab.browser,
     capturedAt,

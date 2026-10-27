@@ -4,8 +4,22 @@ import { classifyAccess } from "@avenire/capture/access";
 import { isEngaged } from "@avenire/capture/candidates";
 import { normalizeUrl } from "@avenire/capture/url";
 import * as Schema from "effect/Schema";
-import { discoverLinks, resolveDocumentUrl, selectDocuments } from "./documents.ts";
-import { DocumentAccessError, fetchDocument, type CapturedFile, type FileBudget } from "./files.ts";
+import {
+  discoverLinks,
+  resolveDocumentUrl,
+  selectDocuments,
+  probePdfViewer,
+  readPdfChunk,
+} from "./documents.ts";
+import {
+  DocumentAccessError,
+  fetchDocument,
+  MAX_CAPTURE_BYTES,
+  safeFileName,
+  sha256,
+  type CapturedFile,
+  type FileBudget,
+} from "./files.ts";
 import { permittedTabs, publicTab } from "./tabs.ts";
 import { MAX_MESSAGE_BYTES, within } from "./wire.ts";
 
@@ -33,7 +47,15 @@ export function safePage(page: PageSnapshot): PageSnapshot {
     ...page,
     url: normalizeUrl(page.url),
     ...(page.canonicalUrl ? { canonicalUrl: normalizeUrl(page.canonicalUrl) } : {}),
-    ...(page.file ? { file: { ...page.file, url: normalizeUrl(page.file.url) } } : {}),
+    ...(page.file
+      ? {
+          file: {
+            ...page.file,
+            url: normalizeUrl(page.file.url),
+            ...(page.file.originUrl ? { originUrl: normalizeUrl(page.file.originUrl) } : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -160,12 +182,108 @@ export async function captureTabs(
         let hints: ReturnType<typeof discoverLinks> = [];
         try {
           const found = await api.scripting.executeScript({
-            target: { tabId: tab.tabId },
+            target: { tabId: tab.tabId, allFrames: true },
             func: discoverLinks,
           });
-          hints = found[0]?.result ?? [];
+          hints = found.flatMap((frame) => frame.result ?? []);
         } catch {
           /* A built-in PDF viewer still has its tab URL. */
+        }
+        if (controller.signal.aborted) return;
+        // Probe every frame before fetching: an LMS shell may hold a blob-backed PDF.js viewer.
+        try {
+          const viewers = await api.scripting.executeScript({
+            target: { tabId: tab.tabId, allFrames: true },
+            world: "MAIN",
+            func: probePdfViewer,
+          });
+          for (const frame of viewers) {
+            if (controller.signal.aborted || budget.count >= 10) break;
+            const viewer = frame.result;
+            if (
+              !viewer ||
+              !/^https?:/i.test(viewer.frameUrl) ||
+              !permittedTabs([{ ...current, url: viewer.frameUrl, finalUrl: viewer.frameUrl }])
+                .length
+            )
+              continue;
+            if (!viewer.memory) {
+              hints.push({
+                url: viewer.url,
+                name: viewer.name,
+                rank: 0,
+                explicit: true,
+                originUrl: viewer.frameUrl,
+              });
+              continue;
+            }
+            const key = `pdfjs:${tab.tabId}:${frame.frameId}:${viewer.frameUrl}`;
+            if (budget.urls.has(key)) continue;
+            budget.urls.add(key);
+            budget.count++;
+            try {
+              let bytes: Uint8Array<ArrayBuffer> | undefined;
+              let offset = 0;
+              const available = MAX_CAPTURE_BYTES - budget.bytes;
+              do {
+                const chunks = await api.scripting.executeScript({
+                  target: { tabId: tab.tabId, frameIds: [frame.frameId] },
+                  world: "MAIN",
+                  func: readPdfChunk,
+                  args: [offset, available, viewer.frameUrl],
+                });
+                if (controller.signal.aborted) break;
+                const chunk = chunks[0]?.result;
+                if (
+                  !chunk ||
+                  !Number.isSafeInteger(chunk.size) ||
+                  chunk.size <= 0 ||
+                  chunk.size > available
+                )
+                  throw new Error("Capture file limit exceeded");
+                if (!bytes) {
+                  if (budget.bytes + chunk.size > MAX_CAPTURE_BYTES)
+                    throw new Error("Capture file limit exceeded");
+                  bytes = new Uint8Array(chunk.size);
+                  budget.bytes += chunk.size; // Reserve against other tab workers before the next await.
+                }
+                const data = Uint8Array.from(atob(chunk.data), (char) => char.charCodeAt(0));
+                if (
+                  chunk.size !== bytes.length ||
+                  !data.length ||
+                  offset + data.length > bytes.length
+                )
+                  throw new Error("Invalid PDF chunk");
+                bytes.set(data, offset);
+                offset += data.length;
+              } while (offset < bytes!.length);
+              if (!bytes || controller.signal.aborted) continue;
+              let fileName = safeFileName(viewer.name) || "document.pdf";
+              if (!/\.pdf$/i.test(fileName)) fileName += ".pdf";
+              const pdf: PageSnapshot = {
+                ...page,
+                url: viewer.frameUrl,
+                canonicalUrl: viewer.frameUrl,
+                title: fileName,
+                text: "",
+                textLength: 0,
+                file: {
+                  url: viewer.frameUrl,
+                  originUrl: viewer.frameUrl,
+                  fileName,
+                  mimeType: "application/pdf",
+                  sizeBytes: bytes.length,
+                  sha256: await sha256(bytes),
+                },
+              };
+              if (!controller.signal.aborted) accept(pdf, { page: pdf, bytes });
+            } catch {
+              if (!controller.signal.aborted)
+                skipped.push({ tabId: tab.tabId, reason: "PDF viewer document could not be read" });
+            }
+          }
+        } catch {
+          /* Restricted frames still leave link and timing discovery available. */
         }
         if (controller.signal.aborted) return;
         const documents = selectDocuments(hints, page.url);
@@ -180,7 +298,13 @@ export async function captureTabs(
           });
         for (const hint of documents) {
           if (controller.signal.aborted) break;
-          if (!permittedTabs([{ ...current, url: hint.url, finalUrl: hint.url }]).length) continue;
+          if (
+            !permittedTabs([{ ...current, url: hint.url, finalUrl: hint.url }]).length ||
+            (hint.originUrl &&
+              !permittedTabs([{ ...current, url: hint.originUrl, finalUrl: hint.originUrl }])
+                .length)
+          )
+            continue;
           try {
             if (/^file:/i.test(hint.url)) {
               if (options.desktop) continue;

@@ -2,7 +2,7 @@ import type { CapturedTab, ExtensionMessage } from "@avenire/contracts";
 import { captureResult, captureTabs } from "./capture.ts";
 import { DesktopChannel } from "./channel.ts";
 import { uploadCapture } from "./direct.ts";
-import { fileFrames } from "./files.ts";
+import { sendFileFrames } from "./files.ts";
 import { fetchPairing, pairingToken, type PairingState } from "./pairing.ts";
 import { reopen } from "./reopen.ts";
 import { detectBrowser, injectOpenTabs, pollTabs, publicTab, snapshotFor } from "./tabs.ts";
@@ -111,31 +111,35 @@ async function handleRequest(
   }
   capturing = true;
   const startedAt = Date.now();
+  const deadline = startedAt + Math.min(8000, message.deadlineMs ?? 8000);
   try {
     let tabs = tabCache;
     try {
-      tabs = await within(pollTabs(chrome, browser, redirects, message.readInBrowser), 300);
+      tabs = await within(
+        pollTabs(chrome, browser, redirects, message.readInBrowser),
+        Math.max(1, Math.min(300, deadline - Date.now())),
+      );
     } catch {
       /* Use pushed tab state when renderers are busy. */
     }
     if (message.tabIds) tabs = tabs.filter((tab) => message.tabIds!.includes(tab.tabId));
     const output = await captureTabs(chrome, tabs, message.readInBrowser, {
       desktop: true,
-      totalTimeoutMs: Math.max(0, 8000 - (Date.now() - startedAt)),
+      totalTimeoutMs: Math.max(0, deadline - Date.now() - 100),
     });
     // Access observations must reach desktop before it consumes CaptureResult.
     const observations = new Map(output.tabs.map((tab) => [tab.tabId, tab]));
     tabCache = tabCache.map((tab) => observations.get(tab.tabId) ?? tab);
     channel?.send({ _tag: "TabsReport", version: 1, tabs: tabCache.map(publicTab) }, socket);
-    if (!channel?.send(captureResult(message.requestId, output), socket)) return;
-    for (const file of output.files) {
-      for (const frame of fileFrames(message.requestId, file)) {
-        while (socket.bufferedAmount > 2 * 1024 * 1024 && socket.readyState === WebSocket.OPEN)
-          await new Promise<void>((resolve) => setTimeout(resolve, 10));
-        if (!channel.state.connected || socket.readyState !== WebSocket.OPEN) return;
-        socket.send(new Uint8Array(frame));
-      }
-    }
+    if (Date.now() >= deadline || !channel?.send(captureResult(message.requestId, output), socket))
+      return;
+    await sendFileFrames(
+      message.requestId,
+      output.files,
+      socket,
+      deadline,
+      () => channel?.state.connected ?? false,
+    );
   } catch {
     channel?.send(
       {

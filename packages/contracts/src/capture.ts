@@ -105,6 +105,8 @@ export const PageSnapshot = Schema.Struct({
   file: Schema.optional(
     Schema.Struct({
       url: Url,
+      /** HTTP(S) frame containing this document, when discovered in an embedded viewer. */
+      originUrl: Schema.optional(Url),
       fileName: Schema.String.check(Schema.isMaxLength(255)),
       mimeType: Schema.String.check(Schema.isMaxLength(255)),
       sizeBytes: NonNegativeInt,
@@ -261,6 +263,8 @@ export const ExtensionMessage = Schema.Union([
     tabs: Schema.Array(CapturedTab).check(Schema.isMaxLength(200)),
   }),
   Schema.TaggedStruct("CaptureRequest", {
+    /** Remaining milliseconds, independent of clock synchronization. */
+    deadlineMs: Schema.optional(NonNegativeInt),
     version: Version,
     requestId: RequestId,
     tabIds: Schema.optional(Schema.Array(NonNegativeInt).check(Schema.isMaxLength(200))),
