@@ -1,0 +1,28 @@
+{
+  "name": "@avenire/marketing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --port 4321",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro sync && tsc --noEmit",
+    "check:design": "node scripts/check-design.mjs"
+  },
+  "dependencies": {
+    "@astrojs/react": "7.1.1",
+    "@avenire/ui": "workspace:*",
+    "@fontsource/geist": "5.3.0",
+    "@fontsource/geist-mono": "5.3.0",
+    "@tailwindcss/vite": "4.3.3",
+    "astro": "7.4.2",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "tailwindcss": "catalog:"
+  },
+  "devDependencies": {
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "typescript": "catalog:"
+  }
+}

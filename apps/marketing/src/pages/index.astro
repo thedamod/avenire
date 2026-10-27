@@ -1,0 +1,55 @@
+---
+import cartpolePoster from "../assets/poster-cartpole.webp";
+import reportPoster from "../assets/poster-ruth-cloud.webp";
+import { Capture } from "../components/Capture.tsx";
+import { FinalCta } from "../components/FinalCta.tsx";
+import { Files } from "../components/Files.tsx";
+import { Footer } from "../components/Footer.tsx";
+import { Hero } from "../components/Hero.tsx";
+import { MorningReport } from "../components/MorningReport.tsx";
+import { Ruth } from "../components/Ruth.tsx";
+import { Statement } from "../components/Statement.tsx";
+import { Trust } from "../components/Trust.tsx";
+import VideoFrame from "../components/VideoFrame.tsx";
+import { hero, morningReport, ruth } from "../content.ts";
+import Base from "../layouts/Base.astro";
+
+const explainer = ruth.answers[2];
+---
+
+<Base title="Avenire · Wake up to your study material, already worked on" description={hero.lead}>
+  <Hero />
+  <main>
+    <Statement />
+    <Capture />
+    <MorningReport>
+      <VideoFrame
+        slot="video"
+        client:visible
+        src={morningReport.video.src}
+        poster={reportPoster.src}
+        label={morningReport.video.label}
+        alt={morningReport.bright}
+      />
+    </MorningReport>
+    <Ruth>
+      {
+        explainer?.video && (
+          <VideoFrame
+            slot="explainer"
+            client:visible
+            size="md"
+            src={explainer.video.src}
+            poster={cartpolePoster.src}
+            label={explainer.video.label}
+            alt={explainer.alt}
+          />
+        )
+      }
+    </Ruth>
+    <Files />
+    <Trust />
+    <FinalCta />
+  </main>
+  <Footer />
+</Base>

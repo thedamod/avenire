@@ -1,0 +1,89 @@
+@import "@fontsource/geist/400.css";
+@import "@fontsource/geist/500.css";
+@import "@fontsource/geist/600.css";
+@import "@fontsource/geist-mono/400.css";
+@import "@avenire/ui/globals.css";
+@source "../**/*.{ts,tsx,astro}";
+
+/*
+ * Marketing layer on top of the app's design system (@avenire/ui, dark theme).
+ * Only what the app has no use for lives here: display type, the dawn colours,
+ * one extra text tone and page widths. DESIGN.md lists every token and its use.
+ */
+@theme {
+  /* Between foreground-soft (#a3a3a3) and muted-foreground (#6e6e6e): eyebrows, secondary copy. */
+  --color-foreground-subtle: #8a8a8a;
+  /* The footer watermark. */
+  --color-ghost: rgb(255 255 255 / 0.07);
+
+  /* Dawn: the nightly-toast mesh. Glows, play-button shadow, text selection. Never text. */
+  --color-dawn-1: #abc4ff;
+  --color-dawn-2: #7a6cf0;
+  --color-dawn-3: #b05be0;
+  --color-dawn-4: #ff4f7b;
+
+  --text-display: clamp(44px, 2rem + 3.6vw, 72px);
+  --text-display--line-height: 1.06;
+  --text-display--letter-spacing: -0.04em;
+  --text-display--font-weight: 500;
+
+  --text-headline: clamp(34px, 1.6rem + 2vw, 52px);
+  --text-headline--line-height: 1.08;
+  --text-headline--letter-spacing: -0.035em;
+  --text-headline--font-weight: 500;
+
+  --text-subhead: clamp(28px, 1.4rem + 1.3vw, 44px);
+  --text-subhead--line-height: 1.18;
+  --text-subhead--letter-spacing: -0.03em;
+  --text-subhead--font-weight: 500;
+
+  --text-lead: 19px;
+  --text-lead--line-height: 29px;
+  --text-body-lg: 17px;
+  --text-body-lg--line-height: 26px;
+  --text-body: 15px;
+  --text-body--line-height: 23px;
+  --text-label: 16px;
+  --text-label--line-height: 20px;
+  --text-label--font-weight: 500;
+
+  --text-logo: 18px;
+  --text-logo--line-height: 22px;
+  --text-logo--letter-spacing: -0.02em;
+  --text-logo--font-weight: 600;
+
+  --text-wordmark: clamp(120px, 26.6vw, 384px);
+  --text-wordmark--line-height: 1;
+  --text-wordmark--letter-spacing: -0.08em;
+  --text-wordmark--font-weight: 600;
+
+  --tracking-eyebrow: 0.08em;
+
+  --container-field: 440px;
+  --container-lead: 600px;
+  --container-aside: 360px;
+  --container-heading: 780px;
+  --container-statement: 1040px;
+  --container-window: 1120px;
+  /* 1216px column plus the 40px gutter on each side. */
+  --container-page: 1296px;
+
+  /* The Ruth Cloud recording (1280×684). */
+  --aspect-report: 1280 / 684;
+
+  --shadow-window: 0 0 0 6px rgb(255 255 255 / 0.025);
+  --shadow-play: 0 8px 40px rgb(81 101 216 / 0.45);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-synthesis: none;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-dawn-2) 60%, transparent);
+  }
+}
