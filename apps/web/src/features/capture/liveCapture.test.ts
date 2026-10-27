@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { LibraryFile } from "@avenire/contracts";
-import { applyProgress, settleCapture, startCapture } from "./liveCapture";
+import {
+  applyProgress,
+  captureHeading,
+  overlayRows,
+  settleCapture,
+  startCapture,
+} from "./liveCapture";
 
 const file = (id: string, title: string) => ({ id, title, kind: "pdf" }) as unknown as LibraryFile;
 const started = {
@@ -103,5 +109,56 @@ describe("live capture", () => {
         file: file("f1", "notes.pdf"),
       },
     ]);
+  });
+
+  it("builds the overlay's rows from main's items, then settles them with the receipt", () => {
+    const items = [
+      { key: "tab:a", title: "Paper", kind: "web-page", status: "pending" as const },
+      {
+        key: "local:b",
+        title: "notes.pdf",
+        status: "saved" as const,
+        file: file("f1", "notes.pdf"),
+      },
+      {
+        key: "local:c",
+        title: "big.mov",
+        kind: "bogus",
+        status: "skipped" as const,
+        reason: "Too big",
+      },
+    ];
+    const streaming = overlayRows(items, undefined);
+    expect(streaming.map((row) => [row.key, row.kind, row.status, row.reason])).toEqual([
+      ["tab:a", "web-page", "pending", undefined],
+      ["local:b", "pdf", "saved", undefined],
+      ["local:c", "document", "skipped", "Too big"],
+    ]);
+    const settled = overlayRows(items, {
+      files: [file("f1", "notes.pdf"), file("f2", "Paper")],
+      skipped: [{ title: "big.mov", reason: "Too big" }],
+      blocked: [{ title: "Bank", category: "banking" }],
+    });
+    expect(settled.map((row) => [row.key, row.status, row.file?.id])).toEqual([
+      ["tab:a", "saved", "f2"],
+      ["local:b", "saved", "f1"],
+      ["local:c", "skipped", undefined],
+      ["blocked:0", "skipped", undefined],
+    ]);
+  });
+
+  it("words the header for each phase", () => {
+    const rows = overlayRows(
+      [
+        { key: "a", title: "A", status: "saved", file: file("f1", "A") },
+        { key: "b", title: "B", status: "skipped", reason: "No" },
+      ],
+      undefined,
+    );
+    expect(captureHeading([], "capturing")).toBe("Capturing…");
+    expect(captureHeading(rows, "capturing")).toBe("Capturing 2 things…");
+    expect(captureHeading(rows, "done")).toBe("Captured 1 thing");
+    expect(captureHeading(rows.slice(1), "done")).toBe("Nothing captured");
+    expect(captureHeading(rows, "failed")).toBe("Capture failed");
   });
 });

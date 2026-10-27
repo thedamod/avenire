@@ -1,6 +1,7 @@
 "use client";
 
 import { applyPolicy } from "@avenire/capture/policy";
+import { FileId } from "@avenire/contracts";
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { toast } from "sonner";
@@ -35,12 +36,26 @@ export function useDesktopCapture() {
       return;
     }
 
+    // The desktop's global overlay shows captures over every app; the app then shows no toast.
+    const overlay = bridge.captureOverlay === true;
+    const trash = (fileIds: readonly FileId[]) =>
+      call(api, (client) => client["library.trashFiles"]({ fileIds }))
+        .then(() => invalidateLibrary(api))
+        .catch((cause: unknown) => toast.error(`Couldn't undo: ${errorMessage(cause)}`));
+    const unsubscribeAction = bridge.onCaptureAction?.((action) => {
+      if (action.type !== "undo") return;
+      // Main sends the ids from the owner-checked receipt it holds, which outlives a reload here.
+      const fileIds = [...new Set(action.fileIds)].map((id) => FileId.make(id));
+      if (fileIds.length) void trash(fileIds);
+      else toast.error("Couldn't undo: this capture is no longer known here.");
+    });
+
     // Swiped away while it was still filling in: the final receipt doesn't bring it back.
     const dismissed = new Set<string>();
     // Closed by us (a failed submit), so a retry that succeeds still shows its receipt.
     const closing = new Set<string>();
     const show = (captureId: string, settled: boolean) => {
-      if (dismissed.has(captureId)) return;
+      if (overlay || dismissed.has(captureId)) return;
       const id = toastId(captureId);
       toast.custom(
         () => (
@@ -50,11 +65,7 @@ export function useDesktopCapture() {
             onUndo={() => {
               toast.dismiss(id);
               const files = getLiveCapture(captureId)?.receipt?.files ?? [];
-              void call(api, (client) =>
-                client["library.trashFiles"]({ fileIds: files.map((file) => file.id) }),
-              )
-                .then(() => invalidateLibrary(api))
-                .catch((cause: unknown) => toast.error(`Couldn't undo: ${errorMessage(cause)}`));
+              void trash(files.map((file) => file.id));
             }}
           />
         ),
@@ -108,10 +119,23 @@ export function useDesktopCapture() {
           };
           setCaptureReceipt(receipt);
           updateLiveCapture(captureId, (previous) => settleCapture(previous, captureId, receipt));
+          if (overlay)
+            void bridge
+              .reportCaptureReceipt(captureId, {
+                files: receipt.files,
+                skipped: receipt.skipped,
+                blocked: receipt.blocked,
+              })
+              .catch(() => {});
           void bridge.acknowledgeCapture?.(captureId);
           show(captureId, true);
         })
         .catch((cause: unknown) => {
+          // The overlay shows the failure; pressing the shortcut again re-sends this capture.
+          if (overlay) {
+            void bridge.reportCaptureFailed(captureId, errorMessage(cause)).catch(() => {});
+            return;
+          }
           // The error toast takes over; pressing the shortcut again re-sends this capture.
           if (getLiveCapture(captureId)) {
             closing.add(captureId);
@@ -175,6 +199,7 @@ export function useDesktopCapture() {
       controller.abort();
       stopSettings?.();
       unsubscribe();
+      unsubscribeAction?.();
       unsubscribeStarted?.();
       unsubscribeProgress?.();
       void bridge.setCaptureReady?.(false);

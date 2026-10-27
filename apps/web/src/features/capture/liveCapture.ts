@@ -1,5 +1,10 @@
 import type { FileKind, LibraryFile } from "@avenire/contracts";
-import type { CaptureProgress, CaptureStarted } from "@avenire/desktop/bridge";
+import type {
+  CaptureOverlayState,
+  CaptureProgress,
+  CaptureReceiptSummary,
+  CaptureStarted,
+} from "@avenire/desktop/bridge";
 import type { CaptureReceipt } from "./receipt";
 
 export type CaptureRowStatus = CaptureProgress["status"];
@@ -90,7 +95,16 @@ export function settleCapture(
   id: string,
   receipt: CaptureReceipt,
 ): LiveCapture {
-  const rows = [...(previous?.id === id ? previous.rows : [])];
+  const rows = settleRows(previous?.id === id ? previous.rows : [], receipt);
+  return { id, rows, seq: previous?.id === id ? previous.seq : 0, receipt };
+}
+
+/** `settleCapture` on bare rows: the receipt's files, skips and blocked pages land on them. */
+export function settleRows(
+  previous: readonly CaptureRow[],
+  receipt: CaptureReceiptSummary,
+): CaptureRow[] {
+  const rows = [...previous];
   const placed = new Set(rows.flatMap((row) => (row.file ? [row.file.id] : [])));
   const waiting = (title: string) => rows.findIndex((row) => !row.file && row.title === title);
   for (const file of receipt.files) {
@@ -130,7 +144,36 @@ export function settleCapture(
       status: "skipped",
       reason: `Not captured · ${BLOCKED[item.category]}`,
     });
-  return { id, rows, seq: previous?.id === id ? previous.seq : 0, receipt };
+  return rows;
+}
+
+/** The overlay's rows: main streams the items, then forwards the app window's receipt. */
+export function overlayRows(
+  items: CaptureOverlayState["items"],
+  receipt: CaptureReceiptSummary | undefined,
+): CaptureRow[] {
+  const rows = items.map((item): CaptureRow => ({
+    key: item.key,
+    title: item.file?.title ?? item.title,
+    kind: item.file?.kind ?? fileKind(item.kind),
+    status: item.status,
+    file: item.file,
+    reason: item.status === "skipped" || item.status === "failed" ? item.reason : undefined,
+  }));
+  return receipt ? settleRows(rows, receipt) : rows;
+}
+
+export type CapturePhase = "capturing" | "done" | "failed";
+
+const things = (count: number) => `${count} thing${count === 1 ? "" : "s"}`;
+
+/** The panel's header line. */
+export function captureHeading(rows: readonly CaptureRow[], phase: CapturePhase) {
+  if (phase === "failed") return "Capture failed";
+  if (phase === "capturing")
+    return rows.length ? `Capturing ${things(rows.length)}…` : "Capturing…";
+  const saved = rows.filter((row) => row.status === "saved").length;
+  return saved ? `Captured ${things(saved)}` : "Nothing captured";
 }
 
 const captures = new Map<string, LiveCapture>();

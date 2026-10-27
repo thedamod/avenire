@@ -40,6 +40,29 @@ export function CaptureShortcutKeys({ hint = false }: { hint?: boolean }) {
         {hint ? "Capture shortcut unavailable" : "Unavailable"}
       </span>
     );
+  return (
+    <>
+      {hint ? "Press " : null}
+      <ShortcutKeycaps
+        shortcut={shortcut}
+        mac={mac}
+        keyClassName={hint ? "h-5 min-w-5 text-[11px]" : undefined}
+      />
+      {hint ? " anywhere to capture" : null}
+    </>
+  );
+}
+
+/** An Electron accelerator as keycaps, with the platform's own modifier names. */
+export function ShortcutKeycaps({
+  shortcut,
+  mac,
+  keyClassName,
+}: {
+  shortcut: string;
+  mac: boolean;
+  keyClassName?: string | undefined;
+}) {
   const labels: Record<string, string> = {
     CommandOrControl: mac ? "⌘" : "Ctrl",
     CmdOrCtrl: mac ? "⌘" : "Ctrl",
@@ -52,16 +75,12 @@ export function CaptureShortcutKeys({ hint = false }: { hint?: boolean }) {
     Super: mac ? "⌘" : "Super",
   };
   return (
-    <>
-      {hint ? "Press " : null}
-      <KbdGroup>
-        {shortcut.split("+").map((key) => (
-          <Kbd key={key} className={hint ? "h-5 min-w-5 text-[11px]" : undefined}>
-            {labels[key] ?? key}
-          </Kbd>
-        ))}
-      </KbdGroup>
-      {hint ? " anywhere to capture" : null}
-    </>
+    <KbdGroup>
+      {shortcut.split("+").map((key) => (
+        <Kbd key={key} className={keyClassName}>
+          {labels[key] ?? key}
+        </Kbd>
+      ))}
+    </KbdGroup>
   );
 }
