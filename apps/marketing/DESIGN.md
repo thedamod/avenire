@@ -18,6 +18,14 @@ headlines (a dim line above, a bright line below) carry the story. The only colo
 **dawn**, the nightly-toast mesh, and it appears only in illustrations, glows and the
 text selection. No cards inside cards: sections are separated by hairlines, lists by dividers.
 
+## Voice
+
+The page sells two things: Avenire **keeps your material in order** (capture, notebooks
+that file themselves, one library), and it **brings you the part you need** so you don't
+go searching for it. Lead with those. Ruth's background work is how that happens, not the
+pitch: don't frame the product around overnight runs, mornings or "while you're away".
+Plain, concrete sentences; name real things (PDFs, lectures, notebooks), not abstractions.
+
 ## Primitives (from `@avenire/ui`)
 
 | Primitive                                          | Used for                                                                                                                                     |
@@ -50,11 +58,11 @@ App tokens (dark theme):
 
 Marketing additions:
 
-| Token               | Value                       | Use                                                                |
-| ------------------- | --------------------------- | ------------------------------------------------------------------ |
-| `foreground-subtle` | #8A8A8A                     | Eyebrows, secondary copy, table cells                              |
-| `ghost`             | white 7%                    | Footer watermark only                                              |
-| `dawn-1…3`          | #ABC4FF → #7A6CF0 → #B05BE0 | The liquid (hero exhaust, CTA glow), play-button shadow, selection |
+| Token               | Value                       | Use                                            |
+| ------------------- | --------------------------- | ---------------------------------------------- |
+| `foreground-subtle` | #8A8A8A                     | Eyebrows, secondary copy, table cells          |
+| `ghost`             | white 7%                    | Footer watermark only                          |
+| `dawn-1…3`          | #ABC4FF → #7A6CF0 → #B05BE0 | The liquid (hero exhaust, CTA glow), selection |
 
 Rules: text never uses `dawn` or `ruth`. A two-tone headline is always
 `muted-foreground` then `foreground`.
@@ -90,10 +98,10 @@ Type tokens carry their own weight and tracking; don't override them.
 
 ## Shape and depth
 
-- App radii only: `rounded-sm` (4px) on screenshot frames, `rounded-full` on pills and
-  the play button. Primitives bring their own radius.
+- App radii only: `rounded-sm` (4px) on screenshot frames, `rounded-full` on pills.
+  Primitives bring their own radius.
 - Frame: `overflow-clip rounded-sm border border-input bg-surface-2`.
-- Shadows: `shadow-window` (hero window ring) and `shadow-play` (play button). No others.
+- Shadows: `shadow-window` (the hero window ring). No others.
 
 ## Motion
 
@@ -123,9 +131,11 @@ marketing tokens in `marketing.css`: `--duration-reveal` (700ms) and `--reveal-d
   (timed once at startup) gets a still of the same liquid (`hero-flow.webp`,
   `cta-glow.webp`) and a resting rocket. Below `lg` the hero has no art.
 - **Reduced motion.** Gentler, not zero: reveals keep the fade and drop the travel; the
-  liquid renders one still frame (the full stream, the rocket at rest) and ignores the pointer.
-- **Hover.** Colour transitions only. The video poster fades out over `duration-moderate`
-  when playback starts.
+  liquid renders one still frame (the full stream, the rocket at rest) and ignores the pointer;
+  videos stay on their poster.
+- **Video.** `VideoFrame` is a muted loop with no controls. It loads and plays only while
+  on screen and pauses offscreen.
+- **Hover.** Colour transitions only.
 
 The liquid's palette lives in the shader. It is night only (ice, periwinkle, indigo,
 violet, purple, with no warm or orange stops), built from `dawn-1…3`. It is illustration, not UI colour.

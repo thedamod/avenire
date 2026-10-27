@@ -5,7 +5,7 @@ export const appUrl: string = import.meta.env.PUBLIC_APP_URL ?? "https://app.ave
 export const nav = {
   links: [
     { label: "Capture", href: "#capture" },
-    { label: "Morning report", href: "#morning-report" },
+    { label: "Brought to you", href: "#brought-to-you" },
     { label: "Ruth", href: "#ruth" },
     { label: "Your files", href: "#files" },
   ],
@@ -20,16 +20,16 @@ export const emailCta = {
 };
 
 export const hero = {
-  dim: ["Wake up to your", "study material,"],
-  bright: "already worked on.",
-  lead: "Avenire organizes what you study and has it ready by morning.",
+  dim: ["Stop searching", "for your notes."],
+  bright: "They come to you.",
+  lead: "Everything you study, filed and handed back to you.",
   screenshotAlt:
-    "Avenire home: the morning toast above your notebooks, chats and tasks, ready when you open the app.",
+    "Avenire home: your notebooks, recent notes and what Ruth has ready for you, in one place.",
 };
 
 export const statement = {
-  dim: "Studying got messier.",
-  bright: "Avenire does the organizing, then brings you what to study.",
+  dim: "Studying shouldn’t mean searching.",
+  bright: "Avenire keeps your material in order and puts the right part in front of you.",
 };
 
 export const capture = {
@@ -56,15 +56,16 @@ export const capture = {
   ],
 };
 
-export const morningReport = {
-  id: "morning-report",
-  eyebrow: "02 · The morning report",
-  dim: "You don’t go to your material.",
-  bright: "Ruth Cloud brings it to you.",
-  aside: "Notes, summaries and quizzes, ready when you log in. You approve every change.",
+export const broughtToYou = {
+  id: "brought-to-you",
+  eyebrow: "02 · Brought to you",
+  dim: "You don’t go looking for it.",
+  bright: "Ruth brings it to you.",
+  aside:
+    "Ruth turns your sources into notes, summaries and quizzes and puts them where you’ll see them. You approve every change.",
   video: {
     src: "/media/ruth-cloud.mp4",
-    label: "Play: Ruth Cloud working through a CartPole control project overnight",
+    alt: "Ruth turning four papers on a CartPole controller into a cited report, with the sources beside it.",
   },
 };
 
@@ -90,7 +91,7 @@ export const ruth = {
       question: "Why does the PID wobble at 10°?",
       title: "A short explainer video",
       alt: "A generated video of a cart balancing a pole.",
-      video: { src: "/media/cartpole.mp4", label: "Play: CartPole explainer" },
+      video: { src: "/media/cartpole.mp4" },
     },
   ],
 };
@@ -104,11 +105,11 @@ export const files = {
   path: ["Avenire", "Thermodynamics"],
   columns: ["Name", "Kind", "Modified"],
   rows: [
-    { icon: "doc", name: "Entropy and the second law.md", kind: "Note", modified: "6:02 am" },
+    { icon: "doc", name: "Entropy and the second law.md", kind: "Note", modified: "Today" },
     { icon: "doc", name: "Carnot cycle, step by step.md", kind: "Note", modified: "Yesterday" },
     { icon: "pdf", name: "Lecture 8 · Heat engines.pdf", kind: "Source", modified: "Yesterday" },
     { icon: "youtube", name: "MIT 5.60 L9 · Entropy", kind: "Source", modified: "Mon" },
-    { icon: "doc", name: "Quiz · Clausius inequality.md", kind: "Note", modified: "6:02 am" },
+    { icon: "doc", name: "Quiz · Clausius inequality.md", kind: "Note", modified: "Today" },
   ],
 } as const;
 
@@ -133,18 +134,18 @@ export const trust = {
 
 export const finalCta = {
   id: "early-access",
-  dim: "Close the laptop.",
-  bright: "Ruth has the rest.",
+  dim: "Stop searching.",
+  bright: "Start studying.",
 };
 
 export const footer = {
-  tagline: "The study companion that works while you’re away.",
+  tagline: "Your study material, organized and brought to you.",
   columns: [
     {
       heading: "Product",
       links: [
         { label: "Capture", href: "#capture" },
-        { label: "Morning report", href: "#morning-report" },
+        { label: "Brought to you", href: "#brought-to-you" },
         { label: "Ruth", href: "#ruth" },
         { label: "Your files", href: "#files" },
       ],

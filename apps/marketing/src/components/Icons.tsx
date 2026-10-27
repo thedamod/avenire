@@ -81,11 +81,3 @@ export function MailIcon(props: IconProps) {
     </svg>
   );
 }
-
-export function PlayIcon(props: IconProps) {
-  return (
-    <svg viewBox="0 0 22 24" fill="currentColor" aria-hidden="true" {...props}>
-      <path d="M3 2.5v19a1 1 0 0 0 1.5.86l16-9.5a1 1 0 0 0 0-1.72l-16-9.5A1 1 0 0 0 3 2.5z" />
-    </svg>
-  );
-}

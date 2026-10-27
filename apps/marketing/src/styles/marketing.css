@@ -16,7 +16,7 @@
   /* The footer watermark. */
   --color-ghost: rgb(255 255 255 / 0.07);
 
-  /* Dawn: the nightly-toast mesh. Glows, play-button shadow, text selection. Never text. */
+  /* Dawn: the nightly-toast mesh. The liquid and text selection. Never text. */
   --color-dawn-1: #abc4ff;
   --color-dawn-2: #7a6cf0;
   --color-dawn-3: #b05be0;
@@ -71,7 +71,6 @@
   --aspect-report: 1280 / 684;
 
   --shadow-window: 0 0 0 6px rgb(255 255 255 / 0.025);
-  --shadow-play: 0 8px 40px rgb(81 101 216 / 0.45);
 }
 
 @layer base {
