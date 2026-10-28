@@ -50,6 +50,21 @@ it("carries source-selection scope into the actual SDK request and continuation"
   }
 });
 
+it("widens scope with a turn's references for that turn only, keeping the thread's notebook", async () => {
+  fetchRequest.mockClear();
+  const entry = createEntry({} as ClientRuntime, "thread-notebook" as ThreadId);
+  entry.setFolderId("folder-notebook" as FolderId);
+  await entry.chat.sendMessage({
+    text: "Use this source",
+    metadata: { createdAt: "2026-10-28T00:00:00.000Z", references: [{ kind: "file", id: "file-attached" }] },
+  });
+  await entry.chat.sendMessage({ text: "And without it?" });
+  expect(entry.chat.error).toBeUndefined();
+  const [first, second] = fetchRequest.mock.calls.map(([, init]) => JSON.parse(init.body));
+  expect(first.scope).toEqual({ folderIds: ["folder-notebook"], fileIds: ["file-attached"] });
+  expect(second.scope).toBeUndefined();
+});
+
 it("keeps authenticated widget HTML inside the script-only iframe", () => {
   const html = '<!doctype html><meta http-equiv="Content-Security-Policy" content="connect-src none"><script>window.parent.postMessage({type:"avenire:widget:ready"},"*")</script>';
   const host = widgetHostDocument("https://api.test/a/widget", 'Figure "quoted"', false, html);

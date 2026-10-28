@@ -1,6 +1,6 @@
 import { Chat, useChat } from "@ai-sdk/react";
 import type { RuthUIMessage } from "@avenire/ai/message-types";
-import { CLOUD_RUN_PATH, RUTH_CHAT_PATH, type ChatScope, type CloudRunId, type FileId, type FolderId, type ThreadId } from "@avenire/contracts";
+import { CLOUD_RUN_PATH, RUTH_CHAT_PATH, type CloudRunId, type FolderId, type ThreadId } from "@avenire/contracts";
 import { call, ConversationSession, conversationSession, invalidate, type ClientRuntime } from "@avenire/client-runtime/rpc";
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses, lastAssistantMessageIsCompleteWithToolCalls, validateUIMessages } from "ai";
 import { fetch as expoFetch } from "expo/fetch";
@@ -11,7 +11,7 @@ import { useApi } from "../../../state/api";
 import { apiUrl, getCookieHeader } from "../../../state/auth";
 import { colors } from "../../../theme/tokens";
 import type { TurnTiming } from "./types";
-import { takeInitialThreadScope } from "../../sources/threadScope";
+import { takeInitialThreadScope, turnScope } from "../../sources/threadScope";
 
 export const widgetTokens: Readonly<Record<string, string>> = {
   "--background": colors.bg, "--foreground": colors.fg, "--foreground-soft": colors["fg-2"],
@@ -50,7 +50,8 @@ function entryFor(api: ClientRuntime, threadId: ThreadId) {
 }
 
 export function createEntry(api: ClientRuntime, threadId: ThreadId) {
-  let scope = takeInitialThreadScope(api, threadId);
+  const initialScope = takeInitialThreadScope(api, threadId);
+  let folderId: FolderId | null | undefined;
   const session = new ConversationSession<RuthUIMessage>();
   session.threadId = threadId;
   const timing = { startedAt: null as number | null, turns: new Map<string, TurnTiming>() };
@@ -62,14 +63,16 @@ export function createEntry(api: ClientRuntime, threadId: ThreadId) {
       fetch: nativeFetch,
       credentials: "omit",
       headers: getCookieHeader,
-      prepareSendMessagesRequest: ({ messages }) => ({
-        body: {
+      prepareSendMessagesRequest: ({ messages }) => {
+        // Continuations end on the assistant; they keep the scope of the turn they continue.
+        const scope = turnScope(initialScope, folderId, messages.findLast((message) => message.role === "user")?.metadata?.references);
+        return { body: {
           threadId, message: messages.at(-1),
           ...(scope ? { scope } : {}),
           page: { surface: "chat", platform: "mobile", contentWidthPx: width, colorScheme: "dark", themeTokens: widgetTokens, fonts: { body: "system-ui", mono: "ui-monospace" } },
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-        },
-      }),
+        } };
+      },
     }),
     sendAutomaticallyWhen: (options) => lastAssistantMessageIsCompleteWithApprovalResponses(options) || lastAssistantMessageIsCompleteWithToolCalls(options),
     onFinish: ({ message }) => {
@@ -81,7 +84,7 @@ export function createEntry(api: ClientRuntime, threadId: ThreadId) {
   });
   return {
     chat, session, timing,
-    setScope: (value: ChatScope) => { scope = value; },
+    setFolderId: (value: FolderId | null | undefined) => { folderId = value; },
     setWidth: (value: number) => { width = Math.max(1, Math.round(value)); },
     hydrate: (refresh = false) => {
       if (chat.status === "streaming" || chat.status === "submitted") return Promise.resolve();
@@ -105,6 +108,7 @@ export function useThread(threadId: ThreadId, q?: string) {
   entry.setWidth(width - 40);
   const chat = useChat({ chat: entry.chat, throttle: 50 });
   const thread = useQuery((client) => client["ruth.getThread"]({ threadId }), `thread-${threadId}`);
+  entry.setFolderId(thread.data?.folderId);
   const folders = useQuery((client) => client["library.listFolders"](), "chat-folders");
   const files = useQuery((client) => client["library.listFiles"]({}), "chat-files");
   const [hydration, setHydration] = useState({ ready: entry.session.ready, error: undefined as unknown });
@@ -134,10 +138,6 @@ export function useThread(threadId: ThreadId, q?: string) {
     const clean = text.trim();
     if (!clean || !entry.session.ready || entry.chat.status === "streaming" || entry.chat.status === "submitted") return;
     setActionError(undefined);
-    if (options?.references?.length) entry.setScope({
-      fileIds: options.references.filter((item) => item.kind === "file").map((item) => item.id as FileId),
-      folderIds: options.references.filter((item) => item.kind === "folder").map((item) => item.id as FolderId),
-    });
     entry.timing.startedAt = Date.now();
     await entry.session.send(() => entry.chat.sendMessage({ text: clean, metadata: { createdAt: new Date().toISOString(), ...(options?.runId ? { runId: options.runId } : {}), ...(options?.references?.length ? { references: [...options.references] } : {}) } }));
   }, [entry]);
