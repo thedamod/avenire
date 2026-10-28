@@ -5,7 +5,13 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { and, eq } from "drizzle-orm";
 import { advanceCorpusRevision, lockCorpus } from "@avenire/database/corpus";
 
-import { assignFoldersTx, refreshFolderCentroidsTx, setFileFoldersTx } from "./folder.ts";
+import {
+  FILING,
+  assignFoldersTx,
+  decideFolder,
+  refreshFolderCentroidsTx,
+  setFileFoldersTx,
+} from "./folder.ts";
 
 const userId = UserId.make("user");
 const fileId = FileId.make("file");
@@ -19,8 +25,11 @@ type FileState = {
   placement: "inbox" | "filed" | "archived";
   archived?: boolean;
   purging?: boolean;
+  source?: string;
+  dedupeKey?: string;
 };
-type FolderState = { userId: string; centroid: Vector | null };
+type FolderState = { userId: string; centroid: Vector | null; suggested?: boolean };
+type Hydration = { userId: string; runId: string; fileIds: string[] };
 type Membership = { userId: string; fileId: string; folderId: string };
 type Query = { tx: number; sql: string; params: unknown[] };
 
@@ -40,6 +49,7 @@ const fixture = () => {
   const files = new Map<string, FileState>();
   const folders = new Map<string, FolderState>();
   let memberships: Membership[] = [];
+  const hydrations: Hydration[] = [];
   const queries: Query[] = [];
   let revision = 0;
   let sequence = 0;
@@ -75,13 +85,35 @@ const fixture = () => {
     }
     if (statement.startsWith('select "id" from "file"')) {
       const row = files.get(String(params[0]));
+      return row?.userId === params[1] ? [[params[0]]] : [];
+    }
+    if (statement.startsWith('select "id", "source", "dedupe_key" from "file"')) {
+      const row = files.get(String(params[0]));
       return row &&
         row.userId === params[1] &&
         !row.archived &&
         !row.purging &&
         row.placement !== "archived"
-        ? [[params[0]]]
+        ? [[params[0], row.source ?? "upload", row.dedupeKey ?? `upload:${params[0]}`]]
         : [];
+    }
+    if (statement.startsWith('select "selector", "files" from "cloud_hydration"')) {
+      return hydrations
+        .filter((row) => row.userId === params[0] && row.runId === params[1])
+        .map((row) => [
+          JSON.stringify({}),
+          JSON.stringify(row.fileIds.map((id) => ({ fileId: id }))),
+        ]);
+    }
+    if (statement.startsWith('select distinct "folder_id" from "file_folder"')) {
+      const ids = params.slice(1).map(String);
+      return [
+        ...new Set(
+          memberships
+            .filter((row) => row.userId === params[0] && ids.includes(row.fileId))
+            .map((row) => row.folderId),
+        ),
+      ].map((id) => [id]);
     }
     if (statement.startsWith('select "folder_id" from "file_folder"')) {
       return memberships
@@ -96,14 +128,24 @@ const fixture = () => {
       );
     }
     if (statement.startsWith('select "id", "centroid" from "folder"')) {
-      const vector = JSON.parse(String(params[1])) as Vector;
+      // Params: user, suggested=false, optional candidate ids, vector, limit.
+      const vector = JSON.parse(String(params.at(-2))) as Vector;
+      const only = statement.includes('"folder"."id" in')
+        ? params.slice(2, -2).map(String)
+        : undefined;
       const distance = (centroid: Vector) =>
         centroid.reduce((sum, value, index) => sum + value * vector[index]!, 0) /
         (Math.hypot(...centroid) * Math.hypot(...vector));
       return [...folders]
-        .filter(([, row]) => row.userId === params[0] && row.centroid !== null)
+        .filter(
+          ([id, row]) =>
+            row.userId === params[0] &&
+            row.centroid !== null &&
+            !row.suggested &&
+            (only === undefined || only.includes(id)),
+        )
         .sort((left, right) => distance(right[1].centroid!) - distance(left[1].centroid!))
-        .slice(0, 1)
+        .slice(0, Number(params.at(-1)))
         .map(([id, row]) => [id, JSON.stringify(row.centroid)]);
     }
     if (statement.startsWith('select "id" from "folder"')) {
@@ -209,8 +251,11 @@ const fixture = () => {
     addFile(id: string, vectors: Vector[], owner = userId) {
       files.set(id, { userId: owner, vectors, placement: "inbox" });
     },
-    addFolder(id: string, centroid: Vector | null, owner = userId) {
-      folders.set(id, { userId: owner, centroid });
+    addFolder(id: string, centroid: Vector | null, owner = userId, suggested = false) {
+      folders.set(id, { userId: owner, centroid, suggested });
+    },
+    addHydration(runId: string, fileIds: string[]) {
+      hydrations.push({ userId, runId, fileIds });
     },
     addMember(id: string, target: string) {
       memberships.push({ userId, fileId: id, folderId: target });
@@ -248,14 +293,10 @@ describe("folder membership publication", () => {
     state.addFolder(folderId, [1, 0]);
     state.addMember("seed", folderId);
     const paused = state.pause((query) => query.sql.startsWith('select "id", "centroid"'));
-    const first = state.db.transaction((tx) =>
-      assignFoldersTx(tx, userId, fileId, "First", FolderId.make("new-first")),
-    );
+    const first = state.db.transaction((tx) => assignFoldersTx(tx, userId, fileId));
     await paused.reached;
     const contention = state.lockContention();
-    const second = state.db.transaction((tx) =>
-      assignFoldersTx(tx, userId, FileId.make("second"), "Second", FolderId.make("new-second")),
-    );
+    const second = state.db.transaction((tx) => assignFoldersTx(tx, userId, FileId.make("second")));
     await contention;
     expect(state.queries.filter((query) => query.tx === 2)).toHaveLength(1);
     paused.resume();
@@ -285,14 +326,10 @@ describe("folder membership publication", () => {
     state.addFolder(folderId, [1, 0]);
     state.addMember(fileId, folderId);
     state.addMember("other", folderId);
-    expect(
-      await state.db.transaction((tx) =>
-        assignFoldersTx(tx, userId, fileId, "Changed", otherFolderId),
-      ),
-    ).toBe(folderId);
+    expect(await state.db.transaction((tx) => assignFoldersTx(tx, userId, fileId))).toBe(folderId);
     expect(state.folders.get(folderId)!.centroid).toEqual([0.5, 0.5]);
     state.files.get(fileId)!.vectors = [];
-    await state.db.transaction((tx) => assignFoldersTx(tx, userId, fileId, "Empty", otherFolderId));
+    await state.db.transaction((tx) => assignFoldersTx(tx, userId, fileId));
     expect(state.folders.get(folderId)!.centroid).toEqual([1, 0]);
     expect(state.folders.has(otherFolderId)).toBe(false);
     expect(state.memberships).toHaveLength(2);
@@ -359,13 +396,7 @@ describe("folder membership publication", () => {
         .update(schema.chunk)
         .set({ embedding: [0, 4] })
         .where(and(eq(schema.chunk.userId, userId), eq(schema.chunk.fileId, fileId)));
-      const result = await assignFoldersTx(
-        tx,
-        userId,
-        fileId,
-        "Reingested",
-        FolderId.make("unused"),
-      );
+      const result = await assignFoldersTx(tx, userId, fileId);
       await advanceCorpusRevision(tx, userId);
       return result;
     });
@@ -393,7 +424,7 @@ describe("folder membership publication", () => {
       const queries = state.queries.filter((query) => query.tx === tx);
       expect(queries[0]!.sql).toContain('from "user"');
       const fileLock = queries.findIndex((query) =>
-        query.sql.startsWith('select "id" from "file"'),
+        query.sql.startsWith('select "id", "source", "dedupe_key" from "file"'),
       );
       const folderLock = queries.findIndex((query) =>
         query.sql.startsWith('select "id" from "folder"'),
@@ -434,15 +465,11 @@ describe("folder membership publication", () => {
       expect(
         await state.db.transaction((tx) => setFileFoldersTx(tx, userId, fileId, [folderId])),
       ).toBe(false);
-      expect(
-        await state.db.transaction((tx) =>
-          assignFoldersTx(tx, userId, fileId, "Unavailable", otherFolderId),
-        ),
-      ).toBeNull();
+      expect(await state.db.transaction((tx) => assignFoldersTx(tx, userId, fileId))).toBeNull();
       expect(state.memberships).toEqual([]);
       expect(state.revision).toBe(0);
       const ownedRead = state.queries.find((query) =>
-        query.sql.startsWith('select "id" from "file"'),
+        query.sql.startsWith('select "id", "source", "dedupe_key" from "file"'),
       )!;
       expect(ownedRead.sql).toContain('"file"."user_id" =');
       expect(ownedRead.sql).toContain('"file"."purge_started_at" is null');
@@ -477,36 +504,103 @@ describe("folder membership publication", () => {
     expect(state.folders.get(folderId)!.centroid).toBeNull();
   });
 
-  it("creates a suggested folder for an unmatched file and leaves revision publication to the caller", async () => {
+  it("leaves an unmatched file in the Inbox instead of creating a notebook", async () => {
     const state = fixture();
     state.addFile(fileId, [
       [1, 0],
       [3, 0],
     ]);
     state.addFolder(otherFolderId, [0, 1]);
-    expect(
-      await state.db.transaction((tx) =>
-        assignFoldersTx(tx, userId, fileId, "New topic", folderId),
-      ),
-    ).toBe(folderId);
-    expect(state.folders.get(folderId)!.centroid).toEqual([2, 0]);
-    expect(state.folders.get(otherFolderId)!.centroid).toEqual([0, 1]);
+    expect(await state.db.transaction((tx) => assignFoldersTx(tx, userId, fileId))).toBeNull();
+    expect(state.folders.size).toBe(1);
+    expect(state.memberships).toEqual([]);
+    expect(state.files.get(fileId)!.placement).toBe("inbox");
+    expect(state.queries.some((query) => query.sql.startsWith('insert into "folder"'))).toBe(false);
+  });
+
+  it("files a confident match and marks it filed, leaving revision publication to the caller", async () => {
+    const state = fixture();
+    state.addFile(fileId, [[1, 0.1]]);
+    state.addFolder(folderId, [1, 0]);
+    state.addFolder(otherFolderId, [0, 1]);
+    expect(await state.db.transaction((tx) => assignFoldersTx(tx, userId, fileId))).toBe(folderId);
     expect(state.memberships).toEqual([{ userId, fileId, folderId }]);
+    expect(state.files.get(fileId)!.placement).toBe("filed");
     expect(state.revision).toBe(0);
-    expect(
-      state.queries.find((query) => query.sql.startsWith('insert into "folder"'))!.params,
-    ).toContain("New topic");
+  });
+
+  it("ignores suggested notebooks and stays in the Inbox between two close matches", async () => {
+    const state = fixture();
+    state.addFile(fileId, [[1, 1]]);
+    state.addFolder("proposal", [1, 1], userId, true);
+    state.addFolder(folderId, [1, 0.9]);
+    state.addFolder(otherFolderId, [0.9, 1]);
+    expect(await state.db.transaction((tx) => assignFoldersTx(tx, userId, fileId))).toBeNull();
+    expect(state.memberships).toEqual([]);
+  });
+
+  it("scopes a Ruth Cloud output to the notebooks its run read, with the lower bar", async () => {
+    const state = fixture();
+    state.addFile("source", [[1, 0]]);
+    state.addFolder(folderId, [1, 0]);
+    state.addMember("source", folderId);
+    // Closer to an unrelated notebook overall, but the run only read `folderId`.
+    state.addFolder(otherFolderId, [0.3, 1]);
+    state.addFile(fileId, [[0.6, 1]]);
+    state.files.get(fileId)!.source = "ruth-cloud";
+    state.files.get(fileId)!.dedupeKey = `ruth-cloud:run-1:${fileId}`;
+    state.addHydration("run-1", ["source"]);
+    expect(await state.db.transaction((tx) => assignFoldersTx(tx, userId, fileId))).toBe(folderId);
+    expect(state.files.get(fileId)!.placement).toBe("filed");
+  });
+
+  it("files a Ruth Cloud output that read nothing by the library rule", async () => {
+    const state = fixture();
+    state.addFolder(folderId, [1, 0]);
+    state.addFile(fileId, [[0.6, 1]]);
+    state.files.get(fileId)!.source = "ruth-cloud";
+    state.files.get(fileId)!.dedupeKey = `ruth-cloud:run-2:${fileId}`;
+    expect(await state.db.transaction((tx) => assignFoldersTx(tx, userId, fileId))).toBeNull();
   });
 
   it("does not create a folder without embeddings or issue an empty aggregate update", async () => {
     const state = fixture();
     state.addFile(fileId, []);
-    expect(
-      await state.db.transaction((tx) => assignFoldersTx(tx, userId, fileId, "Empty", folderId)),
-    ).toBeNull();
+    expect(await state.db.transaction((tx) => assignFoldersTx(tx, userId, fileId))).toBeNull();
     expect(state.folders.size).toBe(0);
     const count = state.queries.length;
     await state.db.transaction((tx) => refreshFolderCentroidsTx(tx, userId, []));
     expect(state.queries).toHaveLength(count);
+  });
+});
+
+describe("decideFolder", () => {
+  it("joins only above the bar and with a margin over the runner-up", () => {
+    const rule = FILING.library;
+    expect(decideFolder([], rule)).toEqual({ folderId: null, reason: "no-candidates" });
+    expect(decideFolder([{ id: "a", similarity: 0.79 }], rule)).toMatchObject({
+      reason: "below-threshold",
+    });
+    expect(
+      decideFolder(
+        [
+          { id: "a", similarity: 0.86 },
+          { id: "b", similarity: 0.83 },
+        ],
+        rule,
+      ),
+    ).toMatchObject({ folderId: null, reason: "ambiguous" });
+    expect(
+      decideFolder(
+        [
+          { id: "a", similarity: 0.9 },
+          { id: "b", similarity: 0.6 },
+        ],
+        rule,
+      ),
+    ).toEqual({ folderId: "a", similarity: 0.9 });
+    expect(decideFolder([{ id: "a", similarity: 0.5 }], FILING.readByRun)).toMatchObject({
+      folderId: "a",
+    });
   });
 });

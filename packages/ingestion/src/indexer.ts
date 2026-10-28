@@ -6,7 +6,6 @@
 import {
   ChunkId,
   FileEventId,
-  FolderId,
   type StorageKey,
   type FileId,
   type UserId,
@@ -313,10 +312,6 @@ export const FileIndexerLive = Layer.effect(
               chunks: pending,
             })
             .pipe(failedWhile("graphing"));
-      const newFolderId = yield* newId(FolderId).pipe(
-        Effect.provideService(Crypto.Crypto, crypto),
-        failedWhile("writing"),
-      );
       const eventId = yield* newId(FileEventId).pipe(
         Effect.provideService(Crypto.Crypto, crypto),
         failedWhile("writing"),
@@ -385,7 +380,7 @@ export const FileIndexerLive = Layer.effect(
                 kind: "edited",
               });
           }
-          await assignFoldersTx(tx, input.userId, input.fileId, input.title, newFolderId);
+          await assignFoldersTx(tx, input.userId, input.fileId);
           // Revision, rather than best-effort deletion, defines cache validity.
           await advanceCorpusRevision(tx, input.userId);
           // Completion belongs to the same fenced commit as the searchable corpus.

@@ -1,13 +1,17 @@
-import { defaultNotebookAppearance } from "@avenire/shared/notebook";
-import { FolderId, NotFound, type FileId, type UserId } from "@avenire/contracts";
+import {
+  FolderId,
+  NotFound,
+  type FileId,
+  type FileSelector,
+  type UserId,
+} from "@avenire/contracts";
 import { Database, type DatabaseTransaction } from "@avenire/database/client";
 import {
   advanceCorpusRevision,
   lockCorpus,
   refreshFolderCentroidsTx,
 } from "@avenire/database/corpus";
-import { chunk, file, fileFolder, folder } from "@avenire/database/schema";
-import { newId } from "@avenire/shared/id";
+import { chunk, cloudHydration, file, fileFolder, folder } from "@avenire/database/schema";
 import { and, cosineDistance, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -33,24 +37,121 @@ export const cosineSimilarity = (
   return a && b ? dot / (a * b) : 0;
 };
 
-/** Files at least this similar to a folder's centroid join it instead of starting a new one. */
-const JOIN_THRESHOLD = 0.8;
-const FOLDER_NAME_LENGTH = 48;
+/**
+ * One filing rule for every file, whatever its origin. A file joins its nearest notebook only
+ * when it clears the bar and beats the runner-up by the margin; otherwise it stays in the
+ * Inbox. Filing never creates notebooks: only the user (or an accepted proposal) does.
+ */
+export const FILING = {
+  /** Any accepted notebook may claim an uploaded or captured source. */
+  library: { threshold: 0.8, margin: 0.05 },
+  /**
+   * A Ruth Cloud output only competes for the notebooks its run read. Generated summaries sit
+   * well below their sources' centroid (0.50–0.77 measured), so the scoped bar is lower.
+   */
+  readByRun: { threshold: 0.4, margin: 0.05 },
+} as const;
 
-const nearestFolder = (tx: DatabaseTransaction, userId: UserId, vector: ReadonlyArray<number>) =>
+export type FilingRule = (typeof FILING)[keyof typeof FILING];
+export type RankedFolder = { readonly id: string; readonly similarity: number };
+export type FilingDecision =
+  | { readonly folderId: FolderId; readonly similarity: number }
+  | { readonly folderId: null; readonly reason: "no-candidates" | "below-threshold" | "ambiguous" };
+
+/** `ranked` is ordered by similarity, best first; only the top two matter. */
+export const decideFolder = (
+  ranked: ReadonlyArray<RankedFolder>,
+  rule: FilingRule,
+): FilingDecision => {
+  const [best, runnerUp] = ranked;
+  if (!best) return { folderId: null, reason: "no-candidates" };
+  if (best.similarity < rule.threshold) return { folderId: null, reason: "below-threshold" };
+  if (runnerUp && best.similarity - runnerUp.similarity < rule.margin)
+    return { folderId: null, reason: "ambiguous" };
+  return { folderId: FolderId.make(best.id), similarity: best.similarity };
+};
+
+/** The two nearest accepted notebooks; suggested (unreviewed) ones never attract files. */
+export const rankFoldersTx = (
+  tx: DatabaseTransaction,
+  userId: UserId,
+  vector: ReadonlyArray<number>,
+  onlyIds?: ReadonlyArray<string>,
+): Promise<ReadonlyArray<RankedFolder>> =>
   tx
     .select({ id: folder.id, centroid: folder.centroid })
     .from(folder)
-    .where(and(eq(folder.userId, userId), isNull(folder.archivedAt), isNotNull(folder.centroid)))
+    .where(
+      and(
+        eq(folder.userId, userId),
+        isNull(folder.archivedAt),
+        isNotNull(folder.centroid),
+        eq(folder.suggested, false),
+        onlyIds ? inArray(folder.id, [...onlyIds]) : undefined,
+      ),
+    )
     .orderBy(cosineDistance(folder.centroid, [...vector]), folder.id)
-    .limit(1)
-    .then(([nearest]) => nearest);
+    .limit(2)
+    .then((rows) =>
+      rows.map((row) => ({ id: row.id, similarity: cosineSimilarity(row.centroid!, vector) })),
+    );
+
+const selectorFolderIds = (selector: FileSelector): ReadonlyArray<string> => [
+  ...(selector.explicit?.folderIds ?? []),
+  ...(selector.filters?.folderIds ?? []),
+];
+
+/**
+ * Notebooks a Ruth Cloud run was allowed to read: folders it selected plus the notebooks of the
+ * files it hydrated. The run id comes from the output's `ruth-cloud:<runId>:<fileId>` key.
+ */
+export const runReadFoldersTx = async (
+  tx: DatabaseTransaction,
+  userId: UserId,
+  dedupeKey: string,
+): Promise<ReadonlyArray<string>> => {
+  const [prefix, runId] = dedupeKey.split(":");
+  if (prefix !== "ruth-cloud" || !runId) return [];
+  const hydrations = await tx
+    .select({ selector: cloudHydration.selector, files: cloudHydration.files })
+    .from(cloudHydration)
+    .where(and(eq(cloudHydration.userId, userId), eq(cloudHydration.runId, runId)));
+  const fileIds = [
+    ...new Set(hydrations.flatMap((row) => row.files.map((hydrated) => hydrated.fileId))),
+  ];
+  const members = fileIds.length
+    ? await tx
+        .selectDistinct({ id: fileFolder.folderId })
+        .from(fileFolder)
+        .where(and(eq(fileFolder.userId, userId), inArray(fileFolder.fileId, fileIds)))
+    : [];
+  return [
+    ...new Set([
+      ...hydrations.flatMap((row) => selectorFolderIds(row.selector)),
+      ...members.map((row) => row.id),
+    ]),
+  ].sort();
+};
+
+/** Ruth Cloud outputs are scoped to what their run read; everything else uses the library rule. */
+export const classifyFileTx = async (
+  tx: DatabaseTransaction,
+  userId: UserId,
+  target: { readonly source: string; readonly dedupeKey: string },
+  vector: ReadonlyArray<number>,
+): Promise<FilingDecision> => {
+  const read =
+    target.source === "ruth-cloud" ? await runReadFoldersTx(tx, userId, target.dedupeKey) : [];
+  return read.length > 0
+    ? decideFolder(await rankFoldersTx(tx, userId, vector, read), FILING.readByRun)
+    : decideFolder(await rankFoldersTx(tx, userId, vector), FILING.library);
+};
 
 /** Every membership mutation takes locks in the same order as corpus publication. */
 const lockLiveFile = async (tx: DatabaseTransaction, userId: UserId, fileId: FileId) => {
   await lockCorpus(tx, userId);
   const [owned] = await tx
-    .select({ id: file.id })
+    .select({ id: file.id, source: file.source, dedupeKey: file.dedupeKey })
     .from(file)
     .where(
       and(
@@ -62,7 +163,7 @@ const lockLiveFile = async (tx: DatabaseTransaction, userId: UserId, fileId: Fil
       ),
     )
     .for("update");
-  return owned !== undefined;
+  return owned;
 };
 
 /** Lock the complete affected set in id order, after the corpus and file locks. */
@@ -142,16 +243,16 @@ export const setFileFolders = Effect.fn("Folders.setFileFolders")(function* (
 /**
  * Assign from the embeddings just published in this transaction. Existing memberships
  * remain authoritative on reingestion; their aggregate is rebuilt from current chunks.
- * The caller advances the corpus revision once its complete publication is committed.
+ * An unmatched file stays in the Inbox. A matched one is filed, so membership and
+ * placement agree. The caller advances the corpus revision once publication commits.
  */
 export const assignFoldersTx = async (
   tx: DatabaseTransaction,
   userId: UserId,
   fileId: FileId,
-  title: string,
-  newFolderId: FolderId,
 ): Promise<FolderId | null> => {
-  if (!(await lockLiveFile(tx, userId, fileId))) return null;
+  const owned = await lockLiveFile(tx, userId, fileId);
+  if (!owned) return null;
   const previous = await tx
     .select({ id: fileFolder.folderId })
     .from(fileFolder)
@@ -181,22 +282,14 @@ export const assignFoldersTx = async (
     .where(and(eq(chunk.userId, userId), eq(chunk.fileId, fileId)));
   const vector = fileEmbedding?.vector;
   if (vector == null) return null;
-  const nearest = await nearestFolder(tx, userId, vector);
-  const joinsExisting =
-    nearest?.centroid != null && cosineSimilarity(nearest.centroid, vector) >= JOIN_THRESHOLD;
-  const folderId = joinsExisting ? FolderId.make(nearest!.id) : newFolderId;
-  if (joinsExisting) {
-    if (!(await lockOwnedFolders(tx, userId, [folderId]))) return null;
-  } else {
-    await tx.insert(folder).values({
-      id: folderId,
-      userId,
-      name: title.slice(0, FOLDER_NAME_LENGTH) || "Untitled",
-      suggested: true,
-      ...defaultNotebookAppearance(title.slice(0, FOLDER_NAME_LENGTH) || "Untitled"),
-    });
-  }
+  const decision = await classifyFileTx(tx, userId, owned, vector);
+  const folderId = decision.folderId;
+  if (folderId === null || !(await lockOwnedFolders(tx, userId, [folderId]))) return null;
   await tx.insert(fileFolder).values({ fileId, folderId, userId }).onConflictDoNothing();
+  await tx
+    .update(file)
+    .set({ placement: "filed", updatedAt: sql`now()` })
+    .where(and(eq(file.id, fileId), eq(file.userId, userId)));
   await refreshFolderCentroidsTx(tx, userId, [folderId]);
   return folderId;
 };
@@ -204,13 +297,11 @@ export const assignFoldersTx = async (
 export const assignFolders = Effect.fn("Folders.assign")(function* (
   userId: UserId,
   fileId: FileId,
-  title: string,
 ) {
   const database = yield* Database;
-  const newFolderId = yield* newId(FolderId);
   return yield* database
     .useTransaction(async (tx) => {
-      const result = await assignFoldersTx(tx, userId, fileId, title, newFolderId);
+      const result = await assignFoldersTx(tx, userId, fileId);
       if (result !== null) await advanceCorpusRevision(tx, userId);
       return result;
     })
