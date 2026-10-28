@@ -14,6 +14,7 @@ import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import { HttpRequestError } from "./http.ts";
 import * as Stream from "effect/Stream";
+import { RuthTitleModelLive } from "@avenire/ai/models";
 import { Library, LibraryLive } from "./library.ts";
 import { RetrievalServicesLive } from "./services.ts";
 import { toApiError } from "./apiErrors.ts";
@@ -21,7 +22,10 @@ import { toApiError } from "./apiErrors.ts";
 const DataLive = Layer.mergeAll(DatabaseLive, NodeServices.layer);
 const AuthDataLive = AuthServicesLive.pipe(Layer.provideMerge(DataLive));
 const StoredDataLive = StorageLive.pipe(Layer.provideMerge(AuthDataLive));
-export const LibraryServicesLive = LibraryLive.pipe(Layer.provideMerge(StoredDataLive));
+export const LibraryServicesLive = LibraryLive.pipe(
+  Layer.provide(RuthTitleModelLive),
+  Layer.provideMerge(StoredDataLive),
+);
 export const ThreadServicesLive = ThreadStoreLive.pipe(Layer.provideMerge(AuthDataLive));
 export const SearchServicesLive = RetrievalServicesLive.pipe(Layer.provideMerge(AuthDataLive));
 export const CloudServicesLive = Layer.mergeAll(
@@ -111,6 +115,8 @@ export const LibraryRpcService = Layer.succeed(Library, {
     provideLibrary(Effect.flatMap(Library, (service) => service.submitCapture(...args))),
   placeFile: (...args) =>
     provideLibrary(Effect.flatMap(Library, (service) => service.placeFile(...args))),
+  suggestFolders: (...args) =>
+    provideLibrary(Effect.flatMap(Library, (service) => service.suggestFolders(...args))),
   listFolders: (...args) =>
     provideLibrary(Effect.flatMap(Library, (service) => service.listFolders(...args))),
   createFolder: (...args) =>

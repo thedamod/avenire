@@ -17,7 +17,6 @@ import {
   cloudToolCall,
   cloudWorkspaceFile,
   file,
-  fileFolder,
   pendingApproval,
   ruthMessage,
   ruthThread,
@@ -33,7 +32,7 @@ import { newId } from "@avenire/shared/id";
 import { AssetStore } from "../outputs/assets.ts";
 import { matplotlibrc, VISUAL_THEME_MANIFEST } from "../outputs/visual-theme.ts";
 import { cloudVisualTools } from "../cloud/visuals.ts";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, like, sql } from "drizzle-orm";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -253,26 +252,20 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
           orderBy: [asc(cloudHydration.createdAt)],
         }),
       );
-      const produced =
-        current.folderId === null
-          ? []
-          : yield* database.use((db) =>
-              db
-                .select({ id: file.id, title: file.title })
-                .from(file)
-                .innerJoin(
-                  fileFolder,
-                  and(eq(fileFolder.fileId, file.id), eq(fileFolder.userId, userId)),
-                )
-                .where(
-                  and(
-                    eq(file.userId, userId),
-                    eq(fileFolder.folderId, current.folderId!),
-                    eq(file.source, "ruth-cloud"),
-                  ),
-                )
-                .orderBy(asc(file.createdAt)),
-            );
+      // Outputs are exact by key, not by location: they may be filed anywhere or sit in the Inbox.
+      const produced = yield* database.use((db) =>
+        db
+          .select({ id: file.id, title: file.title })
+          .from(file)
+          .where(
+            and(
+              eq(file.userId, userId),
+              eq(file.source, "ruth-cloud"),
+              like(file.dedupeKey, `ruth-cloud:${runId}:%`),
+            ),
+          )
+          .orderBy(asc(file.createdAt)),
+      );
       const approvals = yield* database.use((db) =>
         db
           .select({

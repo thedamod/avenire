@@ -30,7 +30,7 @@ export const hydrateFilesSpec = {
 export const publishOutputSpec = {
   name: "publish_output",
   description:
-    "Publish a workspace file up to 100 MB as a new library file in this run's folder. With replaces, propose a sync of a hydrated file for morning review; the original is only updated after the user accepts. Name quizzes quiz.json (or *quiz*.json); they must follow the CloudQuiz shape from the prompt and invalid JSON is rejected with validation details. HTML outputs are also published as widgets. Paths must stay inside the workspace and outside .avenire.",
+    "Publish a workspace file up to 100 MB as a new library file. Avenire files it into the notebook it belongs to among those this run read, or leaves it in the Inbox. With replaces, propose a sync of a hydrated file for morning review; the original is only updated after the user accepts. Name quizzes quiz.json (or *quiz*.json); they must follow the CloudQuiz shape from the prompt and invalid JSON is rejected with validation details. HTML outputs are also published as widgets. Paths must stay inside the workspace and outside .avenire.",
   inputSchema: standardSchema(
     Schema.Struct({
       sandboxPath: Schema.NonEmptyString,

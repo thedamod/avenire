@@ -1,9 +1,7 @@
-import { defaultNotebookAppearance } from "@avenire/shared/notebook";
 import {
   CloudRunId,
   CloudQuiz,
   AssetId,
-  FolderId,
   HydrationId,
   HYDRATION_DEFAULTS,
   FileId,
@@ -20,7 +18,6 @@ import {
   chunk,
   cloudHydration,
   cloudRun,
-  cloudTask,
   cloudWorkspaceFile,
   folder,
   file,
@@ -676,7 +673,7 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
         return {
           kind: "file" as const,
           fileId: FileId.make(prior.id),
-          drivePath: `${folders[0]?.name ? `${folders[0].name}/` : ""}${prior.title}`,
+          drivePath: `${folders[0]?.name ?? "Inbox"}/${prior.title}`,
         };
       }
     }
@@ -723,49 +720,27 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
     return { kind: "sync" as const, approvalId, conflict };
   }
   const fileId = ctx.toolCallId ? FileId.make(stableToolId(ctx, "file")) : yield* newId(FileId);
-  const proposedFolderId = yield* newId(FolderId);
-  const task = yield* database.use((db) =>
-    db.query.cloudTask.findFirst({
-      where: and(eq(cloudTask.id, run.taskId), eq(cloudTask.userId, ctx.userId)),
-    }),
-  );
-  const zoned = DateTime.makeZoned(now, { timeZone: ctx.timeZone });
-  const day = Option.isSome(zoned)
-    ? DateTime.formatIsoDate(zoned.value)
-    : now.toISOString().slice(0, 10);
-  const folderName = `Ruth Cloud · ${day} · ${task?.title ?? "Run"}`;
   const key = fileSourceKey(ctx.userId, fileId, name, yield* newKeyVersion);
   const mimeType = outputMime(name);
   yield* storage.put(key, bytes, { contentType: mimeType });
   const title = input.title?.trim() || name;
   const publishedFolderName = yield* database.useTransaction(async (tx) => {
-    // A row lock makes first-publish folder creation atomic across worker processes.
     const [current] = await tx
       .select()
       .from(cloudRun)
       .where(and(eq(cloudRun.id, runId), eq(cloudRun.userId, ctx.userId)))
       .for("update");
     if (!current) return undefined;
-    const folderId = current.folderId ?? proposedFolderId;
-    if (!current.folderId) {
-      await tx.insert(folder).values({
-        id: folderId,
-        userId: ctx.userId,
-        name: folderName,
-        ...defaultNotebookAppearance(folderName),
-      });
-      await tx
-        .update(cloudRun)
-        .set({ folderId })
-        .where(and(eq(cloudRun.id, runId), eq(cloudRun.userId, ctx.userId)));
-    }
+    // Runs no longer get a notebook of their own. Outputs land in the Inbox, and ingestion's
+    // classifier files them into a notebook the run read. Legacy runs keep their folder.
+    const folderId = current.folderId;
     await tx.insert(file).values({
       id: fileId,
       userId: ctx.userId,
       title,
       kind: outputKind(mimeType),
       source: "ruth-cloud",
-      placement: "filed",
+      placement: folderId ? "filed" : "inbox",
       storageKey: key,
       mimeType,
       sizeBytes: bytes.byteLength,
@@ -773,12 +748,13 @@ const publishOutput = Effect.fn("RuthCloud.publishOutput")(function* (
       dedupeKey: `ruth-cloud:${runId}:${fileId}`,
       contentModifiedAt: now,
     });
+    if (!folderId) return "Inbox";
     await tx.insert(fileFolder).values({ fileId: fileId, folderId, userId: ctx.userId });
     const [selectedFolder] = await tx
       .select({ name: folder.name })
       .from(folder)
       .where(and(eq(folder.id, folderId), eq(folder.userId, ctx.userId)));
-    return selectedFolder?.name ?? folderName;
+    return selectedFolder?.name ?? "Inbox";
   });
   if (publishedFolderName === undefined)
     return yield* fail("publish_output", "This run was not found.", "not_found");
