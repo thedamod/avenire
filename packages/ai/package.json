@@ -27,6 +27,10 @@
       "types": "./src/agents/ruth.ts",
       "import": "./src/agents/ruth.ts"
     },
+    "./filing-judge": {
+      "types": "./src/agents/filing-judge.ts",
+      "import": "./src/agents/filing-judge.ts"
+    },
     "./ruth-cloud": {
       "types": "./src/agents/cloud.ts",
       "import": "./src/agents/cloud.ts"

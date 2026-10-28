@@ -38,7 +38,9 @@ import {
   userSettings,
 } from "@avenire/database/schema";
 import { recordFileEvent } from "@avenire/ingestion/events";
-import { setFileFolders, suggestFolders } from "@avenire/ingestion/folder";
+import { RuthTitleModel } from "@avenire/ai/models";
+import { setFileFolders } from "@avenire/ingestion/folder";
+import { makeFilingSuggester } from "./filingSuggestions.ts";
 import { enqueueIngestionTx } from "@avenire/ingestion/worker";
 import { newId } from "@avenire/shared/id";
 import { fileSourceKey, newKeyVersion } from "@avenire/storage/keys";
@@ -147,6 +149,10 @@ export const LibraryLive = Layer.effect(
   Library,
   Effect.gen(function* () {
     const database = yield* Database;
+    const titleModel = yield* Effect.serviceOption(RuthTitleModel);
+    const suggestFolders = makeFilingSuggester(
+      titleModel._tag === "Some" ? titleModel.value.model : undefined,
+    );
     const changes = yield* PubSub.sliding<{ userId: string; id: string }>(256);
     const listener = database.listen
       ? yield* Effect.acquireRelease(

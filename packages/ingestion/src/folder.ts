@@ -12,7 +12,7 @@ import {
   refreshFolderCentroidsTx,
 } from "@avenire/database/corpus";
 import { chunk, cloudHydration, file, fileFolder, folder } from "@avenire/database/schema";
-import { and, cosineDistance, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, cosineDistance, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -214,18 +214,175 @@ export const suggestFoldersTx = async (
   return ranked;
 };
 
-export const suggestFolders = Effect.fn("Folders.suggest")(function* (
+/** What a judge sees for one file: an excerpt of it and the notebooks worth asking about. */
+export type FilingContext = {
+  readonly fileId: FileId;
+  readonly title: string;
+  readonly kind: string;
+  readonly contentHash: string | null;
+  readonly excerpt: string;
+  /** Embedding (and run) suggestions, best first, as the fallback answer. */
+  readonly ranked: ReadonlyArray<FolderSuggestion>;
+  readonly candidates: ReadonlyArray<{
+    readonly folderId: FolderId;
+    readonly name: string;
+    /** A few member titles, so the judge sees what the notebook holds. */
+    readonly samples: ReadonlyArray<string>;
+    /** Opening text of a member file: names can be opaque course codes. */
+    readonly excerpt: string;
+    /** Embedding similarity to the file; null for an empty notebook. */
+    readonly similarity: number | null;
+  }>;
+};
+
+const SHORTLIST_FLOOR = 0.2;
+const EXCERPT_CHARS = 1_500;
+const CANDIDATE_EXCERPT_CHARS = 400;
+
+/**
+ * The shortlist for a judge: the run's notebooks, the nearest notebooks by embedding (with a
+ * low floor, since the judge decides), and empty notebooks, which only a name can match.
+ */
+export const filingContextTx = async (
+  tx: DatabaseTransaction,
+  userId: UserId,
+  fileId: FileId,
+): Promise<FilingContext | null> => {
+  const [target] = await tx
+    .select({
+      title: file.title,
+      kind: file.kind,
+      contentHash: file.contentHash,
+      source: file.source,
+      dedupeKey: file.dedupeKey,
+    })
+    .from(file)
+    .where(and(eq(file.id, fileId), eq(file.userId, userId), isNull(file.archivedAt)));
+  if (!target) return null;
+  const chunks = await tx
+    .select({ content: chunk.content })
+    .from(chunk)
+    .where(and(eq(chunk.userId, userId), eq(chunk.fileId, fileId)))
+    .orderBy(chunk.ordinal)
+    .limit(4);
+  const [embedding] = await tx
+    .select({
+      vector: sql<ReadonlyArray<number> | null>`avg(${chunk.embedding})`.mapWith(chunk.embedding),
+    })
+    .from(chunk)
+    .where(and(eq(chunk.userId, userId), eq(chunk.fileId, fileId)));
+  const vector = embedding?.vector ?? null;
+  const read =
+    target.source === "ruth-cloud" ? await runReadFoldersTx(tx, userId, target.dedupeKey) : [];
+  const ids = new Set(read);
+  const similarity = new Map<string, number>();
+  if (vector !== null) {
+    for (const row of await rankFoldersTx(tx, userId, vector, undefined, 3))
+      if (row.similarity >= SHORTLIST_FLOOR) ids.add(row.id);
+    if (ids.size)
+      for (const row of await rankFoldersTx(tx, userId, vector, [...ids], ids.size))
+        similarity.set(row.id, row.similarity);
+  }
+  const empty = await tx
+    .select({ id: folder.id })
+    .from(folder)
+    .where(
+      and(
+        eq(folder.userId, userId),
+        isNull(folder.archivedAt),
+        eq(folder.suggested, false),
+        isNull(folder.centroid),
+      ),
+    )
+    .orderBy(folder.id)
+    .limit(5);
+  for (const row of empty) ids.add(row.id);
+  const folders = ids.size
+    ? await tx
+        .select({ id: folder.id, name: folder.name })
+        .from(folder)
+        .where(
+          and(
+            eq(folder.userId, userId),
+            inArray(folder.id, [...ids]),
+            isNull(folder.archivedAt),
+            eq(folder.suggested, false),
+          ),
+        )
+        .orderBy(folder.id)
+    : [];
+  const members = folders.length
+    ? await tx
+        .select({ folderId: fileFolder.folderId, fileId: file.id, title: file.title })
+        .from(fileFolder)
+        .innerJoin(file, and(eq(file.id, fileFolder.fileId), eq(file.userId, fileFolder.userId)))
+        .where(
+          and(
+            eq(fileFolder.userId, userId),
+            inArray(
+              fileFolder.folderId,
+              folders.map((row) => row.id),
+            ),
+            ne(file.id, fileId),
+            isNull(file.archivedAt),
+          ),
+        )
+        .orderBy(desc(file.createdAt))
+    : [];
+  return {
+    fileId,
+    title: target.title,
+    kind: target.kind,
+    contentHash: target.contentHash,
+    excerpt: chunks
+      .map((row) => row.content)
+      .join("\n")
+      .slice(0, EXCERPT_CHARS),
+    ranked: await suggestFoldersTx(tx, userId, fileId),
+    candidates: await Promise.all(
+      folders.map(async (row) => {
+        const own = members.filter((member) => member.folderId === row.id);
+        const [opening] = own.length
+          ? await tx
+              .select({ content: chunk.content })
+              .from(chunk)
+              .where(
+                and(
+                  eq(chunk.userId, userId),
+                  inArray(
+                    chunk.fileId,
+                    own.map((member) => member.fileId),
+                  ),
+                ),
+              )
+              .orderBy(chunk.ordinal, chunk.fileId)
+              .limit(1)
+          : [];
+        return {
+          folderId: FolderId.make(row.id),
+          name: row.name,
+          samples: own.slice(0, 4).map((member) => member.title),
+          excerpt: opening?.content.slice(0, CANDIDATE_EXCERPT_CHARS) ?? "",
+          similarity: similarity.get(row.id) ?? null,
+        };
+      }),
+    ),
+  };
+};
+
+export const filingContexts = Effect.fn("Folders.filingContexts")(function* (
   userId: UserId,
   fileIds: ReadonlyArray<FileId>,
 ) {
   const database = yield* Database;
   return yield* database
     .useTransaction(async (tx) => {
-      const out: Array<{ fileId: FileId; suggestions: ReadonlyArray<FolderSuggestion> }> = [];
-      // Sequential on purpose: one transaction connection, a handful of Inbox files.
-      for (const fileId of fileIds)
+      const out: Array<FilingContext> = [];
+      for (const fileId of fileIds) {
         // eslint-disable-next-line no-await-in-loop
-        out.push({ fileId, suggestions: await suggestFoldersTx(tx, userId, fileId) });
+        const context = await filingContextTx(tx, userId, fileId);
+        if (context) out.push(context);
+      }
       return out;
     })
     .pipe(Effect.mapError((cause) => new FolderError({ cause })));

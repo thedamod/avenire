@@ -132,6 +132,8 @@ export const FolderSuggestions = Schema.Struct({
   suggestions: Schema.Array(
     Schema.Struct({ folderId: FolderId, similarity: Schema.NullOr(Schema.Number) }),
   ),
+  /** When no notebook fits: a name for a new one (null when the item has no study subject). */
+  newNotebook: Schema.NullOr(Schema.String),
 });
 export type FolderSuggestions = typeof FolderSuggestions.Type;
 
