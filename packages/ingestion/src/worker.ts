@@ -279,6 +279,18 @@ export const recordIngestionFailureTx = async (
     .where(claimPredicate(job));
 };
 
+/**
+ * Whether an `avenire_ingestion` notification can mean claimable work. Stage changes and
+ * finished jobs say `claimable: false` (migration 0015); older payloads always wake.
+ */
+export const wakesWorker = (payload: string): boolean => {
+  try {
+    return (JSON.parse(payload) as { claimable?: unknown }).claimable !== false;
+  } catch {
+    return true;
+  }
+};
+
 export const IngestionWorkerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const database = yield* Database;
@@ -288,7 +300,7 @@ export const IngestionWorkerLive = Layer.effectDiscard(
       yield* Effect.acquireRelease(
         Effect.tryPromise(() =>
           database.listen!("avenire_ingestion", (payload) => {
-            Effect.runFork(PubSub.publish(wakeups, payload));
+            if (wakesWorker(payload)) Effect.runFork(PubSub.publish(wakeups, payload));
           }),
         ).pipe(
           Effect.catch((error) =>
