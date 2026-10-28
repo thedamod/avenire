@@ -16,7 +16,8 @@ BEGIN
     'userId', NEW.user_id,
     'id', NEW.id,
     'status', NEW.status,
-    -- Mirrors claimJobs: queued once its retry delay passes; indexed with a scheduled retry.
+    -- The write-driven claimJobs cases: queued once its retry delay passes, or indexed with a
+    -- scheduled retry. Expired in-progress leases and the short-job lane rely on the idle poll.
     'claimable', (NEW.status = 'queued' AND (NEW.locked_until IS NULL OR NEW.locked_until <= now()))
       OR (NEW.status = 'indexed' AND NEW.locked_until IS NOT NULL AND NEW.locked_until <= now())
   )::text);
