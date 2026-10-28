@@ -22,13 +22,14 @@ import { Chip } from "@avenire/ui/components/chip";
 import { Popover, PopoverContent, PopoverTrigger } from "@avenire/ui/components/popover";
 import { useArrivedLate } from "@avenire/ui/components/presence";
 import { cn } from "@avenire/ui/lib/utils";
-import { KIND_LABELS, NotebookTag, RelativeTime } from "~/components/app";
+import { KIND_LABELS, NotebookSwatch, NotebookTag, RelativeTime } from "~/components/app";
 import { useLibrary } from "~/features/library/LibraryProvider";
 import { FileRow } from "~/features/library/FileRow";
 import { SourceUpload, SourceUploadArea } from "~/features/library/SourceUpload";
 import { PresenceRows } from "~/features/library/PresenceRows";
 import { NewNotebookDialog } from "~/features/library/NewNotebookDialog";
 import { NotebookPicker } from "~/features/library/NotebookPicker";
+import { useFolderSuggestions } from "~/features/library/useFolderSuggestions";
 import {
   KEPT_SOURCES,
   ingestionState,
@@ -102,6 +103,11 @@ export function SourcesTab({
   const kept = useLocalSet(KEPT_SOURCES);
   const late = useArrivedLate(sources);
   const unfiledCount = sources?.filter((file) => file.placement === "inbox").length ?? 0;
+  const unfiledIds = useMemo(
+    () => sources?.filter((file) => file.placement === "inbox").map((file) => file.id) ?? [],
+    [sources],
+  );
+  const suggestions = useFolderSuggestions(unfiledIds, folderById);
 
   const groups = useMemo(() => {
     const processing: { file: LibraryFile; state: IngestionState }[] = [];
@@ -132,6 +138,7 @@ export function SourcesTab({
       file={file}
       job={jobs.get(file.id)}
       folderById={folderById}
+      suggested={suggestions.get(file.id)}
       selection={selection}
     />
   );
@@ -389,11 +396,13 @@ function SourceRow({
   file,
   job,
   folderById,
+  suggested,
   selection,
 }: {
   file: LibraryFile;
   job?: IngestionJob | undefined;
   folderById: ReadonlyMap<FolderId, Folder>;
+  suggested?: readonly Folder[] | undefined;
   selection: Selection;
 }) {
   const notebooks = file.folderIds
@@ -418,7 +427,7 @@ function SourceRow({
             ) : null}
           </span>
         ) : (
-          <FileToNotebook fileId={file.id} />
+          <FileToNotebook fileId={file.id} suggested={suggested ?? []} />
         )
       }
       trailing={<RelativeTime iso={file.createdAt} className="md:w-16 md:text-right" />}
@@ -429,33 +438,57 @@ function SourceRow({
   );
 }
 
-/** "File to notebook…" on an unfiled row (desktop). */
-function FileToNotebook({ fileId }: { fileId: FileId }) {
+/**
+ * Filing on an unfiled row (desktop): one click saves to the most likely notebook; the chevron
+ * opens every notebook with the suggestions on top.
+ */
+function FileToNotebook({ fileId, suggested }: { fileId: FileId; suggested: readonly Folder[] }) {
   const { folders, actions } = useLibrary();
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const best = suggested[0];
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger className="inline-flex items-center gap-1 text-[12.5px] text-foreground-soft transition-colors hover:text-foreground">
-          File to notebook…
-          <ChevronDown className="size-3" aria-hidden="true" />
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-[280px] p-1">
-          <NotebookPicker
-            title="Move to"
-            folders={folders ?? []}
-            onPick={(folder) => {
-              setOpen(false);
-              void actions.moveFiles([fileId], folder);
-            }}
-            onNew={() => {
-              setOpen(false);
-              setCreating(true);
-            }}
-          />
-        </PopoverContent>
-      </Popover>
+      <span className="flex min-w-0 items-center">
+        {best ? (
+          <button
+            type="button"
+            onClick={() => void actions.moveFiles([fileId], best)}
+            title={`Save to ${best.name}`}
+            className="inline-flex min-w-0 items-center gap-1.5 text-[12.5px] text-foreground-soft transition-colors hover:text-foreground"
+          >
+            <NotebookSwatch color={best.color} className="h-2.5" />
+            <span className="truncate">Save to {best.name}</span>
+          </button>
+        ) : null}
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger
+            aria-label={best ? "Choose another notebook" : undefined}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1 text-[12.5px] text-foreground-soft transition-colors hover:text-foreground",
+              best && "ml-0.5 h-5 w-5 justify-center rounded hover:bg-hover",
+            )}
+          >
+            {best ? null : "File to notebook…"}
+            <ChevronDown className="size-3" aria-hidden="true" />
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-[280px] p-1">
+            <NotebookPicker
+              title="Move to"
+              folders={folders ?? []}
+              suggested={suggested}
+              onPick={(folder) => {
+                setOpen(false);
+                void actions.moveFiles([fileId], folder);
+              }}
+              onNew={() => {
+                setOpen(false);
+                setCreating(true);
+              }}
+            />
+          </PopoverContent>
+        </Popover>
+      </span>
       <NewNotebookDialog
         open={creating}
         onOpenChange={setCreating}

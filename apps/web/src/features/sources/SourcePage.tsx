@@ -174,6 +174,7 @@ export function SourcePage({ fileId }: { fileId: FileId }) {
         open={moving}
         onOpenChange={setMoving}
         title="Move source to"
+        fileId={fileId}
         onPick={(folder) => void library.actions.moveFiles([fileId], folder)}
       />
       {data ? (

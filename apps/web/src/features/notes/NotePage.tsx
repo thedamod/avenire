@@ -290,6 +290,7 @@ export function NotePage({ fileId }: { fileId: FileId }) {
         open={moving}
         onOpenChange={setMoving}
         title="Move note to"
+        fileId={fileId}
         onPick={(target) => void library.actions.moveFiles([fileId], target)}
       />
     </>

@@ -113,6 +113,7 @@ export function useFileActions({
         open={moving}
         onOpenChange={setMoving}
         title={moveLabel}
+        fileId={dialogIds.length === 1 ? dialogIds[0] : undefined}
         onPick={(folder) => complete(actions.moveFiles(dialogIds, folder))}
       />
       <NewNotebookDialog
