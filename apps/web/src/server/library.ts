@@ -143,25 +143,29 @@ export const LibraryLive = Layer.effect(
   Effect.gen(function* () {
     const database = yield* Database;
     const changes = yield* PubSub.sliding<{ userId: string; id: string }>(256);
-    if (database.listen)
-      yield* Effect.acquireRelease(
-        Effect.tryPromise(() =>
-          database.listen!("avenire_ingestion", (payload) => {
-            try {
-              const event = JSON.parse(payload) as { userId?: unknown; id?: unknown };
-              if (typeof event.userId === "string" && typeof event.id === "string")
-                Effect.runFork(PubSub.publish(changes, { userId: event.userId, id: event.id }));
-            } catch {
-              /* Ignore malformed notifications; durable polling reconciles. */
-            }
-          }),
-        ).pipe(
-          Effect.catch((error) =>
-            Effect.as(Effect.logWarning("Ingestion notifications unavailable", error), undefined),
+    const listener = database.listen
+      ? yield* Effect.acquireRelease(
+          Effect.tryPromise(() =>
+            database.listen!("avenire_ingestion", (payload) => {
+              try {
+                const event = JSON.parse(payload) as { userId?: unknown; id?: unknown };
+                if (typeof event.userId === "string" && typeof event.id === "string")
+                  Effect.runFork(PubSub.publish(changes, { userId: event.userId, id: event.id }));
+              } catch {
+                /* Ignore malformed notifications; durable polling reconciles. */
+              }
+            }),
+          ).pipe(
+            Effect.catch((error) =>
+              Effect.as(Effect.logWarning("Ingestion notifications unavailable", error), undefined),
+            ),
           ),
-        ),
-        (listener) => (listener ? Effect.promise(() => listener.unlisten()) : Effect.void),
-      );
+          (active) => (active ? Effect.promise(() => active.unlisten()) : Effect.void),
+        )
+      : undefined;
+    // With LISTEN delivering each change, polling only reconciles missed notifications.
+    const pollEvery = listener ? "15 seconds" : "2 seconds";
+    const fullScanEvery = listener ? 4 : 30; // About once a minute either way.
     const storage = yield* Storage;
     const crypto = yield* Crypto.Crypto;
     const makeId = <Id extends string>(schema: { readonly make: (id: string) => Id }) =>
@@ -434,7 +438,7 @@ export const LibraryLive = Layer.effect(
                       eq(ingestionJob.userId, userId),
                       id
                         ? eq(ingestionJob.id, id)
-                        : ++polls % 30 === 1 || !watermark
+                        : ++polls % fullScanEvery === 1 || !watermark
                           ? undefined
                           : gte(ingestionJob.updatedAt, new Date(watermark - 5000)),
                     ),
@@ -442,7 +446,7 @@ export const LibraryLive = Layer.effect(
                   .orderBy(asc(ingestionJob.updatedAt), asc(ingestionJob.id)),
               )
               .pipe(Effect.mapError(toApiError));
-          const poll = Stream.fromEffectSchedule(read(), Schedule.spaced("2 seconds"));
+          const poll = Stream.fromEffectSchedule(read(), Schedule.spaced(pollEvery));
           const pushed = Stream.fromPubSub(changes).pipe(
             Stream.filter((event) => event.userId === userId),
             Stream.mapEffect((event) => read(event.id)),
@@ -452,7 +456,8 @@ export const LibraryLive = Layer.effect(
               Stream.fromIterable(
                 rows.flatMap(({ job }) => {
                   watermark = Math.max(watermark, job.updatedAt.getTime());
-                  const version = `${job.updatedAt.toISOString()}:${job.status}:${job.generation}`;
+                  // Lease heartbeats only move updatedAt; they change nothing a client shows.
+                  const version = `${job.status}:${job.generation}:${job.attempts}:${job.error ?? ""}:${job.coverage === null ? "" : JSON.stringify(job.coverage)}`;
                   if (seen.get(job.id) === version) return [];
                   seen.delete(job.id);
                   seen.set(job.id, version);
