@@ -34,7 +34,7 @@ import {
 import { describeSchedule, fromRules } from "./schedule";
 
 export function TaskDetailScreen({ navigation, route }: ScreenProps<"TaskDetail">) {
-  const { tasks, runs, folders, task } = useTaskDetail(route.params.taskId);
+  const { tasks, runs, folders, threads, cloudThread, task } = useTaskDetail(route.params.taskId);
   const [editing, setEditing] = useState(false);
   const [menu, setMenu] = useState(false);
   const [message, setMessage] = useState("");
@@ -49,7 +49,8 @@ export function TaskDetailScreen({ navigation, route }: ScreenProps<"TaskDetail"
     void tasks.refetch();
     void runs.refetch();
     void folders.refetch();
-  }, [tasks.refetch, runs.refetch, folders.refetch]);
+    void threads.refetch();
+  }, [tasks.refetch, runs.refetch, folders.refetch, threads.refetch]);
   useFocusEffect(
     useCallback(() => {
       refresh();
@@ -413,10 +414,15 @@ export function TaskDetailScreen({ navigation, route }: ScreenProps<"TaskDetail"
             <Text>{selected?.summary ?? "No summary was recorded for this run."}</Text>
             {selected?.assets.length ? (
               <Text variant="meta">
-                {selected.assets.length} outputs made. Open the morning report on your computer to
-                review them.
+                {selected.assets.length} outputs made.
               </Text>
             ) : null}
+            {selected && cloudThread ? (
+              <Button accessibilityLabel="Open this morning report" onPress={() => {
+                setSelectedRun(undefined);
+                navigation.navigate("Chat", { threadId: cloudThread.id, runId: selected.id });
+              }}>Open morning report</Button>
+            ) : threads.error ? <ErrorState message={errorMessage(threads.error)} onRetry={() => void threads.refetch()} /> : null}
           </ScrollView>
         </ScrollFade>
       </FeatureOverlay>

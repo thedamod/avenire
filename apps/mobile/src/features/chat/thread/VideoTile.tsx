@@ -6,12 +6,20 @@ import { Platform, View } from "react-native";
 import { colors } from "../../../theme/tokens";
 import { ErrorState, Icon, Pressable, Text } from "../../../ui";
 import { formatTimestamp } from "./citations";
-import { assetUrl } from "./widgetProtocol";
+import { useAssetSource } from "../../../lib/useAssetSource";
+import { Skeleton } from "../../../ui/Skeleton";
 
 export function VideoTile({ url, title, durationSec, compact = false }: { url: string; title: string; durationSec: number | null; compact?: boolean }) {
-  let source: string | undefined;
-  try { source = assetUrl(url); } catch { /* Show the same media error as a failed load. */ }
-  const player = useVideoPlayer(source ?? null);
+  const [attempt, setAttempt] = useState(0);
+  const asset = useAssetSource(url, attempt);
+  const retry = () => setAttempt((value) => value + 1);
+  if (!asset) return <Skeleton height={compact ? 128 : 201} />;
+  if (!asset.source) return <ErrorState message={asset.error ?? "This video couldn't load."} onRetry={retry} />;
+  return <AuthenticatedVideo key={`${url}:${attempt}`} source={asset.source} title={title} durationSec={durationSec} compact={compact} retry={retry} />;
+}
+
+function AuthenticatedVideo({ source, title, durationSec, compact, retry }: { source: { uri: string; headers: Record<string, string> }; title: string; durationSec: number | null; compact: boolean; retry: () => void }) {
+  const player = useVideoPlayer(source);
   const [playing, setPlaying] = useState(false);
   const [thumbnail, setThumbnail] = useState<VideoThumbnail>();
   const [duration, setDuration] = useState(durationSec);
@@ -31,7 +39,7 @@ export function VideoTile({ url, title, durationSec, compact = false }: { url: s
     return () => { live = false; listener.remove(); };
   }, [player, durationSec]);
   useEffect(() => { if (!focused) { player.pause(); setPlaying(false); } }, [focused, player]);
-  if (error || !source) return <ErrorState message={error ?? "This video has an invalid address."} />;
+  if (error) return <ErrorState message={error} onRetry={retry} />;
   return <View style={{ minWidth: 0, flex: compact ? 1 : undefined, gap: 6 }}>
     <View style={{ height: compact ? 128 : 201, borderRadius: 8, borderWidth: 1, borderColor: colors["line-2"], overflow: "hidden", backgroundColor: "#141418" }}>
       {thumbnail && !playing ? <Image source={thumbnail} accessibilityLabel={title} contentFit="cover" style={{ flex: 1 }} /> : <VideoView player={player} accessibilityLabel={title} nativeControls={playing} contentFit="contain" style={{ flex: 1 }} />}

@@ -29,6 +29,7 @@ import { ErrorState } from "./ui/ErrorState";
 import { Screen } from "./ui/Screen";
 import { formSheetOptions } from "./ui/Sheet";
 import { UiGallery } from "./ui/UiGallery";
+import { screenPaths } from "./linking";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const theme = {
@@ -44,23 +45,7 @@ const theme = {
   },
 };
 const paths = {
-  Home: "",
-  Ask: "ask",
-  Notebook: "notebook/:folderId",
-  Note: "note/:fileId",
-  Chat: "chat/:threadId",
-  Output: "chat/:threadId/output/:output",
-  Citation: "source/:sourceId",
-  Tasks: "tasks",
-  TaskDetail: "tasks/:taskId",
-  ScheduleTask: "schedule",
-  NewNotebook: "new-notebook",
-  SourcesSelect: "select-sources",
-  Move: "move",
-  ClusterReview: "clusters",
-  Settings: "settings",
-  Trash: "trash",
-  Onboarding: "onboarding",
+  ...screenPaths,
   ...(__DEV__ ? { UiGallery: "ui-gallery" } : {}),
 };
 const linking: LinkingOptions<RootStackParamList> = {

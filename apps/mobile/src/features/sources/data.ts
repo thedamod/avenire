@@ -1,23 +1,11 @@
 import { useRef, useState } from "react";
 import { Linking } from "react-native";
-import { call, invalidateLibrary, type ClientRuntime } from "@avenire/client-runtime/rpc";
-import type { ChatScope, FileId, FolderId, LibraryFile, ThreadId } from "@avenire/contracts";
+import { call, invalidateLibrary } from "@avenire/client-runtime/rpc";
+import type { FileId, FolderId, LibraryFile } from "@avenire/contracts";
 import { useQuery } from "../../lib/useRpc";
 import { useApi } from "../../state/api";
 import { originLabel } from "./reopen";
-
-// Chat's typed route currently has no fileIds. The chat owner can consume this once,
-// before sending its initial q, and pass it as RuthChatRequest.scope.
-const initialScopes = new WeakMap<ClientRuntime, Map<ThreadId, ChatScope>>();
-export function takeInitialThreadScope(
-  api: ClientRuntime,
-  threadId: ThreadId,
-): ChatScope | undefined {
-  const scopes = initialScopes.get(api);
-  const scope = scopes?.get(threadId);
-  scopes?.delete(threadId);
-  return scope;
-}
+import { rememberInitialThreadScope } from "./threadScope";
 
 export function useLibraryFiles() {
   const query = useQuery((client) => client["library.listFiles"]({}), "filing-files");
@@ -86,9 +74,7 @@ export function useSourceActions() {
             ...(folderId ? { folderId } : {}),
           }),
         );
-        let scopes = initialScopes.get(api);
-        if (!scopes) initialScopes.set(api, (scopes = new Map()));
-        scopes.set(thread.id, {
+        rememberInitialThreadScope(api, thread.id, {
           fileIds: [...fileIds],
           ...(folderId ? { folderIds: [folderId] } : {}),
         });

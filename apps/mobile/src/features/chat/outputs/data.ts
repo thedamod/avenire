@@ -27,7 +27,7 @@ export interface OutputFile {
 
 /** Read persisted thread products, then the referenced run's output notebook and assets.
  * Never infer a run from an unrelated user's latest task or notebook title. */
-export function useOutputs(threadId: ThreadId, requestedId?: string, requestedKind?: OutputKind) {
+export function useOutputs(threadId: ThreadId, requestedId?: string, requestedKind?: OutputKind, requestedRunId?: CloudRunId) {
   const query = useQuery(
     (client) =>
       Effect.gen(function* () {
@@ -43,15 +43,15 @@ export function useOutputs(threadId: ThreadId, requestedId?: string, requestedKi
         const threadAssets = [...listedAssets];
         const published = new Map<FileId, OutputFile>();
         const hydrated = new Set<FileId>();
-        let runId: CloudRunId | undefined;
+        let runId: CloudRunId | undefined = requestedRunId;
         for (const message of messages) {
           const metadataRun = string(object(message.metadata).runId);
-          if (metadataRun) runId = metadataRun as CloudRunId;
+          if (!requestedRunId && metadataRun) runId = metadataRun as CloudRunId;
           for (const raw of message.parts) {
             const part = object(raw);
             if (part.type === "data-cloud-run") {
               const id = string(object(part.data).runId);
-              if (id) runId = id as CloudRunId;
+              if (!requestedRunId && id) runId = id as CloudRunId;
             }
             if (part.state !== "output-available") continue;
             const name =
@@ -142,7 +142,7 @@ export function useOutputs(threadId: ThreadId, requestedId?: string, requestedKi
           citations: collectCitations(messages),
         };
       }),
-    `mobile-outputs-${threadId}-${requestedKind ?? ""}-${requestedId ?? ""}`,
+    `mobile-outputs-${threadId}-${requestedKind ?? ""}-${requestedId ?? ""}-${requestedRunId ?? ""}`,
   );
   const runId = query.data?.run?.id;
   const [transport] = useState(

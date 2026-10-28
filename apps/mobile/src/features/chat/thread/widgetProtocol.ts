@@ -22,7 +22,7 @@ export function assetUrl(url: string): string {
 const escapeHtml = (value: string) => value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 /** An opaque-origin allow-scripts iframe retains web WidgetFrame's isolation inside WKWebView. */
-export function widgetHostDocument(url: string, title: string, reducedMotion: boolean): string {
+export function widgetHostDocument(url: string, title: string, reducedMotion: boolean, html?: string): string {
   const theme = JSON.stringify(themeMessage).replaceAll("<", "\\u003c");
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;background:#0e0e0e;width:100%;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0;color-scheme:normal}</style></head><body><script>
   const theme=${theme};
@@ -34,7 +34,7 @@ export function widgetHostDocument(url: string, title: string, reducedMotion: bo
     if(data.type==='avenire:widget:ready')frame.contentWindow.postMessage(theme,'*');
     window.ReactNativeWebView.postMessage(JSON.stringify(data));
   });
-  </script><iframe id="widget" src="${escapeHtml(assetUrl(url))}" title="${escapeHtml(title)}" sandbox="allow-scripts" referrerpolicy="no-referrer" allow="" loading="eager"></iframe><script>
+  </script><iframe id="widget" ${html === undefined ? `src="${escapeHtml(assetUrl(url))}"` : `srcdoc="${escapeHtml(html)}"`} title="${escapeHtml(title)}" sandbox="allow-scripts" referrerpolicy="no-referrer" allow="" loading="eager"></iframe><script>
   document.getElementById('widget').addEventListener('load',function(){this.contentWindow.postMessage(theme,'*');});
   document.documentElement.dataset.reducedMotion='${reducedMotion}';
   </script></body></html>`;

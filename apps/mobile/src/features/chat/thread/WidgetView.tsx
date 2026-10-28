@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { WebView } from "react-native-webview";
 import { ErrorState, Skeleton } from "../../../ui";
 import { decodeWidgetMessage, widgetHostDocument } from "./widgetProtocol";
+import { assetRequest } from "../../../lib/assetRequest";
+import { apiUrl, getCookieHeader } from "../../../state/auth";
 
 export function WidgetView({ url, title, initialHeight = 240, onResize }: { url: string; title: string; initialHeight?: number; onResize?: () => void }) {
   const [attempt, setAttempt] = useState(0);
@@ -15,9 +17,17 @@ function WidgetAttempt({ url, title, initialHeight, onResize, retry }: { url: st
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string>();
   const reducedMotion = useReducedMotion();
-  const document = useMemo(() => {
-    try { return { html: widgetHostDocument(url, title, reducedMotion) }; }
-    catch { return { error: "This visual has an invalid address." }; }
+  const [document, setDocument] = useState<{ html?: string; error?: string }>({});
+  useEffect(() => {
+    const abort = new AbortController();
+    void (async () => {
+      const source = await assetRequest(url, apiUrl, getCookieHeader);
+      const response = await fetch(source.uri, { headers: source.headers, credentials: "omit", signal: abort.signal });
+      if (!response.ok) throw new Error("This visual couldn't load.");
+      const html = await response.text();
+      if (!abort.signal.aborted) setDocument({ html: widgetHostDocument(url, title, reducedMotion, html) });
+    })().catch(() => { if (!abort.signal.aborted) setDocument({ error: "This visual couldn't load." }); });
+    return () => abort.abort();
   }, [url, title, reducedMotion]);
   useEffect(() => {
     if (ready || error || document.error) return;
@@ -28,7 +38,7 @@ function WidgetAttempt({ url, title, initialHeight, onResize, retry }: { url: st
   if (error || document.error) return <View style={{ padding: 12 }}><ErrorState message={error ?? document.error ?? "This visual couldn't load."} onRetry={retry} /></View>;
   return <View style={{ height, overflow: "hidden" }}>
     {!ready ? <View pointerEvents="none" style={{ position: "absolute", inset: 12, zIndex: 1, gap: 12 }}><Skeleton /><Skeleton width="65%" /></View> : null}
-    <WebView source={{ html: document.html ?? "" }} accessibilityLabel={title} style={{ flex: 1, backgroundColor: "#0E0E0E" }}
+    {document.html ? <WebView source={{ html: document.html }} accessibilityLabel={title} style={{ flex: 1, backgroundColor: "#0E0E0E" }}
       javaScriptEnabled scrollEnabled={false} originWhitelist={["*"]} setSupportMultipleWindows={false} javaScriptCanOpenWindowsAutomatically={false}
       sharedCookiesEnabled={false} thirdPartyCookiesEnabled={false} allowFileAccess={false} allowFileAccessFromFileURLs={false} allowUniversalAccessFromFileURLs={false}
       onShouldStartLoadWithRequest={(request) => !request.isTopFrame || request.url === "about:blank" || request.url.startsWith("about:blank#")}
@@ -40,6 +50,6 @@ function WidgetAttempt({ url, title, initialHeight, onResize, retry }: { url: st
         if (message?.type === "avenire:widget:height") setHeight(Math.max(40, Math.min(1200, message.height)));
         if (message?.type === "avenire:widget:ready") setReady(true);
         if (message?.type === "avenire:widget:error") setError(message.message || "This visual couldn't load.");
-      }} />
+      }} /> : null}
   </View>;
 }
