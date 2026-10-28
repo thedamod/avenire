@@ -6,7 +6,13 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
-import { Files, FilesError, type MultipartOptions, UploadControl } from "files-sdk";
+import {
+  Files,
+  FilesError,
+  type MultipartOptions,
+  type SignedUpload,
+  UploadControl,
+} from "files-sdk";
 import type { UploadThingAdapter } from "files-sdk/uploadthing";
 import { createHash } from "node:crypto";
 
@@ -72,8 +78,9 @@ export class Storage extends Context.Service<
     readonly prepareSourceUpload?: (
       key: StorageKey,
       options: { contentType: string; sizeBytes: number; expiresInSeconds: number },
-    ) => Effect.Effect<import("files-sdk").SignedUpload | null, StorageError>;
-    readonly stream?: (
+    ) => Effect.Effect<SignedUpload | null, StorageError>;
+    /** Streamed read for verification and media spools; never buffers the object. */
+    readonly stream: (
       key: StorageKey,
     ) => Effect.Effect<ReadableStream<Uint8Array>, StorageError | ObjectNotFound>;
     readonly files: Files;

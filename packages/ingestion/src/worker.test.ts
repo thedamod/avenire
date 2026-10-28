@@ -2,7 +2,7 @@ import { expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Cause from "effect/Cause";
-import { failureReason, providerRetryDelay, startIngestionLanes } from "./worker.ts";
+import { failureReason, providerRetryDelay, startIngestionLanes, wakesWorker } from "./worker.ts";
 import { IngestionError } from "./pipeline.ts";
 import { APICallError } from "ai";
 
@@ -57,4 +57,16 @@ it("preserves quota reset delays through pipeline error wrappers", () => {
   );
   expect(providerRetryDelay(cause, 0)).toBe(461_000);
   expect(providerRetryDelay(Cause.fail(new Error("invalid file")), 0)).toBeUndefined();
+});
+
+it("wakes idle lanes only for notifications that can mean claimable work", () => {
+  expect(
+    wakesWorker(JSON.stringify({ userId: "u", id: "j", status: "queued", claimable: true })),
+  ).toBe(true);
+  expect(
+    wakesWorker(JSON.stringify({ userId: "u", id: "j", status: "embedding", claimable: false })),
+  ).toBe(false);
+  // Payloads from before migration 0015, and anything unparseable, still wake.
+  expect(wakesWorker(JSON.stringify({ userId: "u", id: "j" }))).toBe(true);
+  expect(wakesWorker("not json")).toBe(true);
 });

@@ -1,6 +1,5 @@
 import {
   CreateSourceUpload,
-  LibraryFile,
   SourceUploadTicket,
   SubmitCaptureResult,
   type CaptureOrigin,
@@ -96,7 +95,7 @@ export function createCaptureUpload(
         uploadUrl.password
       )
         throw new Error("Avenire returned an invalid upload URL");
-      await uploadSourceTicket(uploadUrl, new Blob([new Uint8Array(bytes)]), {
+      await uploadSourceTicket(uploadUrl, new Blob([bytes]), {
         contentType: input.mimeType,
         appFetch: fetcher,
       });
