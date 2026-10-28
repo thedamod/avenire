@@ -15,6 +15,7 @@ import { IngestionJob } from "./ingestion.ts";
 import {
   FileContentUrl,
   Folder,
+  FolderSuggestions,
   LibraryFile,
   FilePlacement,
   NoteContent,
@@ -100,6 +101,11 @@ export class LibraryRpcs extends RpcGroup.make(
   Rpc.make("library.placeFile", {
     payload: { fileId: FileId, folderIds: Schema.Array(FolderId) },
     success: LibraryFile,
+    error: ApiError,
+  }),
+  Rpc.make("library.suggestFolders", {
+    payload: TrashFilesRequest,
+    success: Schema.Array(FolderSuggestions),
     error: ApiError,
   }),
   Rpc.make("library.listFolders", { success: Schema.Array(Folder), error: ApiError }),

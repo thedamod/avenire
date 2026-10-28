@@ -126,6 +126,15 @@ export const Folder = Schema.Struct({
 });
 export type Folder = typeof Folder.Type;
 
+/** The notebooks a file most likely belongs in, best first (like "save to board" suggestions). */
+export const FolderSuggestions = Schema.Struct({
+  fileId: FileId,
+  suggestions: Schema.Array(
+    Schema.Struct({ folderId: FolderId, similarity: Schema.NullOr(Schema.Number) }),
+  ),
+});
+export type FolderSuggestions = typeof FolderSuggestions.Type;
+
 /** A note's markdown body. `revision` is opaque; send it back as `baseRevision` when saving. */
 export const NoteContent = Schema.Struct({
   fileId: FileId,

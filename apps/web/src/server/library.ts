@@ -16,6 +16,7 @@ import {
   StorageKey,
   type FilePlacement,
   type Folder,
+  type FolderSuggestions,
   type IngestionJob,
   type SubmitCaptureResult,
   type UserId,
@@ -37,7 +38,7 @@ import {
   userSettings,
 } from "@avenire/database/schema";
 import { recordFileEvent } from "@avenire/ingestion/events";
-import { setFileFolders } from "@avenire/ingestion/folder";
+import { setFileFolders, suggestFolders } from "@avenire/ingestion/folder";
 import { enqueueIngestionTx } from "@avenire/ingestion/worker";
 import { newId } from "@avenire/shared/id";
 import { fileSourceKey, newKeyVersion } from "@avenire/storage/keys";
@@ -77,6 +78,10 @@ export interface LibraryOperations extends LibraryFeatures {
     id: FileId,
     folderIds: readonly FolderId[],
   ) => Effect.Effect<LibraryFile, ApiError>;
+  readonly suggestFolders: (
+    userId: UserId,
+    fileIds: readonly FileId[],
+  ) => Effect.Effect<readonly FolderSuggestions[], ApiError>;
   readonly listFolders: (userId: UserId) => Effect.Effect<readonly Folder[], ApiError>;
   readonly createFolder: (
     userId: UserId,
@@ -367,6 +372,11 @@ export const LibraryLive = Layer.effect(
           );
           return yield* getFile(userId, id);
         }).pipe(Effect.mapError(toApiError)),
+      suggestFolders: (userId, fileIds) =>
+        suggestFolders(userId, fileIds).pipe(
+          Effect.provideService(Database, database),
+          Effect.mapError(toApiError),
+        ),
       listFolders: (userId) => listFolders(userId).pipe(Effect.mapError(toApiError)),
       createFolder: (userId, name, options = {}) =>
         Effect.gen(function* () {

@@ -79,6 +79,10 @@ export const LibraryHandlersLive = LibraryRpcs.toLayer({
     Effect.gen(function* () {
       return yield* (yield* Library).placeFile((yield* CurrentUser).id, fileId, folderIds);
     }).pipe(sanitizeApiDefects),
+  "library.suggestFolders": ({ fileIds }) =>
+    Effect.gen(function* () {
+      return yield* (yield* Library).suggestFolders((yield* CurrentUser).id, fileIds);
+    }).pipe(sanitizeApiDefects),
   "library.listFolders": () =>
     Effect.gen(function* () {
       return yield* (yield* Library).listFolders((yield* CurrentUser).id);

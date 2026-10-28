@@ -11,6 +11,7 @@ import {
   decideFolder,
   refreshFolderCentroidsTx,
   setFileFoldersTx,
+  suggestFoldersTx,
 } from "./folder.ts";
 
 const userId = UserId.make("user");
@@ -95,6 +96,12 @@ const fixture = () => {
         !row.purging &&
         row.placement !== "archived"
         ? [[params[0], row.source ?? "upload", row.dedupeKey ?? `upload:${params[0]}`]]
+        : [];
+    }
+    if (statement.startsWith('select "source", "dedupe_key" from "file"')) {
+      const row = files.get(String(params[0]));
+      return row && row.userId === params[1] && !row.archived
+        ? [[row.source ?? "upload", row.dedupeKey ?? `upload:${params[0]}`]]
         : [];
     }
     if (statement.startsWith('select "selector", "files" from "cloud_hydration"')) {
@@ -602,5 +609,50 @@ describe("decideFolder", () => {
     expect(decideFolder([{ id: "a", similarity: 0.5 }], FILING.readByRun)).toMatchObject({
       folderId: "a",
     });
+  });
+});
+
+describe("suggestFoldersTx", () => {
+  it("ranks notebooks below the filing bar but drops ones under the floor", async () => {
+    const state = fixture();
+    // Similarities: folder 0.78 (under the 0.8 bar), other 0.62, unrelated < 0.
+    state.addFile(fileId, [[1, 0.8]]);
+    state.addFolder(folderId, [1, 0]);
+    state.addFolder(otherFolderId, [0, 1]);
+    state.addFolder("unrelated", [-1, 0.1]);
+    state.addFolder("proposal", [1, 0.9], userId, true);
+    const suggestions = await state.db.transaction((tx) => suggestFoldersTx(tx, userId, fileId));
+    expect(suggestions.map((row) => row.folderId)).toEqual([folderId, otherFolderId]);
+    expect(suggestions[0]!.similarity).toBeLessThan(FILING.library.threshold);
+  });
+
+  it("puts the notebooks a Ruth Cloud run read first", async () => {
+    const state = fixture();
+    state.addFile("source", [[1, 0]]);
+    state.addFolder(folderId, [1, 0]);
+    state.addMember("source", folderId);
+    state.addFolder(otherFolderId, [0.6, 1]);
+    state.addFile(fileId, [[0.6, 1]]);
+    state.files.get(fileId)!.source = "ruth-cloud";
+    state.files.get(fileId)!.dedupeKey = `ruth-cloud:run-1:${fileId}`;
+    state.addHydration("run-1", ["source"]);
+    const suggestions = await state.db.transaction((tx) => suggestFoldersTx(tx, userId, fileId));
+    expect(suggestions.map((row) => row.folderId)).toEqual([folderId, otherFolderId]);
+  });
+
+  it("suggests a run's notebook for an output that can't be embedded", async () => {
+    const state = fixture();
+    state.addFile("source", [[1, 0]]);
+    state.addFolder(folderId, [1, 0]);
+    state.addMember("source", folderId);
+    state.addFile(fileId, []);
+    state.files.get(fileId)!.source = "ruth-cloud";
+    state.files.get(fileId)!.dedupeKey = `ruth-cloud:run-1:${fileId}`;
+    state.addHydration("run-1", ["source"]);
+    expect(await state.db.transaction((tx) => suggestFoldersTx(tx, userId, fileId))).toEqual([
+      { folderId, similarity: null },
+    ]);
+    state.files.get(fileId)!.source = "upload";
+    expect(await state.db.transaction((tx) => suggestFoldersTx(tx, userId, fileId))).toEqual([]);
   });
 });

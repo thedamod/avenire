@@ -71,12 +71,13 @@ export const decideFolder = (
   return { folderId: FolderId.make(best.id), similarity: best.similarity };
 };
 
-/** The two nearest accepted notebooks; suggested (unreviewed) ones never attract files. */
+/** The nearest accepted notebooks; suggested (unreviewed) ones never attract files. */
 export const rankFoldersTx = (
   tx: DatabaseTransaction,
   userId: UserId,
   vector: ReadonlyArray<number>,
   onlyIds?: ReadonlyArray<string>,
+  limit = 2,
 ): Promise<ReadonlyArray<RankedFolder>> =>
   tx
     .select({ id: folder.id, centroid: folder.centroid })
@@ -91,7 +92,7 @@ export const rankFoldersTx = (
       ),
     )
     .orderBy(cosineDistance(folder.centroid, [...vector]), folder.id)
-    .limit(2)
+    .limit(limit)
     .then((rows) =>
       rows.map((row) => ({ id: row.id, similarity: cosineSimilarity(row.centroid!, vector) })),
     );
@@ -146,6 +147,86 @@ export const classifyFileTx = async (
     ? decideFolder(await rankFoldersTx(tx, userId, vector, read), FILING.readByRun)
     : decideFolder(await rankFoldersTx(tx, userId, vector), FILING.library);
 };
+
+/** Below this a notebook is not worth offering, even as a suggestion. */
+const SUGGEST_FLOOR = 0.3;
+export type FolderSuggestion = {
+  readonly folderId: FolderId;
+  /** Null for an output that can't be embedded, suggested because its run read that notebook. */
+  readonly similarity: number | null;
+};
+
+/**
+ * The most likely notebooks for one file, best first, for a person to pick from. Unlike
+ * `classifyFileTx` this never declines: it ranks below the filing bar too. A Ruth Cloud output
+ * puts the notebooks its run read first.
+ */
+export const suggestFoldersTx = async (
+  tx: DatabaseTransaction,
+  userId: UserId,
+  fileId: FileId,
+  limit = 3,
+): Promise<ReadonlyArray<FolderSuggestion>> => {
+  const [target] = await tx
+    .select({ source: file.source, dedupeKey: file.dedupeKey })
+    .from(file)
+    .where(and(eq(file.id, fileId), eq(file.userId, userId), isNull(file.archivedAt)));
+  if (!target) return [];
+  const [embedding] = await tx
+    .select({
+      vector: sql<ReadonlyArray<number> | null>`avg(${chunk.embedding})`.mapWith(chunk.embedding),
+    })
+    .from(chunk)
+    .where(and(eq(chunk.userId, userId), eq(chunk.fileId, fileId)));
+  const vector = embedding?.vector ?? null;
+  const read =
+    target.source === "ruth-cloud" ? await runReadFoldersTx(tx, userId, target.dedupeKey) : [];
+  const ranked: Array<FolderSuggestion> = [];
+  const add = (id: string, similarity: number | null) => {
+    if (ranked.length < limit && !ranked.some((row) => row.folderId === id))
+      ranked.push({ folderId: FolderId.make(id), similarity });
+  };
+  if (vector === null) {
+    if (read.length === 0) return [];
+    const live = await tx
+      .select({ id: folder.id })
+      .from(folder)
+      .where(
+        and(
+          eq(folder.userId, userId),
+          inArray(folder.id, [...read]),
+          isNull(folder.archivedAt),
+          eq(folder.suggested, false),
+        ),
+      )
+      .orderBy(folder.id);
+    for (const row of live) add(row.id, null);
+    return ranked;
+  }
+  if (read.length > 0)
+    for (const row of await rankFoldersTx(tx, userId, vector, read, limit))
+      add(row.id, row.similarity);
+  for (const row of await rankFoldersTx(tx, userId, vector, undefined, limit))
+    if (row.similarity >= SUGGEST_FLOOR) add(row.id, row.similarity);
+  return ranked;
+};
+
+export const suggestFolders = Effect.fn("Folders.suggest")(function* (
+  userId: UserId,
+  fileIds: ReadonlyArray<FileId>,
+) {
+  const database = yield* Database;
+  return yield* database
+    .useTransaction(async (tx) => {
+      const out: Array<{ fileId: FileId; suggestions: ReadonlyArray<FolderSuggestion> }> = [];
+      // Sequential on purpose: one transaction connection, a handful of Inbox files.
+      for (const fileId of fileIds)
+        // eslint-disable-next-line no-await-in-loop
+        out.push({ fileId, suggestions: await suggestFoldersTx(tx, userId, fileId) });
+      return out;
+    })
+    .pipe(Effect.mapError((cause) => new FolderError({ cause })));
+});
 
 /** Every membership mutation takes locks in the same order as corpus publication. */
 const lockLiveFile = async (tx: DatabaseTransaction, userId: UserId, fileId: FileId) => {
