@@ -101,7 +101,7 @@ export function createEntry(api: ClientRuntime, threadId: ThreadId) {
 }
 
 /** Same latest-message transport and continuation predicates as the web thread store. */
-export function useThread(threadId: ThreadId, q?: string) {
+export function useThread(threadId: ThreadId, q?: string, runId?: CloudRunId) {
   const api = useApi();
   const { width } = useWindowDimensions();
   const entry = useMemo(() => entryFor(api, threadId), [api, threadId]);
@@ -143,8 +143,8 @@ export function useThread(threadId: ThreadId, q?: string) {
   }, [entry]);
   useEffect(() => {
     if (!hydration.ready || !q?.trim()) return;
-    void act(`initial:${q}`, () => send(q)).catch(() => {});
-  }, [act, hydration.ready, q, send]);
+    void act(`initial:${runId ?? ""}:${q}`, () => send(q, runId ? { runId } : undefined)).catch(() => {});
+  }, [act, hydration.ready, q, runId, send]);
   return { ...chat, thread, folders, files, ready: hydration.ready, hydrationError: hydration.error, reload, send, act, pending, actionError, clearActionError: () => setActionError(undefined), entry };
 }
 

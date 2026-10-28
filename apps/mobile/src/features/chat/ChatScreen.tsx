@@ -26,7 +26,7 @@ export function ChatScreen(props: ScreenProps<"Chat">) {
 }
 
 function ChatThread(props: ScreenProps<"Chat">) {
-  const thread = useThread(props.route.params.threadId, props.route.params.q);
+  const thread = useThread(props.route.params.threadId, props.route.params.q, props.route.params.runId);
   const runId = props.route.params.runId ?? (thread.thread.data?.kind === "ruth-cloud" ? latestRunId(thread.messages) : undefined);
   return runId ? <ReportThread key={runId} {...props} thread={thread} runId={runId} /> : <ThreadScreen {...props} thread={thread} />;
 }
