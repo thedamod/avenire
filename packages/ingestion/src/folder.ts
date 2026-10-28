@@ -148,8 +148,11 @@ export const classifyFileTx = async (
     : decideFolder(await rankFoldersTx(tx, userId, vector), FILING.library);
 };
 
-/** Below this a notebook is not worth offering, even as a suggestion. */
-const SUGGEST_FLOOR = 0.3;
+/**
+ * Below this a notebook is not worth offering. Unrelated files still land around 0.33–0.40
+ * against the nearest notebook, so the floor sits above that until a model judges candidates.
+ */
+const SUGGEST_FLOOR = 0.42;
 export type FolderSuggestion = {
   readonly folderId: FolderId;
   /** Null for an output that can't be embedded, suggested because its run read that notebook. */
