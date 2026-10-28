@@ -1,6 +1,5 @@
 import {
   CreateSourceUpload,
-  LibraryFile,
   SourceUploadTicket,
   SubmitCaptureResult,
   type CaptureOrigin,

@@ -207,9 +207,7 @@ export const IngestionPipelineLive = Layer.effect(
       const reusable =
         Option.isSome(cached) && !shouldRetryDocument(cached.value) ? cached.value : undefined;
       let local =
-        !reusable &&
-        found.storageKey &&
-        (found.kind === "video" || found.kind === "audio")
+        !reusable && found.storageKey && (found.kind === "video" || found.kind === "audio")
           ? yield* storage.stream(StorageKey.make(found.storageKey)).pipe(
               Effect.flatMap((stream) =>
                 spoolMediaSource(stream, MEDIA_LIMITS.sourceBytes, verified?.sha256),
