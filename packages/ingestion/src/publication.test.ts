@@ -183,6 +183,21 @@ const fixture = () => {
   };
 };
 
+it.effect("publishes searchable chunks while graph enrichment is unavailable", () =>
+  Effect.gen(function* () {
+    const state = fixture();
+    state.failPreparation();
+    yield* state.run({ ...input, deferGraph: true });
+    expect(state.committed.some((query) => query.sql.startsWith('insert into "chunk"'))).toBe(true);
+    const completion = state.committed.find((query) =>
+      query.sql.startsWith('update "ingestion_job"'),
+    )!;
+    expect(completion.params).toContain("indexed");
+    expect(completion.params).toContain("Enrichment pending.");
+    expect(state.committed.some((query) => query.sql.includes('set "graph_indexed"'))).toBe(false);
+  }),
+);
+
 it.effect.each(["supersede", "reclaim", "rename", "edit", "replaceDocument", "purge"] as const)(
   "rejects %s between provider preparation and publication",
   (reason) =>

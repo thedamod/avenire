@@ -25,6 +25,7 @@ import {
 } from "./sourceUploads.ts";
 import {
   cancelUploadResponse,
+  completeUploadResponse,
   createUploadResponse,
   putUploadResponse,
 } from "./sourceUploadHttp.ts";
@@ -142,11 +143,19 @@ it.effect(
       const id = randomUUID();
       const absent = SourceUploads.of({
         create: () => Effect.die("create must not execute"),
+        complete: () => Effect.die("complete must not execute"),
         put: () => Effect.die("put must not execute"),
         cancel: () => Effect.die("cancel must not execute"),
         cleanup: () => Effect.void,
       });
       for (const operation of [
+        completeUploadResponse(
+          new Request("https://app.test/api/library/uploads/ticket", {
+            method: "POST",
+            headers: { cookie: "forged" },
+          }),
+          id,
+        ),
         createUploadResponse(
           new Request("https://app.test/api/library/uploads", {
             method: "POST",
@@ -218,6 +227,7 @@ it.effect(
       });
       const absent = SourceUploads.of({
         create: () => Effect.die("No domain access"),
+        complete: () => Effect.die("complete must not execute"),
         put: () => Effect.die("No domain access"),
         cancel: () => Effect.die("No domain access"),
         cleanup: () => Effect.void,
@@ -305,6 +315,11 @@ it.effect(
         let releasePut: (() => void) | undefined;
         const stored = Storage.of({
           ...memory,
+          prepareSourceUpload: (key) =>
+            Effect.succeed({
+              key: "provider-test",
+              url: `https://sea1.ingest.uploadthing.com/provider-test?key=${key}`,
+            }),
           remove: (key) =>
             failRemove
               ? Effect.fail(new StorageError({ operation: "remove", cause: "storage outage" }))
@@ -328,6 +343,39 @@ it.effect(
         });
         yield* Effect.gen(function* () {
           const uploads = yield* SourceUploads;
+          const directBytes = new TextEncoder().encode("direct source fixture");
+          const directInput = {
+            ...metadata(),
+            transport: "direct" as const,
+            sizeBytes: directBytes.length,
+            sha256: hash(directBytes),
+          };
+          const direct = yield* uploads.create(owner, directInput);
+          expect(direct.direct?.key).toBe("provider-test");
+          expect((yield* uploads.create(owner, directInput)).direct).toEqual(direct.direct);
+          const [directRow] = yield* database.use((db) =>
+            db.select().from(sourceUpload).where(eq(sourceUpload.id, direct.uploadId)),
+          );
+          // Provider writes happen out of band. Completion must not call the relay put.
+          yield* memory.put(StorageKey.make(directRow!.storageKey!), "corrupt");
+          expect(
+            yield* uploads.complete(owner, direct.uploadId, request()).pipe(Effect.result),
+          ).toMatchObject({ failure: { status: 422 } });
+          yield* memory.put(StorageKey.make(directRow!.storageKey!), directBytes);
+          failPut = true;
+          const directFile = yield* uploads.complete(owner, direct.uploadId, request());
+          expect((yield* uploads.complete(owner, direct.uploadId, request())).id).toBe(
+            directFile.id,
+          );
+          expect(
+            yield* uploads.complete(other, direct.uploadId, request()).pipe(Effect.result),
+          ).toMatchObject({ failure: { status: 404 } });
+          failPut = false;
+          yield* memory.remove(StorageKey.make(directRow!.storageKey!));
+          yield* database.use((db) => db.delete(file).where(eq(file.id, directFile.id)));
+          yield* database.use((db) =>
+            db.delete(sourceUpload).where(eq(sourceUpload.id, direct.uploadId)),
+          );
           const input = {
             ...metadata(),
             sourceUrl: "https://study.test/chapter?token=secret#fragment",

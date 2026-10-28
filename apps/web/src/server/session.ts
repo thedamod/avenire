@@ -32,7 +32,8 @@ export const isExtensionCaptureEndpoint = (request: Request) => {
   return (
     (request.method === "POST" &&
       ["/api/library/captures", "/api/library/uploads"].includes(path)) ||
-    (["PUT", "DELETE"].includes(request.method) && /^\/api\/library\/uploads\/[^/]+$/.test(path))
+    (["POST", "PUT", "DELETE"].includes(request.method) &&
+      /^\/api\/library\/uploads\/[^/]+$/.test(path))
   );
 };
 

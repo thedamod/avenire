@@ -81,6 +81,7 @@ describe("manual source upload", () => {
     expect(url).toBe("/api/library/uploads");
     expect(options).toMatchObject({ method: "POST", credentials: "include" });
     expect(JSON.parse(options.body)).toEqual({
+      transport: "direct",
       idempotencyKey: uploadId,
       title: "Study.md",
       kind: "document",
@@ -96,6 +97,38 @@ describe("manual source upload", () => {
       body: file,
     });
     expect(onStage.mock.calls).toEqual([["preparing"], ["uploading"]]);
+  });
+
+  it("returns completed duplicate tickets without sending any source bytes", async () => {
+    const fetcher = mockBrowser();
+    fetcher.mockResolvedValueOnce(Response.json({ ...ticket, status: "completed", file: saved }));
+    expect(await uploadSource(new File(["study"], "Study.md"))).toEqual(saved);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("uploads directly without app cookies and finalizes through the authenticated app", async () => {
+    const fetcher = mockBrowser();
+    const direct = {
+      key: "provider-file",
+      url: "https://sea1.ingest.uploadthing.com/provider-file?signature=test",
+    };
+    fetcher
+      .mockResolvedValueOnce(Response.json({ ...ticket, direct }))
+      .mockResolvedValueOnce(new Response(null, { headers: { "x-ut-range-start": "0" } }))
+      .mockResolvedValueOnce(Response.json({ key: direct.key }))
+      .mockResolvedValueOnce(Response.json(saved));
+    expect(await uploadSource(new File(["study"], "Study.md"))).toEqual(saved);
+    expect(fetcher.mock.calls[1]![1]).toMatchObject({
+      method: "HEAD",
+      credentials: "omit",
+      redirect: "error",
+    });
+    expect(fetcher.mock.calls[2]![1]).toMatchObject({
+      method: "PUT",
+      credentials: "omit",
+      redirect: "error",
+    });
+    expect(fetcher.mock.calls[3]![1]).toMatchObject({ method: "POST", credentials: "include" });
   });
 
   it("reuses the ticket identity after an uncertain PUT response", async () => {

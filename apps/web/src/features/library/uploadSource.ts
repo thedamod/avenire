@@ -6,6 +6,9 @@ import {
   SourceUploadTicket,
   type FileKind,
 } from "@avenire/contracts";
+import { hashBlob } from "@avenire/shared/sha256";
+import { SourceWorkQueue } from "@avenire/capture/work-queue";
+import { transferDirectSource, requestSourceTicket } from "@avenire/capture/source-transfer";
 import * as Schema from "effect/Schema";
 
 // Browser MIME detection is often empty (notably Markdown) or generic. Use the extension
@@ -116,9 +119,22 @@ export function kindForFile(file: File): FileKind | null {
   return null;
 }
 
+const preparation = new SourceWorkQueue(1);
 async function sha256(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return preparation.run(file.size, async () => {
+    if (typeof Worker === "undefined") return hashBlob(file);
+    const worker = new Worker(new URL("./hash.worker.ts", import.meta.url));
+    try {
+      return await new Promise<string>((resolve, reject) => {
+        worker.onmessage = (event: MessageEvent<{ hash?: string; error?: string }>) =>
+          event.data.hash ? resolve(event.data.hash) : reject(new Error(event.data.error));
+        worker.onerror = () => reject(new Error("Could not prepare this file."));
+        worker.postMessage(file);
+      });
+    } finally {
+      worker.terminate();
+    }
+  });
 }
 
 /**
@@ -139,24 +155,53 @@ export async function uploadSource(
     throw new Error(`${file.name} is empty or larger than 256 MB.`);
   options.onStage?.("preparing");
   const mimeType = mimeForFile(file);
-  const created = await fetch("/api/library/uploads", {
-    method: "POST",
-    credentials: "include",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      idempotencyKey: options.idempotencyKey ?? crypto.randomUUID(),
-      title: file.name.slice(0, 200),
-      kind,
-      mimeType,
-      sizeBytes: file.size,
-      sha256: await sha256(file),
-    }),
-  });
+  const payload = {
+    transport: "direct",
+    idempotencyKey: options.idempotencyKey ?? crypto.randomUUID(),
+    title: file.name.slice(0, 200),
+    kind,
+    mimeType,
+    sizeBytes: file.size,
+    sha256: await sha256(file),
+  };
+  const created = await requestSourceTicket(
+    (body) =>
+      fetch("/api/library/uploads", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body,
+      }),
+    payload,
+  );
   if (!created.ok) throw new Error(`Couldn't upload ${file.name} (${created.status}).`);
   const ticket = Schema.decodeUnknownSync(SourceUploadTicket)(await created.json());
+  if (ticket.status === "completed" && ticket.file) {
+    options.onProgress?.(100);
+    return ticket.file;
+  }
   const target = new URL(ticket.uploadUrl, window.location.origin);
   if (target.origin !== window.location.origin) throw new Error("Unexpected upload destination.");
   options.onStage?.("uploading");
+  if (ticket.direct) {
+    await transferDirectSource(ticket.direct.url, file, {
+      onProgress: (loaded, total) => options.onProgress?.(Math.floor((loaded / total) * 100)),
+      ...(typeof XMLHttpRequest === "undefined"
+        ? {}
+        : {
+            send: (url: string, body: FormData, offset: number, signal: AbortSignal) =>
+              directRequest(url, body, offset, file.size, signal, options.onProgress),
+          }),
+    });
+    options.onStage?.("saving");
+    const completed = await fetch(target, {
+      method: "POST",
+      credentials: "include",
+      signal: AbortSignal.timeout(15 * 60_000),
+    });
+    if (!completed.ok) throw new Error(`Couldn't verify ${file.name} (${completed.status}).`);
+    return Schema.decodeUnknownSync(LibraryFile)(await completed.json());
+  }
   const uploaded = await transferSource(target, file, mimeType, options);
   if (!uploaded.ok) throw new Error(`Couldn't upload ${file.name} (${uploaded.status}).`);
   return Schema.decodeUnknownSync(LibraryFile)(await uploaded.json());
@@ -215,5 +260,48 @@ async function transferSource(
     );
     request.timeout = 15 * 60 * 1000;
     request.send(file);
+  });
+}
+
+function directRequest(
+  url: string,
+  body: FormData,
+  offset: number,
+  total: number,
+  signal: AbortSignal,
+  progress?: (percent: number) => void,
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    const abort = () => request.abort();
+    const cleanup = () => signal.removeEventListener("abort", abort);
+    request.open("PUT", url);
+    request.setRequestHeader("Range", `bytes=${offset}-`);
+    request.upload.onprogress = (event) =>
+      progress?.(Math.min(99, Math.floor(((offset + event.loaded) / total) * 100)));
+    request.onload = () => {
+      cleanup();
+      resolve(new Response(request.responseText, { status: request.status }));
+    };
+    request.onerror = () => {
+      cleanup();
+      reject(new TypeError("Connection lost."));
+    };
+    request.onabort = () => {
+      cleanup();
+      reject(signal.reason ?? new Error("Upload cancelled."));
+    };
+    request.ontimeout = () => {
+      cleanup();
+      reject(new TypeError("Upload timed out."));
+    };
+    request.timeout = 15 * 60_000;
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) {
+      cleanup();
+      reject(signal.reason);
+      return;
+    }
+    request.send(body);
   });
 }

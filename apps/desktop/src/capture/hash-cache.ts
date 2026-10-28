@@ -1,3 +1,4 @@
+import { SourceWorkQueue } from "@avenire/capture/work-queue";
 /** The acquisition layer checks the same open file before and after spooling. */
 export class HashLru {
   private readonly entries = new Map<string, string>();
@@ -47,21 +48,11 @@ export async function mapConcurrent<A, B>(
 
 /** Shared across native and extension uploads, including overlapping fill-in branches. */
 export class UploadGate {
-  private active = 0;
-  private readonly waiting: Array<() => void> = [];
-  private readonly limit: number;
+  private readonly queue: SourceWorkQueue;
   constructor(limit = 3) {
-    this.limit = limit;
+    this.queue = new SourceWorkQueue(limit);
   }
-  async run<A>(task: () => Promise<A>): Promise<A> {
-    if (this.active >= this.limit) await new Promise<void>((resolve) => this.waiting.push(resolve));
-    else this.active++;
-    try {
-      return await task();
-    } finally {
-      const next = this.waiting.shift();
-      if (next) next();
-      else this.active--;
-    }
+  run<A>(task: () => Promise<A>, size = 0): Promise<A> {
+    return this.queue.run(size, task);
   }
 }

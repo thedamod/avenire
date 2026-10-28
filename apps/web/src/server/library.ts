@@ -42,11 +42,12 @@ import { enqueueIngestionTx } from "@avenire/ingestion/worker";
 import { newId } from "@avenire/shared/id";
 import { fileSourceKey, newKeyVersion } from "@avenire/storage/keys";
 import { Storage } from "@avenire/storage/storage";
-import { and, asc, desc, eq, exists, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, inArray, isNull, isNotNull, ne, gte, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as PubSub from "effect/PubSub";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { createHash } from "node:crypto";
@@ -141,6 +142,26 @@ export const LibraryLive = Layer.effect(
   Library,
   Effect.gen(function* () {
     const database = yield* Database;
+    const changes = yield* PubSub.sliding<{ userId: string; id: string }>(256);
+    if (database.listen)
+      yield* Effect.acquireRelease(
+        Effect.tryPromise(() =>
+          database.listen!("avenire_ingestion", (payload) => {
+            try {
+              const event = JSON.parse(payload) as { userId?: unknown; id?: unknown };
+              if (typeof event.userId === "string" && typeof event.id === "string")
+                Effect.runFork(PubSub.publish(changes, { userId: event.userId, id: event.id }));
+            } catch {
+              /* Ignore malformed notifications; durable polling reconciles. */
+            }
+          }),
+        ).pipe(
+          Effect.catch((error) =>
+            Effect.as(Effect.logWarning("Ingestion notifications unavailable", error), undefined),
+          ),
+        ),
+        (listener) => (listener ? Effect.promise(() => listener.unlisten()) : Effect.void),
+      );
     const storage = yield* Storage;
     const crypto = yield* Crypto.Crypto;
     const makeId = <Id extends string>(schema: { readonly make: (id: string) => Id }) =>
@@ -399,31 +420,47 @@ export const LibraryLive = Layer.effect(
       watchIngestion: (userId) =>
         Stream.suspend(() => {
           const seen = new Map<string, string>();
-          return Stream.fromEffectSchedule(
+          let watermark = 0;
+          let polls = 0;
+          const read = (id?: string) =>
             database
               .use((db) =>
                 db
                   .select({ job: ingestionJob })
                   .from(ingestionJob)
                   .innerJoin(file, and(eq(file.id, ingestionJob.fileId), eq(file.userId, userId)))
-                  .where(eq(ingestionJob.userId, userId))
+                  .where(
+                    and(
+                      eq(ingestionJob.userId, userId),
+                      id
+                        ? eq(ingestionJob.id, id)
+                        : ++polls % 30 === 1 || !watermark
+                          ? undefined
+                          : gte(ingestionJob.updatedAt, new Date(watermark - 5000)),
+                    ),
+                  )
                   .orderBy(asc(ingestionJob.updatedAt), asc(ingestionJob.id)),
               )
-              .pipe(Effect.mapError(toApiError)),
-            Schedule.spaced("2 seconds"),
-          ).pipe(
-            Stream.flatMap((rows) => {
-              const active = new Set(rows.map(({ job }) => job.id));
-              for (const id of seen.keys()) if (!active.has(id)) seen.delete(id);
-              return Stream.fromIterable(
+              .pipe(Effect.mapError(toApiError));
+          const poll = Stream.fromEffectSchedule(read(), Schedule.spaced("2 seconds"));
+          const pushed = Stream.fromPubSub(changes).pipe(
+            Stream.filter((event) => event.userId === userId),
+            Stream.mapEffect((event) => read(event.id)),
+          );
+          return Stream.merge(poll, pushed).pipe(
+            Stream.flatMap((rows) =>
+              Stream.fromIterable(
                 rows.flatMap(({ job }) => {
+                  watermark = Math.max(watermark, job.updatedAt.getTime());
                   const version = `${job.updatedAt.toISOString()}:${job.status}:${job.generation}`;
                   if (seen.get(job.id) === version) return [];
+                  seen.delete(job.id);
                   seen.set(job.id, version);
+                  if (seen.size > 4096) seen.delete(seen.keys().next().value!);
                   return [jobToContract(job)];
                 }),
-              );
-            }),
+              ),
+            ),
           );
         }),
       submitCapture: (userId, snapshot) =>

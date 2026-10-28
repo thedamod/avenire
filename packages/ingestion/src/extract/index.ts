@@ -102,10 +102,11 @@ const extractWith = (
 ): Effect.Effect<ExtractedDocument, ExtractionError | UnsupportedSource, ExtractionServices> => {
   const { bytes, sourceUrl } = source;
   const format = resolveFormat(source);
+  if (source.localMedia && format === "media") return extractMedia(source.localMedia, source);
   if (bytes !== null) {
     switch (format) {
       case "pdf":
-        return extractPdf(bytes);
+        return extractPdf(bytes, source.enrichment === "deferred");
       case "office":
         return extractOffice(source.mimeType, bytes);
       case "image":

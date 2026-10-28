@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { LibraryFile } from "@avenire/contracts";
 import {
   applyProgress,
+  removeCaptureFile,
   captureHeading,
   overlayRows,
   settleCapture,
@@ -161,4 +162,24 @@ describe("live capture", () => {
     expect(captureHeading(rows.slice(1), "done")).toBe("Nothing captured");
     expect(captureHeading(rows, "failed")).toBe("Capture failed");
   });
+});
+
+it("undo removes only the selected file and a late receipt cannot restore it", () => {
+  const first = file("one", "One.pdf");
+  const other = file("two", "Two.pdf");
+  const receipt = { capturedAt: "now", files: [first, other], skipped: [], blocked: [] };
+  let live = settleCapture(undefined, "cap", receipt);
+  live = removeCaptureFile(live, first.id);
+  expect(live.rows.map((row) => row.file?.id)).toEqual([other.id]);
+  live = settleCapture(live, "cap", receipt);
+  expect(live.rows.map((row) => row.file?.id)).toEqual([other.id]);
+  expect(
+    applyProgress(live, {
+      id: "cap",
+      seq: live.seq + 1,
+      key: "file:one",
+      status: "saved",
+      file: first,
+    }),
+  ).toBe(live);
 });

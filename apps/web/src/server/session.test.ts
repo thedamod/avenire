@@ -12,12 +12,13 @@ const request = (method: string, path: string, origin = `chrome-extension://${id
     method,
     headers: { origin, "content-type": "application/ndjson" },
   });
-it.effect("extension origins are exact and limited to the four capture mutations", () =>
+it.effect("extension origins are exact and limited to capture and source-upload mutations", () =>
   Effect.gen(function* () {
     for (const [method, path] of [
       ["POST", "/api/library/captures"],
       ["POST", "/api/library/uploads"],
       ["PUT", "/api/library/uploads/ticket"],
+      ["POST", "/api/library/uploads/ticket"],
       ["DELETE", "/api/library/uploads/ticket"],
     ]) {
       yield* assertMutationOrigin(request(method!, path!));

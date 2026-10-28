@@ -10,6 +10,9 @@ import type { CaptureReceipt } from "./receipt";
 export type CaptureRowStatus = CaptureProgress["status"];
 
 export interface CaptureRow {
+  readonly stage?: CaptureProgress["stage"];
+  readonly loadedBytes?: number | undefined;
+  readonly totalBytes?: number | undefined;
   readonly key: string;
   readonly title: string;
   readonly kind: FileKind;
@@ -20,6 +23,8 @@ export interface CaptureRow {
 
 /** One hotkey press as the toast shows it: rows stream in, then the final receipt settles it. */
 export interface LiveCapture {
+  readonly undoneFileIds?: readonly string[];
+  readonly undoneKeys?: readonly string[];
   readonly id: string;
   readonly rows: readonly CaptureRow[];
   /** Last applied progress `seq`; replays after a reload or re-ready never go backwards. */
@@ -46,7 +51,7 @@ export function startCapture(previous: LiveCapture | undefined, started: Capture
   const base = previous?.id === started.id ? previous : empty(started.id);
   const known = new Set(base.rows.map((row) => row.key));
   const added = started.items
-    .filter((item) => !known.has(item.key))
+    .filter((item) => !known.has(item.key) && !base.undoneKeys?.includes(item.key))
     .map((item): CaptureRow => ({
       key: item.key,
       title: item.title,
@@ -59,7 +64,12 @@ export function startCapture(previous: LiveCapture | undefined, started: Capture
 /** `capture-progress`, in `seq` order. Late items (a document path resolved later) join at the end. */
 export function applyProgress(previous: LiveCapture | undefined, event: CaptureProgress) {
   const base = previous?.id === event.id ? previous : empty(event.id);
-  if (event.seq <= base.seq) return base;
+  if (
+    event.seq <= base.seq ||
+    base.undoneKeys?.includes(event.key) ||
+    (event.file && base.undoneFileIds?.includes(event.file.id))
+  )
+    return base;
   const index = base.rows.findIndex((row) => row.key === event.key);
   const before = base.rows[index];
   const row: CaptureRow = {
@@ -67,6 +77,9 @@ export function applyProgress(previous: LiveCapture | undefined, event: CaptureP
     title: event.file?.title ?? event.title ?? before?.title ?? "Untitled",
     kind: event.file?.kind ?? (event.kind ? fileKind(event.kind) : (before?.kind ?? "document")),
     status: event.status,
+    stage: event.stage,
+    loadedBytes: event.loadedBytes,
+    totalBytes: event.totalBytes,
     file: event.file ?? before?.file,
     reason: event.status === "skipped" || event.status === "failed" ? event.reason : undefined,
   };
@@ -95,8 +108,12 @@ export function settleCapture(
   id: string,
   receipt: CaptureReceipt,
 ): LiveCapture {
-  const rows = settleRows(previous?.id === id ? previous.rows : [], receipt);
-  return { id, rows, seq: previous?.id === id ? previous.seq : 0, receipt };
+  const base = previous?.id === id ? previous : empty(id);
+  const kept = {
+    ...receipt,
+    files: receipt.files.filter((file) => !base.undoneFileIds?.includes(file.id)),
+  };
+  return { ...base, rows: settleRows(base.rows, kept), receipt: kept };
 }
 
 /** `settleCapture` on bare rows: the receipt's files, skips and blocked pages land on them. */
@@ -157,6 +174,9 @@ export function overlayRows(
     title: item.file?.title ?? item.title,
     kind: item.file?.kind ?? fileKind(item.kind),
     status: item.status,
+    stage: item.stage,
+    loadedBytes: item.loadedBytes,
+    totalBytes: item.totalBytes,
     file: item.file,
     reason: item.status === "skipped" || item.status === "failed" ? item.reason : undefined,
   }));
@@ -200,4 +220,28 @@ export function getLiveCapture(id: string) {
 export function subscribeLiveCaptures(listener: () => void) {
   listeners.add(listener);
   return () => void listeners.delete(listener);
+}
+
+/** Keep a late receipt or reload replay from restoring a file the user just undid. */
+export function removeCaptureFile(previous: LiveCapture | undefined, fileId: string): LiveCapture {
+  if (!previous) throw new Error("Capture is unavailable");
+  return {
+    ...previous,
+    undoneFileIds: [...new Set([...(previous.undoneFileIds ?? []), fileId])],
+    undoneKeys: [
+      ...new Set([
+        ...(previous.undoneKeys ?? []),
+        ...previous.rows.filter((row) => row.file?.id === fileId).map((row) => row.key),
+      ]),
+    ],
+    rows: previous.rows.filter((row) => row.file?.id !== fileId),
+    ...(previous.receipt
+      ? {
+          receipt: {
+            ...previous.receipt,
+            files: previous.receipt.files.filter((file) => file.id !== fileId),
+          },
+        }
+      : {}),
+  };
 }

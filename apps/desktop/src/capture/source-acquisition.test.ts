@@ -237,6 +237,7 @@ describe("device source byte acquisition backend", () => {
     expect(app.requests.map((request) => request.method)).toEqual(["POST", "PUT"]);
     const payload = JSON.parse(app.requests[0]!.body.toString());
     expect(payload).toEqual({
+      transport: "direct",
       ...metadata,
       sizeBytes: bytes.length,
       sha256: createHash("sha256").update(bytes).digest("hex"),

@@ -18,6 +18,10 @@ export class MediaError extends Schema.TaggedError<MediaError>()("MediaError", {
   }
 }
 
+export type MediaSource =
+  | Uint8Array
+  | { readonly path: string; readonly directory: string; readonly sizeBytes: number };
+
 export interface AudioSegment {
   /** Where the segment starts in the source, for re-timing its transcript. */
   readonly offsetSec: number;
@@ -34,8 +38,13 @@ export interface Frame {
 export class MediaProcessor extends Context.Service<
   MediaProcessor,
   {
+    readonly streamsAudio?: boolean;
+    readonly withSource?: <A, E, R>(
+      media: MediaSource,
+      effect: Effect.Effect<A, E, R>,
+    ) => Effect.Effect<A, E | MediaError, R>;
     /** Duration in seconds, and whether there is a video stream. */
-    readonly probe: (media: Uint8Array) => Effect.Effect<
+    readonly probe: (media: MediaSource) => Effect.Effect<
       {
         readonly durationSec: number;
         readonly hasVideo: boolean;
@@ -45,25 +54,44 @@ export class MediaProcessor extends Context.Service<
     >;
     /** Converts the first supported subtitle stream to WebVTT. */
     readonly embeddedCaptions: (
-      media: Uint8Array,
+      media: MediaSource,
       streamIndex: number,
     ) => Effect.Effect<string, MediaError>;
     /** Mono 16 kHz compressed audio in overlapping segments, up to `maxSec` of the source. */
     readonly audioSegments: (
-      media: Uint8Array,
+      media: MediaSource,
       options: {
         readonly segmentSec: number;
         readonly overlapSec: number;
         readonly maxSec: number;
+        readonly onSegment?: (clip: AudioSegment) => Effect.Effect<void>;
       },
     ) => Effect.Effect<ReadonlyArray<AudioSegment>, MediaError>;
     /** Bounded scene samples across up to six hours; near-duplicates dropped, at most `maxFrames`. */
     readonly sceneFrames: (
-      media: Uint8Array,
+      media: MediaSource,
       options: { readonly maxFrames: number },
     ) => Effect.Effect<ReadonlyArray<Frame>, MediaError>;
   }
 >()("avenire/ingestion/MediaProcessor") {}
+
+const CurrentMedia = Context.Reference<
+  | {
+      bytes: MediaSource;
+      path: string;
+      directory: string;
+      probe?: Effect.Effect<
+        {
+          durationSec: number;
+          hasAudio: boolean;
+          hasVideo: boolean;
+          subtitleStreamIndex: number | undefined;
+        },
+        unknown
+      >;
+    }
+  | undefined
+>("avenire/ingestion/CurrentMedia", { defaultValue: () => undefined });
 
 const Probe = Schema.fromJsonString(
   Schema.Struct({
@@ -249,12 +277,19 @@ export const MediaProcessorLive = Layer.effect(
       ).pipe(Effect.timeout(timeout));
 
     /** Writes `media` to a scoped temp directory, which is removed afterwards. */
-    const withFile = <A, E>(
-      media: Uint8Array,
-      use: (path: string, directory: string) => Effect.Effect<A, E>,
+    const withFile = <A, E, R = never>(
+      media: MediaSource,
+      use: (path: string, directory: string) => Effect.Effect<A, E, R>,
     ) =>
       Effect.scoped(
         Effect.gen(function* () {
+          const current = yield* CurrentMedia;
+          if (current?.bytes === media) return yield* use(current.path, current.directory);
+          if (!(media instanceof Uint8Array)) {
+            if (media.sizeBytes > MEDIA_LIMITS.sourceBytes)
+              return yield* Effect.fail("Media source byte budget exceeded");
+            return yield* use(media.path, media.directory);
+          }
           if (media.length > MEDIA_LIMITS.sourceBytes)
             return yield* Effect.fail("Media source byte budget exceeded");
           const directory = yield* fs.makeTempDirectoryScoped({ prefix: "avenire-media-" });
@@ -275,7 +310,7 @@ export const MediaProcessorLive = Layer.effect(
         return bytes;
       });
 
-    const probeFile = (path: string) =>
+    const probeFileUncached = (path: string) =>
       run(
         "ffprobe",
         [
@@ -322,8 +357,16 @@ export const MediaProcessorLive = Layer.effect(
         }),
       );
 
+    const probeFile = (path: string) =>
+      Effect.gen(function* () {
+        const current = yield* CurrentMedia;
+        return yield* current?.path === path && current.probe
+          ? current.probe
+          : probeFileUncached(path);
+      });
+
     const probe = Effect.fn("MediaProcessor.probe")(
-      function* (media: Uint8Array) {
+      function* (media: MediaSource) {
         const { durationSec, hasVideo, subtitleStreamIndex } = yield* withFile(media, probeFile);
         return {
           durationSec,
@@ -335,7 +378,7 @@ export const MediaProcessorLive = Layer.effect(
     );
 
     const embeddedCaptions = Effect.fn("MediaProcessor.embeddedCaptions")(
-      function* (media: Uint8Array, streamIndex: number) {
+      function* (media: MediaSource, streamIndex: number) {
         return yield* withFile(media, (path, directory) =>
           Effect.gen(function* () {
             yield* probeFile(path);
@@ -376,7 +419,7 @@ export const MediaProcessorLive = Layer.effect(
 
     const audioSegments = Effect.fn("MediaProcessor.audioSegments")(
       function* (
-        media: Uint8Array,
+        media: MediaSource,
         options: Parameters<MediaProcessor["Service"]["audioSegments"]>[1],
       ) {
         return yield* withFile(media, (path, directory) =>
@@ -434,15 +477,20 @@ export const MediaProcessorLive = Layer.effect(
               ).pipe(
                 Effect.andThen(readBounded(clip, 8 * 1024 * 1024)),
                 Effect.flatMap((bytes) =>
-                  fs
-                    .remove(clip)
-                    .pipe(
-                      Effect.andThen(
-                        bytes.length >= 8 * 1024 * 1024
-                          ? Effect.fail("Audio clip byte budget exceeded")
-                          : Effect.succeed({ offsetSec: start, bytes, mimeType: "audio/mpeg" }),
-                      ),
+                  fs.remove(clip).pipe(
+                    Effect.andThen(
+                      bytes.length >= 8 * 1024 * 1024
+                        ? Effect.fail("Audio clip byte budget exceeded")
+                        : Effect.succeed({ offsetSec: start, bytes, mimeType: "audio/mpeg" }).pipe(
+                            Effect.tap((segment) => options.onSegment?.(segment) ?? Effect.void),
+                            Effect.map((segment) =>
+                              options.onSegment
+                                ? { ...segment, bytes: new Uint8Array(0) }
+                                : segment,
+                            ),
+                          ),
                     ),
+                  ),
                 ),
               );
             });
@@ -455,7 +503,7 @@ export const MediaProcessorLive = Layer.effect(
     // One ffmpeg pass writes each selected frame twice: a JPEG for the vision model and
     // an 8×8 grayscale copy (appended to one raw file) for duplicate detection.
     const sceneFrames = Effect.fn("MediaProcessor.sceneFrames")(
-      function* (media: Uint8Array, options: { readonly maxFrames: number }) {
+      function* (media: MediaSource, options: { readonly maxFrames: number }) {
         if (!Number.isFinite(options.maxFrames))
           return yield* Effect.fail(
             new MediaError({ operation: "frames", cause: "Invalid frame budget" }),
@@ -507,6 +555,26 @@ export const MediaProcessorLive = Layer.effect(
       Effect.mapError((cause) => new MediaError({ operation: "frames", cause })),
     );
 
-    return MediaProcessor.of({ probe, embeddedCaptions, audioSegments, sceneFrames });
+    const withSource = <A, E, R>(bytes: MediaSource, effect: Effect.Effect<A, E, R>) =>
+      withFile(bytes, (path, directory) =>
+        Effect.gen(function* () {
+          const probe = yield* Effect.cached(probeFileUncached(path));
+          return yield* effect.pipe(
+            Effect.provideService(CurrentMedia, { bytes, path, directory, probe }),
+          );
+        }),
+      ).pipe(
+        Effect.mapError((cause) =>
+          cause instanceof MediaError ? cause : new MediaError({ operation: "probe", cause }),
+        ),
+      );
+    return MediaProcessor.of({
+      probe,
+      embeddedCaptions,
+      audioSegments,
+      sceneFrames,
+      withSource,
+      streamsAudio: true,
+    });
   }),
 );

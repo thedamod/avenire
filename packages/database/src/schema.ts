@@ -9,6 +9,7 @@ import type {
   CaptureSnapshot,
   CaptureOrigin,
   SourceAccess,
+  DirectSourceUpload,
   ChunkLocation,
   ExtractionCoverage,
   FileKind,
@@ -226,6 +227,7 @@ export const sourceUpload = pgTable(
     origin: jsonb("origin").$type<CaptureOrigin>(),
     access: text("access").$type<SourceAccess>().notNull().default("open"),
     storageKey: text("storage_key"),
+    directUpload: jsonb("direct_upload").$type<DirectSourceUpload>(),
     abandonedStorageKeys: text("abandoned_storage_keys")
       .array()
       .notNull()
@@ -327,6 +329,7 @@ export const ingestionJob = pgTable(
       t.createdAt,
     ),
     index("ingestion_job_user_id_idx").on(t.userId),
+    index("ingestion_job_user_updated_id_idx").on(t.userId, t.updatedAt, t.id),
   ],
 );
 

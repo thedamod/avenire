@@ -19,7 +19,7 @@ const LIST_FLOOR_ONE = "min-h-[42px]";
  * in the bottom-right corner. Main streams the state; this only animates, measures and forwards
  * clicks. The window is sized to `.capture-overlay`, whose transparent gutter gives the enter
  * offset room so the panel never clips against the window edge. On a short work area the panel
- * caps at main's usable height: header and footer stay, the list scrolls in what's left.
+ * caps at main's usable height: the header stays, the list scrolls in what's left.
  */
 export function CaptureOverlay({ bridge }: { bridge: AvenireOverlayBridge }) {
   const [view, dispatch] = useReducer(overlayView, initialOverlayView);
@@ -37,13 +37,14 @@ export function CaptureOverlay({ bridge }: { bridge: AvenireOverlayBridge }) {
   }, []);
 
   useEffect(() => {
-    if (shown !== "closing") return;
+    if (shown !== "closing" || !state?.id) return;
+    const captureId = state.id;
     const timer = setTimeout(() => {
       dispatch({ type: "hidden" });
-      void bridge.dismissed();
+      void bridge.dismissed(captureId);
     }, EXIT_MS);
     return () => clearTimeout(timer);
-  }, [bridge, shown]);
+  }, [bridge, shown, state?.id]);
 
   // Hover keeps the overlay up and lets it take clicks; never leave it claimed once gone.
   const hovered = useRef(false);
@@ -95,11 +96,13 @@ export function CaptureOverlay({ bridge }: { bridge: AvenireOverlayBridge }) {
     ),
     [bridge, close],
   );
-  const undo = useCallback(() => {
-    if (!id) return;
-    void bridge.undo(id);
-    close();
-  }, [bridge, close, id]);
+  const undo = useCallback(
+    async (fileId: string) => {
+      if (!id) throw new Error("Capture is unavailable");
+      await bridge.undo(id, fileId);
+    },
+    [bridge, id],
+  );
 
   const items = state?.items;
   const receipt = state?.receipt;
@@ -129,7 +132,8 @@ export function CaptureOverlay({ bridge }: { bridge: AvenireOverlayBridge }) {
             <ShortcutKeycaps shortcut={state.shortcut} mac={bridge.platform === "darwin"} />
           ) : null
         }
-        onUndo={receipt?.files.length ? undo : undefined}
+        onUndo={undo}
+        onDismiss={close}
         renderLink={renderLink}
         favicons={false}
         listClassName={cn("max-h-[300px]", rows.length > 1 ? LIST_FLOOR : LIST_FLOOR_ONE)}

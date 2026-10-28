@@ -9,6 +9,7 @@ export const SourceUploadId = Schema.String.check(
 ).pipe(Schema.brand("SourceUploadId"));
 export type SourceUploadId = typeof SourceUploadId.Type;
 export const CreateSourceUpload = Schema.Struct({
+  transport: Schema.optionalKey(Schema.Literal("direct")),
   idempotencyKey: Schema.String.check(
     Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
   ),
@@ -28,7 +29,14 @@ export const CreateSourceUpload = Schema.Struct({
   access: Schema.optionalKey(SourceAccess),
 });
 export type CreateSourceUpload = typeof CreateSourceUpload.Type;
+/** Provider capability only: no Avenire cookies may accompany these requests. */
+export const DirectSourceUpload = Schema.Struct({
+  url: Schema.String,
+  key: Schema.String,
+});
+export type DirectSourceUpload = typeof DirectSourceUpload.Type;
 export const SourceUploadTicket = Schema.Struct({
+  direct: Schema.optionalKey(DirectSourceUpload),
   uploadId: SourceUploadId,
   uploadUrl: Schema.String,
   expiresAt: Schema.String,

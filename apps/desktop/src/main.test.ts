@@ -39,6 +39,7 @@ const mocks = vi.hoisted(() => {
     session,
     windows,
     ipc,
+    trashFile: vi.fn(async (_id: string) => {}),
     shortcuts: new Map<string, () => void>(),
     unavailableShortcut: "",
     openExternal: vi.fn(),
@@ -109,6 +110,15 @@ vi.mock("./capture/upload.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./capture/upload.ts")>()),
   uploadCapturedFiles: vi.fn(async () => ({ files: [], skipped: [] })),
 }));
+vi.mock("./capture/library-client.ts", async (original) => {
+  const module = await original<typeof import("./capture/library-client.ts")>();
+  return {
+    captureLibraryClient: (...args: Parameters<typeof module.captureLibraryClient>) => ({
+      ...module.captureLibraryClient(...args),
+      trash: mocks.trashFile,
+    }),
+  };
+});
 vi.mock("./capture/session.ts", () => ({ captureUploadSession: vi.fn(async () => vi.fn()) }));
 vi.mock("./auth.ts", () => ({
   DesktopAuth: class {
@@ -642,7 +652,8 @@ it("keeps capture global, guards overlay actions and replays its state after a r
     createdAt: "now",
     updatedAt: "now",
   };
-  const receipt = { files: [file], skipped: [], blocked: [] };
+  const otherFile = { ...file, id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", title: "Other file" };
+  const receipt = { files: [file, otherFile], skipped: [], blocked: [] };
   mocks.ipc.get("avenire:capture-receipt")!(
     { ...trusted, senderFrame: { url: trusted.senderFrame.url } },
     "capture",
@@ -655,22 +666,37 @@ it("keeps capture global, guards overlay actions and replays its state after a r
   expect(state().phase).toBe("submitting");
   mocks.ipc.get("avenire:capture-receipt")!(trusted, "capture", receipt);
   expect(state().phase).toBe("done");
-  main.webContents.send.mockClear();
-  mocks.ipc.get("avenire:overlay-undo")!(overlayEvent, "wrong");
-  expect(main.webContents.send).not.toHaveBeenCalled();
-  mocks.ipc.get("avenire:overlay-undo")!(overlayEvent, "capture");
-  expect(main.webContents.send).toHaveBeenLastCalledWith("avenire:capture-action", {
-    type: "undo",
-    captureId: "capture",
-    fileIds: [file.id],
-  });
   await mocks.ipc.get("avenire:overlay-open")!(overlayEvent, file.id);
   expect(main.loadURL).toHaveBeenLastCalledWith(`https://app.avenire.space/sources/${file.id}`);
   await mocks.ipc.get("avenire:overlay-sources")!(overlayEvent);
   expect(main.loadURL).toHaveBeenLastCalledWith("https://app.avenire.space/?tab=sources");
+  main.webContents.send.mockClear();
+  await mocks.ipc.get("avenire:overlay-undo")!(overlayEvent, "wrong", file.id);
+  expect(main.webContents.send).not.toHaveBeenCalled();
+  mocks.trashFile.mockClear();
+  await mocks.ipc.get("avenire:overlay-undo")!(
+    overlayEvent,
+    "capture",
+    "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  );
+  expect(mocks.trashFile).not.toHaveBeenCalled();
+  mocks.trashFile.mockRejectedValueOnce(new Error("Offline"));
+  await expect(
+    mocks.ipc.get("avenire:overlay-undo")!(overlayEvent, "capture", file.id),
+  ).rejects.toThrow("Offline");
+  expect(state().receipt.files).toEqual([file, otherFile]);
+  expect(main.webContents.send).not.toHaveBeenCalled();
+  await mocks.ipc.get("avenire:overlay-undo")!(overlayEvent, "capture", file.id);
+  expect(mocks.trashFile).toHaveBeenLastCalledWith(file.id);
+  expect(state().receipt.files).toEqual([otherFile]);
+  expect(main.webContents.send).toHaveBeenLastCalledWith("avenire:capture-action", {
+    type: "undone",
+    captureId: "capture",
+    fileIds: [file.id],
+  });
   ready(trusted, true, "different-owner");
   main.webContents.send.mockClear();
-  mocks.ipc.get("avenire:overlay-undo")!(overlayEvent, "capture");
+  await mocks.ipc.get("avenire:overlay-undo")!(overlayEvent, "capture", file.id);
   expect(main.webContents.send).not.toHaveBeenCalled();
 });
 

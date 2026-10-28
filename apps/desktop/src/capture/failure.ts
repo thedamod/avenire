@@ -22,6 +22,8 @@ export function captureFailureReason(error: unknown): string {
     if (cause.status === 413) return "This file is larger than Avenire's 256 MB limit.";
     if (cause.status === 400 || cause.status === 415 || cause.status === 422)
       return `Avenire couldn't accept this file${detail}. If you just updated the desktop app, update and restart the Avenire server too.`;
+    if (cause.status >= 500 && cause.stage)
+      return `Avenire couldn't ${cause.stage === "create" ? "start the upload" : cause.stage === "verify" ? "verify the uploaded file" : "store this file"} (HTTP ${cause.status}). Try again.`;
     if (cause.status >= 500)
       return `Avenire's server had a problem (HTTP ${cause.status}). Try again.`;
     return `Avenire rejected this file (HTTP ${cause.status})${detail}.`;

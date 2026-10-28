@@ -982,25 +982,41 @@ ipcMain.handle("avenire:overlay-hovered", (event, hovered: unknown) => {
   const overlay = overlaySender(event);
   if (typeof hovered === "boolean") overlay.setHovered(hovered);
 });
-ipcMain.handle("avenire:overlay-dismissed", (event) => overlaySender(event).dismissed());
+ipcMain.handle("avenire:overlay-dismissed", (event, id: unknown) => {
+  const overlay = overlaySender(event);
+  if (typeof id === "string") overlay.dismissed(id);
+});
 ipcMain.handle("avenire:overlay-resize", (event, height: unknown) => {
   const overlay = overlaySender(event);
   if (typeof height === "number" && Number.isFinite(height) && height > 0) overlay.resize(height);
 });
-ipcMain.handle("avenire:overlay-undo", (event, id: unknown) => {
+ipcMain.handle("avenire:overlay-undo", async (event, id: unknown, fileId: unknown) => {
   const overlay = overlaySender(event);
+  const owner = overlayOwner(overlay);
+  const state = overlay.state;
   if (
-    !overlayOwner(overlay) ||
-    overlay.state?.phase !== "done" ||
-    id !== overlay.state.id ||
+    !owner ||
+    !state ||
+    id !== state.id ||
+    typeof fileId !== "string" ||
     !window ||
     window.isDestroyed()
   )
     return;
+  const captured =
+    state.receipt?.files.some((file) => file.id === fileId) ||
+    state.items.some((item) => item.status === "saved" && item.file?.id === fileId);
+  if (!captured || state.undoneFileIds?.includes(fileId)) return;
+  const fetch = await captureUploadSession(window.webContents.session, appUrl, owner);
+  if (overlayOwner(overlay) !== owner || overlay.state?.id !== id)
+    throw new Error("Your capture changed. Try again.");
+  await captureLibraryClient(appUrl, fetch).trash(fileId);
+  if (overlayOwner(overlay) !== owner || overlay.state?.id !== id) return;
+  overlay.removeFile(owner, id, fileId);
   window.webContents.send("avenire:capture-action", {
-    type: "undo",
+    type: "undone",
     captureId: id,
-    fileIds: [...new Set(overlay.state.receipt?.files.map((file) => file.id) ?? [])],
+    fileIds: [fileId],
   });
 });
 ipcMain.handle("avenire:overlay-open", async (event, id: unknown) => {

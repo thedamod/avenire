@@ -37,6 +37,8 @@ import { newId } from "@avenire/shared/id";
 import { fileSourceKey } from "@avenire/storage/keys";
 import { Storage } from "@avenire/storage/storage";
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { prettyWorkerCause } from "@avenire/shared/error-cause";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -60,6 +62,17 @@ const failure = (cause: unknown) =>
     : cause instanceof DatabaseError && cause.cause instanceof SourceUploadError
       ? cause.cause
       : reject(500, "The upload could not be completed.");
+/** Preserve the underlying failure in server diagnostics before mapping it to the HTTP boundary. */
+const reportFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.tapError((cause) =>
+      cause instanceof SourceUploadError && cause.status < 500
+        ? Effect.void
+        : Effect.logWarning("Source upload failed", prettyWorkerCause(Cause.fail(cause))),
+    ),
+    Effect.mapError(failure),
+  );
+
 const formats: Record<string, readonly string[]> = {
   pdf: ["application/pdf"],
   document: [
@@ -158,6 +171,7 @@ export const normalizeUploadMetadata = (input: CreateSourceUpload): CreateSource
   };
 };
 const ticket = (row: SourceUploadRow): SourceUploadTicket => ({
+  ...(row.directUpload ? { direct: row.directUpload } : {}),
   uploadId: SourceUploadId.make(row.id),
   uploadUrl: `/api/library/uploads/${row.id}`,
   expiresAt: row.expiresAt.toISOString(),
@@ -231,8 +245,8 @@ export const spoolSource = (
         await handle.close();
       }
     },
-    catch: failure,
-  });
+    catch: (cause) => cause,
+  }).pipe(reportFailure);
 
 export class SourceUploads extends Context.Service<
   SourceUploads,
@@ -242,6 +256,11 @@ export class SourceUploads extends Context.Service<
       input: CreateSourceUpload,
     ) => Effect.Effect<SourceUploadTicket, SourceUploadError>;
     readonly put: (
+      userId: UserId,
+      id: SourceUploadId,
+      request: Request,
+    ) => Effect.Effect<LibraryFile, SourceUploadError>;
+    readonly complete: (
       userId: UserId,
       id: SourceUploadId,
       request: Request,
@@ -281,7 +300,7 @@ export const SourceUploadsLive = Layer.effect(
       );
     };
     const readFile = (userId: UserId, id: string) =>
-      database.use((db) => wireFile(db, userId, id)).pipe(Effect.mapError(failure));
+      database.use((db) => wireFile(db, userId, id)).pipe(reportFailure);
     // Caller holds lockCorpus: all capture creates/completions share the same user fence.
     const contentMatch = async (tx: DatabaseTransaction, userId: UserId, sha256: string) => {
       const [match] = await tx
@@ -386,6 +405,242 @@ export const SourceUploadsLive = Layer.effect(
           .where(eq(sourceUpload.id, id));
       });
 
+    const put = Effect.fn("SourceUploads.put")(function* (
+      userId: UserId,
+      id: SourceUploadId,
+      request: Request,
+      direct = false,
+    ) {
+      const token = yield* uuid;
+      const at = yield* now;
+      const claim = yield* database.useTransaction(async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(sourceUpload)
+          .where(and(eq(sourceUpload.id, id), eq(sourceUpload.userId, userId)))
+          .for("update");
+        if (!row) throw reject(404, "Upload ticket not found.");
+        if (row.status === "completed") return { row, completed: true as const };
+        if (direct !== (row.directUpload !== null))
+          throw reject(409, "This ticket uses a different upload transport.");
+        if (row.status === "cancelled" || row.expiresAt <= at)
+          throw reject(410, "This upload ticket has expired or was cancelled.");
+        if (row.status === "uploading" && row.claimExpiresAt !== null && row.claimExpiresAt > at)
+          throw reject(409, "This upload is already in progress.");
+        const key =
+          row.directUpload && row.storageKey
+            ? row.storageKey
+            : fileSourceKey(
+                userId,
+                FileId.make(row.fileId),
+                "source",
+                token.replaceAll("-", "").slice(-12),
+              );
+        const [updated] = await tx
+          .update(sourceUpload)
+          .set({
+            status: "uploading",
+            claimToken: token,
+            claimExpiresAt: new Date(at.getTime() + UPLOAD_LEASE_MS),
+            storageKey: key,
+            abandonedStorageKeys:
+              row.storageKey === null || row.directUpload
+                ? row.abandonedStorageKeys
+                : [...row.abandonedStorageKeys, row.storageKey],
+            updatedAt: at,
+          })
+          .where(eq(sourceUpload.id, id))
+          .returning();
+        return { row: updated!, completed: false as const };
+      });
+      if (claim.completed)
+        return yield* readFile(userId, claim.row.completedFileId ?? claim.row.fileId);
+      const row = claim.row;
+      const key = StorageKey.make(row.storageKey!);
+      const upload = Effect.acquireUseRelease(
+        Effect.tryPromise({
+          try: () => mkdtemp(join(tmpdir(), "avenire-source-")),
+          catch: (cause) => cause,
+        }),
+        (directory) =>
+          Effect.gen(function* () {
+            const started = yield* DateTime.nowAsDate;
+            if (direct) {
+              // Verify the provider's bytes, never a browser-reported ETag or digest.
+              const stream = yield* storage.stream
+                ? storage.stream(key)
+                : storage
+                    .get(key)
+                    .pipe(Effect.map((bytes) => new Blob([new Uint8Array(bytes)]).stream()));
+              yield* spoolSource(
+                new Request("https://source.invalid/verify", {
+                  method: "PUT",
+                  headers: { "content-type": row.mimeType },
+                  body: stream,
+                  signal: request.signal,
+                  duplex: "half",
+                } as RequestInit),
+                directory,
+                row,
+              );
+            } else {
+              const path = yield* spoolSource(request, directory, row);
+              const blob = yield* Effect.tryPromise({
+                try: () => openAsBlob(path, { type: row.mimeType }),
+                catch: (cause) => cause,
+              });
+              yield* storage
+                .put(key, blob, { contentType: row.mimeType })
+                .pipe(Effect.uninterruptible);
+            }
+            const storedAt = yield* DateTime.nowAsDate;
+            yield* Effect.logInfo("Source transfer verified", {
+              uploadId: id,
+              sizeBytes: row.sizeBytes,
+              transport: direct ? "direct" : "relay",
+              durationMs: storedAt.getTime() - started.getTime(),
+            });
+            const jobId = yield* newId(IngestionJobId).pipe(
+              Effect.provideService(Crypto.Crypto, crypto),
+            );
+            const eventId = yield* newId(FileEventId).pipe(
+              Effect.provideService(Crypto.Crypto, crypto),
+            );
+            const finishedAt = yield* now;
+            return yield* database.useTransaction(async (tx) => {
+              await lockCorpus(tx, userId);
+              const [current] = await tx
+                .select()
+                .from(sourceUpload)
+                .where(and(eq(sourceUpload.id, id), eq(sourceUpload.userId, userId)))
+                .for("update");
+              if (
+                !current ||
+                current.status !== "uploading" ||
+                current.claimToken !== token ||
+                current.expiresAt <= finishedAt ||
+                current.claimExpiresAt === null ||
+                current.claimExpiresAt <= finishedAt ||
+                request.signal.aborted
+              )
+                throw reject(409, "This upload no longer owns its completion lease.");
+              const match = await contentMatch(tx, userId, row.sha256);
+              let saved: FileRow;
+              const abandoned = [...current.abandonedStorageKeys];
+              if (match) {
+                saved = await refreshCapture(
+                  tx,
+                  userId,
+                  match,
+                  row.origin ?? undefined,
+                  row.access,
+                  eventId,
+                  jobId,
+                );
+                abandoned.push(key);
+              } else {
+                const dedupeKey = row.origin === null ? `upload:${id}` : dedupeKeyFor(row.origin);
+                const [existing] = await tx
+                  .select()
+                  .from(file)
+                  .where(and(eq(file.userId, userId), eq(file.dedupeKey, dedupeKey)))
+                  .for("update");
+                if (existing?.purgeStartedAt) throw reject(409, "This source is being purged.");
+                const values = {
+                  title: row.title,
+                  kind: row.kind,
+                  sourceUrl:
+                    row.sourceUrl ?? (row.origin === null ? null : captureCitationUrl(row.origin)),
+                  origin: row.origin,
+                  access: row.access,
+                  storageKey: key,
+                  mimeType: row.mimeType,
+                  sizeBytes: row.sizeBytes,
+                  mediaPositionSec: row.origin?.position?.mediaSec ?? null,
+                };
+                if (existing) {
+                  const [updated] = await tx
+                    .update(file)
+                    .set({
+                      ...values,
+                      ...(existing.placement === "archived" || existing.archivedAt !== null
+                        ? {
+                            placement: "inbox" as const,
+                            archivedAt: null,
+                            archivedViaFolderId: null,
+                            purgeRequestedAt: null,
+                          }
+                        : {}),
+                      preview: null,
+                      updatedAt: sql`now()`,
+                    })
+                    .where(and(eq(file.id, existing.id), eq(file.userId, userId)))
+                    .returning();
+                  saved = updated!;
+                  if (existing.storageKey) abandoned.push(existing.storageKey);
+                } else {
+                  const [inserted] = await tx
+                    .insert(file)
+                    .values({
+                      ...values,
+                      id: row.fileId,
+                      userId,
+                      source: row.origin === null ? "upload" : "capture",
+                      dedupeKey,
+                    })
+                    .returning();
+                  saved = inserted!;
+                }
+                await tx.insert(fileEvent).values({
+                  id: eventId,
+                  userId,
+                  fileId: saved.id,
+                  kind: existing || row.origin ? "captured" : "uploaded",
+                });
+                await enqueueIngestionTx(tx, userId, FileId.make(saved.id), jobId);
+                if (existing && (existing.placement === "archived" || existing.archivedAt !== null))
+                  await restoreToCorpusTx(tx, userId, [existing.id]);
+              }
+              await tx
+                .update(sourceUpload)
+                .set({
+                  status: "completed",
+                  completedFileId: saved.id,
+                  storageKey: match ? null : key,
+                  abandonedStorageKeys: [...new Set(abandoned)],
+                  claimToken: null,
+                  claimExpiresAt: null,
+                  updatedAt: finishedAt,
+                })
+                .where(eq(sourceUpload.id, id));
+              return wireFile(tx, userId, saved.id);
+            });
+          }),
+        (directory) =>
+          Effect.tryPromise({
+            try: () => rm(directory, { recursive: true, force: true }),
+            catch: (cause) => cause,
+          }).pipe(Effect.ignore({ log: "Error", message: "Source spool cleanup failed" })),
+      );
+      return yield* upload.pipe(
+        Effect.onError(() =>
+          (direct
+            ? database.use((db) =>
+                db
+                  .update(sourceUpload)
+                  .set({
+                    status: "pending",
+                    claimToken: null,
+                    claimExpiresAt: null,
+                  })
+                  .where(and(eq(sourceUpload.id, id), eq(sourceUpload.claimToken, token))),
+              )
+            : abandonClaim(userId, id, token, key)
+          ).pipe(Effect.ignore({ log: "Error", message: "Upload claim release failed" })),
+        ),
+      );
+    }, reportFailure);
+
     return SourceUploads.of({
       create: Effect.fn("SourceUploads.create")(function* (userId, input) {
         const decoded = yield* Schema.decodeUnknownEffect(CreateSourceUpload)(input, {
@@ -393,7 +648,7 @@ export const SourceUploadsLive = Layer.effect(
         }).pipe(Effect.mapError(() => reject(400, "Invalid upload metadata.")));
         const metadata = yield* Effect.try({
           try: () => normalizeUploadMetadata(decoded),
-          catch: failure,
+          catch: (cause) => cause,
         });
         const id = yield* uuid;
         const fileId = yield* newId(FileId).pipe(Effect.provideService(Crypto.Crypto, crypto));
@@ -468,204 +723,59 @@ export const SourceUploadsLive = Layer.effect(
             .returning();
           return { ...ticket(completed!), file: await wireFile(tx, userId, saved.id) };
         });
-        return result;
-      }, Effect.mapError(failure)),
-      put: Effect.fn("SourceUploads.put")(function* (userId, id, request) {
-        const token = yield* uuid;
-        const at = yield* now;
-        const claim = yield* database.useTransaction(async (tx) => {
-          const [row] = await tx
-            .select()
-            .from(sourceUpload)
-            .where(and(eq(sourceUpload.id, id), eq(sourceUpload.userId, userId)))
-            .for("update");
-          if (!row) throw reject(404, "Upload ticket not found.");
-          if (row.status === "completed") return { row, completed: true as const };
-          if (row.status === "cancelled" || row.expiresAt <= at)
-            throw reject(410, "This upload ticket has expired or was cancelled.");
-          if (row.status === "uploading" && row.claimExpiresAt !== null && row.claimExpiresAt > at)
-            throw reject(409, "This upload is already in progress.");
-          const key = fileSourceKey(
+        if (decoded.transport !== "direct" || result.file || !storage.prepareSourceUpload)
+          return result;
+        const row = yield* database.use((db) =>
+          db.query.sourceUpload.findFirst({
+            where: and(eq(sourceUpload.id, result.uploadId), eq(sourceUpload.userId, userId)),
+          }),
+        );
+        if (!row || row.status !== "pending" || row.directUpload) return result;
+        const key = StorageKey.make(
+          fileSourceKey(
             userId,
             FileId.make(row.fileId),
             "source",
-            token.replaceAll("-", "").slice(-12),
-          );
-          const [updated] = await tx
-            .update(sourceUpload)
-            .set({
-              status: "uploading",
-              claimToken: token,
-              claimExpiresAt: new Date(at.getTime() + UPLOAD_LEASE_MS),
-              storageKey: key,
-              abandonedStorageKeys:
-                row.storageKey === null
-                  ? row.abandonedStorageKeys
-                  : [...row.abandonedStorageKeys, row.storageKey],
-              updatedAt: at,
-            })
-            .where(eq(sourceUpload.id, id))
-            .returning();
-          return { row: updated!, completed: false as const };
-        });
-        if (claim.completed)
-          return yield* readFile(userId, claim.row.completedFileId ?? claim.row.fileId);
-        const row = claim.row;
-        const key = StorageKey.make(row.storageKey!);
-        const upload = Effect.acquireUseRelease(
-          Effect.tryPromise({
-            try: () => mkdtemp(join(tmpdir(), "avenire-source-")),
-            catch: failure,
-          }),
-          (directory) =>
-            Effect.gen(function* () {
-              const path = yield* spoolSource(request, directory, row);
-              const blob = yield* Effect.tryPromise({
-                try: () => openAsBlob(path, { type: row.mimeType }),
-                catch: failure,
-              });
-              yield* storage
-                .put(key, blob, {
-                  contentType: row.mimeType,
-                  // files-sdk maps this to provider-native multipart where supported.
-                  multipart: { partSize: 8 * 1024 * 1024, concurrency: 3 },
-                })
-                .pipe(Effect.uninterruptible);
-              const jobId = yield* newId(IngestionJobId).pipe(
-                Effect.provideService(Crypto.Crypto, crypto),
-              );
-              const eventId = yield* newId(FileEventId).pipe(
-                Effect.provideService(Crypto.Crypto, crypto),
-              );
-              const finishedAt = yield* now;
-              return yield* database.useTransaction(async (tx) => {
-                await lockCorpus(tx, userId);
-                const [current] = await tx
-                  .select()
-                  .from(sourceUpload)
-                  .where(and(eq(sourceUpload.id, id), eq(sourceUpload.userId, userId)))
-                  .for("update");
-                if (
-                  !current ||
-                  current.status !== "uploading" ||
-                  current.claimToken !== token ||
-                  current.expiresAt <= finishedAt ||
-                  current.claimExpiresAt === null ||
-                  current.claimExpiresAt <= finishedAt ||
-                  request.signal.aborted
-                )
-                  throw reject(409, "This upload no longer owns its completion lease.");
-                const match = await contentMatch(tx, userId, row.sha256);
-                let saved: FileRow;
-                const abandoned = [...current.abandonedStorageKeys];
-                if (match) {
-                  saved = await refreshCapture(
-                    tx,
-                    userId,
-                    match,
-                    row.origin ?? undefined,
-                    row.access,
-                    eventId,
-                    jobId,
-                  );
-                  abandoned.push(key);
-                } else {
-                  const dedupeKey = row.origin === null ? `upload:${id}` : dedupeKeyFor(row.origin);
-                  const [existing] = await tx
-                    .select()
-                    .from(file)
-                    .where(and(eq(file.userId, userId), eq(file.dedupeKey, dedupeKey)))
-                    .for("update");
-                  if (existing?.purgeStartedAt) throw reject(409, "This source is being purged.");
-                  const values = {
-                    title: row.title,
-                    kind: row.kind,
-                    sourceUrl:
-                      row.sourceUrl ??
-                      (row.origin === null ? null : captureCitationUrl(row.origin)),
-                    origin: row.origin,
-                    access: row.access,
-                    storageKey: key,
-                    mimeType: row.mimeType,
-                    sizeBytes: row.sizeBytes,
-                    mediaPositionSec: row.origin?.position?.mediaSec ?? null,
-                  };
-                  if (existing) {
-                    const [updated] = await tx
-                      .update(file)
-                      .set({
-                        ...values,
-                        ...(existing.placement === "archived" || existing.archivedAt !== null
-                          ? {
-                              placement: "inbox" as const,
-                              archivedAt: null,
-                              archivedViaFolderId: null,
-                              purgeRequestedAt: null,
-                            }
-                          : {}),
-                        preview: null,
-                        updatedAt: sql`now()`,
-                      })
-                      .where(and(eq(file.id, existing.id), eq(file.userId, userId)))
-                      .returning();
-                    saved = updated!;
-                    if (existing.storageKey) abandoned.push(existing.storageKey);
-                  } else {
-                    const [inserted] = await tx
-                      .insert(file)
-                      .values({
-                        ...values,
-                        id: row.fileId,
-                        userId,
-                        source: row.origin === null ? "upload" : "capture",
-                        dedupeKey,
-                      })
-                      .returning();
-                    saved = inserted!;
-                  }
-                  await tx.insert(fileEvent).values({
-                    id: eventId,
-                    userId,
-                    fileId: saved.id,
-                    kind: existing || row.origin ? "captured" : "uploaded",
-                  });
-                  await enqueueIngestionTx(tx, userId, FileId.make(saved.id), jobId);
-                  if (
-                    existing &&
-                    (existing.placement === "archived" || existing.archivedAt !== null)
-                  )
-                    await restoreToCorpusTx(tx, userId, [existing.id]);
-                }
-                await tx
-                  .update(sourceUpload)
-                  .set({
-                    status: "completed",
-                    completedFileId: saved.id,
-                    storageKey: match ? null : key,
-                    abandonedStorageKeys: [...new Set(abandoned)],
-                    claimToken: null,
-                    claimExpiresAt: null,
-                    updatedAt: finishedAt,
-                  })
-                  .where(eq(sourceUpload.id, id));
-                return wireFile(tx, userId, saved.id);
-              });
-            }),
-          (directory) =>
-            Effect.tryPromise({
-              try: () => rm(directory, { recursive: true, force: true }),
-              catch: failure,
-            }).pipe(Effect.ignore({ log: "Error", message: "Source spool cleanup failed" })),
-        );
-        return yield* upload.pipe(
-          Effect.onError(() =>
-            abandonClaim(userId, id, token, key).pipe(
-              Effect.ignore({ log: "Error", message: "Upload claim release failed" }),
-            ),
+            row.id.replaceAll("-", "").slice(-12),
           ),
-          Effect.mapError(failure),
         );
-      }, Effect.mapError(failure)),
+        const direct = yield* storage.prepareSourceUpload(key, {
+          contentType: row.mimeType,
+          sizeBytes: row.sizeBytes,
+          expiresInSeconds: Math.max(
+            1,
+            Math.floor((row.expiresAt.getTime() - at.getTime()) / 1000),
+          ),
+        });
+        // Concurrent creates may prepare unused capabilities, but only the winner is returned.
+        return yield* database.useTransaction(async (tx) => {
+          await tx
+            .update(sourceUpload)
+            .set({ storageKey: key, directUpload: direct })
+            .where(
+              and(
+                eq(sourceUpload.id, row.id),
+                eq(sourceUpload.userId, userId),
+                eq(sourceUpload.status, "pending"),
+                isNull(sourceUpload.storageKey),
+              ),
+            );
+          const [current] = await tx
+            .select()
+            .from(sourceUpload)
+            .where(and(eq(sourceUpload.id, row.id), eq(sourceUpload.userId, userId)));
+          if (!current || current.status === "cancelled")
+            throw reject(410, "This upload is unavailable.");
+          return {
+            ...ticket(current),
+            ...(current.status === "completed"
+              ? { file: await wireFile(tx, userId, current.completedFileId ?? current.fileId) }
+              : {}),
+          };
+        });
+      }, reportFailure),
+      put: (userId, id, request) => put(userId, id, request),
+      complete: (userId, id, request) => put(userId, id, request, true),
       cancel: Effect.fn("SourceUploads.cancel")(function* (userId, id) {
         const row = yield* database.useTransaction(async (tx) => {
           const [row] = await tx
@@ -694,7 +804,7 @@ export const SourceUploadsLive = Layer.effect(
           return updated!;
         });
         yield* cleanKeys(row);
-      }, Effect.mapError(failure)),
+      }, reportFailure),
       cleanup: Effect.fn("SourceUploads.cleanup")(function* () {
         const at = yield* now;
         const rows = yield* database.useTransaction(async (tx) => {
@@ -728,6 +838,7 @@ export const SourceUploadsLive = Layer.effect(
                   claimToken: null,
                   claimExpiresAt: null,
                   storageKey: null,
+                  directUpload: null,
                   abandonedStorageKeys:
                     row.storageKey === null
                       ? row.abandonedStorageKeys
@@ -742,7 +853,7 @@ export const SourceUploadsLive = Layer.effect(
           return cleanup;
         });
         yield* Effect.forEach(rows, cleanKeys, { concurrency: 4, discard: true });
-      }, Effect.mapError(failure)),
+      }, reportFailure),
     });
   }),
 );

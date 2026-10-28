@@ -141,10 +141,25 @@ const readNativePages = Effect.fn("Pdf.readNativePages")(function* (bytes: Uint8
   ).pipe(Effect.ensuring(Effect.promise(() => pdf.loadingTask.destroy())));
 });
 
-export const extractPdf = Effect.fn("extractPdf")(function* (bytes: Uint8Array) {
+export const extractPdf = Effect.fn("extractPdf")(function* (
+  bytes: Uint8Array,
+  deferEnrichment = false,
+) {
   const native = yield* readNativePages(bytes);
   const needed = native.filter(pageNeedsOcr).map((page) => page.page);
   const requested = needed.slice(0, MAX_OCR_PAGES);
+  if (deferEnrichment && requested.length && native.some((page) => page.text.trim())) {
+    const document = assemblePdfDocument(native, [], requested);
+    return {
+      ...document,
+      coverage: {
+        ...document.coverage,
+        parts: document.coverage.parts.map((part) =>
+          part.part === "ocr" ? { ...part, detail: "Enrichment pending: OCR" } : part,
+        ),
+      },
+    };
+  }
   const ocr = yield* Ocr;
   // Each batch fails on its own: its pages are reported as partial coverage, not lost.
   const recognized = yield* Effect.forEach(

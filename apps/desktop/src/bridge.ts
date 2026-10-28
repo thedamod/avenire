@@ -31,6 +31,9 @@ export interface CaptureStarted {
   }>;
 }
 export interface CaptureProgress {
+  readonly stage?: "preparing" | "transferring" | "validating";
+  readonly loadedBytes?: number;
+  readonly totalBytes?: number;
   readonly id: string;
   readonly seq: number;
   readonly key: string;
@@ -56,7 +59,10 @@ export interface CaptureReceiptSummary {
  * Everything the global capture overlay renders. Main owns it: started/progress events fill
  * `items`, then the app window's receipt (or failure) moves `phase` to done/failed.
  */
+export const CAPTURE_TOAST_VISIBLE_MS = 3500;
+
 export interface CaptureOverlayState {
+  readonly undoneFileIds?: readonly string[];
   readonly maxHeight?: number;
   readonly id: string;
   readonly phase: "collecting" | "submitting" | "done" | "failed";
@@ -72,22 +78,22 @@ export interface CaptureOverlayState {
 export interface AvenireOverlayBridge {
   readonly platform: NodeJS.Platform;
   readonly onState: (callback: (state: CaptureOverlayState) => void) => () => void;
-  /** Ask the app window to trash this capture's files. */
-  readonly undo: (captureId: string) => Promise<void>;
+  /** Trash one saved file through the capture owner's authenticated session. */
+  readonly undo: (captureId: string, fileId: string) => Promise<void>;
   /** Reopen a saved file through the desktop reopen executor, else show it in Avenire. */
   readonly open: (fileId: string) => Promise<void>;
   readonly openSources: () => Promise<void>;
   /** While hovered, main keeps the overlay up and lets it take clicks. */
   readonly setHovered: (hovered: boolean) => Promise<void>;
   /** The overlay finished its exit animation; main hides the window. */
-  readonly dismissed: () => Promise<void>;
+  readonly dismissed: (captureId: string) => Promise<void>;
   /** Content height in CSS px; main resizes the window and keeps it anchored bottom-right. */
   readonly resize: (height: number) => Promise<void>;
 }
 
 /** What the overlay asks the signed-in app window to do on its behalf. */
 export type CaptureOverlayAction = {
-  readonly type: "undo";
+  readonly type: "undo" | "undone";
   readonly captureId: string;
   readonly fileIds: readonly string[];
 };

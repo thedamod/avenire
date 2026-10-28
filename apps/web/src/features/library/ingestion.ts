@@ -5,8 +5,9 @@ import type { FileId, IngestionJob, LibraryFile } from "@avenire/contracts";
 import { call, invalidateLibrary, pruneJobs, updateLatestJob } from "@avenire/client-runtime/rpc";
 import { toast } from "sonner";
 import { addToLocalSet } from "~/lib/localSet";
-import { errorMessage, useApi, useStream } from "~/lib/rpc";
+import { errorMessage, useApi } from "~/lib/rpc";
 
+import { useIngestionStream } from "./ingestionStream";
 import { ingestionState } from "./ingestionState";
 export { ingestionState, isPublishedPartialRetry, type IngestionState } from "./ingestionState";
 
@@ -34,35 +35,31 @@ export function useIngestionJobs(files: readonly LibraryFile[] | undefined) {
 
   const scheduleRefresh = useCallback(() => {
     clearTimeout(refresh.current);
-    refresh.current = setTimeout(() => invalidateLibrary(api, ["files", "folders"]), 400);
+    refresh.current = setTimeout(() => invalidateLibrary(api, ["files", "folders"]), 100);
   }, [api]);
 
-  useStream(
-    (client) => client["library.watchIngestion"](),
-    (job) => {
-      const known = visibleRef.current;
-      if (known && !known.has(job.fileId)) {
-        if (!requested.current.has(job.fileId)) {
-          requested.current.add(job.fileId);
-          scheduleRefresh();
-        }
-        return;
+  useIngestionStream((job) => {
+    const known = visibleRef.current;
+    if (known && !known.has(job.fileId)) {
+      if (!requested.current.has(job.fileId)) {
+        requested.current.add(job.fileId);
+        scheduleRefresh();
       }
-      setJobs((previous) => {
-        const before = previous.get(job.fileId);
-        const next = updateLatestJob(previous, job);
-        // A job we watched finish changes counts and placement (clustering files it).
-        if (
-          before &&
-          ingestionState(before, null)?.kind === "processing" &&
-          ingestionState(job, null)?.kind !== "processing"
-        )
-          scheduleRefresh();
-        return next;
-      });
-    },
-    "library-ingestion-watch",
-  );
+      return;
+    }
+    setJobs((previous) => {
+      const before = previous.get(job.fileId);
+      const next = updateLatestJob(previous, job);
+      // A job we watched finish changes counts and placement (clustering files it).
+      if (
+        before &&
+        ingestionState(before, null)?.kind === "processing" &&
+        ingestionState(job, null)?.kind !== "processing"
+      )
+        scheduleRefresh();
+      return next;
+    });
+  });
 
   const retry = useCallback(
     async (fileId: FileId) => {

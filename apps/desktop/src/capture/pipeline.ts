@@ -242,6 +242,8 @@ export async function runCapturePipeline(options: {
             appUrl: options.appUrl,
             avenireFetch: fetch,
             signal,
+            onTransfer: (stage, loadedBytes, totalBytes) =>
+              stream.progress({ key, status: "uploading", stage, loadedBytes, totalBytes }),
             ...(page.download && result.path
               ? {
                   localOrigin: {
@@ -274,7 +276,7 @@ export async function runCapturePipeline(options: {
               : {}),
           },
         );
-      });
+      }, document?.sizeBytes ?? page.text.length);
       files.push(file);
       processed.add(baseKey);
       stream.progress({ key, status: "saved", file });
@@ -343,12 +345,13 @@ export async function runCapturePipeline(options: {
         registry: options.registry,
         gate,
         keyForPath,
-        progress: (key, status, file, reason) =>
+        progress: (key, status, file, reason, transfer) =>
           stream.progress({
             key,
             status,
             ...(file ? { file } : {}),
             ...(reason ? { reason } : {}),
+            ...transfer,
           }),
       },
     );

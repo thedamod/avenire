@@ -7,9 +7,11 @@ import { usePathname } from "next/navigation";
 import { toast } from "sonner";
 import { call, invalidateLibrary } from "@avenire/client-runtime/rpc";
 import { useApi, errorMessage, watchQuery } from "~/lib/rpc";
+import { CAPTURE_TOAST_VISIBLE_MS } from "@avenire/desktop/bridge";
 import { CaptureToast } from "./CaptureToast";
 import {
   applyProgress,
+  removeCaptureFile,
   getLiveCapture,
   settleCapture,
   startCapture,
@@ -41,12 +43,22 @@ export function useDesktopCapture() {
     const trash = (fileIds: readonly FileId[]) =>
       call(api, (client) => client["library.trashFiles"]({ fileIds }))
         .then(() => invalidateLibrary(api))
-        .catch((cause: unknown) => toast.error(`Couldn't undo: ${errorMessage(cause)}`));
+        .catch((cause: unknown) => {
+          toast.error(`Couldn't undo: ${errorMessage(cause)}`);
+          throw cause;
+        });
     const unsubscribeAction = bridge.onCaptureAction?.((action) => {
+      if (action.type === "undone") {
+        invalidateLibrary(api);
+        for (const fileId of action.fileIds)
+          if (getLiveCapture(action.captureId))
+            updateLiveCapture(action.captureId, (previous) => removeCaptureFile(previous, fileId));
+        return;
+      }
       if (action.type !== "undo") return;
       // Main sends the ids from the owner-checked receipt it holds, which outlives a reload here.
       const fileIds = [...new Set(action.fileIds)].map((id) => FileId.make(id));
-      if (fileIds.length) void trash(fileIds);
+      if (fileIds.length) void trash(fileIds).catch(() => {});
       else toast.error("Couldn't undo: this capture is no longer known here.");
     });
 
@@ -61,17 +73,22 @@ export function useDesktopCapture() {
         () => (
           <CaptureToast
             captureId={captureId}
-            onOpen={() => toast.dismiss(id)}
-            onUndo={() => {
+            onOpen={() => {
+              dismissed.add(captureId);
               toast.dismiss(id);
-              const files = getLiveCapture(captureId)?.receipt?.files ?? [];
-              void trash(files.map((file) => file.id));
+            }}
+            onUndo={async (fileId) => {
+              const current = getLiveCapture(captureId);
+              if (!current?.rows.some((row) => row.status === "saved" && row.file?.id === fileId))
+                throw new Error("Capture is unavailable");
+              await trash([FileId.make(fileId)]);
+              updateLiveCapture(captureId, (previous) => removeCaptureFile(previous, fileId));
             }}
           />
         ),
         {
           id,
-          duration: settled ? 8000 : Infinity,
+          duration: settled ? CAPTURE_TOAST_VISIBLE_MS : Infinity,
           unstyled: true,
           className: "source-upload-toast",
           onDismiss: () => {

@@ -22,6 +22,8 @@ import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
+import * as PubSub from "effect/PubSub";
+import * as Stream from "effect/Stream";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
@@ -157,19 +159,26 @@ const decodeClaimed = Schema.decodeUnknownEffect(Schema.Array(ClaimedJob));
  * Leases up to `limit` jobs: queued ones whose retry delay has passed, plus
  * in-progress ones whose lease expired (their worker died).
  */
-export const claimJobs = (db: DatabaseClient, limit: number, token: string) => {
+export const claimJobs = (db: DatabaseClient, limit: number, token: string, shortOnly = false) => {
   const due = db
     .select({ id: ingestionJob.id })
     .from(ingestionJob)
     .where(
-      or(
-        and(
-          eq(ingestionJob.status, "queued"),
-          or(isNull(ingestionJob.lockedUntil), lt(ingestionJob.lockedUntil, sql`now()`)),
+      and(
+        shortOnly
+          ? sql`exists (select 1 from ${file} where ${file.id} = ${ingestionJob.fileId}
+        and ${file.userId} = ${ingestionJob.userId} and ${file.kind} not in ('video', 'audio')
+        and coalesce(${file.sizeBytes}, 0) <= 8388608)`
+          : undefined,
+        or(
+          and(
+            eq(ingestionJob.status, "queued"),
+            or(isNull(ingestionJob.lockedUntil), lt(ingestionJob.lockedUntil, sql`now()`)),
+          ),
+          and(inArray(ingestionJob.status, IN_PROGRESS), lt(ingestionJob.lockedUntil, sql`now()`)),
+          // An indexed source can still have a scheduled optional extraction retry.
+          and(eq(ingestionJob.status, "indexed"), lt(ingestionJob.lockedUntil, sql`now()`)),
         ),
-        and(inArray(ingestionJob.status, IN_PROGRESS), lt(ingestionJob.lockedUntil, sql`now()`)),
-        // An indexed source can still have a scheduled optional extraction retry.
-        and(eq(ingestionJob.status, "indexed"), lt(ingestionJob.lockedUntil, sql`now()`)),
       ),
     )
     .orderBy(ingestionJob.createdAt)
@@ -274,6 +283,24 @@ export const IngestionWorkerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const database = yield* Database;
     const pipeline = yield* IngestionPipeline;
+    const wakeups = yield* PubSub.sliding<string>(1);
+    if (database.listen)
+      yield* Effect.acquireRelease(
+        Effect.tryPromise(() =>
+          database.listen!("avenire_ingestion", (payload) => {
+            Effect.runFork(PubSub.publish(wakeups, payload));
+          }),
+        ).pipe(
+          Effect.catch((error) =>
+            Effect.as(Effect.logWarning("Ingestion wakeups unavailable", error), undefined),
+          ),
+        ),
+        (listener) => (listener ? Effect.promise(() => listener.unlisten()) : Effect.void),
+      );
+    const idle = Effect.raceFirst(
+      Effect.sleep(IDLE_DELAY),
+      Stream.runHead(Stream.fromPubSub(wakeups)),
+    ).pipe(Effect.asVoid);
     const concurrency = Math.max(
       1,
       yield* Config.Int("INGESTION_CONCURRENCY").pipe(Config.withDefault(2)),
@@ -284,11 +311,12 @@ export const IngestionWorkerLive = Layer.effectDiscard(
     );
 
     const crypto = yield* Crypto.Crypto;
-    const claim = crypto.randomUUIDv7.pipe(
-      Effect.flatMap((token) => database.use((db) => claimJobs(db, 1, token))),
-      Effect.flatMap(decodeClaimed),
-      Effect.withSpan("IngestionWorker.claim"),
-    );
+    const claim = (shortOnly = false) =>
+      crypto.randomUUIDv7.pipe(
+        Effect.flatMap((token) => database.use((db) => claimJobs(db, 1, token, shortOnly))),
+        Effect.flatMap(decodeClaimed),
+        Effect.withSpan("IngestionWorker.claim"),
+      );
 
     const recordFailure = (
       job: ClaimedJob,
@@ -432,16 +460,19 @@ export const IngestionWorkerLive = Layer.effectDiscard(
         Effect.andThen(releaseIfSuperseded(job)),
       );
 
-    const pollOnce = claim.pipe(
-      Effect.flatMap((jobs) => (jobs.length === 0 ? Effect.sleep(IDLE_DELAY) : runJob(jobs[0]!))),
-      // Infrastructure failures (database down, ...) must not stop the worker.
-      Effect.catchCause((cause) =>
-        Effect.logError("Ingestion poll failed", cause).pipe(
-          Effect.andThen(Effect.sleep(OUTAGE_DELAY)),
+    const pollOnce = (shortOnly = false) =>
+      claim(shortOnly).pipe(
+        Effect.flatMap((jobs) => (jobs.length === 0 ? idle : runJob(jobs[0]!))),
+        // Infrastructure failures (database down, ...) must not stop the worker.
+        Effect.catchCause((cause) =>
+          Effect.logError("Ingestion poll failed", cause).pipe(
+            Effect.andThen(Effect.sleep(OUTAGE_DELAY)),
+          ),
         ),
-      ),
-    );
+      );
 
-    yield* startIngestionLanes(concurrency, pollOnce);
+    yield* startIngestionLanes(Math.max(1, concurrency - 1), pollOnce());
+    // Reserve capacity within the configured total, rather than multiplying provider calls.
+    if (concurrency > 1) yield* startIngestionLanes(1, pollOnce(true));
   }),
 );

@@ -8,6 +8,7 @@ import {
   type CapturedTab,
   type PageSnapshot,
 } from "@avenire/contracts";
+import { transferDirectSource, requestSourceTicket } from "@avenire/capture/source-transfer";
 import { normalizeUrl, requiresBrowserSession } from "@avenire/capture/url";
 import * as Schema from "effect/Schema";
 import { captureTabs, type CaptureOutput } from "./capture.ts";
@@ -50,6 +51,7 @@ export function createCaptureUpload(
     const bytes = page.file ? original?.bytes : new TextEncoder().encode(page.text);
     if (!bytes?.byteLength) return;
     const input = Schema.decodeUnknownSync(CreateSourceUpload)({
+      transport: "direct",
       idempotencyKey: crypto.randomUUID(),
       title: (page.title.trim() || "Untitled page").slice(0, 200),
       kind: page.file
@@ -80,11 +82,16 @@ export function createCaptureUpload(
           }),
       access: tab.access ?? "open",
     });
-    const ticket = await apiJson(fetcher, `${appUrl}/api/library/uploads`, SourceUploadTicket, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input),
-    });
+    const ticket = await apiJson(
+      (url, init) => requestSourceTicket((body) => fetcher(url, { ...init, body }), input),
+      `${appUrl}/api/library/uploads`,
+      SourceUploadTicket,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      },
+    );
     if (!ticket.file) {
       // Only the Avenire upload route may receive cookies or captured bytes.
       const uploadUrl = new URL(ticket.uploadUrl, appUrl);
@@ -95,11 +102,22 @@ export function createCaptureUpload(
         uploadUrl.password
       )
         throw new Error("Avenire returned an invalid upload URL");
-      await apiJson(fetcher, uploadUrl.href, LibraryFile, {
-        method: "PUT",
-        headers: { "content-type": input.mimeType },
-        body: bytes,
-      });
+      if (ticket.direct) {
+        await transferDirectSource(ticket.direct.url, new Blob([new Uint8Array(bytes)]), {
+          fetcher,
+        });
+        await apiJson(fetcher, uploadUrl.href, LibraryFile, {
+          method: "POST",
+          signal: AbortSignal.timeout(15 * 60_000),
+        });
+      } else {
+        await apiJson(fetcher, uploadUrl.href, LibraryFile, {
+          method: "PUT",
+          headers: { "content-type": input.mimeType },
+          body: bytes,
+          signal: AbortSignal.timeout(15 * 60_000),
+        });
+      }
     }
     saved++;
     // A linked attachment must not suppress the parent page's URL capture.

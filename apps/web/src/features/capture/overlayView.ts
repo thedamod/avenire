@@ -12,7 +12,7 @@ export interface OverlayView {
   readonly shown: "hidden" | "open" | "closing";
   readonly entry: number;
   /**
-   * Closed by the user (Undo, Open, Sources): later updates of this attempt don't reopen it.
+   * Closed by the user: later updates of this attempt don't reopen it.
    * Main's own exit (`closing`) is not a dismissal, so main taking it back reopens the panel.
    */
   readonly dismissedId?: string | undefined;
@@ -20,7 +20,7 @@ export interface OverlayView {
 
 export type OverlayEvent =
   | { readonly type: "state"; readonly state: OverlayState }
-  /** The overlay closes itself (Undo, Open, Sources). */
+  /** The user dismisses the overlay or opens a saved file. */
   | { readonly type: "close" }
   /** The exit finished, or main hid the window without one. */
   | { readonly type: "hidden" };

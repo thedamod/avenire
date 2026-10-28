@@ -228,6 +228,7 @@ it.effect("fails the pipeline at original storage read without any URL fallback 
   Effect.gen(function* () {
     const storage = yield* Storage;
     const db = {
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
       query: {
         file: {
           findFirst: async () => ({ ...source({}), storageKey: "missing-private-original" }),

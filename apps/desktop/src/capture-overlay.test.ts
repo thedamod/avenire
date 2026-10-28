@@ -94,7 +94,7 @@ it("accepts IPC only from its own main frame and exact bundled URL", () => {
   expect(overlay.trusted(event)).toBe(false);
   overlay.dispose();
 });
-it("streams owner-bound state, waits eight seconds and dismisses only after the exit animation", async () => {
+it("streams owner-bound state, waits three and a half seconds and dismisses only after the exit animation", async () => {
   vi.useFakeTimers();
   const overlay = new CaptureOverlay("/tmp/capture-overlay.html", "/tmp/overlay-preload.cjs");
   const target = mocks.windows.at(-1)!;
@@ -108,7 +108,7 @@ it("streams owner-bound state, waits eight seconds and dismisses only after the 
   overlay.submitting("alice", "capture");
   overlay.receipt("alice", "capture", receipt);
   expect(overlay.state?.phase).toBe("done");
-  await vi.advanceTimersByTimeAsync(7999);
+  await vi.advanceTimersByTimeAsync(3499);
   expect(overlay.state?.closing).not.toBe(true);
   mocks.cursor = { x: -100, y: 950 };
   overlay.setHovered(true);
@@ -125,11 +125,26 @@ it("streams owner-bound state, waits eight seconds and dismisses only after the 
   overlay.begin("bob", { ...start, id: "new" });
   overlay.receipt("alice", "capture", receipt);
   overlay.dismissed();
-  expect(target.hide).toHaveBeenCalledOnce();
+  expect(target.hide).toHaveBeenCalledTimes(2);
   expect(overlay.state).toMatchObject({ id: "new", phase: "collecting" });
   overlay.clear();
   expect(overlay.owner).toBeUndefined();
   expect(overlay.state).toBeUndefined();
+});
+it("keeps a dismissed upload hidden as it finishes and ignores a stale dismissal", () => {
+  const overlay = new CaptureOverlay("/tmp/overlay.html", "/tmp/preload.cjs");
+  const target = mocks.windows.at(-1)!;
+  overlay.begin("alice", start);
+  overlay.dismissed("capture");
+  target.showInactive.mockClear();
+  overlay.submitting("alice", "capture");
+  overlay.receipt("alice", "capture", receipt);
+  expect(target.showInactive).not.toHaveBeenCalled();
+  overlay.begin("alice", { ...start, id: "next" });
+  target.hide.mockClear();
+  overlay.dismissed("capture");
+  expect(target.hide).not.toHaveBeenCalled();
+  overlay.dispose();
 });
 it("reports failures and cancels a previous capture's timeout", async () => {
   vi.useFakeTimers();

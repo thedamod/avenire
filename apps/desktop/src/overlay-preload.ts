@@ -11,12 +11,13 @@ const bridge: AvenireOverlayBridge = {
     void ipcRenderer.invoke("avenire:overlay-ready");
     return () => ipcRenderer.removeListener("avenire:overlay-state", listener);
   },
-  undo: (id) => ipcRenderer.invoke("avenire:overlay-undo", id).then(() => undefined),
+  undo: (id, fileId) =>
+    ipcRenderer.invoke("avenire:overlay-undo", id, fileId).then(() => undefined),
   open: (id) => ipcRenderer.invoke("avenire:overlay-open", id).then(() => undefined),
   openSources: () => ipcRenderer.invoke("avenire:overlay-sources").then(() => undefined),
   setHovered: (hovered) =>
     ipcRenderer.invoke("avenire:overlay-hovered", hovered).then(() => undefined),
-  dismissed: () => ipcRenderer.invoke("avenire:overlay-dismissed").then(() => undefined),
+  dismissed: (id) => ipcRenderer.invoke("avenire:overlay-dismissed", id).then(() => undefined),
   resize: (height) => ipcRenderer.invoke("avenire:overlay-resize", height).then(() => undefined),
 };
 contextBridge.exposeInMainWorld("avenireOverlay", bridge);

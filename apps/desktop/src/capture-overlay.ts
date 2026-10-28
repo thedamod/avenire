@@ -3,6 +3,7 @@ import { BrowserWindow, screen } from "electron";
 import { pathToFileURL } from "node:url";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { CAPTURE_TOAST_VISIBLE_MS } from "./bridge.ts";
 import type {
   CaptureOverlayState,
   CaptureStarted,
@@ -42,6 +43,7 @@ export class CaptureOverlay {
   state: CaptureOverlayState | undefined;
   owner: string | undefined;
   private hovered = false;
+  private dismissedCaptureId: string | undefined;
   private hoverPoll: ReturnType<typeof setInterval> | undefined;
   private expires = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -96,7 +98,7 @@ export class CaptureOverlay {
     this.window.webContents.on("did-finish-load", () => {
       captureLog("Overlay page loaded");
       this.push();
-      if (this.state) this.window.showInactive();
+      if (this.state && this.dismissedCaptureId !== this.state.id) this.window.showInactive();
     });
     void this.window.loadFile(path).catch(() => {
       captureLog("Overlay could not open its bundled page");
@@ -126,6 +128,7 @@ export class CaptureOverlay {
     this.expires = 0;
     this.hovered = false;
     this.owner = owner;
+    this.dismissedCaptureId = undefined;
     this.area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
     this.state = {
       maxHeight: overlayBounds(this.area, Infinity).height,
@@ -143,6 +146,7 @@ export class CaptureOverlay {
   progress(owner: string, event: CaptureProgress) {
     if (owner !== this.owner || event.id !== this.state?.id || this.state.phase !== "collecting")
       return;
+    if (event.file && this.state.undoneFileIds?.includes(event.file.id)) return;
     const items = [...this.state.items];
     const index = items.findIndex((item) => item.key === event.key);
     const { id: _id, seq: _seq, ...update } = event;
@@ -159,11 +163,18 @@ export class CaptureOverlay {
     const { error: _error, receipt: _receipt, ...state } = this.state;
     this.state = { ...state, phase: "submitting", closing: false };
     this.push();
-    this.window.showInactive();
+    if (this.dismissedCaptureId !== id) this.window.showInactive();
   }
   receipt(owner: string, id: string, receipt: CaptureReceiptSummary) {
     if (owner !== this.owner || id !== this.state?.id || this.state.phase !== "submitting") return;
-    this.state = { ...this.state, phase: "done", receipt };
+    this.state = {
+      ...this.state,
+      phase: "done",
+      receipt: {
+        ...receipt,
+        files: receipt.files.filter((file) => !this.state?.undoneFileIds?.includes(file.id)),
+      },
+    };
     this.finish();
   }
   failed(owner: string, id: string, error: string) {
@@ -172,7 +183,8 @@ export class CaptureOverlay {
     this.finish();
   }
   private finish() {
-    this.expires = Date.now() + 8000;
+    this.expires =
+      this.dismissedCaptureId === this.state?.id ? 0 : Date.now() + CAPTURE_TOAST_VISIBLE_MS;
     this.push();
     this.arm();
   }
@@ -221,8 +233,10 @@ export class CaptureOverlay {
     }
     this.arm();
   }
-  dismissed() {
-    if (this.state?.closing || this.state?.phase === "done" || this.state?.phase === "failed") {
+  dismissed(id?: string) {
+    if (id !== undefined && id !== this.state?.id) return;
+    if (this.state) {
+      this.dismissedCaptureId = this.state.id;
       this.cancelTimer();
       this.expires = 0;
       this.hovered = false;
@@ -230,6 +244,23 @@ export class CaptureOverlay {
       this.stopHoverPoll();
       this.window.hide();
     }
+  }
+  removeFile(owner: string, id: string, fileId: string) {
+    if (owner !== this.owner || this.state?.id !== id) return;
+    this.state = {
+      ...this.state,
+      undoneFileIds: [...new Set([...(this.state.undoneFileIds ?? []), fileId])],
+      items: this.state.items.filter((item) => item.file?.id !== fileId),
+      ...(this.state.receipt
+        ? {
+            receipt: {
+              ...this.state.receipt,
+              files: this.state.receipt.files.filter((file) => file.id !== fileId),
+            },
+          }
+        : {}),
+    };
+    this.push();
   }
   resize(height: number) {
     if (!this.window.isDestroyed()) this.window.setBounds(overlayBounds(this.area, height));

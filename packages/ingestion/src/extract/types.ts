@@ -16,6 +16,7 @@ export const EXTRACTOR_VERSION = 2;
 
 /** What an extractor needs to know about a source, independent of how it's stored. */
 export interface SourceInput {
+  readonly enrichment?: "deferred" | "full";
   readonly kind: FileKind;
   readonly title: string;
   readonly mimeType: string | null;
@@ -26,6 +27,11 @@ export interface SourceInput {
   readonly acquisitionMode?: "stored" | "public-url";
   /** The stored original, when there is one. */
   readonly bytes: Uint8Array | null;
+  readonly localMedia?: {
+    readonly path: string;
+    readonly directory: string;
+    readonly sizeBytes: number;
+  };
   readonly transcriptScope?: TranscriptScope;
   readonly access?: SourceAccess;
 }

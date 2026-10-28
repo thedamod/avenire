@@ -65,3 +65,15 @@ export const cancelUploadResponse = (request: Request, id: string) =>
     }),
     204,
   );
+
+/** Finalize a direct transfer with server-side size/SHA-256 verification. */
+export const completeUploadResponse = (request: Request, id: string) =>
+  uploadResponse(
+    request,
+    Effect.gen(function* () {
+      const uploadId = yield* decodeRequest(SourceUploadId, id);
+      return yield* asHttpError(
+        (yield* SourceUploads).complete((yield* CurrentUser).id, uploadId, request),
+      );
+    }),
+  );

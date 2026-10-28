@@ -21,6 +21,7 @@ const harness = (
 ) => {
   const commands: ChildProcess.StandardCommand[] = [];
   const reads: string[] = [];
+  const writes: string[] = [];
   let cleaned = false;
   const fs = FileSystem.layerNoop({
     makeTempDirectoryScoped: () =>
@@ -29,7 +30,10 @@ const harness = (
           cleaned = true;
         }),
       ),
-    writeFile: () => Effect.void,
+    writeFile: (path) =>
+      Effect.sync(() => {
+        writes.push(path);
+      }),
     stat: (path) =>
       Effect.succeed({
         type: "File",
@@ -100,11 +104,32 @@ const harness = (
     layer: MediaProcessorLive.pipe(Layer.provide(Layer.merge(fs, spawner))),
     commands,
     reads,
+    writes,
     cleaned: () => cleaned,
   };
 };
 
 describe("bounded media subprocesses", () => {
+  it.effect("shares one source file and one probe across a media extraction session", () =>
+    Effect.gen(function* () {
+      const test = harness();
+      yield* Effect.gen(function* () {
+        const media = yield* MediaProcessor;
+        const bytes = new Uint8Array([1, 2, 3]);
+        yield* media.withSource!(
+          bytes,
+          Effect.gen(function* () {
+            yield* media.probe(bytes);
+            yield* media.sceneFrames(bytes, { maxFrames: 3 });
+            yield* media.probe(bytes);
+          }),
+        );
+      }).pipe(Effect.provide(test.layer));
+      expect(test.writes).toEqual(["/test/media/source"]);
+      expect(test.commands.filter((command) => command.command === "ffprobe")).toHaveLength(1);
+      expect(test.cleaned()).toBe(true);
+    }),
+  );
   it.effect(
     "caps JPEG production and buffers before allocation, spreads samples and releases temp files",
     () =>

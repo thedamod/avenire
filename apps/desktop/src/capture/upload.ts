@@ -1,6 +1,7 @@
 import { captureLog, captureError } from "./diagnostics.ts";
 import { captureFailureReason } from "./failure.ts";
 import { createHash } from "node:crypto";
+import { stat } from "node:fs/promises";
 import { extname } from "node:path";
 import type {
   CaptureSnapshot,
@@ -87,6 +88,11 @@ export interface NativeUploadOptions {
     status: "uploading" | "saved" | "skipped" | "failed",
     file?: DesktopCaptureUploads["files"][number],
     reason?: string,
+    transfer?: {
+      stage: "preparing" | "transferring" | "validating";
+      loadedBytes: number;
+      totalBytes: number;
+    },
   ) => void;
   readonly keyForPath: (path: string) => string;
 }
@@ -118,7 +124,7 @@ export async function uploadCapturedFiles(
       .map((path) => [localPathIdentity(path, snapshot.platform), path]),
   );
   const gate = options?.gate ?? new UploadGate();
-  await mapConcurrent([...paths.values()], 3, async (path) => {
+  await mapConcurrent([...paths.values()], paths.size, async (path) => {
     const key = options?.keyForPath(path) ?? path;
     const title = displayTitle(path) || "Captured source";
     const format = formats[extname(path).slice(1).toLowerCase()];
@@ -148,36 +154,45 @@ export async function uploadCapturedFiles(
         localPathIdentity(path, snapshot.platform),
     );
     try {
-      const file = await gate.run(async () => {
-        signal?.throwIfAborted();
-        options?.progress(key, "uploading");
-        return acquireAndUploadSource(
-          { type: "local-file", path },
-          { idempotencyKey, title, kind: format[0], mimeType: format[1] },
-          {
-            appUrl,
-            avenireFetch,
-            hashCache,
-            ...(signal ? { signal } : {}),
-            localOrigin: {
-              _tag: "LocalFile",
-              deviceId: snapshot.deviceId,
-              deviceName: hostname(),
-              platform: snapshot.platform,
-              fileName: uploadName(basename(path)),
-              capturedAt: snapshot.capturedAt,
-              ...(native?.appName ? { appName: native.appName.slice(0, 255) } : {}),
-              ...mediaPosition(native),
+      const file = await gate.run(
+        async () => {
+          signal?.throwIfAborted();
+          options?.progress(key, "uploading");
+          return acquireAndUploadSource(
+            { type: "local-file", path },
+            { idempotencyKey, title, kind: format[0], mimeType: format[1] },
+            {
+              appUrl,
+              avenireFetch,
+              hashCache,
+              onTransfer: (stage, loadedBytes, totalBytes) =>
+                options?.progress(key, "uploading", undefined, undefined, {
+                  stage,
+                  loadedBytes,
+                  totalBytes,
+                }),
+              ...(signal ? { signal } : {}),
+              localOrigin: {
+                _tag: "LocalFile",
+                deviceId: snapshot.deviceId,
+                deviceName: hostname(),
+                platform: snapshot.platform,
+                fileName: uploadName(basename(path)),
+                capturedAt: snapshot.capturedAt,
+                ...(native?.appName ? { appName: native.appName.slice(0, 255) } : {}),
+                ...mediaPosition(native),
+              },
+              ...(options
+                ? {
+                    onLocalUploaded: (file, origin) =>
+                      options.registry.record(options.owner, file.id, origin),
+                  }
+                : {}),
             },
-            ...(options
-              ? {
-                  onLocalUploaded: (file, origin) =>
-                    options.registry.record(options.owner, file.id, origin),
-                }
-              : {}),
-          },
-        );
-      });
+          );
+        },
+        (await stat(path).catch(() => ({ size: 0 }))).size,
+      );
       files.push(file);
       options?.progress(key, "saved", file);
     } catch (error) {

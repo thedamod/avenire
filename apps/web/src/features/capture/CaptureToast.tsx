@@ -14,7 +14,7 @@ export function CaptureToast({
   onOpen,
 }: {
   captureId: string;
-  onUndo: () => void;
+  onUndo: (fileId: string) => Promise<void>;
   onOpen: () => void;
 }) {
   const live = useSyncExternalStore(
@@ -39,7 +39,8 @@ export function CaptureToast({
       rows={live?.rows ?? []}
       phase={live?.receipt ? "done" : "capturing"}
       keys={<CaptureShortcutKeys />}
-      onUndo={live?.receipt?.files.length ? onUndo : undefined}
+      onUndo={onUndo}
+      onDismiss={onOpen}
       renderLink={renderLink}
       className="w-[min(358px,calc(100vw-2rem))]"
     />

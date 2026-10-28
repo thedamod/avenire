@@ -67,6 +67,14 @@ export class Storage extends Context.Service<
       key: StorageKey,
       options: SignedUploadOptions,
     ) => Effect.Effect<Awaited<ReturnType<Files["signedUploadUrl"]>>, StorageError>;
+    /** Size-bound provider capability. Undefined means this driver uses the app PUT route. */
+    readonly prepareSourceUpload?: (
+      key: StorageKey,
+      options: { contentType: string; sizeBytes: number; expiresInSeconds: number },
+    ) => Effect.Effect<{ url: string; key: string }, StorageError>;
+    readonly stream?: (
+      key: StorageKey,
+    ) => Effect.Effect<ReadableStream<Uint8Array>, StorageError | ObjectNotFound>;
     readonly files: Files;
   }
 >()("avenire/storage/Storage") {}
@@ -148,6 +156,10 @@ const notFound =
 const makeStorage = (files: Files): Storage["Service"] =>
   Storage.of({
     files,
+    stream: (key) =>
+      idempotent(
+        attempt("stream", key, async () => (await files.download(key, { as: "stream" })).stream()),
+      ).pipe(notFound(key)),
     put: (key, body, options) => {
       const upload = attempt("put", key, () => files.upload(key, body, options)).pipe(
         Effect.tapError((error) =>
@@ -338,7 +350,17 @@ export const StorageLive = Layer.effect(
   Effect.gen(function* () {
     const config = yield* StorageConfig;
     const adapter = yield* makeAdapter(config);
-    return makeStorage(new Files({ adapter }));
+    const service = makeStorage(new Files({ adapter }));
+    if (config.driver !== "uploadthing" || Option.isNone(config.uploadthingToken)) return service;
+    const { prepareUploadThingSource } = yield* Effect.promise(() => import("./source-upload.ts"));
+    const token = Redacted.value(config.uploadthingToken.value);
+    return {
+      ...service,
+      prepareSourceUpload: (key, options) =>
+        attempt("prepareSourceUpload", key, () =>
+          prepareUploadThingSource(token, fitKey(key), options, config.uploadthingAcl),
+        ),
+    };
   }),
 );
 

@@ -34,6 +34,8 @@ export function captureLibraryClient(appUrl: string, fetch: AvenireUploadFetch) 
       { signal: AbortSignal.timeout(5000) },
     );
   return {
+    trash: (fileId: string) =>
+      run((client) => client["library.trashFiles"]({ fileIds: [FileId.make(fileId)] })),
     getFile: (fileId: string) =>
       run((client) => client["library.getFile"]({ fileId: FileId.make(fileId) })),
     opened: (fileId: string) =>
