@@ -14,6 +14,7 @@ export const SCANNABLE_EXTENSIONS: ReadonlySet<string> = new Set(
 
 // Extension-only check (no fs access): scanners confirm existence themselves.
 export function isScannableFilePath(p: string): boolean {
+  if (/(?:^|[\\/])~\$/.test(p)) return false;
   const m = /\.([a-z0-9]+)$/i.exec(p.trim());
   return !!m && SCANNABLE_EXTENSIONS.has(m[1]!.toLowerCase());
 }
@@ -30,6 +31,7 @@ const MATCHABLE_EXTRA = new Set(
 
 export function isMatchableFilePath(p: string): boolean {
   if (isScannableFilePath(p)) return true;
+  if (/(?:^|[\\/])~\$/.test(p)) return false;
   const m = /\.([a-z0-9]+)$/i.exec(p.trim());
   return !!m && MATCHABLE_EXTRA.has(m[1]!.toLowerCase());
 }

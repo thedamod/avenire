@@ -1,4 +1,9 @@
-import type { BlockedCategory, CaptureSnapshot } from "@avenire/contracts";
+import type {
+  BlockedCategory,
+  CapturePosition,
+  CaptureSnapshot,
+  TextQuote,
+} from "@avenire/contracts";
 
 export type BlockedFile = { readonly title: string; readonly category: BlockedCategory };
 export type PolicyResult = {
@@ -19,20 +24,38 @@ const hostRule = (category: BlockedCategory, hosts: readonly string[]): Rule => 
   },
 });
 const urlRules: readonly Rule[] = [
-  hostRule("email", ["mail.google.com", "outlook.live.com", "outlook.office.com"]),
+  hostRule("email", [
+    "mail.google.com",
+    "outlook.live.com",
+    "outlook.office.com",
+    "mail.yahoo.com",
+    "proton.me",
+    "fastmail.com",
+    "hey.com",
+  ]),
   {
     category: "banking",
     test: (value) =>
-      /(?:^|[/.])(?:chase|bankofamerica|wellsfargo|citi|citibank|capitalone|barclays|hsbc|revolut|wise)(?:[/.]|$)/i.test(
+      /(?:^|[/.])(?:chase|bankofamerica|wellsfargo|citi|citibank|capitalone|barclays|hsbc|revolut|wise|paypal|coinbase|robinhood)(?:[/.]|$)/i.test(
         value,
       ),
   },
-  hostRule("messaging", ["web.whatsapp.com", "messenger.com", "slack.com"]),
+  hostRule("messaging", [
+    "web.whatsapp.com",
+    "web.telegram.org",
+    "teams.microsoft.com",
+    "messages.google.com",
+    "messenger.com",
+    "slack.com",
+  ]),
   {
     category: "messaging",
     test: (value) => /^https?:\/\/(?:[^/]+\.)?discord\.com\/channels(?:[/?#]|$)/i.test(value),
   },
-  { category: "password-manager", test: (value) => /1password|bitwarden|lastpass/i.test(value) },
+  {
+    category: "password-manager",
+    test: (value) => /1password|bitwarden|lastpass|dashlane|keepass|roboform|enpass/i.test(value),
+  },
   {
     category: "checkout",
     test: (value) =>
@@ -45,22 +68,54 @@ const urlRules: readonly Rule[] = [
         value,
       ),
   },
-  hostRule("drm-stream", ["netflix.com", "primevideo.com", "disneyplus.com", "hulu.com"]),
+  hostRule("drm-stream", [
+    "netflix.com",
+    "primevideo.com",
+    "disneyplus.com",
+    "hulu.com",
+    "hbomax.com",
+    "crunchyroll.com",
+  ]),
+  {
+    category: "drm-stream",
+    test: (value) => /spotify\.com\/(?:track|episode)(?:[/?#]|$)/i.test(value),
+  },
 ];
+// Process names vary across channels, bundles and platforms.
+const canonicalAppName = (value: string) =>
+  value
+    .replace(/\.exe$/i, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+    .replace(/[^a-z0-9]+/gi, " ")
+    .trim()
+    .toLowerCase();
 const appRules: readonly Rule[] = [
-  { category: "password-manager", test: (value) => /1password|bitwarden|lastpass/i.test(value) },
+  {
+    category: "password-manager",
+    test: (value) =>
+      /\b(?:1 ?password|bit ?warden|last ?pass|dashlane|kee ?pass|robo ?form|enpass)/i.test(value),
+  },
   {
     category: "email",
-    test: (value) => /(?:^|\b)(?:outlook|mail|gmail|thunderbird)(?:\b|$)/i.test(value),
+    test: (value) =>
+      /(?:^|\b)(?:outlook|hx outlook|olk|mail|g ?mail|thunder ?bird|spark|mail ?spring|mail ?client)(?:\b|$)/i.test(
+        value,
+      ),
   },
   {
     category: "messaging",
     test: (value) =>
-      /(?:^|\b)(?:slack|discord|whatsapp|messenger|messages|telegram|signal)(?:\b|$)/i.test(value),
+      // Distinctive brands match at a word start, since process names run words together
+      // (slackclient, discordcanary); generic words must be the whole app name.
+      /\b(?:slack|discord|whats ?app|messenger|telegram|ms ?teams|teams|skype|we ?chat|i ?message)/i.test(
+        value,
+      ) || /^(?:signal(?: ?beta| ?desktop)?|line|messages)$/i.test(value),
   },
   {
     category: "banking",
-    test: (value) => /(?:^|\b)(?:bank|chase|wells fargo|revolut|wise)(?:\b|$)/i.test(value),
+    test: (value) =>
+      /\b(?:bank|chase|wells fargo|bank ?of ?america|revolut|wise|pay ?pal)\b/i.test(value),
   },
 ];
 
@@ -87,10 +142,28 @@ function blockedCategory(
     }
   }
   if (urls.length > 64) return "private-window"; // Unverifiable redirect chain: fail closed.
-  for (const rule of appRules) if (rule.test(appName)) return rule.category;
-  if (/netflix|prime video|disney\+?|hulu/i.test(`${appName} ${title}`)) return "drm-stream";
+  for (const rule of appRules) if (rule.test(canonicalAppName(appName))) return rule.category;
+  if (
+    /^(?:spotify|netflix|hulu|disney\+|prime video|crunchyroll)(?:\.exe)?$/i.test(appName) ||
+    /netflix|prime video|disney\+?|hulu|hbo\s?(?:max)?|crunchyroll|peacock|paramount\s?\+/i.test(
+      `${appName} ${title}`,
+    )
+  )
+    return "drm-stream";
   return undefined;
 }
+
+const copyQuote = (quote: TextQuote): TextQuote => ({
+  exact: quote.exact,
+  ...(quote.prefix === undefined ? {} : { prefix: quote.prefix }),
+  ...(quote.suffix === undefined ? {} : { suffix: quote.suffix }),
+});
+const copyPosition = (position: CapturePosition): CapturePosition => ({
+  ...(position.scrollPct === undefined ? {} : { scrollPct: position.scrollPct }),
+  ...(position.textQuote === undefined ? {} : { textQuote: copyQuote(position.textQuote) }),
+  ...(position.pdfPage === undefined ? {} : { pdfPage: position.pdfPage }),
+  ...(position.mediaSec === undefined ? {} : { mediaSec: position.mediaSec }),
+});
 
 export function applyPolicy(snapshot: CaptureSnapshot): PolicyResult {
   const blocked: BlockedFile[] = [];
@@ -101,8 +174,15 @@ export function applyPolicy(snapshot: CaptureSnapshot): PolicyResult {
   const permittedUrl = (value: string) => {
     try {
       const url = new URL(value);
+      if (
+        /^https?:$/.test(url.protocol) &&
+        [...url.searchParams.values()].some((value) => /^file:|^[a-z]:[\\/]|^\\\\/i.test(value))
+      )
+        return false;
       return (
-        (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password
+        (url.protocol === "http:" || url.protocol === "https:" || url.protocol === "file:") &&
+        !url.username &&
+        !url.password
       );
     } catch {
       return false;
@@ -123,12 +203,19 @@ export function applyPolicy(snapshot: CaptureSnapshot): PolicyResult {
       return [];
     return [
       {
+        tabId: tab.tabId,
+        windowId: tab.windowId,
+        browser: tab.browser,
+        ...(tab.position === undefined ? {} : { position: copyPosition(tab.position) }),
+        ...(tab.selection === undefined ? {} : { selection: copyQuote(tab.selection) }),
         url: tab.url,
         title: tab.title,
         activeInWindow: tab.activeInWindow,
         ...(tab.finalUrl === undefined ? {} : { finalUrl: tab.finalUrl }),
-        // The wire format has no verified selection provenance. Omit until one exists.
+        // Legacy free-form selection has no verified provenance.
         ...(tab.likelyPdf === undefined ? {} : { likelyPdf: tab.likelyPdf }),
+        ...(tab.access === undefined ? {} : { access: tab.access }),
+        ...(tab.summary === undefined ? {} : { summary: tab.summary }),
         engagement: {
           dwellMs: tab.engagement.dwellMs,
           scrollDepthPct: tab.engagement.scrollDepthPct,

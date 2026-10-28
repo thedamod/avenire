@@ -1,6 +1,13 @@
 import * as Crypto from "node:crypto";
-import * as OS from "node:os";
-import { fileURLToPath } from "node:url";
+import { localFilePath } from "./local-file.ts";
+import {
+  cachedNative,
+  collectNative,
+  correlateBrowserMedia,
+  mergeNativeWindows,
+  retainNative,
+} from "./native.ts";
+import { createCaptureContext } from "./research/electron/collectors/capture-context.ts";
 import { CaptureId } from "@avenire/contracts";
 import type {
   CaptureSnapshot,
@@ -8,9 +15,14 @@ import type {
   CapturedTab,
   CapturedWindow,
 } from "@avenire/contracts";
-import { collectForeground } from "./foreground.ts";
+import { cachedForeground, resolveForeground, collectForeground } from "./foreground.ts";
 import { collectSelection } from "./selection.ts";
 import { latestTabs } from "./tabs.ts";
+
+let installId = Crypto.randomBytes(16).toString("hex");
+export function setCaptureDeviceId(id: string) {
+  installId = id;
+}
 
 type Collected = {
   readonly windows?: readonly CapturedWindow[];
@@ -52,7 +64,7 @@ export async function collectSnapshot(
   const results = await Promise.allSettled(
     // The research path collectors include a bounded Windows handle scan.
     collectors.map(([name, collector]) =>
-      withTimeout(collector, name === "foreground" ? 25_000 : 1500),
+      withTimeout(collector, name === "foreground" ? 4000 : 1500),
     ),
   );
   const values: Collected[] = [];
@@ -76,18 +88,20 @@ export async function collectSnapshot(
   // Browser file URLs are device paths, not URLs the server can fetch.
   // Preserve them as native upload candidates; private tabs never become candidates.
   for (const tab of tabs) {
-    if (tab.incognito || !tab.url.startsWith("file:")) continue;
+    if (tab.incognito || !(tab.finalUrl ?? tab.url).startsWith("file:")) continue;
     try {
       browserFiles.push({
         appName: "Browser",
         title: tab.title,
-        filePath: fileURLToPath(tab.url),
+        filePath: localFilePath(tab.finalUrl ?? tab.url),
         foreground: tab.activeInWindow,
       });
     } catch {
       notes.push("A browser file URL could not be resolved on this device.");
     }
   }
+  const native = options.foreground ? await collectNative() : { windows: [], media: [], notes: [] };
+  const correlated = correlateBrowserMedia(native, tabs);
   const platform =
     process.platform === "darwin" || process.platform === "win32" || process.platform === "linux"
       ? process.platform
@@ -95,15 +109,70 @@ export async function collectSnapshot(
   return {
     id: CaptureId.make(Crypto.randomUUID()),
     capturedAt,
-    deviceId: Crypto.createHash("sha256")
-      .update(`${OS.hostname()}\0${OS.userInfo().username}`)
-      .digest("hex")
-      .slice(0, 32),
+    deviceId: installId,
     platform,
-    windows: [...values.flatMap((value) => value.windows ?? []), ...browserFiles],
-    tabs,
-    media: values.flatMap((value) => value.media ?? []),
+    windows: mergeNativeWindows(
+      values.flatMap((value) => value.windows ?? []),
+      correlated.windows,
+      browserFiles,
+    ),
+    tabs: correlated.tabs,
+    media: correlated.media,
     ...(selectionText === undefined ? {} : { selectionText }),
-    collectorNotes: notes,
+    collectorNotes: [...notes, ...correlated.notes],
+  };
+}
+
+/** The hotkey never waits on an OS call, session lookup, disk read, or extraction. */
+export function instantCapture(capturedAt: string, foreground: boolean) {
+  const observation = foreground ? cachedForeground() : { windows: [], notes: [] };
+  const cached = foreground ? cachedNative() : { windows: [], media: [], notes: [] };
+  const native = correlateBrowserMedia(cached, latestTabs());
+  const tabs = native.tabs;
+  const browserFiles: CapturedWindow[] = [];
+  for (const tab of tabs) {
+    if (tab.incognito || !(tab.finalUrl ?? tab.url).startsWith("file:")) continue;
+    try {
+      browserFiles.push({
+        appName: "Browser",
+        title: tab.title,
+        filePath: localFilePath(tab.finalUrl ?? tab.url),
+        foreground: tab.activeInWindow,
+      });
+    } catch {
+      /* Unsupported file URL: never a server URL. */
+    }
+  }
+  const snapshot: CaptureSnapshot = {
+    id: CaptureId.make(Crypto.randomUUID()),
+    capturedAt,
+    deviceId: installId,
+    platform:
+      process.platform === "darwin" || process.platform === "win32" ? process.platform : "linux",
+    windows: mergeNativeWindows(native.windows, browserFiles),
+    tabs,
+    media: native.media,
+    collectorNotes: [...observation.notes, ...native.notes],
+  };
+  return {
+    snapshot,
+    resolve: async () => {
+      const notes: string[] = [];
+      const ctx = createCaptureContext(notes, 9000);
+      const [resolved, filled] = await Promise.all([
+        resolveForeground(observation, ctx),
+        foreground
+          ? collectNative(observation.app, ctx)
+          : Promise.resolve({ windows: [], media: [], notes: [] }),
+      ]);
+      const correlated = correlateBrowserMedia(retainNative(filled, cached), tabs);
+      return {
+        ...snapshot,
+        tabs: correlated.tabs,
+        windows: mergeNativeWindows(resolved.windows, correlated.windows, browserFiles),
+        media: correlated.media,
+        collectorNotes: [...resolved.notes, ...notes],
+      };
+    },
   };
 }

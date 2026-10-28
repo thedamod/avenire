@@ -9,7 +9,7 @@ import {
   StorageKey,
 } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
-import { ingestionJob, file, type FileRow } from "@avenire/database/schema";
+import { ingestionJob, file, sourceUpload, type FileRow } from "@avenire/database/schema";
 import { Storage } from "@avenire/storage/storage";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
@@ -30,9 +30,13 @@ import {
   type StoredDocument,
 } from "./document.ts";
 import { extract, type ExtractionServices } from "./extract/index.ts";
-import { EXTRACTOR_VERSION, UnsupportedSource } from "./extract/types.ts";
+import { EXTRACTOR_VERSION, SourceAccessError, UnsupportedSource } from "./extract/types.ts";
 import { FileIndexer } from "./indexer.ts";
 import { claimPredicate, type IngestionClaim, IngestionLeaseLost } from "./claim.ts";
+import { readFile } from "node:fs/promises";
+import { sniff } from "./extract/resolve.ts";
+import { spoolMediaSource } from "./source.ts";
+import { MEDIA_LIMITS } from "./extract/media.ts";
 import { sha256Hex } from "./text.ts";
 
 export class IngestionError extends Schema.TaggedError<IngestionError>()("IngestionError", {
@@ -134,8 +138,11 @@ export const IngestionPipelineLive = Layer.effect(
       job: IngestionTask,
       found: FileRow,
       bytes: Uint8Array | null,
+      cached?: StoredDocument,
+      local?: { source: { path: string; directory: string; sizeBytes: number }; sha256: string },
     ) {
-      const contentHash = bytes === null ? null : sha256Hex(bytes);
+      if (cached) return { document: cached, publication: undefined };
+      const contentHash = local?.sha256 ?? (bytes === null ? null : sha256Hex(bytes));
       const storedKey = reusableDocumentKey(found, contentHash);
       const stored =
         storedKey === null ? Option.none<StoredDocument>() : yield* loadDocument(storedKey);
@@ -144,8 +151,10 @@ export const IngestionPipelineLive = Layer.effect(
       }
       const fresh = yield* extract({
         ...found,
+        enrichment: job.background ? "full" : "deferred",
         acquisitionMode: found.storageKey === null ? "public-url" : "stored",
         bytes,
+        ...(local ? { localMedia: local.source } : {}),
         transcriptScope: { userId: job.userId, fileId: job.fileId },
       });
       const document: StoredDocument = Option.isSome(stored)
@@ -171,10 +180,57 @@ export const IngestionPipelineLive = Layer.effect(
 
     const run = Effect.fn("IngestionPipeline.run")(function* (job: IngestionTask) {
       const found = yield* loadFile(job).pipe(stage("loading the file"));
-      const bytes = yield* readSource(found).pipe(stage("reading the source"));
+      // A completed upload binds the verified digest to these immutable source bytes.
+      const [verified] =
+        found.storageKey === null
+          ? []
+          : yield* database
+              .use((db) =>
+                db
+                  .select({ sha256: sourceUpload.sha256 })
+                  .from(sourceUpload)
+                  .where(
+                    and(
+                      eq(sourceUpload.userId, job.userId),
+                      eq(sourceUpload.completedFileId, found.id),
+                      eq(sourceUpload.storageKey, found.storageKey!),
+                      eq(sourceUpload.status, "completed"),
+                    ),
+                  )
+                  .limit(1),
+              )
+              .pipe(stage("checking source identity"));
+      const cachedKey = verified ? reusableDocumentKey(found, verified.sha256) : null;
+      const cached = cachedKey
+        ? yield* loadDocument(cachedKey).pipe(stage("reading extracted content"))
+        : Option.none<StoredDocument>();
+      const reusable =
+        Option.isSome(cached) && !shouldRetryDocument(cached.value) ? cached.value : undefined;
+      let local =
+        !reusable &&
+        found.storageKey &&
+        storage.stream &&
+        (found.kind === "video" || found.kind === "audio")
+          ? yield* storage.stream(StorageKey.make(found.storageKey)).pipe(
+              Effect.flatMap((stream) =>
+                spoolMediaSource(stream, MEDIA_LIMITS.sourceBytes, verified?.sha256),
+              ),
+              stage("reading the source"),
+            )
+          : undefined;
+      let bytes =
+        reusable || local ? null : yield* readSource(found).pipe(stage("reading the source"));
+
+      if (local && sniff(local.prefix) !== undefined && sniff(local.prefix) !== "media") {
+        // Signatures still win over a mislabeled MIME, as they do for buffered sources.
+        bytes = yield* Effect.tryPromise(() => readFile(local!.source.path)).pipe(
+          stage("reading the source"),
+        );
+        local = undefined;
+      }
 
       yield* setStatus(job, "extracting").pipe(stage("extracting"));
-      const { document, publication } = yield* documentFor(job, found, bytes).pipe(
+      const { document, publication } = yield* documentFor(job, found, bytes, reusable, local).pipe(
         stage("extracting"),
       );
       yield* recordCoverage(job, document.coverage).pipe(stage("extracting"));
@@ -182,10 +238,16 @@ export const IngestionPipelineLive = Layer.effect(
       if (document.sections.length === 0) {
         return yield* new IngestionError({
           stage: "extracting",
-          cause: [
-            "Nothing searchable was extracted",
-            ...document.coverage.parts.flatMap((part) => (part.detail ? [part.detail] : [])),
-          ].join(". "),
+          cause:
+            document.access !== undefined && document.access !== "open"
+              ? new SourceAccessError({
+                  access: document.access,
+                  cause: "No searchable content behind the access wall.",
+                })
+              : [
+                  "Nothing searchable was extracted",
+                  ...document.coverage.parts.flatMap((part) => (part.detail ? [part.detail] : [])),
+                ].join(". "),
         });
       }
 
@@ -199,9 +261,11 @@ export const IngestionPipelineLive = Layer.effect(
               userId: job.userId,
               fileId: job.fileId,
               title,
+              deferGraph: !job.background,
               sections: document.sections,
               claim: job,
               source: found,
+              ...(document.access === undefined ? {} : { access: document.access }),
               retryAfterMinutes: extractionRetryMinutes({
                 ...document,
                 retryCount: Math.max(document.retryCount ?? 0, job.attempts - 1),
@@ -237,7 +301,7 @@ export const IngestionPipelineLive = Layer.effect(
     });
 
     return IngestionPipeline.of({
-      run: (job) => run(job).pipe(Effect.provideContext(services)),
+      run: (job) => Effect.scoped(run(job)).pipe(Effect.provideContext(services)),
     });
   }),
 );

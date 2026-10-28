@@ -190,10 +190,40 @@ const stageLabels: Record<string, string> = {
   graphing: "Linking ideas",
   foldering: "Finding a notebook",
 };
-export function sourceState(job: IngestionJob | undefined): SourceState | null {
+function siteOf(file: Pick<LibraryFile, "origin" | "sourceUrl">): string | null {
+  const url = file.origin?._tag === "Web" ? file.origin.url : file.sourceUrl;
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? parsed.hostname.replace(/^www\./, "")
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Paywall and login states come from `file.access`, never from error text (as on web). */
+export function sourceState(
+  job: IngestionJob | undefined,
+  file: Pick<LibraryFile, "access" | "origin" | "sourceUrl">,
+): SourceState | null {
+  const busy = !!job && working.has(job.status);
+  // A re-capture after logging in is read again; until then the stub keeps its access state.
+  if (!busy && job?.status !== "paused") {
+    if (file.access === "paywalled")
+      return {
+        kind: "paywall",
+        reason: "Behind a paywall. Saved the title and abstract only.",
+      };
+    if (file.access === "login-required")
+      return {
+        kind: "login",
+        reason: `Needs your ${siteOf(file) ?? "site"} login. Capture it again on your computer with logged-in capture on.`,
+      };
+  }
   if (!job) return null;
-  if (working.has(job.status))
-    return { kind: "processing", label: stageLabels[job.status] ?? "Reading" };
+  if (busy) return { kind: "processing", label: stageLabels[job.status] ?? "Reading" };
   if (job.status === "paused")
     return {
       kind: "paused",
@@ -203,22 +233,11 @@ export function sourceState(job: IngestionJob | undefined): SourceState | null {
     job.error ?? "",
     ...(job.coverage?.parts.map((part) => part.detail ?? "") ?? []),
   ].join(" ");
-  if (/paywall|subscri/i.test(detail))
-    return {
-      kind: "paywall",
-      reason: "Behind a paywall. Saved the title and abstract only.",
-    };
   if (job.status === "indexed") return null;
   if (/password|encrypt/i.test(detail))
     return {
       kind: "password",
       reason: "Couldn't open it. The file is password-protected.",
-    };
-  if (/log ?in|sign ?in|auth|401|403/i.test(detail))
-    return {
-      kind: "login",
-      reason:
-        "Needs your site login. Capture it again on your computer with logged-in capture on.",
     };
   return job.status === "failed"
     ? {

@@ -1,4 +1,9 @@
-import { CreateSourceUpload, CurrentUser, SourceUploadId } from "@avenire/contracts";
+import {
+  CreateSourceUpload,
+  CurrentUser,
+  SourceUploadId,
+  SourceUploadAction,
+} from "@avenire/contracts";
 import * as Effect from "effect/Effect";
 import { decodeRequest, domainResponse } from "./domainHttp.ts";
 import { HttpRequestError, readJsonBody } from "./http.ts";
@@ -64,4 +69,53 @@ export const cancelUploadResponse = (request: Request, id: string) =>
       return yield* asHttpError((yield* SourceUploads).cancel((yield* CurrentUser).id, uploadId));
     }),
     204,
+  );
+
+/** files-sdk's upload protocol is authorized against one durable source ticket. */
+export const completeUploadResponse = (request: Request, id: string) =>
+  uploadResponse(
+    request,
+    Effect.gen(function* () {
+      const uploadId = yield* decodeRequest(SourceUploadId, id);
+      const input = yield* readJsonBody(request).pipe(
+        Effect.flatMap((body) => decodeRequest(SourceUploadAction, body)),
+      );
+      const uploads = yield* SourceUploads;
+      const user = yield* CurrentUser;
+      if (input.op === "presign") {
+        const info = input.files[0]!;
+        const direct = yield* asHttpError(uploads.prepare(user.id, uploadId, info));
+        return {
+          uploads: [
+            {
+              id: uploadId,
+              key: uploadId,
+              target: direct ?? {
+                method: "PUT",
+                // Resolve against the client app origin, including behind a reverse proxy.
+                url: `/api/library/uploads/${uploadId}`,
+                headers: { "content-type": info.type },
+              },
+            },
+          ],
+        };
+      }
+      const completion = input.completions[0]!;
+      if (completion.id !== uploadId || completion.key !== uploadId)
+        return yield* new HttpRequestError({
+          status: 400,
+          message: "Completion must match this upload ticket.",
+        });
+      const file = yield* asHttpError(uploads.complete(user.id, uploadId, request));
+      return {
+        files: [
+          {
+            key: uploadId,
+            size: file.sizeBytes ?? 0,
+            type: file.mimeType ?? "application/octet-stream",
+          },
+        ],
+        sourceFile: file,
+      };
+    }),
   );

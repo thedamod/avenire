@@ -10,6 +10,7 @@ import {
   type StorageKey,
   type FileId,
   type UserId,
+  type SourceAccess,
 } from "@avenire/contracts";
 import { Database } from "@avenire/database/client";
 import { advanceCorpusRevision, lockCorpus } from "@avenire/database/corpus";
@@ -55,7 +56,9 @@ export interface IndexInput {
   readonly sections: ReadonlyArray<ChunkSection>;
   readonly claim?: IngestionClaim;
   readonly source?: SourceSnapshot;
+  readonly access?: SourceAccess;
   /** Publish useful content while reserving the next extraction retry in the same commit. */
+  readonly deferGraph?: boolean;
   readonly retryAfterMinutes?: number | undefined;
   /** An extracted object staged before publication; its pointer commits with the index. */
   readonly document?: {
@@ -295,19 +298,21 @@ export const FileIndexerLive = Layer.effect(
           search: searchVector(input.title, value),
         })),
       ).pipe(failedWhile("writing"));
-      if (onStage) yield* onStage("graphing");
+      if (onStage && !input.deferGraph) yield* onStage("graphing");
       const pending = [...graphPending, ...rows].map(({ id, content }) => ({
         id: ChunkId.make(id),
         content,
       }));
-      const graph = yield* graphIndexer
-        .prepareChunks({
-          userId: input.userId,
-          fileId: input.fileId,
-          title: input.title,
-          chunks: pending,
-        })
-        .pipe(failedWhile("graphing"));
+      const graph = input.deferGraph
+        ? { publish: async (_tx: DatabaseTransaction) => {}, stats: { entities: 0, relations: 0 } }
+        : yield* graphIndexer
+            .prepareChunks({
+              userId: input.userId,
+              fileId: input.fileId,
+              title: input.title,
+              chunks: pending,
+            })
+            .pipe(failedWhile("graphing"));
       const newFolderId = yield* newId(FolderId).pipe(
         Effect.provideService(Crypto.Crypto, crypto),
         failedWhile("writing"),
@@ -340,7 +345,7 @@ export const FileIndexerLive = Layer.effect(
           if (changed) await write(tx, input, diff, rows);
           await graph.publish(tx);
           for (const ids of Arr.chunksOf(
-            pending.map((row) => row.id),
+            (input.deferGraph ? [] : pending).map((row) => row.id),
             BATCH_SIZE,
           )) {
             await tx
@@ -354,6 +359,12 @@ export const FileIndexerLive = Layer.effect(
                 ),
               );
           }
+          // Access observations require the same live claim fence as searchable publication.
+          if (input.claim && input.access !== undefined)
+            await tx
+              .update(file)
+              .set({ access: input.access })
+              .where(and(eq(file.id, input.fileId), eq(file.userId, input.userId)));
           if (input.document) {
             await tx
               .update(file)
@@ -384,12 +395,14 @@ export const FileIndexerLive = Layer.effect(
               .set({
                 // Searchable publication is complete even when OCR needs a later retry.
                 status: "indexed",
-                error:
-                  input.retryAfterMinutes === undefined
+                error: input.deferGraph
+                  ? "Enrichment pending."
+                  : input.retryAfterMinutes === undefined
                     ? null
                     : "Partial extraction; retry scheduled.",
-                lockedUntil:
-                  input.retryAfterMinutes === undefined
+                lockedUntil: input.deferGraph
+                  ? sql`now()`
+                  : input.retryAfterMinutes === undefined
                     ? null
                     : sql`now() + (${input.retryAfterMinutes} * interval '1 minute')`,
                 claimToken: null,

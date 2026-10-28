@@ -1,3 +1,6 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+const execFileAsync = promisify(execFile);
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -110,4 +113,70 @@ export async function resolveObsidianNote(notes: string[] = []): Promise<string 
   }
   notes.push(`obsidian:vaults=${vaults.length}:miss`);
   return undefined;
+}
+
+export async function resolveObsidianOpenNotes(
+  notes: string[] = [],
+  runningOverride?: boolean,
+): Promise<string[]> {
+  const running = runningOverride ?? (await isObsidianRunning(notes));
+  if (running === false) {
+    notes.push("obsidian:open:not-running");
+    return [];
+  }
+  if (running === undefined) notes.push("obsidian:open:running-unknown");
+  const dir = obsidianConfigDir();
+  if (!dir) {
+    notes.push("obsidian:open:no-config-dir");
+    return [];
+  }
+  const cfg = readJson(join(dir, "obsidian.json")) as ObsidianJson | undefined;
+  const vaults = Object.values(cfg?.vaults ?? {})
+    .map((v) => v?.path)
+    .filter((p): p is string => !!p)
+    .slice(0, 5);
+  if (vaults.length === 0) {
+    notes.push("obsidian:open:no-vaults");
+    return [];
+  }
+  const out: string[] = [];
+  for (const vault of vaults) {
+    try {
+      const rels = openNotesFromWorkspace(readJson(join(vault, ".obsidian", "workspace.json")));
+      for (const rel of rels) {
+        const full = join(vault, rel);
+        try {
+          if (existsSync(full) && out.length < 10) out.push(full);
+        } catch {
+          continue;
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+  notes.push(`obsidian:open:vaults=${vaults.length}:files=${out.length}`);
+  return out;
+}
+
+// true = running, false = not running, undefined = check failed (fail open).
+async function isObsidianRunning(notes: string[]): Promise<boolean | undefined> {
+  try {
+    if (process.platform === "win32") {
+      const { stdout } = await execFileAsync(
+        "tasklist",
+        ["/FI", "IMAGENAME eq Obsidian.exe", "/NH"],
+        { timeout: 3000 },
+      );
+      if (/no tasks/i.test(stdout)) return false;
+      return /obsidian\.exe/i.test(stdout) ? true : false;
+    }
+    const { stdout } = await execFileAsync("pgrep", ["-ix", "obsidian"], { timeout: 3000 });
+    return stdout.trim().length > 0;
+  } catch (e) {
+    // pgrep exits 1 when nothing matches — that MEANS not running.
+    if ((e as { code?: unknown })?.code === 1) return false;
+    notes.push("obsidian:running-check-failed");
+    return undefined;
+  }
 }

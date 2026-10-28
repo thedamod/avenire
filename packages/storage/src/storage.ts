@@ -6,10 +6,11 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
-import { Files, FilesError, type MultipartOptions } from "files-sdk";
+import { Files, FilesError, type MultipartOptions, UploadControl } from "files-sdk";
 import type { UploadThingAdapter } from "files-sdk/uploadthing";
 import { createHash } from "node:crypto";
 
+import { prepareSourceUpload } from "./source-upload.ts";
 import { StorageKey } from "@avenire/contracts";
 
 export class StorageError extends Schema.TaggedError<StorageError>()("StorageError", {
@@ -67,6 +68,14 @@ export class Storage extends Context.Service<
       key: StorageKey,
       options: SignedUploadOptions,
     ) => Effect.Effect<Awaited<ReturnType<Files["signedUploadUrl"]>>, StorageError>;
+    /** Size-bound provider capability. Undefined means this driver uses the app PUT route. */
+    readonly prepareSourceUpload?: (
+      key: StorageKey,
+      options: { contentType: string; sizeBytes: number; expiresInSeconds: number },
+    ) => Effect.Effect<import("files-sdk").SignedUpload | null, StorageError>;
+    readonly stream?: (
+      key: StorageKey,
+    ) => Effect.Effect<ReadableStream<Uint8Array>, StorageError | ObjectNotFound>;
     readonly files: Files;
   }
 >()("avenire/storage/Storage") {}
@@ -81,6 +90,8 @@ export const StorageConfig = Config.all({
   r2AccessKeyId: Config.option(Config.Redacted("R2_ACCESS_KEY_ID")),
   r2SecretAccessKey: Config.option(Config.Redacted("R2_SECRET_ACCESS_KEY")),
   awsRegion: Config.String("AWS_REGION").pipe(Config.withDefault("us-east-1")),
+  s3Endpoint: Config.option(Config.String("S3_ENDPOINT")),
+  s3ForcePathStyle: Config.Boolean("S3_FORCE_PATH_STYLE").pipe(Config.withDefault(false)),
   uploadthingToken: Config.option(Config.Redacted("UPLOADTHING_TOKEN")),
   // UploadThing's free tier rejects private files; public-read files get a permanent CDN URL.
   uploadthingAcl: Config.Literals(["private", "public-read"], "UPLOADTHING_ACL").pipe(
@@ -111,6 +122,27 @@ const idempotent = <A>(effect: Effect.Effect<A, StorageError>) =>
     }),
   );
 
+/** `{ name, message, code }` down the cause chain; Error objects otherwise log as `{}`. */
+const describeCause = (cause: unknown) => {
+  const chain: Array<{ name: string | undefined; message: string | undefined; code: unknown }> = [];
+  for (let current = cause, depth = 0; current && depth < 5; depth += 1) {
+    const error = current as {
+      name?: string;
+      _tag?: string;
+      message?: string;
+      code?: unknown;
+      cause?: unknown;
+    };
+    chain.push({
+      name: error._tag ?? error.name,
+      message: error.message?.slice(0, 300),
+      code: error.code,
+    });
+    current = error.cause;
+  }
+  return chain;
+};
+
 const readAll = async (files: Files, prefix: StorageKey) => {
   const objects: Array<{ readonly key: StorageKey; readonly size: number }> = [];
   for await (const file of files.listAll({ prefix })) {
@@ -127,8 +159,27 @@ const notFound =
 const makeStorage = (files: Files): Storage["Service"] =>
   Storage.of({
     files,
-    put: (key, body, options) =>
-      attempt("put", key, () => files.upload(key, body, options)).pipe(Effect.asVoid),
+    stream: (key) =>
+      idempotent(
+        attempt("stream", key, async () => (await files.download(key, { as: "stream" })).stream()),
+      ).pipe(notFound(key)),
+    prepareSourceUpload: (key, options) =>
+      attempt("prepareSourceUpload", key, () => prepareSourceUpload(files, key, options)),
+    put: (key, body, options) => {
+      const replayable = !(body instanceof ReadableStream);
+      return attempt("put", key, () =>
+        files.upload(key, body, {
+          ...options,
+          retries: replayable ? 2 : 0,
+          ...(replayable && files.capabilities.multipart ? { control: new UploadControl() } : {}),
+        }),
+      ).pipe(
+        Effect.tapError((error) =>
+          Effect.logWarning("Storage put failed", { key, cause: describeCause(error.cause) }),
+        ),
+        Effect.asVoid,
+      );
+    },
     get: (key) =>
       idempotent(
         attempt("get", key, async () => {
@@ -284,7 +335,17 @@ const makeAdapter = (config: StorageConfig): Effect.Effect<FilesAdapter> => {
       );
     case "s3":
       return Effect.promise(() => import("files-sdk/s3")).pipe(
-        Effect.map(({ s3 }) => s3({ bucket: config.bucket, region: config.awsRegion })),
+        Effect.map(({ s3 }) =>
+          s3({
+            bucket: config.bucket,
+            region: config.awsRegion,
+            forcePathStyle: config.s3ForcePathStyle,
+            ...Option.match(config.s3Endpoint, {
+              onNone: () => ({}),
+              onSome: (endpoint) => ({ endpoint }),
+            }),
+          }),
+        ),
       );
     case "uploadthing":
       // Private (default): every read goes through a short-lived signed URL (our /a/ links mint them).

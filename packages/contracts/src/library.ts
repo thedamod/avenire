@@ -6,6 +6,7 @@
  */
 import * as Schema from "effect/Schema";
 
+import { CaptureOrigin, SourceAccess } from "./capture.ts";
 import { CaptureId, FolderId, FileId, FileEventId, StorageKey } from "./ids.ts";
 
 export const FileKind = Schema.Literals([
@@ -26,7 +27,14 @@ export type FilePlacement = typeof FilePlacement.Type;
 
 /** Where the file entered the library. */
 /** `user` = written in the note editor; `chat` = saved from a chat or an ephemeral answer. */
-export const FileSource = Schema.Literals(["upload", "capture", "ruth", "ruth-cloud", "user", "chat"]);
+export const FileSource = Schema.Literals([
+  "upload",
+  "capture",
+  "ruth",
+  "ruth-cloud",
+  "user",
+  "chat",
+]);
 export type FileSource = typeof FileSource.Type;
 
 export const FileEventKind = Schema.Literals(["opened", "edited", "captured", "uploaded"]);
@@ -53,6 +61,8 @@ export const LibraryFile = Schema.Struct({
   /** Archive time (ISO); null while active. */
   archivedAt: Schema.NullOr(Schema.String),
   sourceUrl: Schema.NullOr(Schema.String),
+  origin: Schema.NullOr(CaptureOrigin),
+  access: SourceAccess,
   storageKey: Schema.NullOr(StorageKey),
   mimeType: Schema.NullOr(Schema.String),
   sizeBytes: Schema.NullOr(Schema.Number),

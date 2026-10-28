@@ -17,7 +17,9 @@ import { Button, buttonVariants } from "@avenire/ui/components/button";
 import { Progress } from "@avenire/ui/components/progress";
 import { Check, CircleAlert, Loader2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
-import { useApi, useStream } from "~/lib/rpc";
+import { useApi } from "~/lib/rpc";
+import { SourceWorkQueue } from "@avenire/capture/work-queue";
+import { useIngestionStream } from "./ingestionStream";
 import { uploadSource } from "./uploadSource";
 import { ingestionState, isPublishedPartialRetry } from "./ingestion";
 
@@ -49,49 +51,51 @@ export function SourceUploadProvider({ children }: { children: React.ReactNode }
   const api = useApi();
   const toastId = useId();
   const queue = useRef<Entry[]>([]);
-  const running = useRef(false);
+  const transfers = useRef(new SourceWorkQueue());
   const scheduled = useRef(new Set<string>());
   const [entries, setEntries] = useState<Entry[]>([]);
   const [visible, setVisible] = useState(false);
 
   const update = useCallback((id: string, patch: Partial<Entry>) => {
     setEntries((previous) =>
-      previous.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)),
+      previous.every(
+        (entry) =>
+          entry.id !== id ||
+          Object.entries(patch).every(([key, value]) => entry[key as keyof Entry] === value),
+      )
+        ? previous
+        : previous.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)),
     );
   }, []);
 
   const drain = useCallback(async () => {
-    if (running.current) return;
-    running.current = true;
-    try {
-      let entry: Entry | undefined;
-      while ((entry = queue.current.shift())) {
-        const current = entry;
-        if (!current.file) continue;
-        try {
-          update(current.id, { stage: "preparing", percent: 0, error: undefined });
-          // Hash one file at a time instead of retaining several large buffers.
-          // eslint-disable-next-line no-await-in-loop
-          const source = await uploadSource(current.file, {
-            idempotencyKey: current.id,
-            onStage: (stage) => update(current.id, { stage }),
-            onProgress: (percent) => update(current.id, { percent }),
-          });
-          update(current.id, { stage: "processing", source, file: null, percent: 100 });
-          invalidateLibrary(api, ["files", "folders"]);
-        } catch (cause) {
-          update(current.id, {
-            stage: "failed",
-            error: cause instanceof Error ? cause.message : "Upload failed. Try again.",
-          });
-        } finally {
-          scheduled.current.delete(current.id);
-        }
-      }
-    } finally {
-      running.current = false;
-    }
-    // eslint-disable-next-line react/memo-dependencies -- Completion after await must invalidate the current runtime.
+    const batch = queue.current.splice(0);
+    await Promise.all(
+      batch.map((entry) =>
+        transfers.current.run(entry.file?.size ?? 0, async () => {
+          const current = entry;
+          if (!current.file) return;
+          try {
+            update(current.id, { stage: "preparing", percent: 0, error: undefined });
+            // A shared preparation queue hashes one file at a time in a worker.
+            const source = await uploadSource(current.file, {
+              idempotencyKey: current.id,
+              onStage: (stage) => update(current.id, { stage }),
+              onProgress: (percent) => update(current.id, { percent }),
+            });
+            update(current.id, { stage: "processing", source, file: null, percent: 100 });
+            invalidateLibrary(api, ["files", "folders"]);
+          } catch (cause) {
+            update(current.id, {
+              stage: "failed",
+              error: cause instanceof Error ? cause.message : "Upload failed. Try again.",
+            });
+          } finally {
+            scheduled.current.delete(current.id);
+          }
+        }),
+      ),
+    );
   }, [api, update]);
 
   const add = useCallback(
@@ -140,7 +144,7 @@ export function SourceUploadProvider({ children }: { children: React.ReactNode }
   const watching = entries.some(
     (entry) =>
       entry.stage === "processing" &&
-      (!entry.job || ingestionState(entry.job)?.kind === "processing"),
+      (!entry.job || ingestionState(entry.job, null)?.kind === "processing"),
   );
 
   useEffect(() => {
@@ -205,7 +209,7 @@ export function SourceUploadProvider({ children }: { children: React.ReactNode }
 }
 
 function UploadIngestionWatcher({ onJob }: { onJob: (job: IngestionJob) => void }) {
-  useStream((client) => client["library.watchIngestion"](), onJob, "source-upload-ingestion");
+  useIngestionStream(onJob);
   return null;
 }
 
@@ -214,7 +218,7 @@ function entryStatus(entry: Entry) {
     return { label: entry.error ?? "Upload failed", failed: true, done: true };
   if (entry.stage === "processing") {
     if (!entry.job) return { label: "Waiting to read", failed: false, done: false };
-    const state = ingestionState(entry.job);
+    const state = ingestionState(entry.job, entry.source ?? null);
     if (state?.kind === "processing") return { label: state.label, failed: false, done: false };
     if (entry.job.status === "indexed" || isPublishedPartialRetry(entry.job))
       return {

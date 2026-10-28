@@ -15,15 +15,7 @@ export const extractPublicDocument = Effect.fn("extractPublicDocument")(function
   kind: FileKind,
 ) {
   const source = yield* acquireSource(url, { maxBytes: MAX_PUBLIC_DOCUMENT_BYTES }).pipe(
-    Effect.mapError((cause) =>
-      cause.status === 401 || cause.status === 403
-        ? new UnsupportedSource({
-            kind,
-            reason:
-              "This URL requires access. Acquire the original on your device and upload it. Server acquisition never uses your session credentials.",
-          })
-        : new ExtractionError({ source: "public-document-fetch", cause }),
-    ),
+    Effect.mapError((cause) => new ExtractionError({ source: "public-document-fetch", cause })),
   );
   // Signatures take precedence: extensionless PDFs and misleading Content-Type headers work.
   if (sniff(source.bytes) === "pdf") return yield* extractPdf(source.bytes);

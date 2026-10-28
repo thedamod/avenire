@@ -1,4 +1,10 @@
-import { ChunkKind, ChunkLocation, ExtractionCoverage, type FileKind } from "@avenire/contracts";
+import {
+  ChunkKind,
+  ChunkLocation,
+  ExtractionCoverage,
+  SourceAccess,
+  type FileKind,
+} from "@avenire/contracts";
 import * as Schema from "effect/Schema";
 import type { TranscriptScope } from "./transcript-cache.ts";
 
@@ -6,10 +12,11 @@ import type { TranscriptScope } from "./transcript-cache.ts";
  * Bump when any extractor's output changes. Stored documents from older versions
  * are re-extracted on the next ingest; same-version ones are reused.
  */
-export const EXTRACTOR_VERSION = 1;
+export const EXTRACTOR_VERSION = 2;
 
 /** What an extractor needs to know about a source, independent of how it's stored. */
 export interface SourceInput {
+  readonly enrichment?: "deferred" | "full";
   readonly kind: FileKind;
   readonly title: string;
   readonly mimeType: string | null;
@@ -20,7 +27,13 @@ export interface SourceInput {
   readonly acquisitionMode?: "stored" | "public-url";
   /** The stored original, when there is one. */
   readonly bytes: Uint8Array | null;
+  readonly localMedia?: {
+    readonly path: string;
+    readonly directory: string;
+    readonly sizeBytes: number;
+  };
   readonly transcriptScope?: TranscriptScope;
+  readonly access?: SourceAccess;
 }
 
 export const ExtractedSection = Schema.Struct({
@@ -36,6 +49,7 @@ export const ExtractedDocument = Schema.Struct({
   title: Schema.optionalKey(Schema.String),
   sections: Schema.Array(ExtractedSection),
   coverage: ExtractionCoverage,
+  access: Schema.optionalKey(SourceAccess),
 });
 export type ExtractedDocument = typeof ExtractedDocument.Type;
 
@@ -91,3 +105,13 @@ export class UnsupportedSource extends Schema.TaggedError<UnsupportedSource>()(
     return `Cannot ingest ${this.kind}: ${this.reason}`;
   }
 }
+
+/** Typed evidence from source acquisition, independent of extraction coverage. */
+export class SourceAccessError extends Schema.TaggedError<SourceAccessError>()(
+  "SourceAccessError",
+  {
+    access: SourceAccess,
+    status: Schema.optionalKey(Schema.Number),
+    cause: Schema.Defect(),
+  },
+) {}

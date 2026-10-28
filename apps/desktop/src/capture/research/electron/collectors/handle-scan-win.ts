@@ -1,6 +1,7 @@
+import { normalizeCapturePath } from "../../../local-file.ts";
 import { pickBestPath, rankCandidatePaths } from "../../src/capture/path-ranking.ts";
 import { SCANNABLE_EXTENSIONS } from "../../src/capture/scannable-files.ts";
-import type { CaptureContext } from "./capture-context.ts";
+import { collectorTimeout, type CaptureContext } from "./capture-context.ts";
 import { describeExecError } from "./exec-note.ts";
 import { execPowerShell } from "./ps-queue.ts";
 
@@ -164,7 +165,7 @@ public static class HandleScan {
                         if (GetFileType(dup) != FILE_TYPE_DISK) continue;
                         StringBuilder sb = new StringBuilder(1024);
                         uint n = GetFinalPathNameByHandle(dup, sb, 1024, 0);
-                        if (n > 1024 && n < 32768) {
+                        if (n >= 1024 && n < 32768) {
                             sb = new StringBuilder((int)n + 1);
                             n = GetFinalPathNameByHandle(dup, sb, n + 1, 0);
                         }
@@ -217,10 +218,7 @@ export type HandleScanParse = { diag: string; perPid: Map<number, PidScan> };
 // \\?\C:\x and \\?\UNC\srv\share\x -> DOS spellings (the C# already does this;
 // repeated here so a stray prefix can never reach existsSync or ranking).
 export function cleanFinalPath(p: string): string {
-  const t = p.trim();
-  if (/^\\\\\?\\UNC\\/i.test(t)) return "\\\\" + t.slice(8);
-  if (t.startsWith("\\\\?\\")) return t.slice(4);
-  return t;
+  return normalizeCapturePath(p.trim()) ?? "";
 }
 
 // Pure: ::DIAG:: line + grouped ::PID:: sections. Unknown junk lines (a stray
@@ -257,7 +255,8 @@ export function parseHandleScanOutput(stdout: string): HandleScanParse {
 export async function scanProcessFilesBatch(
   pids: number[] | (() => number[]),
   notes: string[],
-  timeoutMs = 12000,
+  timeoutMs = 4000,
+  deadline?: number,
 ): Promise<Map<number, string[]>> {
   const out = new Map<number, string[]>();
   let taken: number[] = [];
@@ -269,7 +268,12 @@ export async function scanProcessFilesBatch(
         );
         return buildHandleScanScript(taken);
       },
-      { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, notes },
+      {
+        timeout: Math.min(timeoutMs, 4000),
+        ...(deadline === undefined ? {} : { deadline }),
+        maxBuffer: 8 * 1024 * 1024,
+        notes,
+      },
     );
     const { diag, perPid } = parseHandleScanOutput(stdout);
     notes.push(`win:scan:batch:pids=${taken.length} ${diag}`.trim());
@@ -292,6 +296,7 @@ export type BatchExec = (
   take: () => number[],
   notes: string[],
   timeoutMs: number,
+  deadline?: number,
 ) => Promise<Map<number, string[]>>;
 
 type Deferred = { resolve: (v: string[]) => void };
@@ -307,11 +312,12 @@ const batchers = new WeakMap<CaptureContext, BatcherState>();
 export function requestProcessScan(
   ctx: CaptureContext,
   pid: number,
-  timeoutMs = 12000,
+  timeoutMs = 4000,
   exec: BatchExec = scanProcessFilesBatch,
   windowMs = 10,
 ): Promise<string[]> {
-  if (!Number.isInteger(pid) || pid <= 0) return Promise.resolve([]);
+  if (!Number.isInteger(pid) || pid <= 0 || Date.now() >= ctx.deadline) return Promise.resolve([]);
+  timeoutMs = collectorTimeout(ctx, timeoutMs);
   let st = batchers.get(ctx);
   if (!st) {
     st = { results: new Map() };
@@ -353,7 +359,7 @@ function startBatch(
     };
     let result = new Map<number, string[]>();
     try {
-      result = await exec(take, ctx.notes, batch.timeoutMs);
+      result = await exec(take, ctx.notes, collectorTimeout(ctx, batch.timeoutMs), ctx.deadline);
     } catch (e) {
       ctx.notes.push(`win:scan:fail:${describeExecError(e)}`);
     }
@@ -367,7 +373,7 @@ function startBatch(
 export async function scanProcessFiles(
   pid: number,
   notes: string[] = [],
-  timeoutMs = 12000,
+  timeoutMs = 4000,
   ctx?: CaptureContext,
   windowTitle?: string,
 ): Promise<string | undefined> {

@@ -25,6 +25,10 @@ export class Database extends Context.Service<
   Database,
   {
     readonly db: DatabaseClient;
+    readonly listen?: (
+      channel: string,
+      callback: (payload: string) => void,
+    ) => Promise<{ unlisten: () => Promise<void> }>;
     readonly use: <A>(fn: (db: DatabaseClient) => Promise<A>) => Effect.Effect<A, DatabaseError>;
     readonly useTransaction: <A>(
       fn: (tx: DatabaseTransaction) => Promise<A>,
@@ -47,7 +51,7 @@ export const DatabaseLive = Layer.effect(
   Database,
   Effect.gen(function* () {
     const url = yield* DatabaseConfig;
-    const { db } = yield* Effect.acquireRelease(
+    const { db, sql } = yield* Effect.acquireRelease(
       Effect.sync(() => makeDatabase(Redacted.value(url))),
       ({ sql }) =>
         Effect.tryPromise(() => sql.end({ timeout: 5 })).pipe(
@@ -57,6 +61,7 @@ export const DatabaseLive = Layer.effect(
     const toError = (cause: unknown) => new DatabaseError({ cause });
     return Database.of({
       db,
+      listen: (channel, callback) => sql.listen(channel, callback),
       use: (fn) => Effect.tryPromise({ try: () => fn(db), catch: toError }),
       useTransaction: (fn) => Effect.tryPromise({ try: () => db.transaction(fn), catch: toError }),
     });

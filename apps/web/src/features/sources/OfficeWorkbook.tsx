@@ -10,11 +10,7 @@ import {
   useRef,
 } from "react";
 import { useTheme } from "next-themes";
-import {
-  XlsxViewer,
-  useXlsxViewerController,
-  type XlsxViewerProps,
-} from "@extend-ai/react-xlsx";
+import { XlsxViewer, useXlsxViewerController, type XlsxViewerProps } from "@extend-ai/react-xlsx";
 import { ViewerDock, useScrollActivatedDock } from "./ViewerDock";
 import { OfficeFailure, OfficeLoading, type OfficeViewProps } from "./office-shared";
 
@@ -32,7 +28,14 @@ function citedTerms(q: string | undefined) {
  * read-only, with worksheet tabs and the shared dock driving its zoom. A cited passage is
  * tinted in every cell that contains it.
  */
-export default function OfficeWorkbook({ url, name, q, compact, target, onRetry }: OfficeViewProps) {
+export default function OfficeWorkbook({
+  url,
+  name,
+  q,
+  compact,
+  target,
+  onRetry,
+}: OfficeViewProps) {
   const controller = useXlsxViewerController({
     fileName: name,
     readOnly: true,
@@ -44,7 +47,10 @@ export default function OfficeWorkbook({ url, name, q, compact, target, onRetry 
   const viewport = useRef<HTMLDivElement | null>(null);
   // Not loading also before the fetch starts: ready means parsed sheets and their tabs.
   const ready =
-    !controller.isLoading && !controller.error && controller.sheets.length > 0 && controller.tabs.length > 0;
+    !controller.isLoading &&
+    !controller.error &&
+    controller.sheets.length > 0 &&
+    controller.tabs.length > 0;
   const dockVisible = useScrollActivatedDock(viewport, ready, target);
   const terms = useMemo(() => citedTerms(q), [q]);
 
@@ -220,9 +226,7 @@ async function rowsBatch(controller: Controller, sheet: number, start: number, c
   const rows =
     controller.isWorkerBacked && controller.getRowsBatchAsync
       ? await controller.getRowsBatchAsync(sheet, start, count)
-      : (
-          controller.workbook as unknown as { getSheet?: (index: number) => BatchSource } | null
-        )
+      : (controller.workbook as unknown as { getSheet?: (index: number) => BatchSource } | null)
           ?.getSheet?.(sheet)
           ?.getRowsBatch?.(start, count, {});
   return Array.isArray(rows) ? (rows as RowBatch) : [];
@@ -234,12 +238,21 @@ async function findCell(controller: Controller, sheet: Sheet, terms: string[]) {
   const rows: RowBatch = [];
   for (let start = Math.max(0, sheet.minUsedRow); start <= last; start += 1_000)
     rows.push(
-      ...(await rowsBatch(controller, sheet.workbookSheetIndex, start, Math.min(1_000, last - start + 1))),
+      ...(await rowsBatch(
+        controller,
+        sheet.workbookSheetIndex,
+        start,
+        Math.min(1_000, last - start + 1),
+      )),
     );
   for (const term of terms)
     for (const row of rows)
       for (const cell of row.cells)
-        if (String(cell.value ?? "").toLowerCase().includes(term))
+        if (
+          String(cell.value ?? "")
+            .toLowerCase()
+            .includes(term)
+        )
           return { row: row.index, col: cell.col };
   return null;
 }

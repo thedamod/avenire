@@ -37,6 +37,11 @@ await Promise.all([
   }),
   Esbuild.build({
     ...shared,
+    entryPoints: ["src/overlay-preload.ts"],
+    outfile: "dist/overlay-preload.cjs",
+  }),
+  Esbuild.build({
+    ...shared,
     entryPoints: ["src/boot.ts"],
     outfile: "dist/boot.cjs",
     external: ["electron", "./main.cjs"],
@@ -51,8 +56,20 @@ await Promise.all([
     entryPoints: ["../web/src/features/onboarding/desktop-entry.tsx"],
     outfile: "dist/onboarding.js",
   }),
+  // The global capture overlay renders the app's own capture rows in an always-on-top window.
+  Esbuild.build({
+    bundle: true,
+    minify: true,
+    platform: "browser",
+    target: "chrome144",
+    jsx: "automatic",
+    define: { "process.env.NODE_ENV": '"production"' },
+    entryPoints: ["../web/src/features/capture/overlay-entry.tsx"],
+    outfile: "dist/capture-overlay.js",
+  }),
 ]);
 await cp("src/onboarding/index.html", "dist/onboarding.html");
+await cp("src/overlay/index.html", "dist/capture-overlay.html");
 // The standalone renderer uses the exact web components/tokens; no separate desktop theme.
 const webRequire = createRequire(new URL("../../web/package.json", import.meta.url));
 // Rasterize the existing web favicon, so Windows installer, taskbar and app chrome share one source.
@@ -82,15 +99,19 @@ pngs.forEach((png, index) => {
 await writeFile("dist/icon.ico", Buffer.concat([directory, ...pngs]));
 const tailwind = webRequire("@tailwindcss/postcss");
 const postcss = createRequire(webRequire.resolve("@tailwindcss/postcss"))("postcss");
-const baseCss = resolve("../web/src/features/onboarding/desktop.css");
-const generated = await postcss([tailwind({ base: resolve("../web"), optimize: true })]).process(
-  await readFile(baseCss, "utf8"),
-  { from: baseCss },
-);
-await writeFile(
-  "dist/onboarding.css",
-  generated.css + "\n" + (await readFile("dist/onboarding.css", "utf8")),
-);
+for (const [entry, output] of [
+  ["../web/src/features/onboarding/desktop.css", "onboarding.css"],
+  ["../web/src/features/capture/overlay.css", "capture-overlay.css"],
+]) {
+  const from = resolve(entry);
+  const generated = await postcss([tailwind({ base: resolve("../web"), optimize: true })]).process(
+    await readFile(from, "utf8"),
+    { from },
+  );
+  // esbuild emits a sibling .css for CSS imported by the entry; keep it after the utilities.
+  const bundled = await readFile(`dist/${output}`, "utf8").catch(() => "");
+  await writeFile(`dist/${output}`, generated.css + "\n" + bundled);
+}
 const fontRoot = resolve(dirname(webRequire.resolve("geist/font/sans")), "..");
 await Promise.all(
   ["Regular", "Medium", "SemiBold"].map((weight) =>
@@ -107,6 +128,7 @@ await cp(`${fontRoot}/LICENSE.TXT`, "dist/Geist-LICENSE.txt");
 for (const [file, globalName] of [
   ["preload.cjs", "avenire"],
   ["setup-preload.cjs", "avenireSetup"],
+  ["overlay-preload.cjs", "avenireOverlay"],
 ]) {
   let exposed;
   runInNewContext(
@@ -146,6 +168,13 @@ await writeFile(
     2,
   ),
 );
-for (const file of ["main.cjs", "preload.cjs", "setup-preload.cjs", "onboarding.js"]) {
+for (const file of [
+  "main.cjs",
+  "preload.cjs",
+  "setup-preload.cjs",
+  "overlay-preload.cjs",
+  "onboarding.js",
+  "capture-overlay.js",
+]) {
   console.log(`${file}: ${(await stat(`dist/${file}`)).size} bytes`);
 }

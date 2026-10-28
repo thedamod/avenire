@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import { parseHTML } from "linkedom";
 
 import { type ExtractedDocument, ExtractionError, fullCoverage } from "./types.ts";
+import { htmlAccess } from "./access.ts";
 import { sectionsFromMarkdown } from "./markdown.ts";
 
 const parseHtml = (html: string) =>
@@ -14,6 +15,7 @@ const parseHtml = (html: string) =>
         ...(parsed.title ? { title: parsed.title } : {}),
         sections: sectionsFromMarkdown(parsed.contentMarkdown ?? parsed.content),
         coverage: fullCoverage("text"),
+        access: htmlAccess(html),
       };
     },
     catch: (cause) => new ExtractionError({ source: "web-parse", cause }),

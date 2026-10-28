@@ -1,0 +1,89 @@
+@import "@avenire/ui/globals.css";
+@source "./**/*.tsx";
+@source "../library/PresenceRows.tsx";
+@source "../../components/app/FileKindIcon.tsx";
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./Geist-Regular.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./Geist-Medium.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./Geist-SemiBold.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("./GeistMono-Regular.woff2") format("woff2");
+}
+:root,
+.dark {
+  --font-sans: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+  /* Transparent room around the panel, so the enter offset never clips at the window edge. */
+  --capture-overlay-gutter: 12px;
+}
+
+/* A transparent window: only the panel (its #131313 surface and 1px border) is drawn. */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+/* Anchored to the bottom, like the window main keeps in the bottom-right corner. */
+#root {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+/* Enters from the bottom-right (offset + fade, never from scale 0); leaves faster. */
+.capture-overlay {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding: var(--capture-overlay-gutter);
+  transition:
+    opacity var(--duration-moderate) var(--ease-out),
+    translate var(--duration-moderate) var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    translate: 8px 10px;
+  }
+}
+.capture-overlay[data-closing] {
+  opacity: 0;
+  translate: 4px 6px;
+  pointer-events: none;
+  transition-duration: var(--duration-popover);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capture-overlay,
+  .capture-overlay[data-closing] {
+    translate: none;
+    @starting-style {
+      translate: none;
+    }
+  }
+}

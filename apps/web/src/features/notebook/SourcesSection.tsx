@@ -7,13 +7,14 @@ import { useScrollFade } from "@avenire/ui/components/scroll-fade";
 import { useArrivedLate } from "@avenire/ui/components/presence";
 import { Skeleton } from "@avenire/ui/components/skeleton";
 import { cn } from "@avenire/ui/lib/utils";
-import { FileKindIcon, KIND_LABELS, RelativeTime, urlHost } from "~/components/app";
+import { FileKindIcon, KIND_LABELS, RelativeTime } from "~/components/app";
 import { FileRow, fileHref } from "~/features/library/FileRow";
 import { FileItemContextMenu } from "~/features/library/FileItemContextMenu";
 import { useLongPress } from "~/features/library/useSelection";
 import { PresenceRows } from "~/features/library/PresenceRows";
 import { ingestionState, type IngestionState } from "~/features/library/ingestion";
 import type { Selection } from "~/features/library/useSelection";
+import { originLabel, savedOn } from "~/features/sources/reopen";
 import { formatTimestamp } from "~/lib/time";
 import { EmptyLine, SectionHeading } from "./parts";
 
@@ -74,7 +75,7 @@ export function SourcesSection({
               <SourceListRow
                 file={file}
                 selection={selection}
-                state={ingestionState(jobs.get(file.id))}
+                state={ingestionState(jobs.get(file.id), file)}
                 selected={selection.has(file.id)}
                 selecting={selection.size > 0}
                 onToggle={selection.toggle}
@@ -95,7 +96,7 @@ export function SourcesSection({
               <SourceCard
                 selection={selection}
                 file={file}
-                state={ingestionState(jobs.get(file.id))}
+                state={ingestionState(jobs.get(file.id), file)}
               />
             </li>
           ))}
@@ -105,10 +106,12 @@ export function SourcesSection({
   );
 }
 
-/** "arxiv.org · saved at 18:40", or what the reader is doing with it. */
+/** "arxiv.org · saved at 18:40", "Preview · notes.pdf · Saved on …", or what the reader is doing. */
 function sourceMeta(file: LibraryFile): string {
-  const parts = [urlHost(file.sourceUrl) ?? KIND_LABELS[file.kind]];
+  const parts = [originLabel(file) ?? KIND_LABELS[file.kind]];
   if (file.mediaPositionSec) parts.push(`saved at ${formatTimestamp(file.mediaPositionSec)}`);
+  const device = savedOn(file);
+  if (device) parts.push(device);
   return parts.join(" · ");
 }
 

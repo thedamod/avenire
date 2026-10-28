@@ -6,6 +6,9 @@ import {
   SourceUploadTicket,
   type FileKind,
 } from "@avenire/contracts";
+import { hashBlob } from "@avenire/shared/sha256";
+import { SourceWorkQueue } from "@avenire/capture/work-queue";
+import { uploadSourceTicket } from "@avenire/storage/client";
 import * as Schema from "effect/Schema";
 
 // Browser MIME detection is often empty (notably Markdown) or generic. Use the extension
@@ -116,9 +119,22 @@ export function kindForFile(file: File): FileKind | null {
   return null;
 }
 
+const preparation = new SourceWorkQueue(1);
 async function sha256(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return preparation.run(file.size, async () => {
+    if (typeof Worker === "undefined") return hashBlob(file);
+    const worker = new Worker(new URL("./hash.worker.ts", import.meta.url));
+    try {
+      return await new Promise<string>((resolve, reject) => {
+        worker.onmessage = (event: MessageEvent<{ hash?: string; error?: string }>) =>
+          event.data.hash ? resolve(event.data.hash) : reject(new Error(event.data.error));
+        worker.onerror = () => reject(new Error("Could not prepare this file."));
+        worker.postMessage(file);
+      });
+    } finally {
+      worker.terminate();
+    }
+  });
 }
 
 /**
@@ -139,81 +155,33 @@ export async function uploadSource(
     throw new Error(`${file.name} is empty or larger than 256 MB.`);
   options.onStage?.("preparing");
   const mimeType = mimeForFile(file);
+  const payload = {
+    idempotencyKey: options.idempotencyKey ?? crypto.randomUUID(),
+    title: file.name.slice(0, 200),
+    kind,
+    mimeType,
+    sizeBytes: file.size,
+    sha256: await sha256(file),
+  };
   const created = await fetch("/api/library/uploads", {
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      idempotencyKey: options.idempotencyKey ?? crypto.randomUUID(),
-      title: file.name.slice(0, 200),
-      kind,
-      mimeType,
-      sizeBytes: file.size,
-      sha256: await sha256(file),
-    }),
+    body: JSON.stringify(payload),
   });
   if (!created.ok) throw new Error(`Couldn't upload ${file.name} (${created.status}).`);
   const ticket = Schema.decodeUnknownSync(SourceUploadTicket)(await created.json());
+  if (ticket.status === "completed" && ticket.file) {
+    options.onProgress?.(100);
+    return ticket.file;
+  }
   const target = new URL(ticket.uploadUrl, window.location.origin);
   if (target.origin !== window.location.origin) throw new Error("Unexpected upload destination.");
   options.onStage?.("uploading");
-  const uploaded = await transferSource(target, file, mimeType, options);
-  if (!uploaded.ok) throw new Error(`Couldn't upload ${file.name} (${uploaded.status}).`);
-  return Schema.decodeUnknownSync(LibraryFile)(await uploaded.json());
-}
-
-/** Like files-sdk/client's transport, use XHR for actual upload-byte progress. Keep the
- * owned, hash-verified ticket endpoint rather than exposing a generic storage gateway. */
-async function transferSource(
-  target: URL,
-  file: File,
-  mimeType: string,
-  options: {
-    onStage?: (stage: "preparing" | "uploading" | "saving") => void;
-    onProgress?: (percent: number) => void;
-  },
-): Promise<Pick<Response, "ok" | "status" | "json">> {
-  options.onProgress?.(0);
-  if (typeof XMLHttpRequest === "undefined") {
-    const response = await fetch(target, {
-      method: "PUT",
-      credentials: "include",
-      headers: { "content-type": mimeType },
-      body: file,
-    });
-    if (response.ok) options.onProgress?.(100);
-    return response;
-  }
-  return new Promise((resolve, reject) => {
-    const request = new XMLHttpRequest();
-    request.open("PUT", target.href, true);
-    request.withCredentials = true;
-    request.setRequestHeader("content-type", mimeType);
-    request.upload.addEventListener("progress", (event) => {
-      if (event.lengthComputable && event.total > 0) {
-        options.onProgress?.(Math.min(100, Math.floor((event.loaded / event.total) * 100)));
-      }
-    });
-    // All bytes reaching the server is distinct from its verified storage/DB commit.
-    request.upload.addEventListener("load", () => {
-      options.onProgress?.(100);
-      options.onStage?.("saving");
-    });
-    request.addEventListener("load", () => {
-      resolve({
-        ok: request.status >= 200 && request.status < 300,
-        status: request.status,
-        json: async () => JSON.parse(request.responseText),
-      });
-    });
-    request.addEventListener("error", () =>
-      reject(new Error("Connection lost. Try the upload again.")),
-    );
-    request.addEventListener("abort", () => reject(new Error("Upload cancelled.")));
-    request.addEventListener("timeout", () =>
-      reject(new Error("The upload timed out. Try again.")),
-    );
-    request.timeout = 15 * 60 * 1000;
-    request.send(file);
+  return uploadSourceTicket(target, file, {
+    contentType: mimeType,
+    onProgress: (loaded, total) =>
+      options.onProgress?.(total ? Math.min(99, Math.floor((loaded / total) * 100)) : 0),
+    onVerifying: () => options.onStage?.("saving"),
   });
 }

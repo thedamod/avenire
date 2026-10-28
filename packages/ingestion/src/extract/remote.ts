@@ -8,11 +8,14 @@ import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
+import { accessForHttp } from "./access.ts";
+import { SourceAccessError } from "./types.ts";
 import { acquireBytes, publicUrl, startPublicProxy } from "./acquisition.ts";
 
 export class RemoteMediaError extends Schema.TaggedError<RemoteMediaError>()("RemoteMediaError", {
   operation: Schema.Literals(["metadata", "captions", "audio"]),
   cause: Schema.Defect(),
+  reason: Schema.optionalKey(Schema.Literals(["unsupported", "failure"])),
 }) {
   override get message(): string {
     return `Remote media ${this.operation} failed`;
@@ -252,19 +255,31 @@ export const RemoteMediaLive = Layer.effect(
             );
             const denied = proxy.failure();
             if (denied) return yield* Effect.fail(denied);
-            if (code !== 0)
-              return yield* Effect.fail(
-                new RemoteMediaError({
-                  operation: "metadata",
-                  cause: `yt-dlp exited with code ${code}: ${stderr.slice(-500)}`,
-                }),
+            if (code !== 0) {
+              const status = Number(
+                stderr.match(/HTTP(?: Error| error)?\s*[: ]?\s*(401|402|403)\b/)?.[1],
               );
+              const access = accessForHttp(status, stderr);
+              const cause = `yt-dlp exited with code ${code}: ${stderr.slice(-500)}`;
+              return yield* new RemoteMediaError({
+                operation: "metadata",
+                reason: /Unsupported URL|No suitable extractor/i.test(stderr)
+                  ? "unsupported"
+                  : "failure",
+                cause:
+                  access === undefined ? cause : new SourceAccessError({ access, status, cause }),
+              });
+            }
             return stdout;
           }),
         ).pipe(Effect.timeout(METADATA_TIMEOUT_MS));
         return yield* decodeRemoteMetadata(output);
       },
-      Effect.mapError((cause) => new RemoteMediaError({ operation: "metadata", cause })),
+      Effect.mapError((cause) =>
+        cause instanceof RemoteMediaError
+          ? cause
+          : new RemoteMediaError({ operation: "metadata", cause }),
+      ),
     );
     const captions = Effect.fn("RemoteMedia.captions")(
       function* (_url: string, info: RemoteMetadata, languages: ReadonlyArray<string>) {

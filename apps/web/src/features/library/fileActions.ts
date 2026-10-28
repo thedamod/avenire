@@ -4,6 +4,7 @@ import {
   Check,
   CheckSquare,
   Download,
+  ExternalLink,
   FolderInput,
   FolderMinus,
   Link,
@@ -15,7 +16,8 @@ import {
 } from "lucide-react";
 import type { ContextAction } from "~/components/app/ItemContextMenu";
 
-export type ActionFile = Pick<LibraryFile, "id" | "kind" | "title" | "folderIds">;
+export type ActionFile = Pick<LibraryFile, "id" | "kind" | "title" | "folderIds"> &
+  Partial<Pick<LibraryFile, "origin" | "sourceUrl">>;
 export interface FileActionHandlers {
   move(folder: Folder): void;
   newNotebook(): void;
@@ -23,6 +25,7 @@ export interface FileActionHandlers {
   download(): void;
   trash(): void;
   openInNewTab(): void;
+  openOriginal(): void;
   copyLink(): void;
   toggleSelection(): void;
   rename(): void;
@@ -36,6 +39,8 @@ export interface FileActionsInput {
   readonly selected?: boolean | undefined;
   readonly desktop?: boolean | undefined;
   readonly currentFolderId?: FolderId | undefined;
+  /** The single target is a source with somewhere to reopen it (`hasOriginal`). */
+  readonly original?: boolean | undefined;
   /** Dock has a count even before file data is available. */
   readonly ids?: readonly FileId[] | undefined;
 }
@@ -43,6 +48,7 @@ export interface FileAction extends ContextAction {
   readonly id:
     | "open"
     | "new-tab"
+    | "original"
     | "ask"
     | "move"
     | "remove"
@@ -62,6 +68,7 @@ export function buildFileActions({
   selected,
   desktop = true,
   currentFolderId,
+  original,
   ids,
 }: FileActionsInput): readonly FileAction[] {
   const count = ids?.length ?? files.length;
@@ -83,6 +90,14 @@ export function buildFileActions({
         group: "open",
       });
   }
+  if (single && original && allSources)
+    actions.push({
+      id: "original",
+      label: "Open original",
+      icon: ExternalLink,
+      onSelect: h.openOriginal,
+      group: "open",
+    });
   actions.push({
     id: "ask",
     label: `Ask Ruth about ${single ? "it" : "them"}`,

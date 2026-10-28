@@ -14,14 +14,14 @@ import {
   LibraryFile,
   NotFound,
   StorageKey,
-  type FileKind,
   type FilePlacement,
   type Folder,
   type IngestionJob,
   type SubmitCaptureResult,
   type UserId,
 } from "@avenire/contracts";
-import { applyPolicy } from "@avenire/desktop/capture-policy";
+import { prepareCapture } from "./capturePolicy.ts";
+import { captureCitationUrl, restoreToCorpusTx } from "./captureOrigin.ts";
 import { lockCorpus } from "@avenire/database/corpus";
 import { isDeepStrictEqual } from "node:util";
 import { Database } from "@avenire/database/client";
@@ -34,6 +34,7 @@ import {
   folder,
   ingestionJob,
   user,
+  userSettings,
 } from "@avenire/database/schema";
 import { recordFileEvent } from "@avenire/ingestion/events";
 import { setFileFolders } from "@avenire/ingestion/folder";
@@ -41,11 +42,12 @@ import { enqueueIngestionTx } from "@avenire/ingestion/worker";
 import { newId } from "@avenire/shared/id";
 import { fileSourceKey, newKeyVersion } from "@avenire/storage/keys";
 import { Storage } from "@avenire/storage/storage";
-import { and, asc, desc, eq, exists, inArray, isNull, isNotNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, inArray, isNull, isNotNull, ne, gte, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as PubSub from "effect/PubSub";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { createHash } from "node:crypto";
@@ -107,6 +109,8 @@ export const fileToContract = (row: FileRow, folderIds: readonly FolderId[] = []
   contentModifiedAt: row.contentModifiedAt?.toISOString() ?? null,
   archivedAt: row.archivedAt?.toISOString() ?? null,
   sourceUrl: row.sourceUrl,
+  origin: row.origin,
+  access: row.access,
   storageKey: row.storageKey === null ? null : StorageKey.make(row.storageKey),
   mimeType: row.mimeType,
   sizeBytes: row.sizeBytes,
@@ -129,80 +133,6 @@ export const jobToContract = (row: typeof ingestionJob.$inferSelect): IngestionJ
   updatedAt: row.updatedAt.toISOString(),
 });
 
-interface CaptureCandidate {
-  readonly title: string;
-  readonly kind: FileKind;
-  readonly dedupeKey: string;
-  readonly url: string | null;
-  readonly text?: string;
-  readonly position?: number;
-}
-/** Local filesystem paths never become server reads. Native clients must upload their bytes. */
-export const captureCandidates = (snapshot: CaptureSnapshot) => {
-  const policy = applyPolicy(snapshot);
-  const candidates = new Map<string, CaptureCandidate>();
-  const skipped = policy.blocked.map((entry) => ({
-    title: entry.title,
-    reason: entry.category as string,
-  }));
-  const addUrl = (raw: string, title: string, kind: FileKind, position?: number) => {
-    let url: URL;
-    try {
-      url = new URL(raw);
-    } catch {
-      skipped.push({ title, reason: "Invalid URL" });
-      return;
-    }
-    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) {
-      skipped.push({ title, reason: "Only public HTTP URLs can be captured" });
-      return;
-    }
-    url.hash = "";
-    const normalized = url.toString();
-    const dedupeKey = `url:${normalized}`;
-    candidates.set(dedupeKey, {
-      title: title.trim().slice(0, 500) || url.hostname,
-      kind,
-      url: normalized,
-      dedupeKey,
-      ...(position !== undefined && Number.isFinite(position) && position >= 0 ? { position } : {}),
-    });
-  };
-  const addText = (text: string, title: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    const dedupeKey = `selection:${createHash("sha256").update(trimmed).digest("hex")}`;
-    candidates.set(dedupeKey, {
-      title: title.trim().slice(0, 500) || trimmed.slice(0, 80),
-      kind: "selection",
-      url: null,
-      text: trimmed,
-      dedupeKey,
-    });
-  };
-  for (const tab of policy.snapshot.tabs) {
-    addUrl(tab.finalUrl ?? tab.url, tab.title, tab.likelyPdf ? "pdf" : "web-page");
-    if (tab.selectionText) addText(tab.selectionText, `Selection from ${tab.title}`);
-  }
-  for (const media of policy.snapshot.media) {
-    if (media.url) addUrl(media.url, media.title, "video", media.positionSec);
-    else
-      skipped.push({
-        title: media.title,
-        reason: "Upload this local media file to capture its contents",
-      });
-  }
-  for (const window of policy.snapshot.windows) {
-    if (window.filePath)
-      skipped.push({
-        title: window.title,
-        reason: "Upload this local file to capture its contents",
-      });
-  }
-  if (policy.snapshot.selectionText) addText(policy.snapshot.selectionText, "Captured selection");
-  return { snapshot: policy.snapshot, candidates: [...candidates.values()], skipped };
-};
-
 const validName = (name: string) => {
   const value = name.trim();
   return value.length > 0 && value.length <= 200 ? value : undefined;
@@ -212,6 +142,26 @@ export const LibraryLive = Layer.effect(
   Library,
   Effect.gen(function* () {
     const database = yield* Database;
+    const changes = yield* PubSub.sliding<{ userId: string; id: string }>(256);
+    if (database.listen)
+      yield* Effect.acquireRelease(
+        Effect.tryPromise(() =>
+          database.listen!("avenire_ingestion", (payload) => {
+            try {
+              const event = JSON.parse(payload) as { userId?: unknown; id?: unknown };
+              if (typeof event.userId === "string" && typeof event.id === "string")
+                Effect.runFork(PubSub.publish(changes, { userId: event.userId, id: event.id }));
+            } catch {
+              /* Ignore malformed notifications; durable polling reconciles. */
+            }
+          }),
+        ).pipe(
+          Effect.catch((error) =>
+            Effect.as(Effect.logWarning("Ingestion notifications unavailable", error), undefined),
+          ),
+        ),
+        (listener) => (listener ? Effect.promise(() => listener.unlisten()) : Effect.void),
+      );
     const storage = yield* Storage;
     const crypto = yield* Crypto.Crypto;
     const makeId = <Id extends string>(schema: { readonly make: (id: string) => Id }) =>
@@ -470,31 +420,47 @@ export const LibraryLive = Layer.effect(
       watchIngestion: (userId) =>
         Stream.suspend(() => {
           const seen = new Map<string, string>();
-          return Stream.fromEffectSchedule(
+          let watermark = 0;
+          let polls = 0;
+          const read = (id?: string) =>
             database
               .use((db) =>
                 db
                   .select({ job: ingestionJob })
                   .from(ingestionJob)
                   .innerJoin(file, and(eq(file.id, ingestionJob.fileId), eq(file.userId, userId)))
-                  .where(eq(ingestionJob.userId, userId))
+                  .where(
+                    and(
+                      eq(ingestionJob.userId, userId),
+                      id
+                        ? eq(ingestionJob.id, id)
+                        : ++polls % 30 === 1 || !watermark
+                          ? undefined
+                          : gte(ingestionJob.updatedAt, new Date(watermark - 5000)),
+                    ),
+                  )
                   .orderBy(asc(ingestionJob.updatedAt), asc(ingestionJob.id)),
               )
-              .pipe(Effect.mapError(toApiError)),
-            Schedule.spaced("2 seconds"),
-          ).pipe(
-            Stream.flatMap((rows) => {
-              const active = new Set(rows.map(({ job }) => job.id));
-              for (const id of seen.keys()) if (!active.has(id)) seen.delete(id);
-              return Stream.fromIterable(
+              .pipe(Effect.mapError(toApiError));
+          const poll = Stream.fromEffectSchedule(read(), Schedule.spaced("2 seconds"));
+          const pushed = Stream.fromPubSub(changes).pipe(
+            Stream.filter((event) => event.userId === userId),
+            Stream.mapEffect((event) => read(event.id)),
+          );
+          return Stream.merge(poll, pushed).pipe(
+            Stream.flatMap((rows) =>
+              Stream.fromIterable(
                 rows.flatMap(({ job }) => {
+                  watermark = Math.max(watermark, job.updatedAt.getTime());
                   const version = `${job.updatedAt.toISOString()}:${job.status}:${job.generation}`;
                   if (seen.get(job.id) === version) return [];
+                  seen.delete(job.id);
                   seen.set(job.id, version);
+                  if (seen.size > 4096) seen.delete(seen.keys().next().value!);
                   return [jobToContract(job)];
                 }),
-              );
-            }),
+              ),
+            ),
           );
         }),
       submitCapture: (userId, snapshot) =>
@@ -507,7 +473,14 @@ export const LibraryLive = Layer.effect(
             return yield* new Conflict({
               reason: "Capture must contain a valid timestamp and at most 200 sources.",
             });
-          const prepared = captureCandidates(snapshot);
+          const [preferences] = yield* database.use((db) =>
+            db.select().from(userSettings).where(eq(userSettings.userId, userId)),
+          );
+          const prepared = prepareCapture(
+            snapshot,
+            (text) => createHash("sha256").update(text).digest("hex"),
+            preferences?.preferences.paywalledPages ?? "title-abstract",
+          );
           const entries = yield* Effect.forEach(prepared.candidates, (candidate) =>
             Effect.gen(function* () {
               const id = yield* makeId(FileId);
@@ -550,12 +523,8 @@ export const LibraryLive = Layer.effect(
               }
             const result = yield* database
               .useTransaction(async (tx) => {
-                await tx
-                  .select({ id: user.id })
-                  .from(user)
-                  .where(eq(user.id, userId))
-                  .for("no key update");
-                await tx
+                await lockCorpus(tx, userId);
+                const created = await tx
                   .insert(capture)
                   .values({
                     id: snapshot.id,
@@ -564,7 +533,8 @@ export const LibraryLive = Layer.effect(
                     capturedAt: new Date(snapshot.capturedAt),
                     snapshot: prepared.snapshot,
                   })
-                  .onConflictDoNothing();
+                  .onConflictDoNothing()
+                  .returning({ id: capture.id });
                 const [receipt] = await tx
                   .select({ userId: capture.userId, snapshot: capture.snapshot })
                   .from(capture)
@@ -577,44 +547,137 @@ export const LibraryLive = Layer.effect(
                   return undefined;
                 const rows: FileRow[] = [];
                 const kept: StorageKey[] = [];
+                const existingRows = entries.length
+                  ? await tx
+                      .select()
+                      .from(file)
+                      .where(
+                        and(
+                          eq(file.userId, userId),
+                          inArray(
+                            file.dedupeKey,
+                            entries.map(({ candidate }) => candidate.dedupeKey),
+                          ),
+                        ),
+                      )
+                      .orderBy(asc(file.id))
+                      .for("update")
+                  : [];
+                const byKey = new Map(existingRows.map((row) => [row.dedupeKey, row]));
+                const inserts: (typeof file.$inferInsert)[] = [];
+                const events: (typeof fileEvent.$inferInsert)[] = [];
+                const jobs: (typeof ingestionJob.$inferInsert)[] = [];
+                const skipped: { title: string; reason: string }[] = [];
+                const restored: string[] = [];
                 for (const entry of entries) {
                   const { candidate, id, key } = entry;
-                  const [existing] = await tx
-                    .select()
-                    .from(file)
-                    .where(and(eq(file.userId, userId), eq(file.dedupeKey, candidate.dedupeKey)))
-                    .limit(1);
+                  const existing = byKey.get(candidate.dedupeKey);
                   if (existing) {
-                    rows.push(existing);
+                    if (existing.purgeStartedAt !== null) {
+                      skipped.push({
+                        title: candidate.title,
+                        reason: "This source is being permanently deleted.",
+                      });
+                      continue;
+                    }
+                    if (created.length === 0) {
+                      rows.push(existing);
+                      continue;
+                    }
+                    if (existing.placement === "archived" || existing.archivedAt !== null)
+                      restored.push(existing.id);
+                    // Metadata recaptures never discard an already uploaded original.
+                    const stub = candidate.stub && existing.storageKey === null;
+                    const improved = !candidate.stub && existing.access !== "open";
+                    const [updated] = await tx
+                      .update(file)
+                      .set({
+                        origin: candidate.origin,
+                        captureId: snapshot.id,
+                        mediaPositionSec: candidate.position ?? existing.mediaPositionSec,
+                        ...(stub
+                          ? {
+                              title: candidate.title,
+                              preview: candidate.summary,
+                              access: candidate.access,
+                            }
+                          : candidate.access === "open"
+                            ? { access: "open" as const }
+                            : {}),
+                        ...(existing.placement === "archived" || existing.archivedAt !== null
+                          ? {
+                              placement: "inbox" as const,
+                              archivedAt: null,
+                              archivedViaFolderId: null,
+                              purgeRequestedAt: null,
+                            }
+                          : {}),
+                        updatedAt: sql`now()`,
+                      })
+                      .where(and(eq(file.id, existing.id), eq(file.userId, userId)))
+                      .returning();
+                    events.push({
+                      id: entry.eventId,
+                      userId,
+                      fileId: existing.id,
+                      kind: "captured",
+                    });
+                    if (stub) {
+                      // Revoke any anonymous fetch already in flight before retaining the stub.
+                      await tx
+                        .update(ingestionJob)
+                        .set({
+                          status: "cancelled",
+                          claimToken: null,
+                          lockedUntil: null,
+                          generation: sql`${ingestionJob.generation} + 1`,
+                          updatedAt: sql`now()`,
+                        })
+                        .where(
+                          and(
+                            eq(ingestionJob.userId, userId),
+                            eq(ingestionJob.fileId, existing.id),
+                          ),
+                        );
+                    } else if (improved) {
+                      await enqueueIngestionTx(tx, userId, FileId.make(existing.id), entry.jobId);
+                    }
+                    rows.push(updated!);
                     continue;
                   }
-                  const [inserted] = await tx
-                    .insert(file)
-                    .values({
-                      id,
-                      userId,
-                      title: candidate.title,
-                      kind: candidate.kind,
-                      source: "capture",
-                      captureId: snapshot.id,
-                      dedupeKey: candidate.dedupeKey,
-                      sourceUrl: candidate.url,
-                      storageKey: key,
-                      mimeType: candidate.text === undefined ? null : "text/plain",
-                      sizeBytes:
-                        candidate.text === undefined ? null : Buffer.byteLength(candidate.text),
-                      mediaPositionSec: candidate.position ?? null,
-                    })
-                    .returning();
-                  if (!inserted) continue;
+                  inserts.push({
+                    id,
+                    userId,
+                    title: candidate.title,
+                    kind: candidate.kind,
+                    source: "capture",
+                    captureId: snapshot.id,
+                    dedupeKey: candidate.dedupeKey,
+                    sourceUrl: captureCitationUrl(candidate.origin),
+                    origin: candidate.origin,
+                    access: candidate.access ?? "open",
+                    preview: candidate.summary,
+                    storageKey: key,
+                    mimeType: candidate.text === undefined ? null : "text/plain",
+                    sizeBytes:
+                      candidate.text === undefined ? null : Buffer.byteLength(candidate.text),
+                    mediaPositionSec: candidate.position ?? null,
+                  });
                   if (key) kept.push(key);
-                  await tx
-                    .insert(fileEvent)
-                    .values({ id: entry.eventId, userId, fileId: id, kind: "captured" });
-                  await enqueueIngestionTx(tx, userId, id, entry.jobId);
-                  rows.push(inserted);
+                  events.push({ id: entry.eventId, userId, fileId: id, kind: "captured" });
+                  // These are new file IDs: defaults initialize generation 1, with no claim to fence.
+                  if (!candidate.stub) jobs.push({ id: entry.jobId, userId, fileId: id });
                 }
-                return { rows, kept };
+                if (inserts.length)
+                  rows.push(...(await tx.insert(file).values(inserts).returning()));
+                if (events.length) await tx.insert(fileEvent).values(events);
+                if (jobs.length) await tx.insert(ingestionJob).values(jobs);
+                await restoreToCorpusTx(tx, userId, restored);
+                const order = new Map(
+                  entries.map(({ candidate }, index) => [candidate.dedupeKey, index]),
+                );
+                rows.sort((a, b) => order.get(a.dedupeKey)! - order.get(b.dedupeKey)!);
+                return { rows, kept, skipped };
               })
               .pipe(
                 Effect.tap((result) =>
@@ -627,7 +690,10 @@ export const LibraryLive = Layer.effect(
             if (!result)
               return yield* new Conflict({ reason: "Capture identifier was already used." });
             yield* cleanup(written.filter((key) => !result.kept.includes(key)));
-            return { files: yield* wireFiles(userId, result.rows), skipped: prepared.skipped };
+            return {
+              files: yield* wireFiles(userId, result.rows),
+              skipped: [...prepared.skipped, ...result.skipped],
+            };
           }).pipe(Effect.onError(() => cleanup(written.filter((key) => !retained.includes(key)))));
         }).pipe(Effect.mapError(toApiError)),
     });

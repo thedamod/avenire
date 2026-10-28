@@ -7,6 +7,9 @@ import type {
   ChunkKind,
   CloudRunStatus,
   CaptureSnapshot,
+  CaptureOrigin,
+  SourceAccess,
+  DirectSourceUpload,
   ChunkLocation,
   ExtractionCoverage,
   FileKind,
@@ -154,6 +157,8 @@ export const file = pgTable(
     /** Once claimed, storage deletion is irreversible; restore must reject the claim. */
     purgeStartedAt: timestamptz("purge_started_at"),
     sourceUrl: text("source_url"),
+    origin: jsonb("origin").$type<CaptureOrigin>(),
+    access: text("access").$type<SourceAccess>().notNull().default("open"),
     storageKey: text("storage_key"),
     mimeType: text("mime_type"),
     sizeBytes: bigint("size_bytes", { mode: "number" }),
@@ -219,7 +224,10 @@ export const sourceUpload = pgTable(
     sha256: text("sha256").notNull(),
     /** Citation provenance only. Never a credential or a fallback download target. */
     sourceUrl: text("source_url"),
+    origin: jsonb("origin").$type<CaptureOrigin>(),
+    access: text("access").$type<SourceAccess>().notNull().default("open"),
     storageKey: text("storage_key"),
+    directUpload: jsonb("direct_upload").$type<DirectSourceUpload>(),
     abandonedStorageKeys: text("abandoned_storage_keys")
       .array()
       .notNull()
@@ -238,6 +246,8 @@ export const sourceUpload = pgTable(
   (t) => [
     unique("source_upload_user_idempotency_unique").on(t.userId, t.idempotencyKey),
     unique("source_upload_file_id_unique").on(t.fileId),
+    /** Content dedupe: a re-captured original resolves to its existing file without a PUT. */
+    index("source_upload_user_sha256_idx").on(t.userId, t.sha256),
     unique("source_upload_storage_key_unique").on(t.storageKey),
     index("source_upload_user_status_idx").on(t.userId, t.status),
     index("source_upload_expiry_idx").on(t.expiresAt),
@@ -319,6 +329,7 @@ export const ingestionJob = pgTable(
       t.createdAt,
     ),
     index("ingestion_job_user_id_idx").on(t.userId),
+    index("ingestion_job_user_updated_id_idx").on(t.userId, t.updatedAt, t.id),
   ],
 );
 
