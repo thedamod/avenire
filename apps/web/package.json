@@ -12,7 +12,8 @@
     "ruth:prompt": "tsx --env-file-if-exists=../../.env.local scripts/ruth-prompt.ts",
     "seed:demo": "tsx --env-file-if-exists=../../.env.local scripts/seed-demo-library.ts",
     "cloud:check": "tsx --env-file-if-exists=../../.env.local scripts/cloud-check.ts",
-    "filing:dry-run": "tsx --env-file-if-exists=../../.env.local scripts/filing-dry-run.ts"
+    "filing:dry-run": "tsx --env-file-if-exists=../../.env.local scripts/filing-dry-run.ts",
+    "filing:eval": "tsx --env-file-if-exists=../../.env.local scripts/filing-eval.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "catalog:",
