@@ -78,7 +78,7 @@ export function HomeScreen({ navigation }: ScreenProps<"Home">) {
   const toast = recentToastRun(activity.runs, now);
   const openRun = (run: CloudRun) => {
     if (run.status === "succeeded" && activity.cloudThread)
-      navigation.navigate("Chat", { threadId: activity.cloudThread.id });
+      navigation.navigate("Chat", { threadId: activity.cloudThread.id, runId: run.id });
     else navigation.navigate("TaskDetail", { taskId: run.taskId });
   };
   const openActivity = (item: HomeActivity) =>

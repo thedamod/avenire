@@ -13,11 +13,11 @@ import { QuizOutput } from "./outputs/QuizOutput";
 import { WidgetOutput } from "./outputs/WidgetOutput";
 
 export function OutputSheet({ route, navigation }: ScreenProps<"Output">) {
-  const { threadId, output, id } = route.params;
+  const { threadId, output, id, runId } = route.params;
   const [selected, setSelected] = useState<OutputKind>(output);
   const [scrolled, setScrolled] = useState(false);
   const reduced = useReducedMotion();
-  const outputs = useOutputs(threadId, id, output);
+  const outputs = useOutputs(threadId, id, output, runId);
   useEffect(() => {
     setSelected(output);
   }, [output, id]);
@@ -69,7 +69,7 @@ export function OutputSheet({ route, navigation }: ScreenProps<"Output">) {
       ...(region ? { region } : {}),
     });
   };
-  const ask = (q: string) => navigation.navigate("Chat", { threadId, q });
+  const ask = (q: string) => navigation.navigate("Chat", { threadId, q, ...(runId ? { runId } : {}) });
   const fallbackSummary = selected === "summary" && data?.run?.summary;
   let body;
   if (outputs.loading)

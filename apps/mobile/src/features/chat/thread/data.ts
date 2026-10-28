@@ -1,6 +1,6 @@
 import { Chat, useChat } from "@ai-sdk/react";
 import type { RuthUIMessage } from "@avenire/ai/message-types";
-import { CLOUD_RUN_PATH, RUTH_CHAT_PATH, type CloudRunId, type ThreadId } from "@avenire/contracts";
+import { CLOUD_RUN_PATH, RUTH_CHAT_PATH, type CloudRunId, type FolderId, type ThreadId } from "@avenire/contracts";
 import { call, ConversationSession, conversationSession, invalidate, type ClientRuntime } from "@avenire/client-runtime/rpc";
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses, lastAssistantMessageIsCompleteWithToolCalls, validateUIMessages } from "ai";
 import { fetch as expoFetch } from "expo/fetch";
@@ -11,6 +11,7 @@ import { useApi } from "../../../state/api";
 import { apiUrl, getCookieHeader } from "../../../state/auth";
 import { colors } from "../../../theme/tokens";
 import type { TurnTiming } from "./types";
+import { takeInitialThreadScope, turnScope } from "../../sources/threadScope";
 
 export const widgetTokens: Readonly<Record<string, string>> = {
   "--background": colors.bg, "--foreground": colors.fg, "--foreground-soft": colors["fg-2"],
@@ -48,7 +49,9 @@ function entryFor(api: ClientRuntime, threadId: ThreadId) {
   return entry;
 }
 
-function createEntry(api: ClientRuntime, threadId: ThreadId) {
+export function createEntry(api: ClientRuntime, threadId: ThreadId) {
+  const initialScope = takeInitialThreadScope(api, threadId);
+  let folderId: FolderId | null | undefined;
   const session = new ConversationSession<RuthUIMessage>();
   session.threadId = threadId;
   const timing = { startedAt: null as number | null, turns: new Map<string, TurnTiming>() };
@@ -60,13 +63,16 @@ function createEntry(api: ClientRuntime, threadId: ThreadId) {
       fetch: nativeFetch,
       credentials: "omit",
       headers: getCookieHeader,
-      prepareSendMessagesRequest: ({ messages }) => ({
-        body: {
+      prepareSendMessagesRequest: ({ messages }) => {
+        // Continuations end on the assistant; they keep the scope of the turn they continue.
+        const scope = turnScope(initialScope, folderId, messages.findLast((message) => message.role === "user")?.metadata?.references);
+        return { body: {
           threadId, message: messages.at(-1),
+          ...(scope ? { scope } : {}),
           page: { surface: "chat", platform: "mobile", contentWidthPx: width, colorScheme: "dark", themeTokens: widgetTokens, fonts: { body: "system-ui", mono: "ui-monospace" } },
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-        },
-      }),
+        } };
+      },
     }),
     sendAutomaticallyWhen: (options) => lastAssistantMessageIsCompleteWithApprovalResponses(options) || lastAssistantMessageIsCompleteWithToolCalls(options),
     onFinish: ({ message }) => {
@@ -78,6 +84,7 @@ function createEntry(api: ClientRuntime, threadId: ThreadId) {
   });
   return {
     chat, session, timing,
+    setFolderId: (value: FolderId | null | undefined) => { folderId = value; },
     setWidth: (value: number) => { width = Math.max(1, Math.round(value)); },
     hydrate: (refresh = false) => {
       if (chat.status === "streaming" || chat.status === "submitted") return Promise.resolve();
@@ -94,13 +101,14 @@ function createEntry(api: ClientRuntime, threadId: ThreadId) {
 }
 
 /** Same latest-message transport and continuation predicates as the web thread store. */
-export function useThread(threadId: ThreadId, q?: string) {
+export function useThread(threadId: ThreadId, q?: string, runId?: CloudRunId) {
   const api = useApi();
   const { width } = useWindowDimensions();
   const entry = useMemo(() => entryFor(api, threadId), [api, threadId]);
   entry.setWidth(width - 40);
   const chat = useChat({ chat: entry.chat, throttle: 50 });
   const thread = useQuery((client) => client["ruth.getThread"]({ threadId }), `thread-${threadId}`);
+  entry.setFolderId(thread.data?.folderId);
   const folders = useQuery((client) => client["library.listFolders"](), "chat-folders");
   const files = useQuery((client) => client["library.listFiles"]({}), "chat-files");
   const [hydration, setHydration] = useState({ ready: entry.session.ready, error: undefined as unknown });
@@ -135,8 +143,8 @@ export function useThread(threadId: ThreadId, q?: string) {
   }, [entry]);
   useEffect(() => {
     if (!hydration.ready || !q?.trim()) return;
-    void act(`initial:${q}`, () => send(q)).catch(() => {});
-  }, [act, hydration.ready, q, send]);
+    void act(`initial:${runId ?? ""}:${q}`, () => send(q, runId ? { runId } : undefined)).catch(() => {});
+  }, [act, hydration.ready, q, runId, send]);
   return { ...chat, thread, folders, files, ready: hydration.ready, hydrationError: hydration.error, reload, send, act, pending, actionError, clearActionError: () => setActionError(undefined), entry };
 }
 

@@ -29,6 +29,7 @@ import { WidgetView } from "./WidgetView";
 import { WorkHeader } from "./WorkHeader";
 import { WorkActivity } from "./WorkLogRow";
 import { assetUrl } from "./widgetProtocol";
+import { useAssetSource } from "../../../lib/useAssetSource";
 
 export interface ReportPresentation {
   run: CloudRun;
@@ -522,25 +523,22 @@ function ImageTile({
   compact: boolean;
 }) {
   const [failed, setFailed] = useState(false);
-  let url: string | undefined;
-  try {
-    url = assetUrl(item.url);
-  } catch {
-    /* Show the media error in the frame. */
-  }
+  const [attempt, setAttempt] = useState(0);
+  const asset = useAssetSource(item.url, attempt);
   return (
     <FigureFrame title={item.title} figure={item.figure} compact={compact}>
-      {failed || !url ? (
-        <ErrorState message="This image couldn't load." onRetry={() => setFailed(false)} />
-      ) : (
+      {failed || asset?.error ? (
+        <ErrorState message="This image couldn't load." onRetry={() => { setFailed(false); setAttempt((value) => value + 1); }} />
+      ) : asset?.source ? (
         <Image
-          source={{ uri: url }}
+          key={attempt}
+          source={asset.source}
           accessibilityLabel={item.title}
           contentFit="contain"
           style={{ height: compact ? 96 : 220, width: "100%" }}
           onError={() => setFailed(true)}
         />
-      )}
+      ) : <Skeleton height={compact ? 96 : 220} />}
     </FigureFrame>
   );
 }

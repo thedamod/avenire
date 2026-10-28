@@ -27,6 +27,7 @@ export function useTaskActivity() {
   return { threads, runs, tasks, folders, approvals };
 }
 export function useTaskDetail(taskId: CloudTaskId) {
+  const threads = useQuery((client) => client["ruth.listThreads"](), "library-threads");
   const tasks = useTasks();
   const runs = useQuery(
     (client) => client["cloud.listRuns"]({ taskId, limit: 30 }),
@@ -34,7 +35,7 @@ export function useTaskDetail(taskId: CloudTaskId) {
   );
   const folders = useQuery((client) => client["library.listFolders"](), "task-detail-folders");
   useLiveRuns(runs.data, runs.refetch);
-  return { tasks, runs, folders, task: tasks.data?.find((task) => task.id === taskId) };
+  return { tasks, runs, folders, threads, cloudThread: threads.data?.find((thread) => thread.kind === "ruth-cloud"), task: tasks.data?.find((task) => task.id === taskId) };
 }
 function useLiveRuns(runs: readonly CloudRun[] | undefined, refetch: () => Promise<unknown>) {
   const focused = useIsFocused();

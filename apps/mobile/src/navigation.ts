@@ -1,6 +1,6 @@
 import type { NavigationProp } from "@react-navigation/native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import type { FileId, FolderId, CloudTaskId, ThreadId } from "@avenire/contracts";
+import type { FileId, FolderId, CloudTaskId, CloudRunId, ThreadId } from "@avenire/contracts";
 
 export type RootStackParamList = {
   Home: undefined;
@@ -8,8 +8,8 @@ export type RootStackParamList = {
   Notebook: { folderId: FolderId };
   Note: { fileId: FileId };
   NewNotebook: undefined;
-  Chat: { threadId: ThreadId; q?: string };
-  Output: { threadId: ThreadId; output: "summary" | "quiz" | "revision" | "widget"; id?: string };
+  Chat: { threadId: ThreadId; q?: string; runId?: CloudRunId };
+  Output: { threadId: ThreadId; output: "summary" | "quiz" | "revision" | "widget"; id?: string; runId?: CloudRunId };
   Citation: {
     sourceId: FileId;
     page?: number;

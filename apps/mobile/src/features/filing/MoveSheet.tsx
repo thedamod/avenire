@@ -27,7 +27,7 @@ export function MoveSheet({ route, navigation }: ScreenProps<"Move">) {
   useLayoutEffect(() => {
     navigation.setOptions({ sheetAllowedDetents: [0.45, 0.92], sheetInitialDetentIndex: 0 });
   }, [navigation]);
-  const fileIds = [...new Set(route.params.fileIds)];
+  const fileIds = [...new Set(route.params?.fileIds ?? [])];
   const notebooks = useNotebooks();
   const actions = useSourceActions();
   const [creating, setCreating] = useState(false);
@@ -56,6 +56,7 @@ export function MoveSheet({ route, navigation }: ScreenProps<"Move">) {
         </View>
       ) : null}
       <ScrollFade top={scrolled} color="#131313">
+        {!fileIds.length ? <EmptyState title="No sources selected" description="Select sources from your library to move them." /> : null}
         <FlatList
           data={notebooks.folders}
           keyExtractor={(folder) => folder.id}

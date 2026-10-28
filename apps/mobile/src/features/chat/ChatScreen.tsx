@@ -26,8 +26,8 @@ export function ChatScreen(props: ScreenProps<"Chat">) {
 }
 
 function ChatThread(props: ScreenProps<"Chat">) {
-  const thread = useThread(props.route.params.threadId, props.route.params.q);
-  const runId = thread.thread.data?.kind === "ruth-cloud" ? latestRunId(thread.messages) : undefined;
+  const thread = useThread(props.route.params.threadId, props.route.params.q, props.route.params.runId);
+  const runId = props.route.params.runId ?? (thread.thread.data?.kind === "ruth-cloud" ? latestRunId(thread.messages) : undefined);
   return runId ? <ReportThread key={runId} {...props} thread={thread} runId={runId} /> : <ThreadScreen {...props} thread={thread} />;
 }
 
@@ -100,7 +100,7 @@ function ThreadScreen({ navigation, route, thread, report, runId }: ScreenProps<
     ...(citation.page !== null ? { page: citation.page } : citation.slide !== null ? { page: citation.slide } : {}),
     ...(citation.region ? { region: citation.region } : {}),
   }), [navigation]);
-  const onOutput = useCallback((output: OutputItem) => navigation.navigate("Output", { threadId: route.params.threadId, output: output.output, id: output.id }), [navigation, route.params.threadId]);
+  const onOutput = useCallback((output: OutputItem) => navigation.navigate("Output", { threadId: route.params.threadId, output: output.output, id: output.id, ...(runId ? { runId } : {}) }), [navigation, route.params.threadId, runId]);
   const handle = (action: () => PromiseLike<void> | void) => { setSendError(undefined); void Promise.resolve().then(action).catch(setSendError); };
   const approve = async (group: readonly PendingApproval[], approved: boolean) => {
     for (const item of group) await thread.act(`approval:${item.approvalId}`, () => thread.addToolApprovalResponse({ id: item.approvalId, approved }));
