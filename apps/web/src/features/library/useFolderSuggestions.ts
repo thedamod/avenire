@@ -26,7 +26,8 @@ export function useFolderSuggestions(
   const query = useQuery(
     (client) =>
       ids.length ? client["library.suggestFolders"]({ fileIds: ids }) : Effect.succeed([]),
-    `library-suggestions:${ids.join(",")}`,
+    // "files" in the key subscribes to file invalidation, so indexing refreshes suggestions.
+    `library-files-suggestions:${ids.join(",")}`,
   );
   return useMemo(() => {
     if (!query.data?.length) return NONE;

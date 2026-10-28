@@ -54,7 +54,7 @@ const cacheKey = (userId: UserId, context: FilingContext) =>
 export const makeFilingSuggester = (model: LanguageModel | undefined) => {
   const verdicts = new Map<string, FilingVerdict>();
   const judge = (userId: UserId, context: FilingContext) => {
-    if (!model || context.candidates.length === 0) return Effect.succeed(null);
+    if (!model) return Effect.succeed(null);
     const key = cacheKey(userId, context);
     const cached = verdicts.get(key);
     if (cached) return Effect.succeed(cached);
