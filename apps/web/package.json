@@ -11,7 +11,8 @@
     "test": "pnpm --filter @avenire/widget-kit build && vp test run --config ../../vite.config.ts --dir . --passWithNoTests",
     "ruth:prompt": "tsx --env-file-if-exists=../../.env.local scripts/ruth-prompt.ts",
     "seed:demo": "tsx --env-file-if-exists=../../.env.local scripts/seed-demo-library.ts",
-    "cloud:check": "tsx --env-file-if-exists=../../.env.local scripts/cloud-check.ts"
+    "cloud:check": "tsx --env-file-if-exists=../../.env.local scripts/cloud-check.ts",
+    "filing:dry-run": "tsx --env-file-if-exists=../../.env.local scripts/filing-dry-run.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "catalog:",
