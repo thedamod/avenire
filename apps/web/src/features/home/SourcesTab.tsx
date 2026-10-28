@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import { errorMessage } from "~/lib/rpc";
 import type {
   FileId,
   FileKind,
@@ -12,6 +14,7 @@ import type {
 import {
   ChevronDown,
   FileText,
+  Plus,
   Globe,
   Image as ImageIcon,
   SquarePlay,
@@ -29,7 +32,10 @@ import { SourceUpload, SourceUploadArea } from "~/features/library/SourceUpload"
 import { PresenceRows } from "~/features/library/PresenceRows";
 import { NewNotebookDialog } from "~/features/library/NewNotebookDialog";
 import { NotebookPicker } from "~/features/library/NotebookPicker";
-import { useFolderSuggestions } from "~/features/library/useFolderSuggestions";
+import {
+  useFolderSuggestions,
+  type FilingSuggestion,
+} from "~/features/library/useFolderSuggestions";
 import {
   KEPT_SOURCES,
   ingestionState,
@@ -402,7 +408,7 @@ function SourceRow({
   file: LibraryFile;
   job?: IngestionJob | undefined;
   folderById: ReadonlyMap<FolderId, Folder>;
-  suggested?: readonly Folder[] | undefined;
+  suggested?: FilingSuggestion | undefined;
   selection: Selection;
 }) {
   const notebooks = file.folderIds
@@ -427,7 +433,11 @@ function SourceRow({
             ) : null}
           </span>
         ) : (
-          <FileToNotebook fileId={file.id} suggested={suggested ?? []} />
+          <FileToNotebook
+            fileId={file.id}
+            suggested={suggested?.suggested ?? []}
+            newNotebook={suggested?.newNotebook ?? null}
+          />
         )
       }
       trailing={<RelativeTime iso={file.createdAt} className="md:w-16 md:text-right" />}
@@ -439,14 +449,29 @@ function SourceRow({
 }
 
 /**
- * Filing on an unfiled row (desktop): one click saves to the most likely notebook; the chevron
- * opens every notebook with the suggestions on top.
+ * Filing on an unfiled row (desktop): one click saves to the most likely notebook, or starts the
+ * suggested new one when none fits; the chevron opens every notebook with suggestions on top.
  */
-function FileToNotebook({ fileId, suggested }: { fileId: FileId; suggested: readonly Folder[] }) {
+function FileToNotebook({
+  fileId,
+  suggested,
+  newNotebook,
+}: {
+  fileId: FileId;
+  suggested: readonly Folder[];
+  newNotebook: string | null;
+}) {
   const { folders, actions } = useLibrary();
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const best = suggested[0];
+  const createAndMove = (name: string) =>
+    void actions
+      .createNotebook({ name })
+      .then((folder) => actions.moveFiles([fileId], folder))
+      .catch((cause: unknown) =>
+        toast.error(`Couldn't create the notebook: ${errorMessage(cause)}`),
+      );
   return (
     <>
       <span className="flex min-w-0 items-center">
@@ -460,16 +485,26 @@ function FileToNotebook({ fileId, suggested }: { fileId: FileId; suggested: read
             <NotebookSwatch color={best.color} className="h-2.5" />
             <span className="truncate">Save to {best.name}</span>
           </button>
+        ) : newNotebook ? (
+          <button
+            type="button"
+            onClick={() => createAndMove(newNotebook)}
+            title={`Create “${newNotebook}” and file this source there`}
+            className="inline-flex min-w-0 items-center gap-1.5 text-[12.5px] text-foreground-soft transition-colors hover:text-foreground"
+          >
+            <Plus className="size-3 shrink-0" aria-hidden="true" />
+            <span className="truncate">New notebook “{newNotebook}”</span>
+          </button>
         ) : null}
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
-            aria-label={best ? "Choose another notebook" : undefined}
+            aria-label={best || newNotebook ? "Choose a notebook" : undefined}
             className={cn(
               "inline-flex shrink-0 items-center gap-1 text-[12.5px] text-foreground-soft transition-colors hover:text-foreground",
-              best && "ml-0.5 h-5 w-5 justify-center rounded hover:bg-hover",
+              (best || newNotebook) && "ml-0.5 h-5 w-5 justify-center rounded hover:bg-hover",
             )}
           >
-            {best ? null : "File to notebook…"}
+            {best || newNotebook ? null : "File to notebook…"}
             <ChevronDown className="size-3" aria-hidden="true" />
           </PopoverTrigger>
           <PopoverContent align="start" className="w-[280px] p-1">
@@ -477,6 +512,11 @@ function FileToNotebook({ fileId, suggested }: { fileId: FileId; suggested: read
               title="Move to"
               folders={folders ?? []}
               suggested={suggested}
+              suggestedNew={newNotebook}
+              onPickNew={(name) => {
+                setOpen(false);
+                createAndMove(name);
+              }}
               onPick={(folder) => {
                 setOpen(false);
                 void actions.moveFiles([fileId], folder);

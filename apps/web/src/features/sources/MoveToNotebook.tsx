@@ -29,7 +29,7 @@ export function MoveToNotebook({
 }) {
   const { folders, folderById } = useLibrary();
   const ids = useMemo(() => (open && fileId ? [fileId] : NO_FILES), [open, fileId]);
-  const suggested = useFolderSuggestions(ids, folderById).get(fileId!) ?? [];
+  const suggested = useFolderSuggestions(ids, folderById).get(fileId!)?.suggested ?? [];
   const [creating, setCreating] = useState(false);
   return (
     <>
