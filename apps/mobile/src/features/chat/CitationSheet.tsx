@@ -18,6 +18,7 @@ import {
   Text,
   errorMessage,
 } from "../../ui";
+import { originLabel, phoneReopen, savedOn } from "../sources/reopen";
 import { useCitationSource } from "./citations/data";
 import { citationFocus, object, string, timestamp, youtubeId } from "./citations/model";
 import {
@@ -56,7 +57,10 @@ export function CitationSheet({ route, navigation }: ScreenProps<"Citation">) {
   const data = source.data;
   const file = data?.file;
   const url = data?.content?.url;
-  const original = file?.sourceUrl ?? url;
+  // This sheet is Avenire's own viewer: when the original only lives on a computer, the stored
+  // bytes are the way out.
+  const plan = file ? phoneReopen(file) : undefined;
+  const original = plan?._tag === "OpenUrl" ? plan.url : url;
   const youtube = youtubeId(file?.sourceUrl ?? null);
   const time =
     typeof target.time === "number" && Number.isFinite(target.time)
@@ -69,9 +73,8 @@ export function CitationSheet({ route, navigation }: ScreenProps<"Citation">) {
         ? timestamp(time)
         : target.region
           ? "Cited region"
-          : file?.sourceUrl
-            ? host(file.sourceUrl)
-            : "Source";
+          : ((file && originLabel(file)) ?? "Source");
+  const meta = [location, file ? savedOn(file) : null].filter(Boolean).join(" · ");
   const openOriginal = () => {
     if (!original) return;
     try {
@@ -239,7 +242,7 @@ export function CitationSheet({ route, navigation }: ScreenProps<"Citation">) {
             {file?.title ?? "Citation"}
           </Text>
           <Text variant="meta" numberOfLines={1}>
-            {location}
+            {meta}
           </Text>
         </View>
         {original ? (
@@ -266,12 +269,4 @@ export function CitationSheet({ route, navigation }: ScreenProps<"Citation">) {
       {body}
     </Screen>
   );
-}
-
-function host(value: string): string {
-  try {
-    return new URL(value).hostname.replace(/^www\./, "");
-  } catch {
-    return "Source";
-  }
 }

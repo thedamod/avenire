@@ -36,7 +36,7 @@ export const shouldRetryDocument = (document: StoredDocument): boolean =>
       const capped = new Set(detail.split("; capped:")[1]?.match(/\d+/gu) ?? []);
       return failed.some((page) => !capped.has(page));
     }
-    return /fail|error|timeout|unavailable/iu.test(detail);
+    return /fail|error|timeout|unavailable|enrichment pending/iu.test(detail);
   });
 
 /** Retry useful partial content automatically, with bounded exponential backoff. */

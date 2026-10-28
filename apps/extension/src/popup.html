@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Avenire</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Avenire</h1>
+      <p class="status">
+        <span id="status" role="status">Checking connection…</span>
+        <a id="sign-in" hidden target="_blank" rel="noopener">Sign in to Avenire</a>
+      </p>
+    </header>
+    <main>
+      <button id="capture" class="primary" type="button">Capture open tabs</button>
+      <p id="result" role="status" aria-live="polite"></p>
+      <form id="pairing" hidden>
+        <label for="code">Pair with Avenire desktop</label>
+        <p id="code-help">Enter the 6-digit code from the Avenire menu in your tray.</p>
+        <div class="pairing-row">
+          <input
+            id="code"
+            name="code"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            pattern="[0-9]{6}"
+            maxlength="6"
+            required
+            spellcheck="false"
+            aria-describedby="code-help"
+            placeholder="000000"
+          />
+          <button type="submit" class="secondary">Pair</button>
+        </div>
+      </form>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

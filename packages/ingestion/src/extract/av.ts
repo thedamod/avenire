@@ -1,12 +1,22 @@
 /** Audio and video files: a timed transcript, plus slide sections for video. */
 import type { CoverageStatus, ExtractionCoverage } from "@avenire/contracts";
 import * as Effect from "effect/Effect";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
+import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 
+import { failureAccess } from "./access.ts";
 import { formatTimestamp } from "../chunk.ts";
 import { parseCaptions } from "./captions.ts";
 import { ImageDescriber } from "./describe.ts";
-import { type Frame, MEDIA_LIMITS, MediaProcessor } from "./media.ts";
+import {
+  type AudioSegment,
+  type MediaSource,
+  type Frame,
+  MEDIA_LIMITS,
+  MediaProcessor,
+} from "./media.ts";
 import { type RemoteMetadata, RemoteMedia } from "./remote.ts";
 import { type Cue, groupCues, stitchCues } from "./transcript.ts";
 import { TranscriptCache, type TranscriptScope } from "./transcript-cache.ts";
@@ -16,6 +26,7 @@ import {
   type ExtractedDocument,
   type ExtractedSection,
   ExtractionError,
+  SourceAccessError,
   type SourceInput,
 } from "./types.ts";
 
@@ -49,6 +60,21 @@ const orMissing =
     effect.pipe(
       Effect.tapError((error) => Effect.logWarning(`${what} failed`, error)),
       Effect.option,
+    );
+
+/** Optional media work may lose coverage, but must retain access evidence. */
+const remoteOrMissing =
+  (what: string) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(
+      Effect.map(Option.some),
+      Effect.catch((cause) => {
+        const access = failureAccess(cause);
+        return access === undefined
+          ? Effect.as(Effect.logWarning(`${what} failed`, cause), Option.none<A>())
+          : Effect.fail(new SourceAccessError({ access, cause }));
+      }),
+      Effect.mapError((cause) => new ExtractionError({ source: "remote-media", cause })),
     );
 
 const nearbyText = (cues: ReadonlyArray<Cue>, atSec: number) =>
@@ -114,72 +140,87 @@ export const outlineSection = (
 };
 
 export const transcribeAudio = Effect.fn("extractMedia.transcribe")(function* (
-  bytes: Uint8Array,
+  bytes: MediaSource,
   durationSec: number,
   scope?: TranscriptScope,
 ) {
   const media = yield* MediaProcessor;
   const transcriber = yield* Transcriber;
   const cache = yield* TranscriptCache;
-  const clips = yield* media
-    .audioSegments(bytes, {
-      segmentSec: CLIP_SEC,
-      overlapSec: CLIP_OVERLAP_SEC,
-      maxSec: MAX_MEDIA_SEC,
-    })
-    .pipe(orMissing("Audio extraction"));
-  if (Option.isNone(clips)) {
-    return { cues: [], part: coveragePart("transcript", "none", ["Audio extraction failed"]) };
-  }
-  const transcribed = yield* Effect.forEach(
-    clips.value,
-    (clip) =>
-      cache.lookup(transcriber.model, clip.bytes, scope).pipe(
-        Effect.catchTag("TranscriptCacheError", (error) =>
-          Effect.as(Effect.logWarning("Transcript cache lookup failed", { error }), undefined),
-        ),
-        Effect.flatMap((stored) =>
-          stored === undefined
-            ? transcriber
-                .transcribe(clip.bytes, clip.mimeType)
-                .pipe(
-                  Effect.tap((segments) =>
-                    cache
-                      .store(transcriber.model, clip.bytes, segments, scope)
-                      .pipe(
-                        Effect.catchTag("TranscriptCacheError", (error) =>
-                          Effect.logWarning("Transcript cache store failed", error),
-                        ),
-                      ),
-                  ),
-                )
-            : Effect.succeed(stored),
-        ),
-        Effect.map((segments) =>
-          segments.map(({ text, startSec, endSec }) => ({
-            text,
-            startSec: clip.offsetSec + startSec,
-            endSec: clip.offsetSec + endSec,
-          })),
-        ),
-        orMissing("Transcription"),
+  const transcribeClip = (clip: AudioSegment) =>
+    cache.lookup(transcriber.model, clip.bytes, scope).pipe(
+      Effect.catchTag("TranscriptCacheError", (error) =>
+        Effect.as(Effect.logWarning("Transcript cache lookup failed", { error }), undefined),
       ),
-    { concurrency: 2 },
-  );
+      Effect.flatMap((stored) =>
+        stored === undefined
+          ? transcriber
+              .transcribe(clip.bytes, clip.mimeType)
+              .pipe(
+                Effect.tap((segments) =>
+                  cache
+                    .store(transcriber.model, clip.bytes, segments, scope)
+                    .pipe(
+                      Effect.catchTag("TranscriptCacheError", (error) =>
+                        Effect.logWarning("Transcript cache store failed", error),
+                      ),
+                    ),
+                ),
+              )
+          : Effect.succeed(stored),
+      ),
+      Effect.map((segments) =>
+        segments.map(({ text, startSec, endSec }) => ({
+          text,
+          startSec: clip.offsetSec + startSec,
+          endSec: clip.offsetSec + endSec,
+        })),
+      ),
+      orMissing("Transcription"),
+    );
+  const options = { segmentSec: CLIP_SEC, overlapSec: CLIP_OVERLAP_SEC, maxSec: MAX_MEDIA_SEC };
+  const work = media.streamsAudio
+    ? Effect.gen(function* () {
+        const queue = yield* Queue.bounded<AudioSegment, Cause.Done>(2);
+        const producer = media
+          .audioSegments(bytes, {
+            ...options,
+            onSegment: (clip) => Queue.offer(queue, clip).pipe(Effect.asVoid),
+          })
+          .pipe(orMissing("Audio extraction"), Effect.ensuring(Queue.end(queue)));
+        const consumer = Stream.fromQueue(queue).pipe(
+          Stream.mapEffect(transcribeClip, { concurrency: 2 }),
+          Stream.runCollect,
+        );
+        const [clips, transcribed] = yield* Effect.all([producer, consumer], { concurrency: 2 });
+        return { clips, transcribed };
+      })
+    : Effect.gen(function* () {
+        const clips = yield* media
+          .audioSegments(bytes, options)
+          .pipe(orMissing("Audio extraction"));
+        const transcribed = Option.isSome(clips)
+          ? yield* Effect.forEach(clips.value, transcribeClip, { concurrency: 2 })
+          : [];
+        return { clips, transcribed };
+      });
+  const { clips, transcribed } = yield* work;
+  const clipCount = Option.isSome(clips) ? clips.value.length : transcribed.length;
   const failed = transcribed.filter(Option.isNone).length;
   const cues = stitchCues(transcribed.flatMap((clip) => Option.getOrElse(clip, () => [])));
   const issues = [
-    ...(clips.value.length === 0 ? ["No audio track"] : []),
-    ...(failed > 0 ? [`${failed} of ${clips.value.length} audio clips failed transcription`] : []),
+    ...(Option.isNone(clips) ? ["Audio extraction failed"] : []),
+    ...(clipCount === 0 ? ["No audio track"] : []),
+    ...(failed > 0 ? [`${failed} of ${clipCount} audio clips failed transcription`] : []),
     ...(durationSec > MAX_MEDIA_SEC ? [`Transcribed the first ${MAX_MEDIA_SEC} seconds`] : []),
-    ...(cues.length === 0 && clips.value.length > 0 && failed === 0 ? ["No speech detected"] : []),
+    ...(cues.length === 0 && clipCount > 0 && failed === 0 ? ["No speech detected"] : []),
   ];
   const status = cues.length === 0 ? "none" : issues.length > 0 ? "partial" : "full";
   return { cues, part: coveragePart("transcript", status, ["speech to text", ...issues]) };
 });
 
 const describeSlides = Effect.fn("extractMedia.describeSlides")(function* (
-  bytes: Uint8Array,
+  bytes: MediaSource,
   durationSec: number,
   cues: ReadonlyArray<Cue>,
   title: string,
@@ -229,8 +270,8 @@ const describeSlides = Effect.fn("extractMedia.describeSlides")(function* (
 });
 
 /** Timed transcript sections and, for video, independent slide sections. */
-export const extractMedia = Effect.fn("extractMedia")(function* (
-  bytes: Uint8Array,
+const extractPreparedMedia = Effect.fn("extractMedia.prepared")(function* (
+  bytes: MediaSource,
   source: SourceInput,
 ) {
   const media = yield* MediaProcessor;
@@ -257,7 +298,13 @@ export const extractMedia = Effect.fn("extractMedia")(function* (
       coverage: combineCoverage([speech.part]),
     } satisfies ExtractedDocument;
   }
-  const slides = yield* describeSlides(bytes, info.durationSec, speech.cues, source.title);
+  const slides =
+    source.enrichment === "deferred" && transcript.length > 0
+      ? {
+          sections: [],
+          part: coveragePart("slides", "partial", ["Enrichment pending: slide descriptions"]),
+        }
+      : yield* describeSlides(bytes, info.durationSec, speech.cues, source.title);
   return {
     title: source.title,
     sections: [
@@ -267,6 +314,19 @@ export const extractMedia = Effect.fn("extractMedia")(function* (
     ],
     coverage: combineCoverage([speech.part, slides.part]),
   } satisfies ExtractedDocument;
+});
+
+export const extractMedia = Effect.fn("extractMedia")(function* (
+  bytes: MediaSource,
+  source: SourceInput,
+) {
+  const media = yield* MediaProcessor;
+  const work = extractPreparedMedia(bytes, source);
+  return yield* (media.withSource ? media.withSource(bytes, work) : work).pipe(
+    Effect.mapError((cause) =>
+      cause instanceof ExtractionError ? cause : new ExtractionError({ source: "media", cause }),
+    ),
+  );
 });
 
 const captionedSpeech = (cues: ReadonlyArray<Cue>, origin: string, durationSec: number) => {
@@ -305,7 +365,7 @@ export const extractRemoteMedia = Effect.fn("extractRemoteMedia")(function* (
       ? Option.none()
       : yield* remote
           .captions(url, metadata, captionLanguages(metadata))
-          .pipe(orMissing("Platform captions"));
+          .pipe(remoteOrMissing("Platform captions"));
   const platform = Option.flatMap(captions, Option.fromUndefinedOr);
 
   const speech =
@@ -323,7 +383,7 @@ export const extractRemoteMedia = Effect.fn("extractRemoteMedia")(function* (
                 ),
               ),
             ),
-            orMissing("Remote audio"),
+            remoteOrMissing("Remote audio"),
             Effect.map(
               Option.getOrElse(() => ({
                 cues: [],

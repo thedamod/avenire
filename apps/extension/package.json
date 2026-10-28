@@ -1,0 +1,25 @@
+{
+  "name": "@avenire/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
+  },
+  "dependencies": {
+    "@avenire/capture": "workspace:*",
+    "@avenire/contracts": "workspace:*",
+    "@avenire/storage": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/chrome": "0.3.6",
+    "esbuild": "0.28.2",
+    "happy-dom": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

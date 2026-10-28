@@ -1,3 +1,5 @@
+import { SourceAccess } from "@avenire/contracts";
+import { accessForHttp } from "./access.ts";
 /** Public-source network boundary shared by page, caption and media acquisition. */
 import { lookup } from "node:dns/promises";
 import * as http from "node:http";
@@ -9,9 +11,10 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 export class AcquisitionError extends Schema.TaggedError<AcquisitionError>()("AcquisitionError", {
-  reason: Schema.Literals(["url", "address", "redirect", "size", "timeout", "network"]),
+  reason: Schema.Literals(["url", "address", "redirect", "size", "timeout", "network", "http"]),
   cause: Schema.Defect(),
   status: Schema.optionalKey(Schema.Number),
+  access: Schema.optionalKey(SourceAccess),
 }) {}
 
 export interface PublicAddress {
@@ -262,12 +265,20 @@ export const acquireSource = (url: string, options: AcquisitionOptions = {}) =>
         ...options,
         signal: options.signal ? AbortSignal.any([signal, options.signal]) : signal,
       });
-      if (!response.ok)
+      if (!response.ok) {
+        const html = /(?:text\/html|application\/xhtml\+xml)/i.test(
+          response.headers.get("content-type") ?? "",
+        )
+          ? await response.text()
+          : undefined;
+        const access = accessForHttp(response.status, html);
         throw new AcquisitionError({
-          reason: "network",
+          reason: "http",
           cause: `Source returned HTTP ${response.status}`,
           status: response.status,
+          ...(access === undefined ? {} : { access }),
         });
+      }
       return {
         bytes: new Uint8Array(await response.arrayBuffer()),
         mimeType: response.headers.get("content-type"),

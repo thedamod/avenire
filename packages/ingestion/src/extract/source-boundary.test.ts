@@ -10,6 +10,7 @@ import { beforeEach, vi } from "vite-plus/test";
 
 import { FileIndexer } from "../indexer.ts";
 import { IngestionError, IngestionPipeline, IngestionPipelineLive } from "../pipeline.ts";
+import { failureAccess } from "./access.ts";
 import { AcquisitionError, acquireSource } from "./acquisition.ts";
 import { extract, type ExtractionServices } from "./index.ts";
 import { Ocr } from "./ocr.ts";
@@ -189,22 +190,21 @@ it.effect.each(["pdf", "web-page"] as const)(
     }),
 );
 
-it.effect.each([401, 403])(
-  "returns device acquisition guidance on HTTP %s without trying session credentials",
+it.effect.each([401, 402, 403])(
+  "retains typed HTTP %s acquisition failures without using session credentials",
   (status) =>
     Effect.gen(function* () {
       vi.mocked(acquireSource).mockReturnValueOnce(
-        Effect.fail(new AcquisitionError({ reason: "network", cause: "Access required", status })),
+        Effect.fail(new AcquisitionError({ reason: "http", cause: "Access required", status })),
       );
       const result = yield* Effect.result(run(source({ acquisitionMode: "public-url" })));
       expect(result).toMatchObject({
-        failure: { _tag: "UnsupportedSource", reason: expect.stringContaining("on your device") },
+        failure: { _tag: "ExtractionError", cause: { _tag: "AcquisitionError", status } },
       });
-      if (result._tag === "Failure") {
-        expect(
-          new IngestionError({ stage: "extracting", cause: result.failure }).message,
-        ).toContain("on your device");
-      }
+      if (result._tag === "Failure")
+        expect(failureAccess(result.failure)).toBe(
+          status === 401 ? "login-required" : status === 402 ? "paywalled" : undefined,
+        );
       expect(acquireSource).toHaveBeenCalledTimes(1);
     }),
 );
@@ -228,6 +228,7 @@ it.effect("fails the pipeline at original storage read without any URL fallback 
   Effect.gen(function* () {
     const storage = yield* Storage;
     const db = {
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
       query: {
         file: {
           findFirst: async () => ({ ...source({}), storageKey: "missing-private-original" }),

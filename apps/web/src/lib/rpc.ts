@@ -20,7 +20,7 @@ import * as Cause from "effect/Cause";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 
-import { QueryCache } from "./query-cache";
+import { QueryCache, type QuerySnapshot } from "./query-cache";
 
 const caches = new WeakMap<ClientRuntime, QueryCache>();
 
@@ -86,6 +86,31 @@ export function useQuery<T, E>(
   }, [query]);
 
   return { ...snapshot, refetch, setData: query.setData };
+}
+
+/**
+ * The same cached query `useQuery` reads, followed from outside render (an effect that talks to
+ * the desktop). Calls `onData` with each new value, `onError` when a fetch fails.
+ */
+export function watchQuery<T, E>(
+  runtime: ClientRuntime,
+  fn: (client: AvenireRpcClient) => Effect.Effect<T, E>,
+  queryKey: string,
+  onData: (data: T) => void,
+  onError?: (error: unknown) => void,
+): () => void {
+  const query = cachedQuery(runtime, queryKey, fn);
+  let last: QuerySnapshot<T> | undefined;
+  const emit = () => {
+    const snapshot = query.getSnapshot();
+    if (snapshot === last) return;
+    if (snapshot.data !== undefined && snapshot.data !== last?.data) onData(snapshot.data);
+    if (snapshot.error !== undefined && snapshot.error !== last?.error) onError?.(snapshot.error);
+    last = snapshot;
+  };
+  const unsubscribe = query.subscribe(emit);
+  void query.fetch().then(emit);
+  return unsubscribe;
 }
 
 export function useStream<T, E>(

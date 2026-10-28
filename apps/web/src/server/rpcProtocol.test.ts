@@ -1,3 +1,5 @@
+import { captureCandidates } from "@avenire/capture/candidates";
+import { createHash } from "node:crypto";
 import { Settings } from "./settings.ts";
 import { AuthenticationLive } from "@avenire/auth/middleware";
 import { AuthService, createAuth, makeAuthService } from "@avenire/auth/server";
@@ -23,7 +25,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as HttpRouter from "effect/http/HttpRouter";
-import { Library, captureCandidates, type LibraryOperations } from "./library.ts";
+import { Library, type LibraryOperations } from "./library.ts";
 import { filesResponse, ingestionStreamResponse, placementResponse } from "./libraryHttp.ts";
 import { ApplicationHandlersLive, rpcRoutes } from "./rpcProtocol.ts";
 
@@ -314,30 +316,39 @@ it.effect(
   "server capture policy strips clipboard, blocked media and diagnostic content before persistence",
   () =>
     Effect.sync(() => {
-      const result = captureCandidates({
-        ...snapshot,
-        selectionText: "clipboard secret",
-        collectorNotes: ["secret diagnostic"],
-        tabs: [
-          {
-            url: "https://study.test/chapter#one",
-            title: "Study",
-            activeInWindow: true,
-            selectionText: "Source-bound text",
-            engagement: { dwellMs: 1, scrollDepthPct: 1, mediaPlaying: false },
-          },
-          {
-            url: "https://mail.google.com/inbox",
-            title: "Private message",
-            activeInWindow: false,
-            selectionText: "email secret",
-            engagement: { dwellMs: 1, scrollDepthPct: 0, mediaPlaying: false },
-          },
-        ],
-        media: [
-          { appName: "Chrome", title: "Private browsing", url: "https://study.test/private" },
-        ],
-      });
+      const result = captureCandidates(
+        {
+          ...snapshot,
+          selectionText: "clipboard secret",
+          collectorNotes: ["secret diagnostic"],
+          tabs: [
+            {
+              url: "https://study.test/chapter#one",
+              title: "Study",
+              tabId: 1,
+              windowId: 1,
+              browser: "chrome",
+              activeInWindow: true,
+              selectionText: "Source-bound text",
+              engagement: { dwellMs: 1, scrollDepthPct: 1, mediaPlaying: false },
+            },
+            {
+              url: "https://mail.google.com/inbox",
+              title: "Private message",
+              tabId: 1,
+              windowId: 1,
+              browser: "chrome",
+              activeInWindow: false,
+              selectionText: "email secret",
+              engagement: { dwellMs: 1, scrollDepthPct: 0, mediaPlaying: false },
+            },
+          ],
+          media: [
+            { appName: "Chrome", title: "Private browsing", url: "https://study.test/private" },
+          ],
+        },
+        (text) => createHash("sha256").update(text).digest("hex"),
+      );
       const serialized = JSON.stringify(result);
       for (const secret of [
         "clipboard secret",

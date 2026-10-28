@@ -4,7 +4,14 @@
  * processes can run side by side and a crashed worker's jobs are picked up again.
  */
 import { prettyWorkerCause } from "@avenire/shared/error-cause";
-import { IngestionJobId, type IngestionStatus, FileId, NotFound, UserId } from "@avenire/contracts";
+import {
+  IngestionJobId,
+  type IngestionStatus,
+  FileId,
+  NotFound,
+  UserId,
+  type SourceAccess,
+} from "@avenire/contracts";
 import { Database, type DatabaseClient, type DatabaseTransaction } from "@avenire/database/client";
 import { lockCorpus, advanceCorpusRevision } from "@avenire/database/corpus";
 import { ingestionJob, file } from "@avenire/database/schema";
@@ -15,11 +22,14 @@ import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
+import * as PubSub from "effect/PubSub";
+import * as Stream from "effect/Stream";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 
-import { claimPredicate, IngestionLeaseLost } from "./claim.ts";
+import { failureAccess } from "./extract/access.ts";
+import { claimPredicate, IngestionLeaseLost, ownsPublication } from "./claim.ts";
 import { IngestionError, IngestionPipeline } from "./pipeline.ts";
 import { graphRetryDelay } from "./graph/extract.ts";
 
@@ -149,19 +159,26 @@ const decodeClaimed = Schema.decodeUnknownEffect(Schema.Array(ClaimedJob));
  * Leases up to `limit` jobs: queued ones whose retry delay has passed, plus
  * in-progress ones whose lease expired (their worker died).
  */
-export const claimJobs = (db: DatabaseClient, limit: number, token: string) => {
+export const claimJobs = (db: DatabaseClient, limit: number, token: string, shortOnly = false) => {
   const due = db
     .select({ id: ingestionJob.id })
     .from(ingestionJob)
     .where(
-      or(
-        and(
-          eq(ingestionJob.status, "queued"),
-          or(isNull(ingestionJob.lockedUntil), lt(ingestionJob.lockedUntil, sql`now()`)),
+      and(
+        shortOnly
+          ? sql`exists (select 1 from ${file} where ${file.id} = ${ingestionJob.fileId}
+        and ${file.userId} = ${ingestionJob.userId} and ${file.kind} not in ('video', 'audio')
+        and coalesce(${file.sizeBytes}, 0) <= 8388608)`
+          : undefined,
+        or(
+          and(
+            eq(ingestionJob.status, "queued"),
+            or(isNull(ingestionJob.lockedUntil), lt(ingestionJob.lockedUntil, sql`now()`)),
+          ),
+          and(inArray(ingestionJob.status, IN_PROGRESS), lt(ingestionJob.lockedUntil, sql`now()`)),
+          // An indexed source can still have a scheduled optional extraction retry.
+          and(eq(ingestionJob.status, "indexed"), lt(ingestionJob.lockedUntil, sql`now()`)),
         ),
-        and(inArray(ingestionJob.status, IN_PROGRESS), lt(ingestionJob.lockedUntil, sql`now()`)),
-        // An indexed source can still have a scheduled optional extraction retry.
-        and(eq(ingestionJob.status, "indexed"), lt(ingestionJob.lockedUntil, sql`now()`)),
       ),
     )
     .orderBy(ingestionJob.createdAt)
@@ -227,10 +244,75 @@ export const providerRetryDelay = (
   return undefined;
 };
 
+/** Access and failure state publish together under the same generation/token/lease fence. */
+export const recordIngestionFailureTx = async (
+  tx: DatabaseTransaction,
+  job: ClaimedJob,
+  message: string,
+  retryAfterMs?: number,
+  access?: SourceAccess,
+): Promise<void> => {
+  const deferred = retryAfterMs !== undefined;
+  const exhausted = !deferred && job.attempts >= MAX_ATTEMPTS;
+
+  if (!(await ownsPublication(tx, job))) return;
+  if (access !== undefined)
+    await tx
+      .update(file)
+      .set({ access })
+      .where(and(eq(file.id, job.fileId), eq(file.userId, job.userId)));
+  await tx
+    .update(ingestionJob)
+    .set({
+      status: job.background ? "indexed" : exhausted ? "failed" : "queued",
+      error: message,
+      // Quota availability is not a failed processing attempt.
+      attempts: deferred ? Math.max(0, job.attempts - 1) : job.attempts,
+      claimToken: null,
+      lockedUntil: deferred
+        ? sql`now() + (${retryAfterMs + 1000} * interval '1 millisecond')`
+        : exhausted
+          ? null
+          : sql`now() + (${retryDelayMinutes(job.attempts)} * interval '1 minute')`,
+      updatedAt: sql`now()`,
+    })
+    .where(claimPredicate(job));
+};
+
+/**
+ * Whether an `avenire_ingestion` notification can mean claimable work. Stage changes and
+ * finished jobs say `claimable: false` (migration 0015); older payloads always wake.
+ */
+export const wakesWorker = (payload: string): boolean => {
+  try {
+    return (JSON.parse(payload) as { claimable?: unknown }).claimable !== false;
+  } catch {
+    return true;
+  }
+};
+
 export const IngestionWorkerLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const database = yield* Database;
     const pipeline = yield* IngestionPipeline;
+    const wakeups = yield* PubSub.sliding<string>(1);
+    if (database.listen)
+      yield* Effect.acquireRelease(
+        Effect.tryPromise(() =>
+          database.listen!("avenire_ingestion", (payload) => {
+            if (wakesWorker(payload)) Effect.runFork(PubSub.publish(wakeups, payload));
+          }),
+        ).pipe(
+          Effect.catch((error) =>
+            Effect.as(Effect.logWarning("Ingestion wakeups unavailable", error), undefined),
+          ),
+        ),
+        (listener) => (listener ? Effect.promise(() => listener.unlisten()) : Effect.void),
+      );
+    const idle = Effect.raceFirst(
+      Effect.sleep(IDLE_DELAY),
+      Stream.runHead(Stream.fromPubSub(wakeups)),
+    ).pipe(Effect.asVoid);
     const concurrency = Math.max(
       1,
       yield* Config.Int("INGESTION_CONCURRENCY").pipe(Config.withDefault(2)),
@@ -241,35 +323,22 @@ export const IngestionWorkerLive = Layer.effectDiscard(
     );
 
     const crypto = yield* Crypto.Crypto;
-    const claim = crypto.randomUUIDv7.pipe(
-      Effect.flatMap((token) => database.use((db) => claimJobs(db, 1, token))),
-      Effect.flatMap(decodeClaimed),
-      Effect.withSpan("IngestionWorker.claim"),
-    );
-
-    /** Re-queue with exponential backoff, or fail the job once it is out of attempts. */
-    const recordFailure = (job: ClaimedJob, message: string, retryAfterMs?: number) => {
-      const deferred = retryAfterMs !== undefined;
-      const exhausted = !deferred && job.attempts >= MAX_ATTEMPTS;
-      return database.use((db) =>
-        db
-          .update(ingestionJob)
-          .set({
-            status: job.background ? "indexed" : exhausted ? "failed" : "queued",
-            error: message,
-            // Quota availability is not a failed processing attempt.
-            attempts: deferred ? Math.max(0, job.attempts - 1) : job.attempts,
-            claimToken: null,
-            lockedUntil: deferred
-              ? sql`now() + (${retryAfterMs + 1000} * interval '1 millisecond')`
-              : exhausted
-                ? null
-                : sql`now() + (${retryDelayMinutes(job.attempts)} * interval '1 minute')`,
-            updatedAt: sql`now()`,
-          })
-          .where(claimPredicate(job)),
+    const claim = (shortOnly = false) =>
+      crypto.randomUUIDv7.pipe(
+        Effect.flatMap((token) => database.use((db) => claimJobs(db, 1, token, shortOnly))),
+        Effect.flatMap(decodeClaimed),
+        Effect.withSpan("IngestionWorker.claim"),
       );
-    };
+
+    const recordFailure = (
+      job: ClaimedJob,
+      message: string,
+      retryAfterMs?: number,
+      access?: SourceAccess,
+    ) =>
+      database.useTransaction((tx) =>
+        recordIngestionFailureTx(tx, job, message, retryAfterMs, access),
+      );
 
     /** If the file was re-enqueued while this run held the lease, hand the lease back. */
     const releaseIfSuperseded = (job: ClaimedJob) =>
@@ -333,7 +402,7 @@ export const IngestionWorkerLive = Layer.effectDiscard(
             prettyWorkerCause(cause),
           ).pipe(
             Effect.annotateLogs({ jobId: job.id, attempts: job.attempts }),
-            Effect.andThen(recordFailure(job, reason, delay)),
+            Effect.andThen(recordFailure(job, reason, delay, failureAccess(error))),
             Effect.catchTag("DatabaseError", (error) =>
               Effect.logError("Could not record the ingestion failure", { jobId: job.id, error }),
             ),
@@ -403,16 +472,19 @@ export const IngestionWorkerLive = Layer.effectDiscard(
         Effect.andThen(releaseIfSuperseded(job)),
       );
 
-    const pollOnce = claim.pipe(
-      Effect.flatMap((jobs) => (jobs.length === 0 ? Effect.sleep(IDLE_DELAY) : runJob(jobs[0]!))),
-      // Infrastructure failures (database down, ...) must not stop the worker.
-      Effect.catchCause((cause) =>
-        Effect.logError("Ingestion poll failed", cause).pipe(
-          Effect.andThen(Effect.sleep(OUTAGE_DELAY)),
+    const pollOnce = (shortOnly = false) =>
+      claim(shortOnly).pipe(
+        Effect.flatMap((jobs) => (jobs.length === 0 ? idle : runJob(jobs[0]!))),
+        // Infrastructure failures (database down, ...) must not stop the worker.
+        Effect.catchCause((cause) =>
+          Effect.logError("Ingestion poll failed", cause).pipe(
+            Effect.andThen(Effect.sleep(OUTAGE_DELAY)),
+          ),
         ),
-      ),
-    );
+      );
 
-    yield* startIngestionLanes(concurrency, pollOnce);
+    yield* startIngestionLanes(Math.max(1, concurrency - 1), pollOnce());
+    // Reserve capacity within the configured total, rather than multiplying provider calls.
+    if (concurrency > 1) yield* startIngestionLanes(1, pollOnce(true));
   }),
 );

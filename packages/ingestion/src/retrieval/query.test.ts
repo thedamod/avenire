@@ -46,7 +46,6 @@ describe("analyzeQuery", () => {
     const result = analyzeQuery("cells -plants and membranes");
     expect(result.lexical).toEqual({ terms: ["cells", "and", "membranes"], negated: ["plants"] });
   });
-
 });
 
 describe("optionsKey", () => {
@@ -60,4 +59,3 @@ describe("optionsKey", () => {
     expect(optionsKey(query, analysis)).not.toBe(optionsKey(query, analyzeQuery("cells p. 12")));
   });
 });
-

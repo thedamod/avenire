@@ -9,10 +9,6 @@
       "types": "./src/bridge.ts",
       "import": "./src/bridge.ts"
     },
-    "./capture-policy": {
-      "types": "./src/capture/policy.ts",
-      "import": "./src/capture/policy.ts"
-    },
     "./source-acquisition": {
       "types": "./src/capture/source-acquisition.ts",
       "import": "./src/capture/source-acquisition.ts"
@@ -27,12 +23,16 @@
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
   },
   "dependencies": {
+    "@avenire/capture": "workspace:*",
     "@avenire/contracts": "workspace:*",
-    "effect": "catalog:"
+    "@avenire/storage": "workspace:*",
+    "effect": "catalog:",
+    "ws": "8.22.0"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
+    "@types/ws": "8.18.2",
     "electron": "44.5.1",
     "electron-builder": "26.15.3",
     "esbuild": "0.28.2",

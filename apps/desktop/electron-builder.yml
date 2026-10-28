@@ -11,6 +11,9 @@ files:
   - onboarding.js
   - onboarding.html
   - onboarding.css
+  - capture-overlay.js
+  - capture-overlay.html
+  - capture-overlay.css
   - desktop-config.json
   - "*.png"
   - "*.svg"

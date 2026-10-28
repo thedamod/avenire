@@ -25,6 +25,7 @@ import {
 } from "./sourceUploads.ts";
 import {
   cancelUploadResponse,
+  completeUploadResponse,
   createUploadResponse,
   putUploadResponse,
 } from "./sourceUploadHttp.ts";
@@ -142,11 +143,20 @@ it.effect(
       const id = randomUUID();
       const absent = SourceUploads.of({
         create: () => Effect.die("create must not execute"),
+        complete: () => Effect.die("complete must not execute"),
+        prepare: () => Effect.die("prepare must not execute"),
         put: () => Effect.die("put must not execute"),
         cancel: () => Effect.die("cancel must not execute"),
         cleanup: () => Effect.void,
       });
       for (const operation of [
+        completeUploadResponse(
+          new Request("https://app.test/api/library/uploads/ticket", {
+            method: "POST",
+            headers: { cookie: "forged" },
+          }),
+          id,
+        ),
         createUploadResponse(
           new Request("https://app.test/api/library/uploads", {
             method: "POST",
@@ -218,6 +228,8 @@ it.effect(
       });
       const absent = SourceUploads.of({
         create: () => Effect.die("No domain access"),
+        complete: () => Effect.die("complete must not execute"),
+        prepare: () => Effect.die("prepare must not execute"),
         put: () => Effect.die("No domain access"),
         cancel: () => Effect.die("No domain access"),
         cleanup: () => Effect.void,
@@ -299,12 +311,22 @@ it.effect(
       );
       yield* Effect.gen(function* () {
         const memory = yield* Storage;
+        let canSign = false;
         let failPut = false;
         let failRemove = false;
         let beginPut: (() => void) | undefined;
         let releasePut: (() => void) | undefined;
         const stored = Storage.of({
           ...memory,
+          prepareSourceUpload: (key) =>
+            Effect.succeed(
+              canSign
+                ? {
+                    method: "PUT" as const,
+                    url: `https://bucket.test/provider-test?key=${key}`,
+                  }
+                : null,
+            ),
           remove: (key) =>
             failRemove
               ? Effect.fail(new StorageError({ operation: "remove", cause: "storage outage" }))
@@ -328,10 +350,175 @@ it.effect(
         });
         yield* Effect.gen(function* () {
           const uploads = yield* SourceUploads;
+          const directBytes = new TextEncoder().encode("direct source fixture");
+          const directInput = {
+            ...metadata(),
+            sizeBytes: directBytes.length,
+            sha256: hash(directBytes),
+          };
+          const direct = yield* uploads.create(owner, directInput);
+          const protocol = (body: unknown) =>
+            completeUploadResponse(
+              new Request(`https://app.test/api/library/uploads/${direct.uploadId}`, {
+                method: "POST",
+                headers: { "content-type": "application/json", cookie: "session=owner" },
+                body: JSON.stringify(body),
+              }),
+              direct.uploadId,
+            ).pipe(
+              Effect.provideService(
+                AuthService,
+                AuthService.of({
+                  auth: {} as AuthService["Service"]["auth"],
+                  getSession: () =>
+                    Effect.succeed({ id: owner, email: "owner@test", name: "Owner" }),
+                }),
+              ),
+              Effect.provideService(WidgetHost, { host: "widgets.test" }),
+              Effect.provideService(
+                ConfigProvider.ConfigProvider,
+                ConfigProvider.fromUnknown({ BETTER_AUTH_URL: "https://app.test" }),
+              ),
+            );
+          const relay = yield* protocol({
+            op: "presign",
+            files: [{ name: "source", size: directBytes.length, type: directInput.mimeType }],
+          });
+          expect(yield* Effect.promise(() => relay.json())).toMatchObject({
+            uploads: [{ target: { method: "PUT", url: direct.uploadUrl } }],
+          });
+          canSign = true;
+          const presigned = yield* protocol({
+            op: "presign",
+            files: [{ name: "source", size: directBytes.length, type: directInput.mimeType }],
+          });
+          expect(presigned.status).toBe(200);
+          expect(yield* Effect.promise(() => presigned.json())).toMatchObject({
+            uploads: [{ id: direct.uploadId, key: direct.uploadId, target: { method: "PUT" } }],
+          });
+          expect(
+            (yield* protocol({
+              op: "presign",
+              files: [{ name: "source", size: directBytes.length + 1, type: directInput.mimeType }],
+            })).status,
+          ).toBe(422);
+          expect(
+            (yield* protocol({
+              op: "complete",
+              completions: [{ id: direct.uploadId, key: randomUUID() }],
+            })).status,
+          ).toBe(400);
+          const target = yield* uploads.prepare(owner, direct.uploadId, {
+            size: directBytes.length,
+            type: directInput.mimeType,
+          });
+          expect(target?.method).toBe("PUT");
+          expect(
+            yield* uploads.prepare(owner, direct.uploadId, {
+              size: directBytes.length,
+              type: directInput.mimeType,
+            }),
+          ).toEqual(target);
+          expect(
+            yield* uploads
+              .prepare(other, direct.uploadId, {
+                size: directBytes.length,
+                type: directInput.mimeType,
+              })
+              .pipe(Effect.result),
+          ).toMatchObject({ failure: { status: 404 } });
+          expect(
+            yield* uploads
+              .prepare(owner, direct.uploadId, {
+                size: directBytes.length + 1,
+                type: directInput.mimeType,
+              })
+              .pipe(Effect.result),
+          ).toMatchObject({ failure: { status: 422 } });
+          const [directRow] = yield* database.use((db) =>
+            db.select().from(sourceUpload).where(eq(sourceUpload.id, direct.uploadId)),
+          );
+          // Provider writes happen out of band. Completion must not call the relay put.
+          yield* memory.put(StorageKey.make(directRow!.storageKey!), "corrupt");
+          expect(
+            yield* uploads.complete(owner, direct.uploadId, request()).pipe(Effect.result),
+          ).toMatchObject({ failure: { status: 422 } });
+          yield* memory.put(StorageKey.make(directRow!.storageKey!), directBytes);
+          failPut = true;
+          const directFile = yield* uploads.complete(owner, direct.uploadId, request());
+          expect((yield* uploads.complete(owner, direct.uploadId, request())).id).toBe(
+            directFile.id,
+          );
+          expect(
+            yield* uploads.complete(other, direct.uploadId, request()).pipe(Effect.result),
+          ).toMatchObject({ failure: { status: 404 } });
+          const completed = yield* protocol({
+            op: "complete",
+            completions: [{ id: direct.uploadId, key: direct.uploadId }],
+          });
+          expect(completed.status).toBe(200);
+          expect(yield* Effect.promise(() => completed.json())).toMatchObject({
+            files: [{ key: direct.uploadId, size: directBytes.length }],
+            sourceFile: { id: directFile.id },
+          });
+          failPut = false;
+          yield* memory.remove(StorageKey.make(directRow!.storageKey!));
+          yield* database.use((db) => db.delete(file).where(eq(file.id, directFile.id)));
+          yield* database.use((db) =>
+            db.delete(sourceUpload).where(eq(sourceUpload.id, direct.uploadId)),
+          );
+
+          // A stale direct claim is reset and re-presigned; its tombstoned key never becomes live.
+          const staleBytes = new TextEncoder().encode("stale direct fixture");
+          const staleInput = {
+            ...metadata(),
+            sizeBytes: staleBytes.length,
+            sha256: hash(staleBytes),
+          };
+          const stale = yield* uploads.create(owner, staleInput);
+          const staleInfo = { size: staleBytes.length, type: staleInput.mimeType };
+          yield* uploads.prepare(owner, stale.uploadId, staleInfo);
+          const [firstClaim] = yield* database.use((db) =>
+            db
+              .update(sourceUpload)
+              .set({
+                status: "uploading",
+                claimToken: randomUUID(),
+                claimExpiresAt: new Date(-1000),
+              })
+              .where(eq(sourceUpload.id, stale.uploadId))
+              .returning(),
+          );
+          yield* uploads.cleanup();
+          yield* uploads.prepare(owner, stale.uploadId, staleInfo);
+          const [represigned] = yield* database.use((db) =>
+            db.select().from(sourceUpload).where(eq(sourceUpload.id, stale.uploadId)),
+          );
+          expect(represigned!.storageKey).not.toBe(firstClaim!.storageKey);
+          yield* memory.put(StorageKey.make(represigned!.storageKey!), staleBytes);
+          const staleFile = yield* uploads.complete(owner, stale.uploadId, request());
+          const [staleDone] = yield* database.use((db) =>
+            db.select().from(sourceUpload).where(eq(sourceUpload.id, stale.uploadId)),
+          );
+          expect(staleDone!.abandonedStorageKeys).not.toContain(staleFile.storageKey);
+          yield* uploads.cleanup();
+          expect(new TextDecoder().decode(yield* memory.get(staleFile.storageKey!))).toBe(
+            "stale direct fixture",
+          );
+          yield* memory.remove(staleFile.storageKey!);
+          yield* database.use((db) => db.delete(file).where(eq(file.id, staleFile.id)));
+          yield* database.use((db) =>
+            db.delete(sourceUpload).where(eq(sourceUpload.id, stale.uploadId)),
+          );
           const input = {
             ...metadata(),
             sourceUrl: "https://study.test/chapter?token=secret#fragment",
           };
+          // Stage lifecycle tickets before publishing identical bytes; later creates dedupe.
+          const expired = yield* uploads.create(owner, metadata());
+          const cancelled = yield* uploads.create(owner, metadata());
+          const reclaimed = yield* uploads.create(owner, metadata());
+          const concurrent = yield* uploads.create(owner, metadata());
           const created = yield* uploads.create(owner, input);
           expect(created.uploadUrl).toBe(`/api/library/uploads/${created.uploadId}`);
           expect(yield* uploads.create(owner, input)).toEqual(created);
@@ -395,7 +582,6 @@ it.effect(
           );
           expect(cleaned?.abandonedStorageKeys).toEqual([]);
 
-          const expired = yield* uploads.create(owner, metadata());
           yield* database.use((db) =>
             db
               .update(sourceUpload)
@@ -406,14 +592,12 @@ it.effect(
             yield* uploads.put(owner, expired.uploadId, request()).pipe(Effect.result),
           ).toMatchObject({ failure: { status: 410 } });
           yield* uploads.cleanup();
-          const cancelled = yield* uploads.create(owner, metadata());
           yield* uploads.cancel(owner, cancelled.uploadId);
           expect(
             yield* uploads.put(owner, cancelled.uploadId, request()).pipe(Effect.result),
           ).toMatchObject({ failure: { status: 410 } });
 
           // A dead worker lease is reclaimable; failed garbage deletion stays durable.
-          const reclaimed = yield* uploads.create(owner, metadata());
           const oldKey = `users/${owner}/files/reclaimed/source`;
           yield* memory.put(StorageKey.make(oldKey), "abandoned source");
           yield* database.use((db) =>
@@ -450,7 +634,6 @@ it.effect(
           });
           expect(new TextDecoder().decode(yield* memory.get(recovered.storageKey!))).toBe(content);
 
-          const concurrent = yield* uploads.create(owner, metadata());
           const started = new Promise<void>((resolve) => {
             beginPut = resolve;
           });
@@ -483,4 +666,12 @@ it.effect(
         Effect.provide(NodeServices.layer),
       );
     }).pipe(Effect.scoped),
+);
+
+it.effect("web page snapshots accept markdown originals", () =>
+  Effect.sync(() => {
+    expect(
+      normalizeUploadMetadata({ ...metadata(), kind: "web-page", mimeType: "text/markdown" }),
+    ).toMatchObject({ kind: "web-page", mimeType: "text/markdown", access: "open" });
+  }),
 );

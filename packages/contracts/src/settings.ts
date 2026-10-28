@@ -19,7 +19,10 @@ export const UserSettings = Schema.Struct({
   fileChanges: Schema.Literals(["propose", "apply"]),
   /** Ruth proposes notebooks for Unfiled sources every night (no run quota). */
   sortUnfiledNightly: Schema.Boolean,
-  /** Desktop capture may read pages the user is logged into, with their own session. */
+  /**
+   * Capture reads page text and files (PDFs, Office documents) inside the user's browser, with
+   * their own session, instead of the server fetching public URLs anonymously.
+   */
   captureLoggedInPages: Schema.Boolean,
   /** What capture keeps when a page is behind a paywall. */
   paywalledPages: Schema.Literals(["title-abstract", "skip"]),

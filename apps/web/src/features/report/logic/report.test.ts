@@ -31,6 +31,8 @@ const file = (id: string, kind: LibraryFile["kind"], title: string, extra = {}) 
     placement: "filed",
     folderIds: [],
     mimeType: null,
+    origin: null,
+    access: "open",
     ...extra,
   }) as unknown as LibraryFile;
 

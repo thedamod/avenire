@@ -6,18 +6,33 @@ const mocks = vi.hoisted(() => ({
     notes: [],
   })),
 }));
+vi.mock("../config.ts", () => ({
+  captureAppData: "",
+  captureConfigHome: "",
+  powerShellOneShot: false,
+}));
+vi.mock("./native.ts", async (original) => ({
+  ...(await original<typeof import("./native.ts")>()),
+  collectNative: async () => ({ windows: [], media: [], notes: [] }),
+}));
 vi.mock("./foreground.ts", () => ({ collectForeground: mocks.foreground }));
 vi.mock("./tabs.ts", () => ({
   latestTabs: () => [
     {
       url: "file:///tmp/Browser%20Study.pdf",
       title: "Browser Study",
+      tabId: 1,
+      windowId: 1,
+      browser: "chrome",
       activeInWindow: true,
       engagement: { dwellMs: 0, scrollDepthPct: 0, mediaPlaying: false },
     },
     {
       url: "file:///tmp/Private.pdf",
       title: "Private",
+      tabId: 1,
+      windowId: 1,
+      browser: "chrome",
       activeInWindow: true,
       incognito: true,
       engagement: { dwellMs: 0, scrollDepthPct: 0, mediaPlaying: false },

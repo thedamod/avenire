@@ -22,7 +22,7 @@ import { Chip } from "@avenire/ui/components/chip";
 import { Popover, PopoverContent, PopoverTrigger } from "@avenire/ui/components/popover";
 import { useArrivedLate } from "@avenire/ui/components/presence";
 import { cn } from "@avenire/ui/lib/utils";
-import { KIND_LABELS, NotebookTag, RelativeTime, urlHost } from "~/components/app";
+import { KIND_LABELS, NotebookTag, RelativeTime } from "~/components/app";
 import { useLibrary } from "~/features/library/LibraryProvider";
 import { FileRow } from "~/features/library/FileRow";
 import { SourceUpload, SourceUploadArea } from "~/features/library/SourceUpload";
@@ -36,6 +36,8 @@ import {
   type IngestionState,
 } from "~/features/library/ingestion";
 import type { Selection } from "~/features/library/useSelection";
+import { hasOriginal, originLabel, savedOn } from "~/features/sources/reopen";
+import { useIsDesktop, useReopenFile } from "~/features/sources/useReopenFile";
 import { useLocalSet } from "~/lib/localSet";
 import { formatTimestamp } from "~/lib/time";
 import { useNow } from "~/lib/useNow";
@@ -65,8 +67,10 @@ export function matchesSourceFilter(file: LibraryFile, filter: SourceFilter) {
 }
 
 function sourceSubtitle(file: LibraryFile): string {
-  const parts = [urlHost(file.sourceUrl) ?? KIND_LABELS[file.kind]];
+  const parts = [originLabel(file) ?? KIND_LABELS[file.kind]];
   if (file.mediaPositionSec) parts.push(`saved at ${formatTimestamp(file.mediaPositionSec)}`);
+  const device = savedOn(file);
+  if (device) parts.push(device);
   return parts.join(" · ");
 }
 
@@ -93,6 +97,8 @@ export function SourcesTab({
   onRetry: (id: FileId) => void;
 }) {
   const { actions } = useLibrary();
+  const desktop = useIsDesktop();
+  const reopen = useReopenFile();
   const kept = useLocalSet(KEPT_SOURCES);
   const late = useArrivedLate(sources);
   const unfiledCount = sources?.filter((file) => file.placement === "inbox").length ?? 0;
@@ -103,7 +109,7 @@ export function SourcesTab({
     const rest: LibraryFile[] = [];
     for (const file of sources ?? []) {
       if (!matchesSourceFilter(file, filter)) continue;
-      const state = ingestionState(jobs.get(file.id));
+      const state = ingestionState(jobs.get(file.id), file);
       if (state?.kind === "processing") processing.push({ file, state });
       else if (state && !(state.kind === "paywall" && kept.has(file.id)))
         needsYou.push({ file, state });
@@ -187,14 +193,10 @@ export function SourcesTab({
             <Group label={`Needs you · ${groups.needsYou.length}`} flat>
               <PresenceRows items={groups.needsYou} getKey={entryFileId}>
                 {({ file, state }) => {
-                  const fix = needsYouCopy(file, state);
+                  const fix = needsYouCopy(state, hasOriginal(file, desktop));
                   const primary = {
                     retry: { label: "Try again", run: () => onRetry(file.id) },
-                    open: {
-                      label: "Open in browser",
-                      run: () =>
-                        file.sourceUrl && window.open(file.sourceUrl, "_blank", "noopener"),
-                    },
+                    open: { label: "Open original", run: () => reopen(file) },
                   }[fix.primary];
                   const secondary =
                     fix.secondary === "keep"
@@ -278,7 +280,7 @@ export function SourcesTab({
   );
 }
 
-function needsYouCopy(file: LibraryFile, state: IngestionState) {
+function needsYouCopy(state: IngestionState, canOpen: boolean) {
   const danger = "text-destructive/85";
   const warn = "text-warning";
   switch (state.kind) {
@@ -293,14 +295,14 @@ function needsYouCopy(file: LibraryFile, state: IngestionState) {
       return {
         reason: "Behind a paywall. Saved the title and abstract only.",
         tone: warn,
-        primary: file.sourceUrl ? "open" : "retry",
+        primary: canOpen ? "open" : "retry",
         secondary: "keep",
       } as const;
     case "login":
       return {
         reason: `Needs your ${state.site ?? "site"} login. Capture it again on your computer with logged-in capture on.`,
         tone: warn,
-        primary: file.sourceUrl ? "open" : "retry",
+        primary: canOpen ? "open" : "retry",
         secondary: "remove",
       } as const;
     case "paused":

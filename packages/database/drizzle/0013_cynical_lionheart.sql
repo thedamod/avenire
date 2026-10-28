@@ -1,0 +1,1 @@
+ALTER TABLE "source_upload" ADD COLUMN "direct_upload" jsonb;

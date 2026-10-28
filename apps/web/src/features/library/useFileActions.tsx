@@ -12,6 +12,8 @@ import { errorMessage } from "~/lib/rpc";
 import { MoveToNotebook } from "~/features/sources/MoveToNotebook";
 import { NewNotebookDialog } from "./NewNotebookDialog";
 import { useLibrary } from "./LibraryProvider";
+import { hasOriginal } from "~/features/sources/reopen";
+import { useIsDesktop, useReopenFile } from "~/features/sources/useReopenFile";
 import { buildFileActions, type ActionFile } from "./fileActions";
 
 /** The dock and row menus share policy, callbacks and existing filing dialogs. */
@@ -34,6 +36,8 @@ export function useFileActions({
   const params = useParams<{ folderId?: string }>();
   const currentFolderId = params?.folderId as FolderId | undefined;
   const isMobile = useIsMobile();
+  const desktopShell = useIsDesktop();
+  const reopen = useReopenFile();
   const [moving, setMoving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -48,6 +52,11 @@ export function useFileActions({
   const complete = (operation: Promise<void>) => {
     void operation.then(onComplete);
   };
+  const single = targets.length === 1 && ids.length === 1 ? targets[0] : undefined;
+  const original =
+    single && single.kind !== "note"
+      ? { id: single.id, origin: single.origin ?? null, sourceUrl: single.sourceUrl ?? null }
+      : undefined;
   const list = buildFileActions({
     files: targets,
     ids,
@@ -56,6 +65,7 @@ export function useFileActions({
     selected,
     desktop: !isMobile,
     currentFolderId,
+    original: !!original && hasOriginal(original, desktopShell),
     handlers: {
       move: (folder) => complete(actions.moveFiles(ids, folder)),
       newNotebook: () => {
@@ -74,6 +84,9 @@ export function useFileActions({
       trash: () => complete(actions.trashFiles(ids)),
       openInNewTab: () => {
         if (href) window.open(href, "_blank", "noopener,noreferrer");
+      },
+      openOriginal: () => {
+        if (original) reopen(original);
       },
       copyLink: () => {
         if (href)
@@ -107,7 +120,11 @@ export function useFileActions({
         onOpenChange={setCreating}
         onCreated={(folder) => complete(actions.moveFiles(dialogIds, folder))}
       />
-      <ResponsiveDialog open={renaming} onOpenChange={setRenaming} title={targets[0]?.kind === "note" ? "Rename note" : "Rename source"}>
+      <ResponsiveDialog
+        open={renaming}
+        onOpenChange={setRenaming}
+        title={targets[0]?.kind === "note" ? "Rename note" : "Rename source"}
+      >
         <form
           className="flex flex-col gap-4 p-5 md:p-6"
           onSubmit={(event) => {

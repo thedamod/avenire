@@ -2,6 +2,7 @@ import { FileId, UserId } from "@avenire/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Deferred from "effect/Deferred";
 
 import { extractMedia, outlineSection, transcribeAudio } from "./av.ts";
 import { DescribeError, ImageDescriber, ImageDescriberTest } from "./describe.ts";
@@ -35,6 +36,62 @@ const media = Layer.succeed(
 );
 
 describe("extractMedia", () => {
+  it.effect("publishes transcript coverage before optional slide descriptions", () =>
+    Effect.gen(function* () {
+      const document = yield* extractMedia(bytes, { ...source, enrichment: "deferred" });
+      expect(document.sections.some((section) => section.kind === "transcript")).toBe(true);
+      expect(document.sections.some((section) => section.kind === "slide")).toBe(false);
+      expect(document.coverage.parts).toContainEqual({
+        part: "slides",
+        status: "partial",
+        detail: "Enrichment pending: slide descriptions",
+      });
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(media, TranscriberTest, TranscriptCacheTest, ImageDescriberTest),
+      ),
+    ),
+  );
+
+  it.effect("starts transcription while the audio producer is still making clips", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      let produced = 0;
+      const processor = MediaProcessor.of({
+        streamsAudio: true,
+        probe: () => Effect.succeed({ durationSec: 1200, hasVideo: false }),
+        embeddedCaptions: () => Effect.succeed(""),
+        sceneFrames: () => Effect.succeed([]),
+        audioSegments: (_source, options) =>
+          Effect.gen(function* () {
+            produced++;
+            yield* options.onSegment!({ offsetSec: 0, bytes, mimeType: "audio/mpeg" });
+            yield* Deferred.await(started);
+            produced++;
+            yield* options.onSegment!({ offsetSec: 600, bytes, mimeType: "audio/mpeg" });
+            return [
+              { offsetSec: 0, bytes: new Uint8Array(), mimeType: "audio/mpeg" },
+              { offsetSec: 600, bytes: new Uint8Array(), mimeType: "audio/mpeg" },
+            ];
+          }),
+      });
+      const transcriber = Transcriber.of({
+        model: "stream-test",
+        transcribe: () =>
+          Effect.gen(function* () {
+            if (produced === 1) yield* Deferred.succeed(started, undefined);
+            return [{ text: "Streaming speech", startSec: 0, endSec: 1 }];
+          }),
+      });
+      const result = yield* transcribeAudio(bytes, 1200).pipe(
+        Effect.provideService(MediaProcessor, processor),
+        Effect.provideService(Transcriber, transcriber),
+        Effect.provide(TranscriptCacheTest),
+      );
+      expect(produced).toBe(2);
+      expect(result.cues.map((cue) => cue.startSec)).toEqual([0, 600]);
+    }),
+  );
   it.effect("reuses successful clips only within the owning source", () => {
     let calls = 0;
     const transcriber = Layer.succeed(

@@ -46,7 +46,9 @@ export function trayTemplate(state: TrayState): MenuItemConstructorOptions[] {
       checked: !state.shortcutsEnabled,
       enabled: state.setupCompleted,
     },
+    { id: "pair", label: "Pair browser extension…", enabled: state.captureReady },
     { id: "setup", label: "Desktop setup…" },
+    { id: "capture-log", label: "Open capture log" },
     { type: "separator" },
     {
       id: "quit",

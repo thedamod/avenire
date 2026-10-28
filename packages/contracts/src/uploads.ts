@@ -1,6 +1,7 @@
 /** Device acquisition transfers source bytes; OCR/transcription/indexing stays on the server. */
 import * as Schema from "effect/Schema";
-import { FileKind } from "./library.ts";
+import { CaptureOrigin, SourceAccess } from "./capture.ts";
+import { FileKind, LibraryFile } from "./library.ts";
 
 export const MAX_SOURCE_UPLOAD_BYTES = 256 * 1024 * 1024;
 export const SourceUploadId = Schema.String.check(
@@ -8,6 +9,8 @@ export const SourceUploadId = Schema.String.check(
 ).pipe(Schema.brand("SourceUploadId"));
 export type SourceUploadId = typeof SourceUploadId.Type;
 export const CreateSourceUpload = Schema.Struct({
+  /** Accepted for older clients; the storage SDK now selects the upload transport. */
+  transport: Schema.optionalKey(Schema.Literal("direct")),
   idempotencyKey: Schema.String.check(
     Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
   ),
@@ -18,13 +21,36 @@ export const CreateSourceUpload = Schema.Struct({
   sha256: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/i)),
   /** Optional provenance only. The server drops query/fragment and rejects credentials. */
   sourceUrl: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))),
+  /**
+   * Where a captured original came from. The server derives the file's dedupe key from it, so a
+   * page read in the browser and the same URL captured server-side are one file.
+   */
+  origin: Schema.optionalKey(CaptureOrigin),
+  /** What the capturing client observed; defaults to `open`. */
+  access: Schema.optionalKey(SourceAccess),
 });
 export type CreateSourceUpload = typeof CreateSourceUpload.Type;
+/** Provider capability only: no Avenire cookies may accompany these requests. */
+export const DirectSourceUpload = Schema.Union([
+  Schema.Struct({
+    method: Schema.Literal("PUT"),
+    url: Schema.String,
+    headers: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+  }),
+  Schema.Struct({
+    method: Schema.Literal("POST"),
+    url: Schema.String,
+    fields: Schema.Record(Schema.String, Schema.String),
+  }),
+]);
+export type DirectSourceUpload = typeof DirectSourceUpload.Type;
 export const SourceUploadTicket = Schema.Struct({
   uploadId: SourceUploadId,
   uploadUrl: Schema.String,
   expiresAt: Schema.String,
   status: Schema.Literals(["pending", "uploading", "completed", "cancelled"]),
+  /** Set when the bytes already exist in the library (content dedupe): skip the PUT. */
+  file: Schema.optionalKey(LibraryFile),
 });
 export type SourceUploadTicket = typeof SourceUploadTicket.Type;
 export class SourceUploadError extends Schema.TaggedError<SourceUploadError>()(
@@ -34,3 +60,21 @@ export class SourceUploadError extends Schema.TaggedError<SourceUploadError>()(
     message: Schema.String,
   },
 ) {}
+
+/** The files-sdk client protocol, scoped to one authenticated source-upload ticket. */
+export const SourceUploadAction = Schema.Union([
+  Schema.Struct({
+    op: Schema.Literal("presign"),
+    files: Schema.Array(
+      Schema.Struct({ name: Schema.String, size: Schema.Int, type: Schema.String }),
+    ).check(Schema.isMinLength(1), Schema.isMaxLength(1)),
+    expiresIn: Schema.optionalKey(Schema.Number),
+  }),
+  Schema.Struct({
+    op: Schema.Literal("complete"),
+    completions: Schema.Array(Schema.Struct({ id: SourceUploadId, key: SourceUploadId })).check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(1),
+    ),
+  }),
+]);

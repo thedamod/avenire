@@ -17,7 +17,7 @@ import type { TranscriptCache } from "./transcript-cache.ts";
 import type { Transcriber } from "./transcribe.ts";
 import {
   type ExtractedDocument,
-  type ExtractionError,
+  ExtractionError,
   type SourceInput,
   storableDocument,
   UnsupportedSource,
@@ -55,7 +55,14 @@ const extractUrlMedia = Effect.fn("extractUrlMedia")(function* (
         () => [],
       )
     : [];
-  const metadata = yield* remote.metadata(url).pipe(Effect.option);
+  const metadata = yield* remote.metadata(url).pipe(
+    Effect.map(Option.some),
+    Effect.catchTag("RemoteMediaError", (error) =>
+      error.reason === "unsupported"
+        ? Effect.succeed(Option.none())
+        : Effect.fail(new ExtractionError({ source: "remote-metadata", cause: error })),
+    ),
+  );
   if (Option.isNone(metadata) && cues.length === 0) {
     return yield* new UnsupportedSource({
       kind: source.kind,
@@ -79,17 +86,27 @@ const extractUrlMedia = Effect.fn("extractUrlMedia")(function* (
 export const extract = (
   source: SourceInput,
 ): Effect.Effect<ExtractedDocument, ExtractionError | UnsupportedSource, ExtractionServices> =>
-  extractWith(source).pipe(Effect.map(storableDocument));
+  extractWith(source).pipe(
+    Effect.map((document) =>
+      storableDocument({
+        ...document,
+        access:
+          document.access ??
+          (source.acquisitionMode === "stored" ? (source.access ?? "open") : "open"),
+      }),
+    ),
+  );
 
 const extractWith = (
   source: SourceInput,
 ): Effect.Effect<ExtractedDocument, ExtractionError | UnsupportedSource, ExtractionServices> => {
   const { bytes, sourceUrl } = source;
   const format = resolveFormat(source);
+  if (source.localMedia && format === "media") return extractMedia(source.localMedia, source);
   if (bytes !== null) {
     switch (format) {
       case "pdf":
-        return extractPdf(bytes);
+        return extractPdf(bytes, source.enrichment === "deferred");
       case "office":
         return extractOffice(source.mimeType, bytes);
       case "image":

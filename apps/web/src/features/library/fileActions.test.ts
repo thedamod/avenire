@@ -20,6 +20,7 @@ function setup(
     download: vi.fn(),
     trash: vi.fn(),
     openInNewTab: vi.fn(),
+    openOriginal: vi.fn(),
     copyLink: vi.fn(),
     toggleSelection: vi.fn(),
     rename: vi.fn(),
@@ -108,6 +109,15 @@ describe("buildFileActions", () => {
     expect(actions.some((action) => action.id === "remove")).toBe(true);
     expect(setup([note]).ids).not.toContain("remove");
     expect(setup([source], { currentFolderId: folderId }).ids).not.toContain("remove");
+  });
+  it("offers Open original only for a single source that has one", () => {
+    const { actions, handlers, ids } = setup([source], { original: true });
+    expect(ids.slice(0, 3)).toEqual(["open", "new-tab", "original"]);
+    actions.find((action) => action.id === "original")?.onSelect?.();
+    expect(handlers.openOriginal).toHaveBeenCalledOnce();
+    expect(setup([source]).ids).not.toContain("original");
+    expect(setup([note], { original: true }).ids).not.toContain("original");
+    expect(setup([source, { ...source, id: c }], { original: true }).ids).not.toContain("original");
   });
   it("routes dock/menu actions through the same supplied handlers", () => {
     const folder = { id: folderId, name: "Physics" } as Folder;

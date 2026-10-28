@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { promisify } from "node:util";
 import { pickBestPath, rankCandidatePaths } from "../../src/capture/path-ranking.ts";
 import type { ForegroundApp } from "../../src/capture/types.ts";
-import { createCaptureContext, type CaptureContext } from "./capture-context.ts";
+import { collectorTimeout, createCaptureContext, type CaptureContext } from "./capture-context.ts";
 import { describeExecError } from "./exec-note.ts";
 
 const execFileAsync = promisify(execFile);
@@ -22,6 +22,7 @@ export async function resolveDocumentPathMac(
       'tell application "Microsoft Word" to get full name of active document',
       "word",
       notes,
+      ctx,
     );
     if (p) return p;
   } else if (name === "microsoft excel") {
@@ -29,6 +30,7 @@ export async function resolveDocumentPathMac(
       'tell application "Microsoft Excel" to get full name of active workbook',
       "excel",
       notes,
+      ctx,
     );
     if (p) return p;
   } else if (name === "microsoft powerpoint") {
@@ -36,6 +38,7 @@ export async function resolveDocumentPathMac(
       'tell application "Microsoft PowerPoint" to get full name of active presentation',
       "ppt",
       notes,
+      ctx,
     );
     if (p) return p;
   }
@@ -49,9 +52,12 @@ async function osascriptPath(
   script: string,
   tag: string,
   notes: string[],
+  ctx: CaptureContext,
 ): Promise<string | undefined> {
   try {
-    const { stdout } = await execFileAsync("osascript", ["-e", script], { timeout: 5000 });
+    const { stdout } = await execFileAsync("osascript", ["-e", script], {
+      timeout: collectorTimeout(ctx, 5000),
+    });
     const p = stdout.trim();
     if (p && existsSync(p)) {
       notes.push(`mac:osascript:${tag}:hit`);
@@ -89,7 +95,7 @@ function lsofScan(pid: number, notes: string[], ctx: CaptureContext): Promise<st
     try {
       // -n/-P: no DNS or port-name lookups — the slow part of a bare lsof.
       const { stdout } = await execFileAsync("lsof", ["-n", "-P", "-p", String(pid), "-Ffn"], {
-        timeout: 5000,
+        timeout: collectorTimeout(ctx, 5000),
         maxBuffer: 8 * 1024 * 1024,
       });
       const paths = rankCandidatePaths(parseLsofNames(stdout)).filter((p) => existsSync(p));

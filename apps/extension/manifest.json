@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Avenire",
+  "version": "0.1.0",
+  "minimum_chrome_version": "120",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjoQi5wO1XAVQpnpjWoOnAufrDHvqhWx1yYf4HJ29s98LmrZ+vtAfn9fNRo8q15WLzGeyKXuV7wuQ5tE7/qqiZUQZDIUe5sLX+I2mvcpoEOQcc9EGVVEVPEKlDeP/E7YEF/Rh6FhSxUU7hImkDZN9FaPKM8ASM9ZqGatCN8yU8/uyCTXUl0W9e1pFT+v8GHyXfKFMnVxrmV+n0HgjJIAi5IydmFQJG188gJ9KbicSAsaIakDuILzFQj5lE2n+oCBtBznhRCPm0N6qhVONK3GJU5Fl1ShtbxHaAXuaLiaNmF6HfG0UrFvfomvJdEy9aSH5w4sxzPA9AS87wPaa09aK3wIDAQAB",
+  "description": "Capture study pages and original documents into your own Avenire library.",
+  "permissions": ["tabs", "scripting", "storage", "alarms", "downloads", "downloads.ui"],
+  "host_permissions": ["<all_urls>", "http://127.0.0.1:17842/*"],
+  "optional_host_permissions": ["file:///*"],
+  "incognito": "not_allowed",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Avenire",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "capture": {
+      "suggested_key": {
+        "default": "Alt+Shift+C"
+      },
+      "description": "Capture this page in Avenire"
+    }
+  }
+}

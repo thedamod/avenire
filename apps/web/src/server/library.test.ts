@@ -41,6 +41,8 @@ it.effect("Library's real read boundary filters the database by both file and ow
       mimeType: null,
       sizeBytes: null,
       captureId: null,
+      origin: null,
+      access: "open",
       mediaPositionSec: null,
       createdAt: date,
       updatedAt: date,

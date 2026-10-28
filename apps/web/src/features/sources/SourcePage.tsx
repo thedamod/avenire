@@ -17,6 +17,8 @@ import { errorMessage, useApi, useQuery } from "~/lib/rpc";
 import { useBack } from "~/lib/navigation";
 import { parseCitation } from "./citation";
 import { MoveToNotebook } from "./MoveToNotebook";
+import { hasOriginal } from "./reopen";
+import { useIsDesktop, useReopenFile } from "./useReopenFile";
 import { SourceViewerBody } from "./SourceViewer";
 import { ViewerLoading } from "./ViewerLoading";
 import { isJsonOutput } from "~/features/report/logic/report";
@@ -56,7 +58,8 @@ export function SourcePage({ fileId }: { fileId: FileId }) {
     .filter((folder): folder is Folder => !!folder && folder.archivedAt === null);
   const home = notebooks[0] ? `/notebooks/${notebooks[0].id}` : "/";
   const back = useBack(home);
-  const original = data?.sourceUrl ?? null;
+  const desktop = useIsDesktop();
+  const reopen = useReopenFile();
 
   async function rename(title: string) {
     if (!data || title === data.title) return;
@@ -78,13 +81,13 @@ export function SourcePage({ fileId }: { fileId: FileId }) {
   }
 
   const menu: HeaderAction[] = [
-    ...(original
+    ...(data && hasOriginal(data, desktop)
       ? [
           {
             label: "Open original",
             icon: ExternalLink,
             pinned: true,
-            onSelect: () => window.open(original, "_blank", "noopener"),
+            onSelect: () => reopen(data),
           },
         ]
       : []),
