@@ -209,7 +209,6 @@ export const IngestionPipelineLive = Layer.effect(
       let local =
         !reusable &&
         found.storageKey &&
-        storage.stream &&
         (found.kind === "video" || found.kind === "audio")
           ? yield* storage.stream(StorageKey.make(found.storageKey)).pipe(
               Effect.flatMap((stream) =>

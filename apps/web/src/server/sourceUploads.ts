@@ -187,6 +187,55 @@ const sameMetadata = (row: SourceUploadRow, input: CreateSourceUpload) =>
   row.access === (input.access ?? "open") &&
   isDeepStrictEqual(row.origin, input.origin ?? null);
 
+/**
+ * Read a source body once, enforcing the ticket's size and SHA-256 incrementally. `write`
+ * receives each chunk (the relay spools to disk); without it the bytes are only hashed.
+ */
+const consumeSource = async (
+  body: ReadableStream<Uint8Array>,
+  signal: AbortSignal,
+  metadata: { sizeBytes: number; sha256: string },
+  write?: (chunk: Uint8Array) => Promise<unknown>,
+) => {
+  const reader = body.getReader();
+  const hash = createHash("sha256");
+  let size = 0;
+  let timedOut = false;
+  const abort = () => {
+    void reader.cancel().catch(() => undefined);
+  };
+  signal.addEventListener("abort", abort, { once: true });
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    abort();
+  }, UPLOAD_LEASE_MS);
+  try {
+    if (signal.aborted) throw reject(400, "The upload was cancelled.");
+    while (true) {
+      // eslint-disable-next-line no-await-in-loop -- Backpressure and strict streamed size accounting.
+      const { value, done } = await reader.read();
+      if (timedOut) throw reject(408, "The upload transfer exceeded its time limit.");
+      if (signal.aborted) throw reject(400, "The upload was cancelled.");
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_SOURCE_UPLOAD_BYTES)
+        throw reject(413, "Source bytes exceed the upload limit.");
+      if (size > metadata.sizeBytes)
+        throw reject(422, "The upload size does not match its ticket.");
+      hash.update(value);
+      // eslint-disable-next-line no-await-in-loop -- Keep disk writes bounded to one chunk.
+      if (write) await write(value);
+    }
+    if (size !== metadata.sizeBytes || hash.digest("hex") !== metadata.sha256)
+      throw reject(422, "Source size or SHA-256 does not match the upload ticket.");
+  } finally {
+    clearTimeout(timeout);
+    signal.removeEventListener("abort", abort);
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+};
+
 /** Bounded disk spool with incremental hash. No full source payload is buffered in memory. */
 export const spoolSource = (
   request: Request,
@@ -202,49 +251,29 @@ export const spoolSource = (
         throw reject(422, "The upload size does not match its ticket.");
       if (request.headers.has("content-encoding"))
         throw reject(415, "Encoded upload bodies are not supported.");
-      const reader = request.body?.getReader();
-      if (!reader) throw reject(422, "Source bytes are required.");
+      if (!request.body) throw reject(422, "Source bytes are required.");
       const path = join(directory, "source");
       const handle = await open(path, "wx", 0o600);
-      const hash = createHash("sha256");
-      let size = 0;
-      let timedOut = false;
-      const abort = () => {
-        void reader.cancel().catch(() => undefined);
-      };
-      request.signal.addEventListener("abort", abort, { once: true });
-      const timeout = setTimeout(() => {
-        timedOut = true;
-        abort();
-      }, UPLOAD_LEASE_MS);
       try {
-        if (request.signal.aborted) throw reject(400, "The upload was cancelled.");
-        while (true) {
-          // eslint-disable-next-line no-await-in-loop -- Backpressure and strict streamed size accounting.
-          const { value, done } = await reader.read();
-          if (timedOut) throw reject(408, "The upload transfer exceeded its time limit.");
-          if (request.signal.aborted) throw reject(400, "The upload was cancelled.");
-          if (done) break;
-          size += value.byteLength;
-          if (size > MAX_SOURCE_UPLOAD_BYTES)
-            throw reject(413, "Source bytes exceed the upload limit.");
-          if (size > metadata.sizeBytes)
-            throw reject(422, "The upload size does not match its ticket.");
-          hash.update(value);
-          // eslint-disable-next-line no-await-in-loop -- Keep disk writes bounded to one chunk.
-          await handle.writeFile(value);
-        }
-        if (size !== metadata.sizeBytes || hash.digest("hex") !== metadata.sha256)
-          throw reject(422, "Source size or SHA-256 does not match the upload ticket.");
+        await consumeSource(request.body, request.signal, metadata, (chunk) =>
+          handle.writeFile(chunk),
+        );
         return path;
       } finally {
-        clearTimeout(timeout);
-        request.signal.removeEventListener("abort", abort);
-        await reader.cancel().catch(() => undefined);
-        reader.releaseLock();
         await handle.close();
       }
     },
+    catch: (cause) => cause,
+  }).pipe(reportFailure);
+
+/** Hash the provider's stored bytes in one streamed pass; nothing is spooled or buffered. */
+export const verifyStoredSource = (
+  body: ReadableStream<Uint8Array>,
+  signal: AbortSignal,
+  metadata: { sizeBytes: number; sha256: string },
+) =>
+  Effect.tryPromise({
+    try: () => consumeSource(body, signal, metadata),
     catch: (cause) => cause,
   }).pipe(reportFailure);
 
@@ -464,163 +493,25 @@ export const SourceUploadsLive = Layer.effect(
         return yield* readFile(userId, claim.row.completedFileId ?? claim.row.fileId);
       const row = claim.row;
       const key = StorageKey.make(row.storageKey!);
-      const upload = Effect.acquireUseRelease(
+      // Verify the provider's bytes, never a browser-reported ETag or digest.
+      const verifyDirect = storage
+        .stream(key)
+        .pipe(Effect.flatMap((body) => verifyStoredSource(body, request.signal, row)));
+      const relay = Effect.acquireUseRelease(
         Effect.tryPromise({
           try: () => mkdtemp(join(tmpdir(), "avenire-source-")),
           catch: (cause) => cause,
         }),
         (directory) =>
           Effect.gen(function* () {
-            const started = yield* now;
-            if (direct) {
-              // Verify the provider's bytes, never a browser-reported ETag or digest.
-              const stream = yield* storage.stream
-                ? storage.stream(key)
-                : storage
-                    .get(key)
-                    .pipe(Effect.map((bytes) => new Blob([new Uint8Array(bytes)]).stream()));
-              yield* spoolSource(
-                new Request("https://source.invalid/verify", {
-                  method: "PUT",
-                  headers: { "content-type": row.mimeType },
-                  body: stream,
-                  signal: request.signal,
-                  duplex: "half",
-                } as RequestInit),
-                directory,
-                row,
-              );
-            } else {
-              const path = yield* spoolSource(request, directory, row);
-              const blob = yield* Effect.tryPromise({
-                try: () => openAsBlob(path, { type: row.mimeType }),
-                catch: (cause) => cause,
-              });
-              yield* storage
-                .put(key, blob, { contentType: row.mimeType })
-                .pipe(Effect.uninterruptible);
-            }
-            const storedAt = yield* now;
-            yield* Effect.logInfo("Source transfer verified", {
-              uploadId: id,
-              sizeBytes: row.sizeBytes,
-              transport: direct ? "direct" : "relay",
-              durationMs: storedAt.getTime() - started.getTime(),
+            const path = yield* spoolSource(request, directory, row);
+            const blob = yield* Effect.tryPromise({
+              try: () => openAsBlob(path, { type: row.mimeType }),
+              catch: (cause) => cause,
             });
-            const jobId = yield* makeId(IngestionJobId);
-            const eventId = yield* makeId(FileEventId);
-            const finishedAt = yield* now;
-            return yield* database.useTransaction(async (tx) => {
-              await lockCorpus(tx, userId);
-              const [current] = await tx
-                .select()
-                .from(sourceUpload)
-                .where(and(eq(sourceUpload.id, id), eq(sourceUpload.userId, userId)))
-                .for("update");
-              if (
-                !current ||
-                current.status !== "uploading" ||
-                current.claimToken !== token ||
-                current.expiresAt <= finishedAt ||
-                current.claimExpiresAt === null ||
-                current.claimExpiresAt <= finishedAt ||
-                request.signal.aborted
-              )
-                throw reject(409, "This upload no longer owns its completion lease.");
-              const match = await contentMatch(tx, userId, row.sha256);
-              let saved: FileRow;
-              const abandoned = [...current.abandonedStorageKeys];
-              if (match) {
-                saved = await refreshCapture(
-                  tx,
-                  userId,
-                  match,
-                  row.origin ?? undefined,
-                  row.access,
-                  eventId,
-                  jobId,
-                );
-                abandoned.push(key);
-              } else {
-                const dedupeKey = row.origin === null ? `upload:${id}` : dedupeKeyFor(row.origin);
-                const [existing] = await tx
-                  .select()
-                  .from(file)
-                  .where(and(eq(file.userId, userId), eq(file.dedupeKey, dedupeKey)))
-                  .for("update");
-                if (existing?.purgeStartedAt) throw reject(409, "This source is being purged.");
-                const values = {
-                  title: row.title,
-                  kind: row.kind,
-                  sourceUrl:
-                    row.sourceUrl ?? (row.origin === null ? null : captureCitationUrl(row.origin)),
-                  origin: row.origin,
-                  access: row.access,
-                  storageKey: key,
-                  mimeType: row.mimeType,
-                  sizeBytes: row.sizeBytes,
-                  mediaPositionSec: row.origin?.position?.mediaSec ?? null,
-                };
-                if (existing) {
-                  const [updated] = await tx
-                    .update(file)
-                    .set({
-                      ...values,
-                      ...(existing.placement === "archived" || existing.archivedAt !== null
-                        ? {
-                            placement: "inbox" as const,
-                            archivedAt: null,
-                            archivedViaFolderId: null,
-                            purgeRequestedAt: null,
-                          }
-                        : {}),
-                      preview: null,
-                      updatedAt: sql`now()`,
-                    })
-                    .where(and(eq(file.id, existing.id), eq(file.userId, userId)))
-                    .returning();
-                  saved = updated!;
-                  if (existing.storageKey) abandoned.push(existing.storageKey);
-                } else {
-                  const [inserted] = await tx
-                    .insert(file)
-                    .values({
-                      ...values,
-                      id: row.fileId,
-                      userId,
-                      source: row.origin === null ? "upload" : "capture",
-                      dedupeKey,
-                    })
-                    .returning();
-                  saved = inserted!;
-                }
-                await tx.insert(fileEvent).values({
-                  id: eventId,
-                  userId,
-                  fileId: saved.id,
-                  kind: existing || row.origin ? "captured" : "uploaded",
-                });
-                await enqueueIngestionTx(tx, userId, FileId.make(saved.id), jobId);
-                if (existing && (existing.placement === "archived" || existing.archivedAt !== null))
-                  await restoreToCorpusTx(tx, userId, [existing.id]);
-              }
-              await tx
-                .update(sourceUpload)
-                .set({
-                  status: "completed",
-                  completedFileId: saved.id,
-                  storageKey: match ? null : key,
-                  // The published file owns `key`; a stale tombstone for it must not delete it.
-                  abandonedStorageKeys: [...new Set(abandoned)].filter(
-                    (stale) => match || stale !== key,
-                  ),
-                  claimToken: null,
-                  claimExpiresAt: null,
-                  updatedAt: finishedAt,
-                })
-                .where(eq(sourceUpload.id, id));
-              return wireFile(tx, userId, saved.id);
-            });
+            yield* storage
+              .put(key, blob, { contentType: row.mimeType })
+              .pipe(Effect.uninterruptible);
           }),
         (directory) =>
           Effect.tryPromise({
@@ -628,6 +519,131 @@ export const SourceUploadsLive = Layer.effect(
             catch: (cause) => cause,
           }).pipe(Effect.ignore({ log: "Error", message: "Source spool cleanup failed" })),
       );
+      const upload = Effect.gen(function* () {
+        const started = yield* now;
+        yield* direct ? verifyDirect : relay;
+        const storedAt = yield* now;
+        yield* Effect.logInfo("Source transfer verified", {
+          uploadId: id,
+          sizeBytes: row.sizeBytes,
+          transport: direct ? "direct" : "relay",
+          durationMs: storedAt.getTime() - started.getTime(),
+        });
+        const jobId = yield* makeId(IngestionJobId);
+        const eventId = yield* makeId(FileEventId);
+        const finishedAt = yield* now;
+        return yield* database.useTransaction(async (tx) => {
+          await lockCorpus(tx, userId);
+          const [current] = await tx
+            .select()
+            .from(sourceUpload)
+            .where(and(eq(sourceUpload.id, id), eq(sourceUpload.userId, userId)))
+            .for("update");
+          if (
+            !current ||
+            current.status !== "uploading" ||
+            current.claimToken !== token ||
+            current.expiresAt <= finishedAt ||
+            current.claimExpiresAt === null ||
+            current.claimExpiresAt <= finishedAt ||
+            request.signal.aborted
+          )
+            throw reject(409, "This upload no longer owns its completion lease.");
+          const match = await contentMatch(tx, userId, row.sha256);
+          let saved: FileRow;
+          const abandoned = [...current.abandonedStorageKeys];
+          if (match) {
+            saved = await refreshCapture(
+              tx,
+              userId,
+              match,
+              row.origin ?? undefined,
+              row.access,
+              eventId,
+              jobId,
+            );
+            abandoned.push(key);
+          } else {
+            const dedupeKey = row.origin === null ? `upload:${id}` : dedupeKeyFor(row.origin);
+            const [existing] = await tx
+              .select()
+              .from(file)
+              .where(and(eq(file.userId, userId), eq(file.dedupeKey, dedupeKey)))
+              .for("update");
+            if (existing?.purgeStartedAt) throw reject(409, "This source is being purged.");
+            const values = {
+              title: row.title,
+              kind: row.kind,
+              sourceUrl:
+                row.sourceUrl ?? (row.origin === null ? null : captureCitationUrl(row.origin)),
+              origin: row.origin,
+              access: row.access,
+              storageKey: key,
+              mimeType: row.mimeType,
+              sizeBytes: row.sizeBytes,
+              mediaPositionSec: row.origin?.position?.mediaSec ?? null,
+            };
+            if (existing) {
+              const [updated] = await tx
+                .update(file)
+                .set({
+                  ...values,
+                  ...(existing.placement === "archived" || existing.archivedAt !== null
+                    ? {
+                        placement: "inbox" as const,
+                        archivedAt: null,
+                        archivedViaFolderId: null,
+                        purgeRequestedAt: null,
+                      }
+                    : {}),
+                  preview: null,
+                  updatedAt: sql`now()`,
+                })
+                .where(and(eq(file.id, existing.id), eq(file.userId, userId)))
+                .returning();
+              saved = updated!;
+              if (existing.storageKey) abandoned.push(existing.storageKey);
+            } else {
+              const [inserted] = await tx
+                .insert(file)
+                .values({
+                  ...values,
+                  id: row.fileId,
+                  userId,
+                  source: row.origin === null ? "upload" : "capture",
+                  dedupeKey,
+                })
+                .returning();
+              saved = inserted!;
+            }
+            await tx.insert(fileEvent).values({
+              id: eventId,
+              userId,
+              fileId: saved.id,
+              kind: existing || row.origin ? "captured" : "uploaded",
+            });
+            await enqueueIngestionTx(tx, userId, FileId.make(saved.id), jobId);
+            if (existing && (existing.placement === "archived" || existing.archivedAt !== null))
+              await restoreToCorpusTx(tx, userId, [existing.id]);
+          }
+          await tx
+            .update(sourceUpload)
+            .set({
+              status: "completed",
+              completedFileId: saved.id,
+              storageKey: match ? null : key,
+              // The published file owns `key`; a stale tombstone for it must not delete it.
+              abandonedStorageKeys: [...new Set(abandoned)].filter(
+                (stale) => match || stale !== key,
+              ),
+              claimToken: null,
+              claimExpiresAt: null,
+              updatedAt: finishedAt,
+            })
+            .where(eq(sourceUpload.id, id));
+          return wireFile(tx, userId, saved.id);
+        });
+      });
       return yield* upload.pipe(
         Effect.onError(() =>
           (direct
