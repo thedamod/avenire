@@ -467,6 +467,49 @@ it.effect(
           yield* database.use((db) =>
             db.delete(sourceUpload).where(eq(sourceUpload.id, direct.uploadId)),
           );
+
+          // A stale direct claim is reset and re-presigned; its tombstoned key never becomes live.
+          const staleBytes = new TextEncoder().encode("stale direct fixture");
+          const staleInput = {
+            ...metadata(),
+            sizeBytes: staleBytes.length,
+            sha256: hash(staleBytes),
+          };
+          const stale = yield* uploads.create(owner, staleInput);
+          const staleInfo = { size: staleBytes.length, type: staleInput.mimeType };
+          yield* uploads.prepare(owner, stale.uploadId, staleInfo);
+          const [firstClaim] = yield* database.use((db) =>
+            db
+              .update(sourceUpload)
+              .set({
+                status: "uploading",
+                claimToken: randomUUID(),
+                claimExpiresAt: new Date(-1000),
+              })
+              .where(eq(sourceUpload.id, stale.uploadId))
+              .returning(),
+          );
+          yield* uploads.cleanup();
+          yield* uploads.prepare(owner, stale.uploadId, staleInfo);
+          const [represigned] = yield* database.use((db) =>
+            db.select().from(sourceUpload).where(eq(sourceUpload.id, stale.uploadId)),
+          );
+          expect(represigned!.storageKey).not.toBe(firstClaim!.storageKey);
+          yield* memory.put(StorageKey.make(represigned!.storageKey!), staleBytes);
+          const staleFile = yield* uploads.complete(owner, stale.uploadId, request());
+          const [staleDone] = yield* database.use((db) =>
+            db.select().from(sourceUpload).where(eq(sourceUpload.id, stale.uploadId)),
+          );
+          expect(staleDone!.abandonedStorageKeys).not.toContain(staleFile.storageKey);
+          yield* uploads.cleanup();
+          expect(new TextDecoder().decode(yield* memory.get(staleFile.storageKey!))).toBe(
+            "stale direct fixture",
+          );
+          yield* memory.remove(staleFile.storageKey!);
+          yield* database.use((db) => db.delete(file).where(eq(file.id, staleFile.id)));
+          yield* database.use((db) =>
+            db.delete(sourceUpload).where(eq(sourceUpload.id, stale.uploadId)),
+          );
           const input = {
             ...metadata(),
             sourceUrl: "https://study.test/chapter?token=secret#fragment",

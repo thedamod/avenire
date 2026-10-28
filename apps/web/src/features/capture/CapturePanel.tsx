@@ -243,6 +243,11 @@ const STATUS_LABEL: Record<CaptureRowStatus, string> = {
 };
 
 type Glyph = "busy" | "saved" | "skipped" | "failed";
+// Mirrors CapturePanel.css: four cubic curves each, so `d` can interpolate between them.
+const RING_PATH =
+  "M12 3 C16.97 3 21 7.03 21 12 C21 16.97 16.97 21 12 21 C7.03 21 3 16.97 3 12 C3 7.03 7.03 3 12 3";
+const TICK_PATH =
+  "M5 12 C5.7 12.7 6.3 13.3 7 14 C7.7 14.7 8.3 15.3 9 16 C10.7 14.3 12.3 12.7 14 11 C15.7 9.3 17.3 7.7 19 6";
 /** The spinner and tick share one path, so completion changes its shape in place. */
 function StatusGlyph({ status, settled }: { status: CaptureRowStatus; settled: boolean }) {
   const busy = status === "pending" || status === "uploading";
@@ -268,7 +273,12 @@ function StatusGlyph({ status, settled }: { status: CaptureRowStatus; settled: b
           status === "pending" && "opacity-50",
         )}
       >
-        <path className="capture-status-stroke" pathLength="1" />
+        {/* Engines without the CSS `d` property (Safari) swap shapes instead of morphing. */}
+        <path
+          className="capture-status-stroke"
+          pathLength="1"
+          d={glyph === "saved" ? TICK_PATH : RING_PATH}
+        />
       </svg>
       {glyph === "failed" ? (
         <CircleAlert

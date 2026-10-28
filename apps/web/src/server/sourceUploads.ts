@@ -283,6 +283,8 @@ export const SourceUploadsLive = Layer.effect(
     const crypto = yield* Crypto.Crypto;
     const uuid = crypto.randomUUIDv4;
     const now = DateTime.nowAsDate;
+    const makeId = <Id extends string>(schema: { readonly make: (id: string) => Id }) =>
+      newId(schema).pipe(Effect.provideService(Crypto.Crypto, crypto));
     const wireFile = async (
       db: DatabaseClient | DatabaseTransaction,
       userId: UserId,
@@ -469,7 +471,7 @@ export const SourceUploadsLive = Layer.effect(
         }),
         (directory) =>
           Effect.gen(function* () {
-            const started = yield* DateTime.nowAsDate;
+            const started = yield* now;
             if (direct) {
               // Verify the provider's bytes, never a browser-reported ETag or digest.
               const stream = yield* storage.stream
@@ -498,19 +500,15 @@ export const SourceUploadsLive = Layer.effect(
                 .put(key, blob, { contentType: row.mimeType })
                 .pipe(Effect.uninterruptible);
             }
-            const storedAt = yield* DateTime.nowAsDate;
+            const storedAt = yield* now;
             yield* Effect.logInfo("Source transfer verified", {
               uploadId: id,
               sizeBytes: row.sizeBytes,
               transport: direct ? "direct" : "relay",
               durationMs: storedAt.getTime() - started.getTime(),
             });
-            const jobId = yield* newId(IngestionJobId).pipe(
-              Effect.provideService(Crypto.Crypto, crypto),
-            );
-            const eventId = yield* newId(FileEventId).pipe(
-              Effect.provideService(Crypto.Crypto, crypto),
-            );
+            const jobId = yield* makeId(IngestionJobId);
+            const eventId = yield* makeId(FileEventId);
             const finishedAt = yield* now;
             return yield* database.useTransaction(async (tx) => {
               await lockCorpus(tx, userId);
@@ -612,7 +610,10 @@ export const SourceUploadsLive = Layer.effect(
                   status: "completed",
                   completedFileId: saved.id,
                   storageKey: match ? null : key,
-                  abandonedStorageKeys: [...new Set(abandoned)],
+                  // The published file owns `key`; a stale tombstone for it must not delete it.
+                  abandonedStorageKeys: [...new Set(abandoned)].filter(
+                    (stale) => match || stale !== key,
+                  ),
                   claimToken: null,
                   claimExpiresAt: null,
                   updatedAt: finishedAt,
@@ -656,14 +657,10 @@ export const SourceUploadsLive = Layer.effect(
           catch: (cause) => cause,
         });
         const id = yield* uuid;
-        const fileId = yield* newId(FileId).pipe(Effect.provideService(Crypto.Crypto, crypto));
+        const fileId = yield* makeId(FileId);
         const at = yield* now;
-        const eventId = yield* newId(FileEventId).pipe(
-          Effect.provideService(Crypto.Crypto, crypto),
-        );
-        const jobId = yield* newId(IngestionJobId).pipe(
-          Effect.provideService(Crypto.Crypto, crypto),
-        );
+        const eventId = yield* makeId(FileEventId);
+        const jobId = yield* makeId(IngestionJobId);
         const result = yield* database.useTransaction(async (tx) => {
           await lockCorpus(tx, userId);
           const [existing] = await tx
@@ -722,6 +719,13 @@ export const SourceUploadsLive = Layer.effect(
             .set({
               status: "completed",
               completedFileId: saved.id,
+              // A prepared direct target may already hold bytes; the matched file owns the source.
+              storageKey: null,
+              directUpload: null,
+              abandonedStorageKeys:
+                row!.storageKey === null
+                  ? row!.abandonedStorageKeys
+                  : [...new Set([...row!.abandonedStorageKeys, row!.storageKey])],
               updatedAt: at,
             })
             .where(eq(sourceUpload.id, row!.id))
@@ -752,11 +756,13 @@ export const SourceUploadsLive = Layer.effect(
           );
         }
         if (!storage.prepareSourceUpload) return null;
+        // Fresh per presign: after a stale claim is reset, the old key stays tombstoned for deletion.
+        const suffix = yield* uuid;
         const key = fileSourceKey(
           userId,
           FileId.make(row.fileId),
           "source",
-          row.id.replaceAll("-", "").slice(-12),
+          suffix.replaceAll("-", "").slice(-12),
         );
         const direct = yield* storage.prepareSourceUpload(key, {
           contentType: row.mimeType,
