@@ -4,8 +4,8 @@
  *
  * What a run produces (packages/ai/src/cloud/tools.ts):
  * - `hydrate_files` outputs: the library files Ruth read (the report's sources).
- * - `publish_output` outputs: `{ kind: "file", fileId }` for a new library file in the run's
- *   "Ruth Cloud · …" notebook (notes, quiz.json, flashcards.json…), or
+ * - `publish_output` outputs: `{ kind: "file", fileId }` for a new library file (notes,
+ *   quiz.json, flashcards.json…), filed into a notebook the run read or left in the Inbox, or
  *   `{ kind: "sync", approvalId }` for a proposed change to an existing file (morning review).
  * - `publish_report`: the markdown summary (`run.summary`) and assets (`run.assets`).
  */

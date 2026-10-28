@@ -56,7 +56,7 @@ it.effect("text-only/media files hydrate extracted markdown with its own hash", 
     expect(again.files[0]?.skipped).toBe(true);
   }).pipe(Effect.provide(StorageMemory));
 });
-it.effect("publishes two new files into one run folder with events and ingestion", () => {
+it.effect("publishes new files to the Inbox without creating a run folder", () => {
   const f = cloudFixture();
   return Effect.gen(function* () {
     const storage = yield* Storage;
@@ -68,16 +68,16 @@ it.effect("publishes two new files into one run folder with events and ingestion
       const second = yield* cloudTools.publish_output({ sandboxPath: "report.md" }, cloudCtx);
       expect(first.kind).toBe("file");
       expect(second.kind).toBe("file");
-      expect(f.rows("folder")).toHaveLength(1);
-      expect(f.rows("folder")[0]?.name).toMatch(/^Ruth Cloud · \d{4}-\d{2}-\d{2} · Morning$/);
-      expect(f.rows("file_folder")).toHaveLength(2);
-      expect(f.rows("cloud_run")[0]?.folderId).toBe(f.rows("folder")[0]?.id);
+      expect(first).toMatchObject({ drivePath: "Inbox/Report" });
+      expect(f.rows("folder")).toHaveLength(0);
+      expect(f.rows("file_folder")).toHaveLength(0);
+      expect(f.rows("cloud_run")[0]?.folderId).toBeNull();
       expect(f.rows("file").slice(1)).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             kind: "note",
             source: "ruth-cloud",
-            placement: "filed",
+            placement: "inbox",
             sizeBytes: 8,
           }),
         ]),
@@ -196,7 +196,7 @@ it.effect(
           firstPublish,
         );
         expect(f.rows("file").filter((row) => row.source === "ruth-cloud")).toHaveLength(1);
-        expect(f.rows("folder")).toHaveLength(1);
+        expect(f.rows("folder")).toHaveLength(0);
         expect(f.rows("ingestion_job")).toHaveLength(1);
         expect(f.rows("file_event").filter((row) => row.kind === "uploaded")).toHaveLength(1);
       }).pipe(Effect.provide(f.services(storage)));
