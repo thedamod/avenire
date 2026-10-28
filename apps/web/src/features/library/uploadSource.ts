@@ -8,7 +8,7 @@ import {
 } from "@avenire/contracts";
 import { hashBlob } from "@avenire/shared/sha256";
 import { SourceWorkQueue } from "@avenire/capture/work-queue";
-import { transferDirectSource, requestSourceTicket } from "@avenire/capture/source-transfer";
+import { uploadSourceTicket } from "@avenire/storage/client";
 import * as Schema from "effect/Schema";
 
 // Browser MIME detection is often empty (notably Markdown) or generic. Use the extension
@@ -156,7 +156,6 @@ export async function uploadSource(
   options.onStage?.("preparing");
   const mimeType = mimeForFile(file);
   const payload = {
-    transport: "direct",
     idempotencyKey: options.idempotencyKey ?? crypto.randomUUID(),
     title: file.name.slice(0, 200),
     kind,
@@ -164,16 +163,12 @@ export async function uploadSource(
     sizeBytes: file.size,
     sha256: await sha256(file),
   };
-  const created = await requestSourceTicket(
-    (body) =>
-      fetch("/api/library/uploads", {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body,
-      }),
-    payload,
-  );
+  const created = await fetch("/api/library/uploads", {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
   if (!created.ok) throw new Error(`Couldn't upload ${file.name} (${created.status}).`);
   const ticket = Schema.decodeUnknownSync(SourceUploadTicket)(await created.json());
   if (ticket.status === "completed" && ticket.file) {
@@ -183,125 +178,10 @@ export async function uploadSource(
   const target = new URL(ticket.uploadUrl, window.location.origin);
   if (target.origin !== window.location.origin) throw new Error("Unexpected upload destination.");
   options.onStage?.("uploading");
-  if (ticket.direct) {
-    await transferDirectSource(ticket.direct.url, file, {
-      onProgress: (loaded, total) => options.onProgress?.(Math.floor((loaded / total) * 100)),
-      ...(typeof XMLHttpRequest === "undefined"
-        ? {}
-        : {
-            send: (url: string, body: FormData, offset: number, signal: AbortSignal) =>
-              directRequest(url, body, offset, file.size, signal, options.onProgress),
-          }),
-    });
-    options.onStage?.("saving");
-    const completed = await fetch(target, {
-      method: "POST",
-      credentials: "include",
-      signal: AbortSignal.timeout(15 * 60_000),
-    });
-    if (!completed.ok) throw new Error(`Couldn't verify ${file.name} (${completed.status}).`);
-    return Schema.decodeUnknownSync(LibraryFile)(await completed.json());
-  }
-  const uploaded = await transferSource(target, file, mimeType, options);
-  if (!uploaded.ok) throw new Error(`Couldn't upload ${file.name} (${uploaded.status}).`);
-  return Schema.decodeUnknownSync(LibraryFile)(await uploaded.json());
-}
-
-/** Like files-sdk/client's transport, use XHR for actual upload-byte progress. Keep the
- * owned, hash-verified ticket endpoint rather than exposing a generic storage gateway. */
-async function transferSource(
-  target: URL,
-  file: File,
-  mimeType: string,
-  options: {
-    onStage?: (stage: "preparing" | "uploading" | "saving") => void;
-    onProgress?: (percent: number) => void;
-  },
-): Promise<Pick<Response, "ok" | "status" | "json">> {
-  options.onProgress?.(0);
-  if (typeof XMLHttpRequest === "undefined") {
-    const response = await fetch(target, {
-      method: "PUT",
-      credentials: "include",
-      headers: { "content-type": mimeType },
-      body: file,
-    });
-    if (response.ok) options.onProgress?.(100);
-    return response;
-  }
-  return new Promise((resolve, reject) => {
-    const request = new XMLHttpRequest();
-    request.open("PUT", target.href, true);
-    request.withCredentials = true;
-    request.setRequestHeader("content-type", mimeType);
-    request.upload.addEventListener("progress", (event) => {
-      if (event.lengthComputable && event.total > 0) {
-        options.onProgress?.(Math.min(100, Math.floor((event.loaded / event.total) * 100)));
-      }
-    });
-    // All bytes reaching the server is distinct from its verified storage/DB commit.
-    request.upload.addEventListener("load", () => {
-      options.onProgress?.(100);
-      options.onStage?.("saving");
-    });
-    request.addEventListener("load", () => {
-      resolve({
-        ok: request.status >= 200 && request.status < 300,
-        status: request.status,
-        json: async () => JSON.parse(request.responseText),
-      });
-    });
-    request.addEventListener("error", () =>
-      reject(new Error("Connection lost. Try the upload again.")),
-    );
-    request.addEventListener("abort", () => reject(new Error("Upload cancelled.")));
-    request.addEventListener("timeout", () =>
-      reject(new Error("The upload timed out. Try again.")),
-    );
-    request.timeout = 15 * 60 * 1000;
-    request.send(file);
-  });
-}
-
-function directRequest(
-  url: string,
-  body: FormData,
-  offset: number,
-  total: number,
-  signal: AbortSignal,
-  progress?: (percent: number) => void,
-): Promise<Response> {
-  return new Promise((resolve, reject) => {
-    const request = new XMLHttpRequest();
-    const abort = () => request.abort();
-    const cleanup = () => signal.removeEventListener("abort", abort);
-    request.open("PUT", url);
-    request.setRequestHeader("Range", `bytes=${offset}-`);
-    request.upload.onprogress = (event) =>
-      progress?.(Math.min(99, Math.floor(((offset + event.loaded) / total) * 100)));
-    request.onload = () => {
-      cleanup();
-      resolve(new Response(request.responseText, { status: request.status }));
-    };
-    request.onerror = () => {
-      cleanup();
-      reject(new TypeError("Connection lost."));
-    };
-    request.onabort = () => {
-      cleanup();
-      reject(signal.reason ?? new Error("Upload cancelled."));
-    };
-    request.ontimeout = () => {
-      cleanup();
-      reject(new TypeError("Upload timed out."));
-    };
-    request.timeout = 15 * 60_000;
-    signal.addEventListener("abort", abort, { once: true });
-    if (signal.aborted) {
-      cleanup();
-      reject(signal.reason);
-      return;
-    }
-    request.send(body);
+  return uploadSourceTicket(target, file, {
+    contentType: mimeType,
+    onProgress: (loaded, total) =>
+      options.onProgress?.(total ? Math.min(99, Math.floor((loaded / total) * 100)) : 0),
+    onVerifying: () => options.onStage?.("saving"),
   });
 }

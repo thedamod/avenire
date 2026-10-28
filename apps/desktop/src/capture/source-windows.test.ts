@@ -215,6 +215,20 @@ it("logs create and put rejection status and scrubbed server messages without so
   const path = initializeCaptureLog(directories[0]!);
   for (const operation of ["create", "put"]) {
     const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      if (
+        operation === "put" &&
+        init.method === "POST" &&
+        JSON.parse(String(init.body)).op === "presign"
+      )
+        return Response.json({
+          uploads: [
+            {
+              id: h.file.id,
+              key: h.file.id,
+              target: { method: "PUT", url: `https://app.test/api/library/uploads/${h.file.id}` },
+            },
+          ],
+        });
       if (operation === "put" && init.method === "POST")
         return new Response(
           JSON.stringify({

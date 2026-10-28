@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { CaptureSnapshot, LibraryFile, PageSnapshot, type CapturedTab } from "@avenire/contracts";
 import { decodeFileFrame, FILE_FRAME_BYTES } from "@avenire/capture/frames";
 import { extractPage } from "@avenire/capture/extract";
@@ -96,6 +96,31 @@ const ticket = {
   expiresAt: "later",
   status: "pending",
 };
+function sdkUploadResponse(input: RequestInfo | URL, init?: RequestInit) {
+  const url = new URL(String(input));
+  if (init?.method === "PUT") return Response.json(libraryFile);
+  const action = JSON.parse(String(init?.body ?? "{}"));
+  if (action.op === "presign")
+    return Response.json({
+      uploads: [
+        {
+          id: ticket.uploadId,
+          key: ticket.uploadId,
+          target: {
+            method: "PUT",
+            url: new URL(ticket.uploadUrl, url).href,
+            headers: { "content-type": action.files[0].type },
+          },
+        },
+      ],
+    });
+  if (action.op === "complete")
+    return Response.json({
+      files: [{ key: ticket.uploadId, size: libraryFile.sizeBytes, type: libraryFile.mimeType }],
+      sourceFile: libraryFile,
+    });
+  return Response.json(ticket);
+}
 const secret = "s".repeat(43);
 afterEach(() => {
   vi.useRealTimers();
@@ -455,6 +480,9 @@ describe("capture boundaries and access", () => {
 });
 
 describe("direct upload requests", () => {
+  // This code runs in the MV3 service worker, where XMLHttpRequest is unavailable.
+  beforeEach(() => vi.stubGlobal("XMLHttpRequest", undefined));
+  afterEach(() => vi.unstubAllGlobals());
   it.each([
     [
       "https://drive.google.com/file/d/abc/view",
@@ -485,10 +513,10 @@ describe("direct upload requests", () => {
         skipped: [],
       };
       const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) =>
-        Response.json(init?.method === "PUT" ? libraryFile : ticket),
+        sdkUploadResponse(_url, init),
       );
       await uploadCapture("https://avenire.example", snapshot(output.tabs), output, fetcher);
-      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(fetcher).toHaveBeenCalledTimes(4);
     },
   );
   it("uploads original PDF bytes with provenance and never substitutes rendered text", async () => {
@@ -512,7 +540,7 @@ describe("direct upload requests", () => {
       skipped: [],
     };
     const fetcher = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) =>
-      Response.json(init?.method === "PUT" ? libraryFile : ticket),
+      sdkUploadResponse(_url, init),
     );
     await uploadCapture("https://avenire.example", snapshot(output.tabs), output, fetcher);
     expect(JSON.parse(fetcher.mock.calls[0]![1]!.body as string)).toMatchObject({
@@ -521,15 +549,19 @@ describe("direct upload requests", () => {
       origin: { url: original.url },
       access: "open",
     });
-    expect(fetcher.mock.calls[1]![1]!.body).toEqual(bytes);
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(new Uint8Array(await (fetcher.mock.calls[2]![1]!.body as Blob).arrayBuffer())).toEqual(
+      bytes,
+    );
+    expect(fetcher).toHaveBeenCalledTimes(4);
   });
   it("creates a ticket, PUTs bytes, then submits only URL and blocked tabs", async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     const fetcher: typeof fetch = async (input, init) => {
       calls.push({ url: String(input), ...(init ? { init } : {}) });
       return Response.json(
-        calls.length === 1 ? ticket : calls.length === 2 ? libraryFile : { files: [], skipped: [] },
+        new URL(String(input)).pathname === "/api/library/captures"
+          ? { files: [], skipped: [] }
+          : await sdkUploadResponse(input, init).json(),
       );
     };
     const tabs = [
@@ -546,7 +578,9 @@ describe("direct upload requests", () => {
     );
     expect(calls.map((call) => [call.init?.method, new URL(call.url).pathname])).toEqual([
       ["POST", "/api/library/uploads"],
+      ["POST", ticket.uploadUrl],
       ["PUT", ticket.uploadUrl],
+      ["POST", ticket.uploadUrl],
       ["POST", "/api/library/captures"],
     ]);
     const creation = JSON.parse(calls[0]!.init!.body as string);
@@ -556,7 +590,7 @@ describe("direct upload requests", () => {
       access: "open",
       origin: { _tag: "Web", url: tabs[0]!.url },
     });
-    expect(JSON.parse(calls[2]!.init!.body as string).snapshot.tabs).toEqual([tabs[1]]);
+    expect(JSON.parse(calls[4]!.init!.body as string).snapshot.tabs).toEqual([tabs[1]]);
     expect(calls.every((call) => call.init?.credentials === "include")).toBe(true);
   });
   it("skips PUT for a completed ticket with a decoded existing file", async () => {

@@ -3,10 +3,6 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./source-transfer": {
-      "types": "./src/source-transfer.ts",
-      "import": "./src/source-transfer.ts"
-    },
     "./work-queue": {
       "types": "./src/work-queue.ts",
       "import": "./src/work-queue.ts"

@@ -69,19 +69,36 @@ describe("manual source upload", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("sends verified metadata followed by the original bytes and returns the source", async () => {
+  it("sends verified metadata and delegates the upload protocol to storage", async () => {
     const fetcher = mockBrowser();
-    fetcher
-      .mockResolvedValueOnce(Response.json(ticket))
-      .mockResolvedValueOnce(Response.json(saved));
+    fetcher.mockImplementation(async (input, init) => {
+      const url = new URL(String(input), "https://app.test");
+      if (url.pathname === "/api/library/uploads") return Response.json(ticket);
+      if (init.method === "PUT") return Response.json(saved);
+      const body = JSON.parse(init.body);
+      if (body.op === "presign")
+        return Response.json({
+          uploads: [
+            {
+              id: uploadId,
+              key: uploadId,
+              target: {
+                method: "PUT",
+                url: new URL(uploadUrl, "https://app.test").href,
+                headers: { "content-type": "text/markdown" },
+              },
+            },
+          ],
+        });
+      return Response.json({
+        files: [{ key: uploadId, size: 5, type: "text/markdown" }],
+        sourceFile: saved,
+      });
+    });
     const file = new File(["study"], "Study.md");
     const onStage = vi.fn();
     expect(await uploadSource(file, { idempotencyKey: uploadId, onStage })).toEqual(saved);
-    const [url, options] = fetcher.mock.calls[0]!;
-    expect(url).toBe("/api/library/uploads");
-    expect(options).toMatchObject({ method: "POST", credentials: "include" });
-    expect(JSON.parse(options.body)).toEqual({
-      transport: "direct",
+    expect(JSON.parse(fetcher.mock.calls[0]![1].body)).toMatchObject({
       idempotencyKey: uploadId,
       title: "Study.md",
       kind: "document",
@@ -89,61 +106,20 @@ describe("manual source upload", () => {
       sizeBytes: 5,
       sha256: createHash("sha256").update("study").digest("hex"),
     });
-    expect(fetcher.mock.calls[1]![0].toString()).toBe(`https://app.test${uploadUrl}`);
-    expect(fetcher.mock.calls[1]![1]).toEqual({
-      method: "PUT",
-      credentials: "include",
-      headers: { "content-type": "text/markdown" },
-      body: file,
-    });
-    expect(onStage.mock.calls).toEqual([["preparing"], ["uploading"]]);
+    expect(fetcher.mock.calls.map(([, init]) => init.method)).toEqual([
+      "POST",
+      "POST",
+      "PUT",
+      "POST",
+    ]);
+    expect(onStage.mock.calls.flat()).toEqual(["preparing", "uploading", "saving"]);
   });
 
-  it("returns completed duplicate tickets without sending any source bytes", async () => {
+  it("skips the entire transfer when the ticket already has a completed file", async () => {
     const fetcher = mockBrowser();
     fetcher.mockResolvedValueOnce(Response.json({ ...ticket, status: "completed", file: saved }));
     expect(await uploadSource(new File(["study"], "Study.md"))).toEqual(saved);
     expect(fetcher).toHaveBeenCalledTimes(1);
-  });
-
-  it("uploads directly without app cookies and finalizes through the authenticated app", async () => {
-    const fetcher = mockBrowser();
-    const direct = {
-      key: "provider-file",
-      url: "https://sea1.ingest.uploadthing.com/provider-file?signature=test",
-    };
-    fetcher
-      .mockResolvedValueOnce(Response.json({ ...ticket, direct }))
-      .mockResolvedValueOnce(new Response(null, { headers: { "x-ut-range-start": "0" } }))
-      .mockResolvedValueOnce(Response.json({ key: direct.key }))
-      .mockResolvedValueOnce(Response.json(saved));
-    expect(await uploadSource(new File(["study"], "Study.md"))).toEqual(saved);
-    expect(fetcher.mock.calls[1]![1]).toMatchObject({
-      method: "HEAD",
-      credentials: "omit",
-      redirect: "error",
-    });
-    expect(fetcher.mock.calls[2]![1]).toMatchObject({
-      method: "PUT",
-      credentials: "omit",
-      redirect: "error",
-    });
-    expect(fetcher.mock.calls[3]![1]).toMatchObject({ method: "POST", credentials: "include" });
-  });
-
-  it("reuses the ticket identity after an uncertain PUT response", async () => {
-    const fetcher = mockBrowser();
-    fetcher
-      .mockResolvedValueOnce(Response.json(ticket))
-      .mockRejectedValueOnce(new TypeError("Network error"))
-      .mockResolvedValueOnce(Response.json({ ...ticket, status: "completed" }))
-      .mockResolvedValueOnce(Response.json(saved));
-    const file = new File(["study"], "Study.md");
-    await expect(uploadSource(file, { idempotencyKey: uploadId })).rejects.toThrow("Network error");
-    await expect(uploadSource(file, { idempotencyKey: uploadId })).resolves.toEqual(saved);
-    expect(JSON.parse(fetcher.mock.calls[0]![1].body)).toEqual(
-      JSON.parse(fetcher.mock.calls[2]![1].body),
-    );
   });
 
   it("does not transfer bytes when ticket creation fails or gives another origin", async () => {
@@ -156,89 +132,5 @@ describe("manual source upload", () => {
     );
     await expect(uploadSource(file)).rejects.toThrow("Unexpected upload destination");
     expect(fetcher).toHaveBeenCalledTimes(2);
-  });
-
-  it("reports transfer errors and rejects malformed completion data", async () => {
-    const fetcher = mockBrowser();
-    fetcher
-      .mockResolvedValueOnce(Response.json(ticket))
-      .mockResolvedValueOnce(new Response(null, { status: 422 }));
-    const file = new File(["study"], "Study.md");
-    await expect(uploadSource(file)).rejects.toThrow("422");
-    fetcher
-      .mockResolvedValueOnce(Response.json(ticket))
-      .mockResolvedValueOnce(Response.json({ ok: true }));
-    await expect(uploadSource(file)).rejects.toThrow();
-  });
-});
-
-class UploadRequest extends EventTarget {
-  static requests: UploadRequest[] = [];
-  upload = new EventTarget();
-  status = 200;
-  responseText = JSON.stringify(saved);
-  withCredentials = false;
-  timeout = 0;
-  open = vi.fn();
-  setRequestHeader = vi.fn();
-  send = vi.fn();
-  constructor() {
-    super();
-    UploadRequest.requests.push(this);
-  }
-}
-
-describe("browser transfer progress", () => {
-  function setup() {
-    UploadRequest.requests = [];
-    const fetcher = mockBrowser();
-    fetcher.mockResolvedValue(Response.json(ticket));
-    vi.stubGlobal("XMLHttpRequest", UploadRequest);
-  }
-
-  it("reports real byte percentage, then waits for server persistence before completing", async () => {
-    setup();
-    const onProgress = vi.fn(),
-      onStage = vi.fn(),
-      finished = vi.fn();
-    const file = new File(["study"], "Study.md");
-    const pending = uploadSource(file, { onProgress, onStage }).then(finished);
-    await vi.waitFor(() => expect(UploadRequest.requests).toHaveLength(1));
-    const request = UploadRequest.requests[0]!;
-    expect(request.withCredentials).toBe(true);
-    expect(request.send).toHaveBeenCalledWith(file);
-    request.upload.dispatchEvent(
-      Object.assign(new Event("progress"), { lengthComputable: true, loaded: 2, total: 5 }),
-    );
-    expect(onProgress).toHaveBeenLastCalledWith(40);
-    request.upload.dispatchEvent(new Event("load"));
-    expect(onProgress).toHaveBeenLastCalledWith(100);
-    expect(onStage).toHaveBeenLastCalledWith("saving");
-    await Promise.resolve();
-    expect(finished).not.toHaveBeenCalled();
-    request.dispatchEvent(new Event("load"));
-    await pending;
-    expect(finished).toHaveBeenCalledWith(saved);
-  });
-
-  it("surfaces a failed server commit after all bytes transferred", async () => {
-    setup();
-    const pending = uploadSource(new File(["study"], "Study.md"));
-    const rejected = expect(pending).rejects.toThrow("422");
-    await vi.waitFor(() => expect(UploadRequest.requests).toHaveLength(1));
-    const request = UploadRequest.requests[0]!;
-    request.upload.dispatchEvent(new Event("load"));
-    request.status = 422;
-    request.dispatchEvent(new Event("load"));
-    await rejected;
-  });
-
-  it("surfaces interrupted transfers for retry", async () => {
-    setup();
-    const pending = uploadSource(new File(["study"], "Study.md"));
-    const rejected = expect(pending).rejects.toThrow("Connection lost");
-    await vi.waitFor(() => expect(UploadRequest.requests).toHaveLength(1));
-    UploadRequest.requests[0]!.dispatchEvent(new Event("error"));
-    await rejected;
   });
 });

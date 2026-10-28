@@ -89,6 +89,41 @@ const appHarness = async (
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
     request.on("end", () => {
+      const action =
+        request.method === "POST"
+          ? JSON.parse(Buffer.concat(chunks).toString("utf8") || "null")
+          : null;
+      if (action?.op === "presign") {
+        response.setHeader("content-type", "application/json");
+        response.end(
+          JSON.stringify({
+            uploads: [
+              {
+                id,
+                key: id,
+                target: {
+                  method: "PUT",
+                  url: `http://${request.headers.host}/api/library/uploads/${id}`,
+                  headers: { "content-type": action.files[0].type },
+                },
+              },
+            ],
+          }),
+        );
+        return;
+      }
+      if (action?.op === "complete") {
+        response.setHeader("content-type", "application/json");
+        response.end(
+          options.invalidPutResponse
+            ? "invalid-json"
+            : JSON.stringify({
+                files: [{ key: id, size: file.sizeBytes, type: file.mimeType }],
+                sourceFile: file,
+              }),
+        );
+        return;
+      }
       requests.push({
         method: request.method!,
         cookie: request.headers.cookie,
@@ -237,7 +272,6 @@ describe("device source byte acquisition backend", () => {
     expect(app.requests.map((request) => request.method)).toEqual(["POST", "PUT"]);
     const payload = JSON.parse(app.requests[0]!.body.toString());
     expect(payload).toEqual({
-      transport: "direct",
       ...metadata,
       sizeBytes: bytes.length,
       sha256: createHash("sha256").update(bytes).digest("hex"),
@@ -476,7 +510,7 @@ describe("device source byte acquisition backend", () => {
         tempRoot,
       }),
     ).rejects.toMatchObject({ operation: "upload" });
-    expect(app.requests.map((request) => request.method)).toEqual(["POST", "PUT", "DELETE"]);
+    expect(app.requests.map((request) => request.method)).toEqual(["POST", "PUT"]);
     expect(await readdir(tempRoot)).toEqual([]);
   });
 

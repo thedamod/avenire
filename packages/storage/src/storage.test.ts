@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "@effect/vitest";
+import { UploadControl } from "files-sdk";
 import * as Effect from "effect/Effect";
 import { StorageKey } from "@avenire/contracts";
 
@@ -34,7 +35,11 @@ describe("StorageMemory", () => {
         multipart: { partSize: 8 * 1024 * 1024, concurrency: 3 },
       };
       yield* storage.put(key, body, options);
-      expect(upload).toHaveBeenCalledWith(key, body, options);
+      expect(upload).toHaveBeenCalledWith(key, body, {
+        ...options,
+        retries: 2,
+        control: expect.any(UploadControl),
+      });
       expect(new TextDecoder().decode(yield* storage.get(key))).toBe("multipart source");
       upload.mockRestore();
     }).pipe(Effect.provide(StorageMemory)),

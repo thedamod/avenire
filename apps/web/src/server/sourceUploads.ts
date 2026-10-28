@@ -1,6 +1,7 @@
 /** Durable owned upload tickets. Only verified complete source bytes become library rows. */
 import {
   CreateSourceUpload,
+  DirectSourceUpload,
   FileEventId,
   FileId,
   FolderId,
@@ -171,7 +172,6 @@ export const normalizeUploadMetadata = (input: CreateSourceUpload): CreateSource
   };
 };
 const ticket = (row: SourceUploadRow): SourceUploadTicket => ({
-  ...(row.directUpload ? { direct: row.directUpload } : {}),
   uploadId: SourceUploadId.make(row.id),
   uploadUrl: `/api/library/uploads/${row.id}`,
   expiresAt: row.expiresAt.toISOString(),
@@ -255,6 +255,11 @@ export class SourceUploads extends Context.Service<
       userId: UserId,
       input: CreateSourceUpload,
     ) => Effect.Effect<SourceUploadTicket, SourceUploadError>;
+    readonly prepare: (
+      userId: UserId,
+      id: SourceUploadId,
+      info: { size: number; type: string },
+    ) => Effect.Effect<DirectSourceUpload | null, SourceUploadError>;
     readonly put: (
       userId: UserId,
       id: SourceUploadId,
@@ -723,21 +728,35 @@ export const SourceUploadsLive = Layer.effect(
             .returning();
           return { ...ticket(completed!), file: await wireFile(tx, userId, saved.id) };
         });
-        if (decoded.transport !== "direct" || result.file || !storage.prepareSourceUpload)
-          return result;
+        return result;
+      }, reportFailure),
+      prepare: Effect.fn("SourceUploads.prepare")(function* (userId, id, info) {
+        const at = yield* now;
         const row = yield* database.use((db) =>
           db.query.sourceUpload.findFirst({
-            where: and(eq(sourceUpload.id, result.uploadId), eq(sourceUpload.userId, userId)),
+            where: and(eq(sourceUpload.id, id), eq(sourceUpload.userId, userId)),
           }),
         );
-        if (!row || row.status !== "pending" || row.directUpload) return result;
-        const key = StorageKey.make(
-          fileSourceKey(
-            userId,
-            FileId.make(row.fileId),
-            "source",
-            row.id.replaceAll("-", "").slice(-12),
-          ),
+        if (!row) return yield* reject(404, "Upload ticket not found.");
+        if (row.status === "cancelled" || row.expiresAt <= at)
+          return yield* reject(410, "This upload ticket has expired or was cancelled.");
+        if (row.status !== "pending")
+          return yield* reject(409, "This upload is already in progress or completed.");
+        if (info.size !== row.sizeBytes || info.type !== row.mimeType)
+          return yield* reject(422, "Source size and type must match the upload ticket.");
+        if (row.directUpload) {
+          return yield* Schema.decodeUnknownEffect(DirectSourceUpload)(row.directUpload).pipe(
+            Effect.mapError(() =>
+              reject(410, "This upload ticket uses an older transport. Capture again."),
+            ),
+          );
+        }
+        if (!storage.prepareSourceUpload) return null;
+        const key = fileSourceKey(
+          userId,
+          FileId.make(row.fileId),
+          "source",
+          row.id.replaceAll("-", "").slice(-12),
         );
         const direct = yield* storage.prepareSourceUpload(key, {
           contentType: row.mimeType,
@@ -747,14 +766,14 @@ export const SourceUploadsLive = Layer.effect(
             Math.floor((row.expiresAt.getTime() - at.getTime()) / 1000),
           ),
         });
-        // Concurrent creates may prepare unused capabilities, but only the winner is returned.
+        if (!direct) return null;
         return yield* database.useTransaction(async (tx) => {
           await tx
             .update(sourceUpload)
             .set({ storageKey: key, directUpload: direct })
             .where(
               and(
-                eq(sourceUpload.id, row.id),
+                eq(sourceUpload.id, id),
                 eq(sourceUpload.userId, userId),
                 eq(sourceUpload.status, "pending"),
                 isNull(sourceUpload.storageKey),
@@ -763,15 +782,10 @@ export const SourceUploadsLive = Layer.effect(
           const [current] = await tx
             .select()
             .from(sourceUpload)
-            .where(and(eq(sourceUpload.id, row.id), eq(sourceUpload.userId, userId)));
-          if (!current || current.status === "cancelled")
-            throw reject(410, "This upload is unavailable.");
-          return {
-            ...ticket(current),
-            ...(current.status === "completed"
-              ? { file: await wireFile(tx, userId, current.completedFileId ?? current.fileId) }
-              : {}),
-          };
+            .where(and(eq(sourceUpload.id, id), eq(sourceUpload.userId, userId)));
+          if (!current || current.status !== "pending" || current.expiresAt <= at)
+            throw reject(409, "This upload is no longer available for transfer.");
+          return current.directUpload;
         });
       }, reportFailure),
       put: (userId, id, request) => put(userId, id, request),

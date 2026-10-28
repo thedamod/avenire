@@ -25,6 +25,7 @@
   "dependencies": {
     "@avenire/capture": "workspace:*",
     "@avenire/contracts": "workspace:*",
+    "@avenire/storage": "workspace:*",
     "effect": "catalog:",
     "ws": "8.22.0"
   },

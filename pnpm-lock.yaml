@@ -141,6 +141,9 @@ importers:
       '@avenire/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@avenire/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       effect:
         specifier: 'catalog:'
         version: 4.0.0
@@ -178,6 +181,9 @@ importers:
       '@avenire/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@avenire/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       effect:
         specifier: 'catalog:'
         version: 4.0.0

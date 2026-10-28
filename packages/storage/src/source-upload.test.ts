@@ -1,51 +1,66 @@
-import { afterEach, expect, it, vi } from "@effect/vitest";
-import { prepareUploadThingSource } from "./source-upload.ts";
-afterEach(() => vi.unstubAllGlobals());
-it("binds signing to size, type and custom ID and rejects a mismatched capability", async () => {
-  const token = Buffer.from(JSON.stringify({ apiKey: "test" })).toString("base64");
-  const key = "users/u/source";
-  // Match UploadThing's wire format: it encodes the custom ID before URLSearchParams does.
-  const url = new URL("https://sea1.ingest.uploadthing.com/physical");
-  url.search = new URLSearchParams({
-    "x-ut-custom-id": encodeURIComponent(key),
-    "x-ut-file-size": "5",
-  }).toString();
-  const fetcher = vi.fn().mockResolvedValue(Response.json({ key: "physical", url: url.href }));
-  vi.stubGlobal("fetch", fetcher);
+import { expect, it, vi } from "@effect/vitest";
+import { Files, FilesError } from "files-sdk";
+import { memory } from "files-sdk/memory";
+import { prepareSourceUpload } from "./source-upload.ts";
+
+it("delegates size-bound signed targets to the SDK for PUT and POST providers", async () => {
+  const files = new Files({ adapter: memory() });
+  Object.defineProperty(files, "capabilities", { value: { signedUrl: { supported: true } } });
+  const sign = vi.spyOn(files, "signedUploadUrl");
+  for (const target of [
+    {
+      method: "PUT" as const,
+      url: "https://bucket.test/source",
+      headers: { "content-type": "video/mp4" },
+    },
+    {
+      method: "POST" as const,
+      url: "https://bucket.test",
+      fields: { key: "source", policy: "signed" },
+    },
+  ]) {
+    sign.mockResolvedValueOnce(target);
+    expect(
+      await prepareSourceUpload(files, "source", {
+        sizeBytes: 42,
+        contentType: "video/mp4",
+        expiresInSeconds: 60,
+      }),
+    ).toEqual(target);
+    expect(sign).toHaveBeenLastCalledWith("source", {
+      contentType: "video/mp4",
+      minSize: 42,
+      maxSize: 42,
+      expiresIn: 60,
+    });
+  }
+  sign.mockRejectedValueOnce(new FilesError("Provider", "Size-bound presigning is unsupported"));
   expect(
-    await prepareUploadThingSource(
-      token,
-      key,
-      { sizeBytes: 5, contentType: "video/mp4", expiresInSeconds: 60 },
-      "private",
-    ),
-  ).toEqual({ key: "physical", url: url.href });
-  expect(JSON.parse(fetcher.mock.calls[0]![1].body)).toMatchObject({
-    fileSize: 5,
-    fileType: "video/mp4",
-    customId: key,
-    acl: "private",
-  });
-  fetcher.mockResolvedValue(
-    Response.json({ key: "physical", url: url.href.replace("size=5", "size=50") }),
-  );
+    await prepareSourceUpload(files, "source", {
+      sizeBytes: 42,
+      contentType: "video/mp4",
+      expiresInSeconds: 60,
+    }),
+  ).toBeNull();
+  sign.mockRejectedValueOnce(new FilesError("Unauthorized", "Denied"));
   await expect(
-    prepareUploadThingSource(
-      token,
-      key,
-      { sizeBytes: 5, contentType: "video/mp4", expiresInSeconds: 60 },
-      "private",
-    ),
-  ).rejects.toThrow("Unexpected storage");
-  const wrongOwner = new URL(url);
-  wrongOwner.searchParams.set("x-ut-custom-id", encodeURIComponent("users/other/source"));
-  fetcher.mockResolvedValue(Response.json({ key: "physical", url: wrongOwner.href }));
-  await expect(
-    prepareUploadThingSource(
-      token,
-      key,
-      { sizeBytes: 5, contentType: "video/mp4", expiresInSeconds: 60 },
-      "private",
-    ),
-  ).rejects.toThrow("Unexpected storage");
+    prepareSourceUpload(files, "source", {
+      sizeBytes: 42,
+      contentType: "video/mp4",
+      expiresInSeconds: 60,
+    }),
+  ).rejects.toThrow("Denied");
+});
+
+it("uses the relay when the adapter cannot sign uploads", async () => {
+  const files = new Files({ adapter: memory() });
+  const sign = vi.spyOn(files, "signedUploadUrl");
+  expect(
+    await prepareSourceUpload(files, "source", {
+      sizeBytes: 42,
+      contentType: "video/mp4",
+      expiresInSeconds: 60,
+    }),
+  ).toBeNull();
+  expect(sign).not.toHaveBeenCalled();
 });

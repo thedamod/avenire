@@ -1,4 +1,5 @@
 import { scrubCaptureText } from "./diagnostics.ts";
+import { SourceUploadTransferError } from "@avenire/storage/client";
 import type { UploadRejected } from "./source-acquisition.ts";
 
 // Matched by tag and name rather than instanceof, so the check survives module mocks and bundling.
@@ -6,8 +7,9 @@ const causeOf = (error: unknown): unknown =>
   (error as { _tag?: unknown } | null)?._tag === "DeviceAcquisitionError"
     ? (error as { cause: unknown }).cause
     : error;
-const isRejection = (value: unknown): value is UploadRejected =>
-  value instanceof Error && value.name === "UploadRejected";
+const isRejection = (value: unknown): value is UploadRejected | SourceUploadTransferError =>
+  value instanceof Error &&
+  (value.name === "UploadRejected" || value instanceof SourceUploadTransferError);
 
 /**
  * What the capture overlay says when a source couldn't be saved. Server text is safe to show

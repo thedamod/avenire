@@ -2,7 +2,7 @@
 import type { Stats } from "node:fs";
 import { createHash } from "node:crypto";
 import { openAsBlob } from "node:fs";
-import { transferDirectSource, requestSourceTicket } from "@avenire/capture/source-transfer";
+import { uploadSourceTicket, SourceUploadTransferError } from "@avenire/storage/client";
 import { open, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -212,10 +212,8 @@ export const acquireAndUploadSource = async (
     : controller.signal;
   let directory: string | undefined;
   let sourceStream: Readable | undefined;
-  let uploadStream: Readable | undefined;
   let cancelUrl: string | undefined;
   let completed = false;
-  let directTicket = false;
   const startedAt = performance.now();
   let localFile: Awaited<ReturnType<typeof open>> | undefined;
   let localInfo: Stats | undefined;
@@ -235,7 +233,6 @@ export const acquireAndUploadSource = async (
           : undefined
         : provenance(metadata.sourceUrl);
     const cleanMetadata = {
-      transport: "direct" as const,
       idempotencyKey: metadata.idempotencyKey,
       title: uploadName(metadata.title, 200),
       kind: metadata.kind,
@@ -327,20 +324,16 @@ export const acquireAndUploadSource = async (
             }
           : {}),
       };
-      const response = await requestSourceTicket(
-        (body) =>
-          abortable(
-            options.avenireFetch(new URL("/api/library/uploads", app).href, {
-              method: "POST",
-              redirect: "error",
-              credentials: "include",
-              signal,
-              headers: { "content-type": "application/json" },
-              body,
-            }),
-            signal,
-          ),
-        knownPayload,
+      const response = await abortable(
+        options.avenireFetch(new URL("/api/library/uploads", app).href, {
+          method: "POST",
+          redirect: "error",
+          credentials: "include",
+          signal,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(knownPayload),
+        }),
+        signal,
       );
       if (!response.ok) throw await rejection(response, signal);
       const known = Schema.decodeUnknownSync(SourceUploadTicket)(await readJson(response, signal));
@@ -420,15 +413,11 @@ export const acquireAndUploadSource = async (
         }),
         requestSignal,
       );
-    const created = await requestSourceTicket(
-      (body) =>
-        request(new URL("/api/library/uploads", app).href, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body,
-        }),
-      payload,
-    );
+    const created = await request(new URL("/api/library/uploads", app).href, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
     if (!created.ok) {
       const error = await rejection(created, signal);
       error.stage = "create";
@@ -460,78 +449,25 @@ export const acquireAndUploadSource = async (
       throw new Error("Upload ticket is cancelled or expired");
     if (completed && ticket.file) return await finish(ticket.file);
     // Older servers may omit file on completed tickets; retain the idempotent PUT fallback.
-    directTicket = Boolean(ticket.direct);
-    if (ticket.direct) {
-      const blob = await openAsBlob(path, { type: payload.mimeType });
-      await transferDirectSource(ticket.direct.url, blob, {
-        signal,
-        onProgress: (loaded, total) => transfer("transferring", loaded, total),
-        send: async (url, body, offset, uploadSignal) => {
-          const framed = new Request(url, {
-            method: "PUT",
-            headers: { Range: `bytes=${offset}-` },
-            body,
-          });
-          let loaded = offset,
-            last = 0;
-          const meter = new TransformStream<Uint8Array, Uint8Array>({
-            transform(chunk, controller) {
-              loaded += chunk.byteLength;
-              if (performance.now() - last >= 100) {
-                transfer("transferring", Math.min(loaded, blob.size - 1), blob.size);
-                last = performance.now();
-              }
-              controller.enqueue(chunk);
-            },
-          });
-          return fetch(url, {
-            method: "PUT",
-            headers: framed.headers,
-            body: framed.body!.pipeThrough(meter),
-            duplex: "half",
-            credentials: "omit",
-            redirect: "error",
-            signal: uploadSignal,
-          } as RequestInit);
-        },
-      });
-      transfer("validating", sizeBytes, sizeBytes);
-      const response = await request(target.href, { method: "POST" });
-      if (!response.ok) {
-        const error = await rejection(response, signal);
-        error.stage = "verify";
-        throw error;
-      }
-      completed = true;
-      return await finish(Schema.decodeUnknownSync(LibraryFile)(await readJson(response, signal)));
-    }
-    const file = await open(path, "r");
-    uploadStream = file.createReadStream();
-    const uploaded = await request(target.href, {
-      method: "PUT",
-      // Electron's network layer rejects a hand-set Content-Length (net::ERR_INVALID_ARGUMENT);
-      // the stream goes chunked and the server verifies size and hash as it spools.
-      headers: { "content-type": payload.mimeType },
-      body: Readable.toWeb(uploadStream) as ReadableStream<Uint8Array>,
-      duplex: "half",
-    } as RequestInit);
-    if (!uploaded.ok) {
-      const error = await rejection(uploaded, signal);
-      error.stage = "transfer";
-      captureLog("Upload rejected", {
-        operation: "put",
-        status: error.status,
-        detail: error.detail,
-      });
-      throw error;
-    }
-    // A successful PUT has finalized the server upload even if response decoding fails.
+    const blob = await openAsBlob(path, { type: payload.mimeType });
+    const result = await uploadSourceTicket(target, blob, {
+      contentType: payload.mimeType,
+      appFetch: options.avenireFetch,
+      signal,
+      onProgress: (loaded, total) => transfer("transferring", loaded, total),
+      onVerifying: () => transfer("validating", sizeBytes, sizeBytes),
+    });
     completed = true;
-    const result = Schema.decodeUnknownSync(LibraryFile)(await readJson(uploaded, signal));
     return await finish(result);
   } catch (cause) {
     // Schema errors can embed the decoded response (including previews). Log only field paths.
     let failure = cause;
+    if (cause instanceof SourceUploadTransferError)
+      captureLog("Upload rejected", {
+        operation: cause.stage === "transfer" ? "put" : cause.stage,
+        status: cause.status,
+        detail: cause.detail,
+      });
     if (Schema.isSchemaError(cause)) {
       const fields = SchemaIssue.makeFormatterStandardSchemaV1()(cause.issue).issues.map(
         (issue) =>
@@ -550,13 +486,12 @@ export const acquireAndUploadSource = async (
     clearTimeout(timer);
     controller.abort();
     sourceStream?.destroy();
-    uploadStream?.destroy();
     await localFile?.close().catch(() => {});
     captureLog("Source timing", {
       durationMs: Math.round(performance.now() - startedAt),
       completed,
     });
-    if (cancelUrl !== undefined && !completed && (!directTicket || options.signal?.aborted)) {
+    if (cancelUrl !== undefined && !completed && options.signal?.aborted) {
       // Cancellation gets a fresh short deadline even when the main request was aborted.
       const cleanupSignal = AbortSignal.timeout(2000);
       try {

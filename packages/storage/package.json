@@ -14,6 +14,10 @@
     "./archive": {
       "types": "./src/archive.ts",
       "import": "./src/archive.ts"
+    },
+    "./client": {
+      "types": "./src/client.ts",
+      "import": "./src/client.ts"
     }
   },
   "scripts": {

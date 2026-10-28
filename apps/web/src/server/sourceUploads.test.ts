@@ -144,6 +144,7 @@ it.effect(
       const absent = SourceUploads.of({
         create: () => Effect.die("create must not execute"),
         complete: () => Effect.die("complete must not execute"),
+        prepare: () => Effect.die("prepare must not execute"),
         put: () => Effect.die("put must not execute"),
         cancel: () => Effect.die("cancel must not execute"),
         cleanup: () => Effect.void,
@@ -228,6 +229,7 @@ it.effect(
       const absent = SourceUploads.of({
         create: () => Effect.die("No domain access"),
         complete: () => Effect.die("complete must not execute"),
+        prepare: () => Effect.die("prepare must not execute"),
         put: () => Effect.die("No domain access"),
         cancel: () => Effect.die("No domain access"),
         cleanup: () => Effect.void,
@@ -309,6 +311,7 @@ it.effect(
       );
       yield* Effect.gen(function* () {
         const memory = yield* Storage;
+        let canSign = false;
         let failPut = false;
         let failRemove = false;
         let beginPut: (() => void) | undefined;
@@ -316,10 +319,14 @@ it.effect(
         const stored = Storage.of({
           ...memory,
           prepareSourceUpload: (key) =>
-            Effect.succeed({
-              key: "provider-test",
-              url: `https://sea1.ingest.uploadthing.com/provider-test?key=${key}`,
-            }),
+            Effect.succeed(
+              canSign
+                ? {
+                    method: "PUT" as const,
+                    url: `https://bucket.test/provider-test?key=${key}`,
+                  }
+                : null,
+            ),
           remove: (key) =>
             failRemove
               ? Effect.fail(new StorageError({ operation: "remove", cause: "storage outage" }))
@@ -346,13 +353,88 @@ it.effect(
           const directBytes = new TextEncoder().encode("direct source fixture");
           const directInput = {
             ...metadata(),
-            transport: "direct" as const,
             sizeBytes: directBytes.length,
             sha256: hash(directBytes),
           };
           const direct = yield* uploads.create(owner, directInput);
-          expect(direct.direct?.key).toBe("provider-test");
-          expect((yield* uploads.create(owner, directInput)).direct).toEqual(direct.direct);
+          const protocol = (body: unknown) =>
+            completeUploadResponse(
+              new Request(`https://app.test/api/library/uploads/${direct.uploadId}`, {
+                method: "POST",
+                headers: { "content-type": "application/json", cookie: "session=owner" },
+                body: JSON.stringify(body),
+              }),
+              direct.uploadId,
+            ).pipe(
+              Effect.provideService(
+                AuthService,
+                AuthService.of({
+                  auth: {} as AuthService["Service"]["auth"],
+                  getSession: () =>
+                    Effect.succeed({ id: owner, email: "owner@test", name: "Owner" }),
+                }),
+              ),
+              Effect.provideService(WidgetHost, { host: "widgets.test" }),
+              Effect.provideService(
+                ConfigProvider.ConfigProvider,
+                ConfigProvider.fromUnknown({ BETTER_AUTH_URL: "https://app.test" }),
+              ),
+            );
+          const relay = yield* protocol({
+            op: "presign",
+            files: [{ name: "source", size: directBytes.length, type: directInput.mimeType }],
+          });
+          expect(yield* Effect.promise(() => relay.json())).toMatchObject({
+            uploads: [{ target: { method: "PUT", url: direct.uploadUrl } }],
+          });
+          canSign = true;
+          const presigned = yield* protocol({
+            op: "presign",
+            files: [{ name: "source", size: directBytes.length, type: directInput.mimeType }],
+          });
+          expect(presigned.status).toBe(200);
+          expect(yield* Effect.promise(() => presigned.json())).toMatchObject({
+            uploads: [{ id: direct.uploadId, key: direct.uploadId, target: { method: "PUT" } }],
+          });
+          expect(
+            (yield* protocol({
+              op: "presign",
+              files: [{ name: "source", size: directBytes.length + 1, type: directInput.mimeType }],
+            })).status,
+          ).toBe(422);
+          expect(
+            (yield* protocol({
+              op: "complete",
+              completions: [{ id: direct.uploadId, key: randomUUID() }],
+            })).status,
+          ).toBe(400);
+          const target = yield* uploads.prepare(owner, direct.uploadId, {
+            size: directBytes.length,
+            type: directInput.mimeType,
+          });
+          expect(target?.method).toBe("PUT");
+          expect(
+            yield* uploads.prepare(owner, direct.uploadId, {
+              size: directBytes.length,
+              type: directInput.mimeType,
+            }),
+          ).toEqual(target);
+          expect(
+            yield* uploads
+              .prepare(other, direct.uploadId, {
+                size: directBytes.length,
+                type: directInput.mimeType,
+              })
+              .pipe(Effect.result),
+          ).toMatchObject({ failure: { status: 404 } });
+          expect(
+            yield* uploads
+              .prepare(owner, direct.uploadId, {
+                size: directBytes.length + 1,
+                type: directInput.mimeType,
+              })
+              .pipe(Effect.result),
+          ).toMatchObject({ failure: { status: 422 } });
           const [directRow] = yield* database.use((db) =>
             db.select().from(sourceUpload).where(eq(sourceUpload.id, direct.uploadId)),
           );
@@ -370,6 +452,15 @@ it.effect(
           expect(
             yield* uploads.complete(other, direct.uploadId, request()).pipe(Effect.result),
           ).toMatchObject({ failure: { status: 404 } });
+          const completed = yield* protocol({
+            op: "complete",
+            completions: [{ id: direct.uploadId, key: direct.uploadId }],
+          });
+          expect(completed.status).toBe(200);
+          expect(yield* Effect.promise(() => completed.json())).toMatchObject({
+            files: [{ key: direct.uploadId, size: directBytes.length }],
+            sourceFile: { id: directFile.id },
+          });
           failPut = false;
           yield* memory.remove(StorageKey.make(directRow!.storageKey!));
           yield* database.use((db) => db.delete(file).where(eq(file.id, directFile.id)));

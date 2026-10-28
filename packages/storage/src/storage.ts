@@ -6,10 +6,11 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
-import { Files, FilesError, type MultipartOptions } from "files-sdk";
+import { Files, FilesError, type MultipartOptions, UploadControl } from "files-sdk";
 import type { UploadThingAdapter } from "files-sdk/uploadthing";
 import { createHash } from "node:crypto";
 
+import { prepareSourceUpload } from "./source-upload.ts";
 import { StorageKey } from "@avenire/contracts";
 
 export class StorageError extends Schema.TaggedError<StorageError>()("StorageError", {
@@ -71,7 +72,7 @@ export class Storage extends Context.Service<
     readonly prepareSourceUpload?: (
       key: StorageKey,
       options: { contentType: string; sizeBytes: number; expiresInSeconds: number },
-    ) => Effect.Effect<{ url: string; key: string }, StorageError>;
+    ) => Effect.Effect<import("files-sdk").SignedUpload | null, StorageError>;
     readonly stream?: (
       key: StorageKey,
     ) => Effect.Effect<ReadableStream<Uint8Array>, StorageError | ObjectNotFound>;
@@ -89,6 +90,8 @@ export const StorageConfig = Config.all({
   r2AccessKeyId: Config.option(Config.Redacted("R2_ACCESS_KEY_ID")),
   r2SecretAccessKey: Config.option(Config.Redacted("R2_SECRET_ACCESS_KEY")),
   awsRegion: Config.String("AWS_REGION").pipe(Config.withDefault("us-east-1")),
+  s3Endpoint: Config.option(Config.String("S3_ENDPOINT")),
+  s3ForcePathStyle: Config.Boolean("S3_FORCE_PATH_STYLE").pipe(Config.withDefault(false)),
   uploadthingToken: Config.option(Config.Redacted("UPLOADTHING_TOKEN")),
   // UploadThing's free tier rejects private files; public-read files get a permanent CDN URL.
   uploadthingAcl: Config.Literals(["private", "public-read"], "UPLOADTHING_ACL").pipe(
@@ -160,15 +163,22 @@ const makeStorage = (files: Files): Storage["Service"] =>
       idempotent(
         attempt("stream", key, async () => (await files.download(key, { as: "stream" })).stream()),
       ).pipe(notFound(key)),
+    prepareSourceUpload: (key, options) =>
+      attempt("prepareSourceUpload", key, () => prepareSourceUpload(files, key, options)),
     put: (key, body, options) => {
-      const upload = attempt("put", key, () => files.upload(key, body, options)).pipe(
+      const replayable = !(body instanceof ReadableStream);
+      return attempt("put", key, () =>
+        files.upload(key, body, {
+          ...options,
+          retries: replayable ? 2 : 0,
+          ...(replayable && files.capabilities.multipart ? { control: new UploadControl() } : {}),
+        }),
+      ).pipe(
         Effect.tapError((error) =>
           Effect.logWarning("Storage put failed", { key, cause: describeCause(error.cause) }),
         ),
+        Effect.asVoid,
       );
-      // A stream can't be replayed; bytes, strings and (file-backed) Blobs can, so a transient
-      // provider or network failure retries instead of failing the whole upload.
-      return (body instanceof ReadableStream ? upload : idempotent(upload)).pipe(Effect.asVoid);
     },
     get: (key) =>
       idempotent(
@@ -325,7 +335,17 @@ const makeAdapter = (config: StorageConfig): Effect.Effect<FilesAdapter> => {
       );
     case "s3":
       return Effect.promise(() => import("files-sdk/s3")).pipe(
-        Effect.map(({ s3 }) => s3({ bucket: config.bucket, region: config.awsRegion })),
+        Effect.map(({ s3 }) =>
+          s3({
+            bucket: config.bucket,
+            region: config.awsRegion,
+            forcePathStyle: config.s3ForcePathStyle,
+            ...Option.match(config.s3Endpoint, {
+              onNone: () => ({}),
+              onSome: (endpoint) => ({ endpoint }),
+            }),
+          }),
+        ),
       );
     case "uploadthing":
       // Private (default): every read goes through a short-lived signed URL (our /a/ links mint them).
@@ -350,17 +370,7 @@ export const StorageLive = Layer.effect(
   Effect.gen(function* () {
     const config = yield* StorageConfig;
     const adapter = yield* makeAdapter(config);
-    const service = makeStorage(new Files({ adapter }));
-    if (config.driver !== "uploadthing" || Option.isNone(config.uploadthingToken)) return service;
-    const { prepareUploadThingSource } = yield* Effect.promise(() => import("./source-upload.ts"));
-    const token = Redacted.value(config.uploadthingToken.value);
-    return {
-      ...service,
-      prepareSourceUpload: (key, options) =>
-        attempt("prepareSourceUpload", key, () =>
-          prepareUploadThingSource(token, fitKey(key), options, config.uploadthingAcl),
-        ),
-    };
+    return makeStorage(new Files({ adapter }));
   }),
 );
 
