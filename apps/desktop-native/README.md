@@ -11,7 +11,8 @@ engine integration, not a completed replacement of the desktop shell. Ruth can i
 context. The prompt applies each directive once and rejects a mismatched capture
 timestamp, so stored instructions are not replayed onto a later screen. The `native_visualize` tool accepts bounded scenes with 1..32 colored primitives,
 transforms and a camera, with real mouse/keyboard rotation. No arbitrary QML,
-scripts, URLs or external meshes run.
+scripts, URLs or external meshes run. Native visualizations have no card, backplate,
+rounded container or decorative border; the scene floats directly over the app.
 
 ## Install and run
 

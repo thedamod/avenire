@@ -15,7 +15,6 @@ Item {
     Keys.onRightPressed: ry += 10
     Keys.onUpPressed: rx -= 10
     Keys.onDownPressed: rx += 10
-    Rectangle { anchors.fill: parent; radius: 20; color: "transparent"; border.color: "#8878ff" }
     View3D {
         anchors.fill: parent
         environment: SceneEnvironment { backgroundMode: SceneEnvironment.Transparent }
