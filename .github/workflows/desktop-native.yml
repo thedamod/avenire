@@ -40,7 +40,7 @@ jobs:
             host: windows
             arch: win64_msvc2022_64
             kit: msvc2022_64
-          - os: macos-14
+          - os: macos-15
             host: mac
             arch: clang_64
             kit: macos
@@ -105,7 +105,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-2022, macos-14]
+        os: [ubuntu-22.04, windows-2022, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Require explicit distribution license basis
