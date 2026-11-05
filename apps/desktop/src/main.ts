@@ -65,7 +65,7 @@ import { loadInstallIdentity } from "./capture/identity.ts";
 import { LocalOriginRegistry } from "./capture/registry.ts";
 import { PairingAuthority } from "./capture/pairing.ts";
 import { startForegroundPoll } from "./capture/foreground.ts";
-import { prewarmPowerShell } from "./capture/research/electron/collectors/ps-queue.ts";
+import { prewarmPowerShell } from "./capture/collectors/ps-queue.ts";
 import { CaptureProgressStream } from "./capture/progress.ts";
 import { captureItems, runCapturePipeline } from "./capture/pipeline.ts";
 import { executeReopen } from "./capture/reopen.ts";

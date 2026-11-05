@@ -2,12 +2,12 @@ import { nativeFile } from "./native-file.ts";
 import * as ChildProcess from "node:child_process";
 import { promisify } from "node:util";
 import type { CapturedWindow } from "@avenire/contracts";
-import type { ForegroundApp } from "./research/src/capture/types.ts";
+import type { ForegroundApp } from "./support/types.ts";
 import { WINDOWS_FOREGROUND_SCRIPT } from "./foreground-windows.ts";
 import {
   createCaptureContext,
   type CaptureContext,
-} from "./research/electron/collectors/capture-context.ts";
+} from "./collectors/capture-context.ts";
 import { resolveDocumentPath } from "./document-path.ts";
 
 const execFile = promisify(ChildProcess.execFile);
@@ -34,7 +34,7 @@ export async function readForeground(): Promise<{
       const result = await command("osascript", ["-e", foregroundScript]);
       [appName = "", title = "", pidText = ""] = result.split(/\r?\n/);
     } else if (process.platform === "win32") {
-      const { execPowerShell } = await import("./research/electron/collectors/ps-queue.ts");
+      const { execPowerShell } = await import("./collectors/ps-queue.ts");
       const { stdout } = await execPowerShell(WINDOWS_FOREGROUND_SCRIPT, { timeout: 1200, notes });
       [appName = "", title = "", pidText = ""] = stdout.trim().split(/\r?\n/);
     } else {

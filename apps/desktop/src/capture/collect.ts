@@ -7,7 +7,7 @@ import {
   mergeNativeWindows,
   retainNative,
 } from "./native.ts";
-import { createCaptureContext } from "./research/electron/collectors/capture-context.ts";
+import { createCaptureContext } from "./collectors/capture-context.ts";
 import { CaptureId } from "@avenire/contracts";
 import type {
   CaptureSnapshot,
