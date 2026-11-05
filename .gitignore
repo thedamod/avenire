@@ -33,3 +33,4 @@ drizzle/meta/_journal.local.json
 
 # local files-sdk storage (STORAGE_DRIVER=fs)
 .data/
+.vercel

@@ -1,0 +1,33 @@
+---
+import Base from "../layouts/Base.astro";
+import { Logo } from "../components/Logo.tsx";
+---
+<Base title="Join the waitlist · Avenire" description="Get early access to Avenire.">
+  <main class="mx-auto flex min-h-screen max-w-md flex-col px-6 py-10">
+    <Logo />
+    <section class="my-auto py-20">
+      <p class="text-foreground-subtle font-mono text-xs uppercase tracking-eyebrow">Early access</p>
+      <h1 class="text-foreground mt-5 text-3xl font-medium">Join the waitlist</h1>
+      <p class="text-foreground-soft mt-4 text-sm leading-6">Keep your study material in order. We’ll let you know when Avenire is ready for you.</p>
+      <p id="success" hidden class="text-foreground mt-8" role="status">You’re on the list. Check your inbox for a welcome from us.</p>
+      <p id="error" hidden class="text-foreground mt-8" role="alert">We couldn’t complete your request. Please try again.</p>
+      <form id="join-form" action="/api/waitlist" method="post" class="mt-8 flex flex-col gap-4">
+        <label for="email" class="text-foreground text-sm">Email address</label>
+        <input id="email" name="email" type="email" required maxlength="254" autocomplete="email" placeholder="you@example.com" class="border-input bg-surface-3 text-foreground rounded-md border px-4 py-3 text-sm" />
+        <div hidden aria-hidden="true"><label for="website">Website</label><input id="website" name="website" tabindex="-1" autocomplete="off" /></div>
+        <button type="submit" class="bg-foreground text-background rounded-md px-4 py-3 text-sm font-medium">Join waitlist</button>
+      </form>
+      <a href="/" class="text-foreground-soft mt-8 inline-block text-sm underline">Back to Avenire</a>
+    </section>
+  </main>
+  <script is:inline>
+    const params = new URLSearchParams(location.search);
+    const input = document.getElementById("email");
+    if (params.has("email")) input.value = params.get("email");
+    if (params.get("status") === "success") {
+      document.getElementById("success").hidden = false;
+      document.getElementById("join-form").style.display = "none";
+    } else if (params.get("status") === "error") document.getElementById("error").hidden = false;
+    if (location.search) history.replaceState(null, "", location.pathname);
+  </script>
+</Base>

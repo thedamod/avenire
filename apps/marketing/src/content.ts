@@ -14,7 +14,7 @@ export const nav = {
 };
 
 export const emailCta = {
-  action: `${appUrl}/sign-up`,
+  action: "/join",
   placeholder: "you@university.edu",
   button: "Get early access",
 };

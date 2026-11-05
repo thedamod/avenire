@@ -5,8 +5,10 @@ import CloudRunFailed from "./CloudRunFailed.tsx";
 import MorningDigest from "./MorningDigest.tsx";
 import ResetPassword from "./ResetPassword.tsx";
 import VerifyEmail from "./VerifyEmail.tsx";
+import WaitlistWelcome from "./WaitlistWelcome.tsx";
 
 export const TemplatePropsSchema = {
+  "waitlist-welcome": Schema.Struct({}),
   "verify-email": Schema.Struct({ name: Schema.String, url: Schema.String }),
   "reset-password": Schema.Struct({ name: Schema.String, url: Schema.String }),
   "morning-digest": Schema.Struct({
@@ -34,6 +36,7 @@ type EmailTemplate<N extends TemplateName> = ComponentType<TemplateProps<N>> & {
 };
 
 export const templates: { readonly [N in TemplateName]: EmailTemplate<N> } = {
+  "waitlist-welcome": WaitlistWelcome,
   "verify-email": VerifyEmail,
   "reset-password": ResetPassword,
   "morning-digest": MorningDigest,
@@ -41,6 +44,7 @@ export const templates: { readonly [N in TemplateName]: EmailTemplate<N> } = {
 };
 
 export const subjects: { readonly [N in TemplateName]: (props: TemplateProps<N>) => string } = {
+  "waitlist-welcome": () => "You're on the Avenire waitlist",
   "verify-email": () => "Confirm your Avenire email",
   "reset-password": () => "Reset your Avenire password",
   "morning-digest": ({ date }) => `Your Avenire study digest · ${date}`,

@@ -1,2 +1,4 @@
 dist/
 .astro/
+
+/api/waitlist.js
