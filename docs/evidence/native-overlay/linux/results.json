@@ -1,0 +1,86 @@
+{
+  "platform": "linux",
+  "passed": true,
+  "checks": [
+    "Transparent interior and visible thinking border verified from compositor pixels",
+    "Real OS mouse click passed through the annotation to the underlying QPushButton",
+    "Native capture excluded annotations/thinking overlay and remained within synthetic region",
+    "Interactive Qt Quick 3D rotation changed via real keyboard input and changed rendered pixels",
+    "Escape from the interactive native window dismissed both native surfaces"
+  ],
+  "state": {
+    "visible": true,
+    "screenId": "screen",
+    "phase": "thinking",
+    "reducedMotion": true,
+    "items": [
+      {
+        "id": "button",
+        "kind": "rect",
+        "x": 0.05,
+        "y": 0.32,
+        "width": 0.61,
+        "height": 0.15
+      },
+      {
+        "id": "label",
+        "kind": "label",
+        "x": 0.05,
+        "y": 0.25,
+        "text": "Ruth annotation \u00b7 click the button below"
+      },
+      {
+        "id": "arrow",
+        "kind": "arrow",
+        "x": 0.75,
+        "y": 0.2,
+        "width": 0.12,
+        "height": 0.25
+      }
+    ],
+    "capturing": false,
+    "visualizationVisible": true,
+    "visualizationInteractive": true,
+    "rotation": {
+      "x": -20.0,
+      "y": 40.0
+    },
+    "sceneTitle": "Molecular geometry",
+    "windowIds": {
+      "overlay": 10485773,
+      "visualization": 10485777
+    },
+    "screens": [
+      {
+        "id": "screen",
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 800,
+        "devicePixelRatio": 1.0
+      }
+    ],
+    "graphicsApi": "OpenGL",
+    "softwareRendering": false,
+    "hardwareAcceleration": "unverified",
+    "flags": {
+      "alwaysOnTop": true,
+      "transparentForInput": true,
+      "doesNotAcceptFocus": true
+    }
+  },
+  "stderr": [
+    "/tmp/avenire-desktop-explorer/apps/desktop-native/main.py:256: DeprecationWarning: Function: 'QColor.isValidColor(const QString &name)' is marked as deprecated, please check the documentation for more information.\n",
+    "  if not isinstance(color, str) or len(color) != 7 or not color.startswith(\"#\") or not QColor.isValidColor(color):\n"
+  ],
+  "captureDimensions": [
+    900,
+    600
+  ],
+  "runtime": {
+    "python": "3.12.3",
+    "Qt": "6.10.2",
+    "binding": "PySide6"
+  },
+  "scope": "Synthetic 900x600 logical-pixel test region only; not a user desktop capture"
+}

@@ -23,7 +23,8 @@
     "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests && node --test scripts/explore/explore.node-test.mjs",
     "explore": "node scripts/explore/inspect.mjs",
     "explore:probe": "node scripts/explore/probe.mjs",
-    "test:explore": "node --test scripts/explore/explore.node-test.mjs"
+    "test:explore": "node --test scripts/explore/explore.node-test.mjs",
+    "native:behavior": "node scripts/native-overlay-behavior.mjs"
   },
   "dependencies": {
     "@avenire/capture": "workspace:*",

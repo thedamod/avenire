@@ -58,7 +58,23 @@ const bridge: AvenireDesktopBridge = {
   getOnboardingPreferences: () => ipcRenderer.invoke("avenire:onboarding-preferences"),
   acknowledgeOnboardingPreferences: () =>
     ipcRenderer.invoke("avenire:onboarding-preferences-ack").then(() => undefined),
+  getPromptCaptureContext: () => ipcRenderer.invoke("avenire:prompt-capture-context"),
+  setNativeOverlayState: (id, state) =>
+    ipcRenderer.invoke("avenire:native-overlay-state", id, state).then(() => undefined),
+  annotateNativeOverlay: (id, items) =>
+    ipcRenderer.invoke("avenire:native-overlay-annotate", id, items).then(() => undefined),
+  clearNativeOverlay: (id) =>
+    ipcRenderer.invoke("avenire:native-overlay-clear", id).then(() => undefined),
+  visualizeNativeOverlay: (id, visible, interactive, scene) =>
+    ipcRenderer
+      .invoke("avenire:native-overlay-visualize", id, visible, interactive, scene)
+      .then(() => undefined),
   hidePrompt: () => ipcRenderer.invoke("avenire:hide-prompt").then(() => undefined),
+  onPromptHidden(callback) {
+    const listener = () => callback();
+    ipcRenderer.on("avenire:prompt-hidden", listener);
+    return () => ipcRenderer.removeListener("avenire:prompt-hidden", listener);
+  },
   onPromptShown(callback) {
     const listener = () => callback();
     ipcRenderer.on("avenire:prompt-shown", listener);

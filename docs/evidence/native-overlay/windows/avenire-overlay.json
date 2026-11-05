@@ -1,0 +1,19 @@
+{
+  "application": "Avenire.exe",
+  "windowId": 2230630,
+  "scope": "Avenire client region only",
+  "graphicsApi": "Direct3D11",
+  "sceneTitle": "Cart-pole geometry",
+  "captureDimensions": [
+    1920,
+    1027
+  ],
+  "nativeGeometry": [
+    0,
+    0,
+    1739,
+    930
+  ],
+  "visibleNativeFrames": 2,
+  "validation": "Actual installed Avenire window with Qt companion; not a live model/Alt+Space round trip"
+}

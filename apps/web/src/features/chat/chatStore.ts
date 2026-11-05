@@ -10,6 +10,7 @@ import type { RuthUIMessage } from "@avenire/ai/message-types";
 import {
   RUTH_CHAT_PATH,
   type ChatScope,
+  type DesktopScreenObservation,
   type FolderId,
   type PageContext,
   type ThreadId,
@@ -37,6 +38,16 @@ export class ThreadChat {
   threadId: ThreadId | undefined;
   scope: ChatScope | undefined;
   fast = false;
+  private nativeScreen: DesktopScreenObservation | undefined;
+  get screenContext(): DesktopScreenObservation | undefined {
+    return this.nativeScreen;
+  }
+  setScreenContext(value: DesktopScreenObservation | undefined): void {
+    this.nativeScreen = value;
+  }
+  setMeasurement(measure: () => PageContext): void {
+    this.measure = measure;
+  }
   measure: () => PageContext = () => measurePage(null);
   hydrated: boolean;
   timings: ReadonlyMap<string, TurnTiming> = new Map();
@@ -71,6 +82,7 @@ export class ThreadChat {
           threadId: this.threadId,
           message: messages.at(-1),
           page: this.measure(),
+          ...(this.screenContext ? { screenContext: this.screenContext } : {}),
           ...(this.scope && (this.scope.folderIds?.length || this.scope.fileIds?.length)
             ? { scope: this.scope }
             : {}),

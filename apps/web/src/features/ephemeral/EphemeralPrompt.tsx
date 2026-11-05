@@ -1,10 +1,10 @@
 "use client";
 
-import type { FolderId } from "@avenire/contracts";
+import type { FolderId, DesktopScreenObservation } from "@avenire/contracts";
 import { ScrollFade } from "@avenire/ui/components/scroll-fade";
 import { cn } from "@avenire/ui/lib/utils";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { errorMessage, useApi } from "~/lib/rpc";
 import { draftChat } from "~/features/chat/chatStore";
@@ -63,17 +63,47 @@ export function EphemeralPrompt({
   const input = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState("");
   const asked = useRef(false);
-  entry.measure = () => measurePage(root.current);
+  const questionGeneration = useRef(0);
+  const appliedAnnotations = useRef(new Set<string>());
+  const screenOptOut = useRef(false);
+  const captureSession = useRef<number | null>(null);
+  const [screenContext, setScreenContext] = useState<DesktopScreenObservation | null>(null);
+  const screenImage = useMemo(
+    () => (screenContext ? `data:image/png;base64,${screenContext.data}` : null),
+    [screenContext],
+  );
+  const [nativeSession, setNativeSession] = useState<number | null>(null);
+  const [nativeError, setNativeError] = useState<string | null>(null);
+  const [submissionFailed, setSubmissionFailed] = useState(false);
+  useEffect(() => {
+    entry.setMeasurement(() => ({ ...measurePage(root.current), surface: "ephemeral" }));
+    asked.current = false;
+  }, [entry]);
 
-  const ask = (question: string) => {
-    const text = question.trim();
-    if (!text) return;
-    setDraft("");
-    void entry.ensureThread(text, folderId).then(
-      () => entry.send({ text }),
-      (cause: unknown) => toast.error(`Couldn't reach Ruth: ${errorMessage(cause)}`),
-    );
-  };
+  const ask = useCallback(
+    (question: string) => {
+      const text = question.trim();
+      if (!text) return;
+      setDraft("");
+      setSubmissionFailed(false);
+      const generation = questionGeneration.current;
+      void (async () => {
+        // Resolve initial IPC context even if a pre-filled question submits before the shown effect.
+        if (standalone && window.avenire?.getPromptCaptureContext && !screenOptOut.current) {
+          const context = await window.avenire.getPromptCaptureContext();
+          if (generation !== questionGeneration.current) return;
+          entry.setScreenContext(context.capture ?? undefined);
+        }
+        await entry.ensureThread(text, folderId);
+        if (generation === questionGeneration.current) await entry.send({ text });
+      })().catch((cause: unknown) => {
+        if (generation !== questionGeneration.current) return;
+        setSubmissionFailed(true);
+        toast.error(`Couldn't reach Ruth: ${errorMessage(cause)}`);
+      });
+    },
+    [entry, folderId, standalone],
+  );
 
   useEffect(() => {
     if (initialQuestion && !asked.current) {
@@ -82,14 +112,104 @@ export function EphemeralPrompt({
     }
     input.current?.focus();
     // A new session (or a pre-filled question) restarts the overlay.
-  }, [entry]);
+  }, [initialQuestion, ask]);
 
   const messages = chat.messages;
   const busy = chat.status === "submitted" || chat.status === "streaming";
   useEffect(() => {
     if (!standalone) return;
-    return window.avenire?.onPromptShown?.(() => input.current?.focus());
-  }, [standalone]);
+    const bridge = window.avenire;
+    let active = true;
+    let revision = 0;
+    const refresh = () => {
+      const current = ++revision;
+      input.current?.focus();
+      void bridge
+        ?.getPromptCaptureContext?.()
+        .then((context) => {
+          if (!active || current !== revision) return;
+          if (captureSession.current !== context.sessionId) {
+            captureSession.current = context.sessionId;
+            screenOptOut.current = false;
+          }
+          entry.setScreenContext(screenOptOut.current ? undefined : (context.capture ?? undefined));
+          setScreenContext(screenOptOut.current ? null : context.capture);
+          setNativeSession(context.sessionId);
+          setNativeError(context.error ?? null);
+        })
+        .catch(() => {
+          if (active && current === revision) setNativeError("Native overlay unavailable");
+        });
+    };
+    refresh();
+    const shown = bridge?.onPromptShown?.(refresh);
+    const hidden = bridge?.onPromptHidden?.(() => {
+      revision++;
+      questionGeneration.current++;
+      entry.setScreenContext(undefined);
+      captureSession.current = null;
+      setScreenContext(null);
+      appliedAnnotations.current.clear();
+      setNativeSession(null);
+      void entry.chat.stop();
+    });
+    return () => {
+      active = false;
+      questionGeneration.current++;
+      entry.setScreenContext(undefined);
+      void entry.chat.stop();
+      shown?.();
+      hidden?.();
+    };
+  }, [standalone, entry]);
+  useEffect(() => {
+    if (!standalone || nativeSession === null) return;
+    let active = true;
+    void window.avenire
+      ?.setNativeOverlayState?.(nativeSession, {
+        phase: chat.error || submissionFailed ? "error" : busy ? "thinking" : "idle",
+        reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      })
+      .catch(() => {
+        if (active) setNativeError("Native overlay unavailable");
+      });
+    return () => {
+      active = false;
+    };
+  }, [standalone, nativeSession, busy, chat.error, submissionFailed]);
+  useEffect(() => {
+    if (!standalone || nativeSession === null) return;
+    let active = true;
+    const reply = messages.at(-1);
+    if (reply?.role !== "assistant") return;
+    for (const part of reply.parts) {
+      if (
+        (part.type !== "tool-native_annotate" && part.type !== "tool-native_visualize") ||
+        part.state !== "output-available"
+      )
+        continue;
+      const output = part.output;
+      if (!output || output.capturedAt !== entry.screenContext?.capturedAt) continue;
+      const key = `${nativeSession}:${part.toolCallId}`;
+      if (appliedAnnotations.current.has(key)) continue;
+      appliedAnnotations.current.add(key);
+      const presentation =
+        part.type === "tool-native_annotate"
+          ? window.avenire?.annotateNativeOverlay?.(nativeSession, part.output.items)
+          : window.avenire?.visualizeNativeOverlay?.(
+              nativeSession,
+              true,
+              part.output.interactive,
+              part.output.scene,
+            );
+      void presentation?.catch(() => {
+        if (active) setNativeError("Native presentation unavailable");
+      });
+    }
+    return () => {
+      active = false;
+    };
+  }, [standalone, nativeSession, messages, entry]);
   // While a reply streams or is on screen, the desktop overlay stays up on blur; esc hides it.
   const holding = busy || messages.length > 0;
   useEffect(() => {
@@ -292,6 +412,36 @@ export function EphemeralPrompt({
           <button type="button" className="text-ruth-text hover:opacity-80" onClick={openInChat}>
             Open in chat
           </button>
+        </p>
+      ) : null}
+
+      {standalone && screenImage ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <img
+            src={screenImage}
+            alt="Screen context attached to this prompt"
+            className="h-8 w-12 rounded border border-input object-cover"
+          />
+          <span>Using your screen</span>
+          <button
+            type="button"
+            disabled={busy}
+            className="underline disabled:opacity-50"
+            onClick={() => {
+              screenOptOut.current = true;
+              entry.setScreenContext(undefined);
+              setScreenContext(null);
+              if (nativeSession !== null) void window.avenire?.clearNativeOverlay?.(nativeSession);
+            }}
+          >
+            Remove
+          </button>
+        </div>
+      ) : null}
+
+      {standalone && nativeError ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          Screen context unavailable. Ruth can still answer your question.
         </p>
       ) : null}
 

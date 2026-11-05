@@ -1,4 +1,15 @@
 import {
+  DesktopOverlayState,
+  DesktopOverlayAnnotation,
+  DesktopNativeScene,
+} from "@avenire/contracts";
+import {
+  NativeOverlay,
+  loadNativeOverlayConfig,
+  type NativeOverlayConfig,
+  type PromptCaptureContext,
+} from "./native-overlay.ts";
+import {
   captureLog,
   captureError,
   initializeCaptureLog,
@@ -71,6 +82,24 @@ let captureShortcut: string | undefined;
 let captureRunning = false;
 let promptWindow: BrowserWindow | undefined;
 let promptBusy = false;
+let nativeOverlayConfig: NativeOverlayConfig;
+let nativeOverlay: NativeOverlay | undefined;
+let promptGeneration = 0;
+let promptOpening = false;
+let promptCaptureContext: PromptCaptureContext = { sessionId: 0, capture: null };
+
+function endNativePrompt(): void {
+  promptGeneration++;
+  promptOpening = false;
+  nativeOverlay?.dispose();
+  nativeOverlay = undefined;
+  promptCaptureContext = { sessionId: promptGeneration, capture: null };
+}
+function hidePrompt(): void {
+  endNativePrompt();
+  promptWindow?.hide();
+}
+
 let setupWindow: BrowserWindow | undefined;
 let setup: DesktopSetup;
 let captureReady = false;
@@ -116,6 +145,7 @@ else {
     .whenReady()
     .then(async () => {
       initializeCaptureLog(app.getPath("logs"));
+      nativeOverlayConfig = loadNativeOverlayConfig();
       const userData = app.getPath("userData");
       deviceId = loadInstallIdentity(userData).deviceId;
       setCaptureDeviceId(deviceId);
@@ -381,14 +411,66 @@ function applyNavigationPolicy(target: BrowserWindow): void {
 }
 
 function togglePrompt(): void {
+  void showPrompt().catch((error: unknown) => {
+    endNativePrompt();
+    captureLog("native-prompt-error", captureError(error));
+  });
+}
+async function showPrompt(): Promise<void> {
   if (!setup?.completed) {
     showSetup();
     return;
   }
-  if (promptWindow?.isFocused()) {
-    promptWindow.hide();
+  if (promptOpening || promptWindow?.isFocused()) {
+    hidePrompt();
     return;
   }
+  if (promptWindow?.isVisible()) {
+    promptWindow.focus();
+    promptWindow.webContents.send("avenire:prompt-shown");
+    return;
+  }
+  endNativePrompt();
+  const generation = promptGeneration;
+  promptOpening = true;
+  if (nativeOverlayConfig?.enabled) {
+    const native = new NativeOverlay(nativeOverlayConfig, () => {
+      if (generation === promptGeneration) hidePrompt();
+    });
+    nativeOverlay = native;
+    try {
+      // Capture before either native surfaces or the browser prompt become visible.
+      const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).bounds;
+      const inspection = (await native.request("inspect")) as {
+        screens?: Array<{ id: string; x: number; y: number; width: number; height: number }>;
+      };
+      if (generation !== promptGeneration) return;
+      const selected = inspection.screens?.find(
+        (candidate) =>
+          candidate.x === display.x &&
+          candidate.y === display.y &&
+          candidate.width === display.width &&
+          candidate.height === display.height,
+      );
+      // Never silently capture the primary display when monitor matching is ambiguous.
+      if (!selected) throw new Error("Native overlay could not match the selected display");
+      const capture = await native.capture(selected.id);
+      if (generation !== promptGeneration) return;
+      promptCaptureContext = { sessionId: generation, capture };
+      await native.request("show", { screenId: capture.screenId });
+    } catch (error) {
+      if (generation !== promptGeneration) return;
+      native.dispose();
+      nativeOverlay = undefined;
+      promptCaptureContext = {
+        sessionId: generation,
+        capture: null,
+        error: error instanceof Error ? error.message : "Native overlay unavailable",
+      };
+    }
+  }
+  if (generation !== promptGeneration || quitting) return;
+  promptOpening = false;
   if (!window || window.isDestroyed()) createWindow();
   if (!promptWindow) {
     promptWindow = new BrowserWindow({
@@ -416,19 +498,30 @@ function togglePrompt(): void {
     if (process.platform === "darwin") {
       promptWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     }
+    let promptLoaded = false;
     applyNavigationPolicy(promptWindow);
     promptWindow.on("blur", () => {
-      if (!promptBusy) promptWindow?.hide();
+      if (!promptBusy) hidePrompt();
+    });
+    promptWindow.on("hide", () => {
+      endNativePrompt();
+      promptWindow?.webContents.send("avenire:prompt-hidden");
     });
     promptWindow.on("closed", () => {
+      endNativePrompt();
       promptWindow = undefined;
       promptBusy = false;
     });
     promptWindow.webContents.on("render-process-gone", () => {
       promptBusy = false;
-      promptWindow?.hide();
+      hidePrompt();
+    });
+    promptWindow.webContents.on("did-start-navigation", (_event, _url, inPlace, mainFrame) => {
+      if (promptLoaded && mainFrame && !inPlace) hidePrompt();
     });
     promptWindow.webContents.on("did-finish-load", () => {
+      promptLoaded = true;
+      if (new URL(promptWindow!.webContents.getURL()).pathname !== "/prompt") endNativePrompt();
       promptBusy = false;
       if (promptWindow?.isFocused()) promptWindow.webContents.send("avenire:prompt-shown");
     });
@@ -1218,14 +1311,77 @@ ipcMain.handle("avenire:get-shortcut", (event) => {
   return captureShortcut ?? null;
 });
 
+/** Native controls belong only to the current, top-frame prompt document. */
+function trustedPrompt(event: Electron.IpcMainInvokeEvent): boolean {
+  return (
+    !!promptWindow &&
+    trustedSender(event, promptWindow) &&
+    new URL(event.senderFrame!.url).pathname === "/prompt"
+  );
+}
+function currentNative(event: Electron.IpcMainInvokeEvent, id: unknown): NativeOverlay | undefined {
+  if (!trustedPrompt(event)) throw new Error("Untrusted native overlay IPC sender");
+  if (id !== promptGeneration || !promptWindow?.isVisible())
+    throw new Error("Stale native overlay session");
+  return nativeOverlay;
+}
+ipcMain.handle("avenire:prompt-capture-context", (event) => {
+  if (!trustedPrompt(event)) throw new Error("Untrusted native overlay IPC sender");
+  return promptCaptureContext;
+});
+ipcMain.handle("avenire:native-overlay-state", async (event, id: unknown, value: unknown) => {
+  const native = currentNative(event, id);
+  const state = Schema.decodeUnknownSync(DesktopOverlayState)(value);
+  // Completion clears the thinking indicator while explanations remain until dismissal.
+  await native?.request("set_state", { phase: state.phase, reducedMotion: state.reducedMotion });
+});
+ipcMain.handle("avenire:native-overlay-annotate", async (event, id: unknown, value: unknown) => {
+  const native = currentNative(event, id);
+  if (!native) throw new Error("Native overlay unavailable");
+  if (!Array.isArray(value) || value.length > 128) throw new Error("Invalid overlay annotations");
+  const ids = new Set<string>();
+  const items = value.map((item: unknown) => {
+    if (!item || typeof item !== "object") throw new Error("Invalid annotation");
+    const annotation = Schema.decodeUnknownSync(DesktopOverlayAnnotation)(item);
+    if (!annotation.id || ids.has(annotation.id)) throw new Error("Invalid annotation id");
+    ids.add(annotation.id);
+    if (annotation.x + (annotation.width ?? 0) > 1 || annotation.y + (annotation.height ?? 0) > 1)
+      throw new Error("Annotation exceeds display");
+    if (annotation.text && annotation.text.length > 512) throw new Error("Invalid annotation text");
+    if (annotation.color && !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(annotation.color))
+      throw new Error("Invalid annotation color");
+    return annotation;
+  });
+  await native?.request("annotate", { items });
+});
+ipcMain.handle("avenire:native-overlay-clear", async (event, id: unknown) => {
+  await currentNative(event, id)?.request("clear");
+});
+ipcMain.handle(
+  "avenire:native-overlay-visualize",
+  async (event, id: unknown, visible: unknown, interactive: unknown, scene: unknown) => {
+    const native = currentNative(event, id);
+    if (
+      typeof visible !== "boolean" ||
+      (interactive !== undefined && typeof interactive !== "boolean")
+    )
+      throw new Error("Invalid visualization state");
+    await native?.request("visualize", {
+      visible,
+      interactive: interactive ?? false,
+      ...(scene === undefined
+        ? {}
+        : { scene: Schema.decodeUnknownSync(DesktopNativeScene)(scene) }),
+    });
+  },
+);
+
 ipcMain.handle("avenire:hide-prompt", (event) => {
-  if (!promptWindow || !trustedSender(event, promptWindow))
-    throw new Error("Untrusted desktop IPC sender");
-  promptWindow?.hide();
+  if (!trustedPrompt(event)) throw new Error("Untrusted desktop IPC sender");
+  hidePrompt();
 });
 ipcMain.handle("avenire:set-prompt-busy", (event, busy: unknown) => {
-  if (!promptWindow || !trustedSender(event, promptWindow))
-    throw new Error("Untrusted desktop IPC sender");
+  if (!trustedPrompt(event)) throw new Error("Untrusted desktop IPC sender");
   if (typeof busy !== "boolean") return;
   promptBusy = busy;
 });
@@ -1246,12 +1402,13 @@ ipcMain.handle("avenire:open-in-main", async (event, path: unknown) => {
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
-  promptWindow?.hide();
+  hidePrompt();
   return true;
 });
 
 app.on("before-quit", () => {
   quitting = true;
+  endNativePrompt();
 });
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();

@@ -13,6 +13,10 @@ import type * as Context from "effect/Context";
 import { askUserSpec, getPageContextSpec, type PageContextResult, ruthToolSpecs } from "./index.ts";
 import { VISUAL_BUDGETS, VISUAL_RUNTIME } from "./page.ts";
 import { loadSkillTool } from "./skills.ts";
+import {
+  createNativeAnnotationTool,
+  createNativeVisualizationTool,
+} from "./native-overlay-specs.ts";
 
 import { makeComputerRegistry, type ComputerServices } from "./computer.ts";
 import { recordingRegistry } from "./recording.ts";
@@ -26,6 +30,7 @@ export type RuthToolServices =
   | AssetStore;
 export interface RuthTurn {
   readonly userId: UserId;
+  readonly nativeScreenCapturedAt?: string | undefined;
   readonly scope?: import("@avenire/contracts").ChatScope | undefined;
   readonly threadId: ThreadId;
   readonly page: PageContext;
@@ -34,7 +39,10 @@ export interface RuthTurn {
   readonly existingVisuals: PageContextResult["existingVisuals"];
 }
 export const chatToolNames = Object.keys(ruthToolSpecs).filter(
-  (name) => !["load_skill", "get_page_context", "ask_user"].includes(name),
+  (name) =>
+    !["load_skill", "get_page_context", "ask_user", "native_annotate", "native_visualize"].includes(
+      name,
+    ),
 );
 export const createRuthTools = (
   services: Context.Context<RuthToolServices>,
@@ -64,6 +72,14 @@ export const createRuthTools = (
   );
   const boundTools: ToolSet = {
     ...tools,
+    ...(turn.nativeScreenCapturedAt &&
+    turn.page.surface === "ephemeral" &&
+    turn.page.platform === "desktop"
+      ? {
+          native_annotate: createNativeAnnotationTool(turn.nativeScreenCapturedAt),
+          native_visualize: createNativeVisualizationTool(turn.nativeScreenCapturedAt),
+        }
+      : {}),
     load_skill: loadSkillTool(),
     get_page_context: tool({
       ...getPageContextSpec,
