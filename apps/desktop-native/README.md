@@ -47,6 +47,20 @@ exploration and unsigned testing do not establish release licensing.
 No comparative RAM, latency or physical GPU claim has been measured. `inspect`
 reports the rendering API, which can also be backed by software drivers.
 
+`native_diagram` supplies a transparent 2D cart-pole figure as bounded data. The
+renderer follows the anatomy figure guidelines: direct side view, quiet technical
+labels, one geometric state shared by drawing/readouts, and no card. Dragging and
+arrow keys adjust angle/cart position when interactive. This is geometric
+manipulation, not a simulated controller. The existing 3D renderer stays optional.
+
+`get_cursor` reads the OS pointer without moving it: global Qt logical pixels,
+normalized coordinates within the selected capture bounds, screen ID and an
+observation timestamp. The prompt refreshes pointer and current native presentation
+state before each submission. Ruth can inspect these through `native_cursor` and
+`native_presentation`, and request parameter changes through `native_diagram` or
+`native_visualize`. These observations are per-turn snapshots, not continuous
+same-turn desktop feedback. Trusted prompt/session checks protect the read IPC too.
+
 ## Process contract
 
 The private transport is newline-delimited JSON on inherited stdin/stdout. There
@@ -72,8 +86,10 @@ interactive scene emits `{event:"dismiss"}` and hides both native surfaces.
 Frames are capped at 1 MiB, queued work at 32 requests, annotations at 128 and
 plain-text labels at 512 characters. Coordinates are normalized to the selected
 screen and validated along with extents. Cursor annotations draw the Bibata Modern Ice pointer, a target
-ring and clamped explanatory label; they do not move the OS pointer. Rectangles,
-arrows and labels also remain available. Screen-pinned annotations do not track
+ring and clamped opaque text bubble; they do not move the OS pointer. Rectangles,
+arrows and labels also remain available. Every annotation with text uses the same
+cream bubble, dark ink and muted coral leader; it repositions at display edges.
+There is no bare floating annotation text. Screen-pinned annotations do not track
 moving or scrolling document content.
 
 Scenes accept 1..32 bounded colored primitives and transforms, with native mouse
