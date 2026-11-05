@@ -1159,4 +1159,3 @@ software do apply.
 
 For the latest licensing terms and conditions, see https://www.qt.io/terms-conditions.
 For further information use the contact form at https://www.qt.io/contact-us.
-

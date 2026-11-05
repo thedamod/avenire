@@ -77,7 +77,12 @@ arrows and labels also remain available. Screen-pinned annotations do not track
 moving or scrolling document content.
 
 Scenes accept 1..32 bounded colored primitives and transforms, with native mouse
-and keyboard rotation. They float without a card or backplate. The passive overlay
+and keyboard rotation. They float without a card or backplate. The thinking perimeter uses the landing page Dawn colors (#ABC4FF, #7A6CF0,
+#B05BE0) with a rounded glow. Its compiled shader draws four narrow edge bands;
+it does not use a fullscreen blur texture. Reduced motion holds a still gradient,
+and hidden windows stop both the gradient drift and breathing animation.
+
+The passive overlay
 requests topmost, click-through and no-focus behavior. The interactive visualization
 is a separate 320x320 window. Compositors govern stacking; secure desktops and
 exclusive fullscreen can supersede ordinary topmost windows. Another topmost app

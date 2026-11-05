@@ -7,25 +7,14 @@ Item {
     property string phase: "idle"
     property bool reducedMotion: false
     property var annotations: []
-    readonly property bool thinkingAnimationRunning: thinkingPulse.running
+    readonly property bool thinkingAnimationRunning: thinkingGlow.running
 
-    Rectangle {
+    EdgeGlow {
+        id: thinkingGlow
         anchors.fill: parent
-        color: "transparent"
-        border.width: root.phase === "idle" ? 0 : 3
-        border.color: root.phase === "error" ? "#cced637c" : "#aa786cff"
-        opacity: root.phase === "thinking" && !root.reducedMotion ? pulse.value : 0.8
-        QtObject {
-            id: pulse
-            property real value: 0.8
-            SequentialAnimation on value {
-                id: thinkingPulse
-                running: root.Window.window !== null && root.Window.window.visible && root.phase === "thinking" && !root.reducedMotion
-                loops: Animation.Infinite
-                NumberAnimation { to: 0.4; duration: 1500 }
-                NumberAnimation { to: 0.9; duration: 1500 }
-            }
-        }
+        visible: root.phase !== "idle"
+        errorState: root.phase === "error"
+        animate: root.Window.window !== null && root.Window.window.visible && root.phase === "thinking" && !root.reducedMotion
     }
     Repeater {
         model: root.annotations
