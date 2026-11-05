@@ -6,7 +6,7 @@ export type DesktopOverlayPhase = typeof DesktopOverlayPhase.Type;
 
 export const DesktopOverlayAnnotation = Schema.Struct({
   id: Schema.String.check(Schema.isMaxLength(100)),
-  kind: Schema.Literals(["rect", "arrow", "label"]),
+  kind: Schema.Literals(["rect", "arrow", "label", "cursor"]),
   x: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
   y: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
   width: Schema.optional(Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),

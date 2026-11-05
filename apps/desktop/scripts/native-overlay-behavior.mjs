@@ -1,167 +1,258 @@
-/** Real PySide6 child behavior. Run only on an isolated display:
- * QT_QPA_PLATFORM=offscreen node apps/desktop/scripts/native-overlay-behavior.mjs /absolute/venv/bin/python
- * Offscreen verifies lifecycle/protocol, not transparency, capture, or GPU rendering.
- * For capture/render acceptance, run inside an isolated Xvfb with QT_QPA_PLATFORM=xcb.
+/** Real compiled Qt process and deliberately broken native-process E2E checks.
+ * Always offscreen: this is lifecycle/protocol/deployment proof, not visual proof.
+ * Run from any cwd. Optional positional argument: absolute staged executable.
+ * Custom build directory: --fixture /absolute/build/overlay-protocol-fixture(.exe).
  */
 import assert from "node:assert/strict";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import childProcess from "node:child_process";
+import { syncBuiltinESMExports, createRequire } from "node:module";
+import { mkdtemp, rm, readFile, cp, stat, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { resolve, join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { createRequire } from "node:module";
+import { parseArgs } from "node:util";
+import { resolve, join, dirname, basename, isAbsolute } from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const { build } = require("esbuild");
-if (!process.env.QT_QPA_PLATFORM || !["offscreen", "xcb"].includes(process.env.QT_QPA_PLATFORM))
-  throw new Error(
-    "Set QT_QPA_PLATFORM explicitly on an isolated display before running this script",
-  );
-const python = process.argv[2];
-if (!python?.startsWith("/")) throw new Error("Pass an absolute Python executable path");
+const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const filename = process.platform === "win32" ? "avenire-overlay.exe" : "avenire-overlay";
+const { values, positionals } = parseArgs({
+  allowPositionals: true,
+  options: { fixture: { type: "string" } },
+});
+const executable = positionals[0] ?? join(desktop, "native-dist", filename);
+assert.ok(isAbsolute(executable), "Pass an absolute native executable path");
+const source = dirname(executable);
+const manifest = JSON.parse(await readFile(join(source, "deployment.json"), "utf8"));
+assert.equal(manifest.qt, "6.8.3");
+assert.equal(manifest.platform, process.platform);
+assert.equal(manifest.arch, process.arch);
 const temporary = await mkdtemp(join(tmpdir(), "avenire-overlay-behavior-"));
+const deployed = join(temporary, "relocated deployment");
+// Track actual ChildProcess exit events portably; no /proc or platform signal assumptions.
+const spawn = childProcess.spawn;
+const children = [];
+childProcess.spawn = (...args) => {
+  const child = spawn(...args);
+  const done = new Promise((resolve) => {
+    child.once("close", resolve);
+    child.once("error", resolve);
+  });
+  children.push({ child, done });
+  return child;
+};
+syncBuiltinESMExports();
 let native;
-async function engineChildren() {
-  const children = await readFile(`/proc/${process.pid}/task/${process.pid}/children`, "utf8");
-  const commands = await Promise.all(
-    children
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .map(async (pid) => {
-        try {
-          return (await readFile(`/proc/${pid}/cmdline`, "utf8")).includes(
-            resolve("apps/desktop-native/main.py"),
-          )
-            ? pid
-            : null;
-        } catch {
-          return null;
-        }
-      }),
-  );
-  return commands.filter(Boolean);
-}
-async function assertNoEngineChildren() {
-  for (let attempt = 0; attempt < 30; attempt++) {
-    // eslint-disable-next-line no-await-in-loop -- Observe actual child exit before sampling again.
-    if ((await engineChildren()).length === 0) return;
-    // eslint-disable-next-line no-await-in-loop -- The next observation depends on the prior interval.
-    await new Promise((done) => setTimeout(done, 50));
-  }
-  assert.deepEqual(await engineChildren(), [], "sidecar process must exit after disposal");
+async function exited(child) {
+  await Promise.race([
+    child.done,
+    new Promise((_, reject) => {
+      const timer = setTimeout(() => reject(new Error("Companion did not exit")), 2500);
+      timer.unref();
+    }),
+  ]);
 }
 try {
-  const entry = resolve("apps/desktop/src/native-overlay.ts");
+  await cp(source, deployed, { recursive: true, verbatimSymlinks: true });
+  const notices = JSON.parse(
+    await readFile(join(deployed, "licenses/Qt-6.8.3/sources.json"), "utf8"),
+  );
+  assert.equal(notices.length, 6, "All deployed Qt modules retain source/license provenance");
+  for (const module of [
+    "qtbase",
+    "qtdeclarative",
+    "qtquick3d",
+    "qtquicktimeline",
+    "qtshadertools",
+    "qtsvg",
+  ]) {
+    assert.ok((await stat(join(deployed, "licenses/Qt-6.8.3", `${module}-NOTICES.txt`))).size > 0);
+  }
+  const relocated = join(deployed, filename);
+  const info = await stat(relocated);
+  if (process.platform !== "win32")
+    assert.ok(info.mode & 0o111, "Executable permissions preserved");
+  const entries = await readdir(deployed);
+  assert.ok(
+    entries.some((entry) => /^(lib|plugins|platforms|avenire-overlay.app)$/.test(entry)),
+    "Qt deployment must accompany executable",
+  );
+  process.env.QT_QPA_PLATFORM = "offscreen";
+  process.env.QT_QUICK_BACKEND = "software";
+  delete process.env.QSG_RHI_BACKEND;
+  for (const name of [
+    "QT_PLUGIN_PATH",
+    "QML_IMPORT_PATH",
+    "QML2_IMPORT_PATH",
+    "LD_LIBRARY_PATH",
+    "DYLD_LIBRARY_PATH",
+    "QT_QPA_PLATFORM_PLUGIN_PATH",
+  ])
+    delete process.env[name];
+  // The executable must find its own Qt DLLs/frameworks instead of an SDK PATH.
+  if (process.platform === "win32")
+    process.env.PATH = `${process.env.SystemRoot}\\System32;${process.env.SystemRoot}`;
   const bundle = join(temporary, "native-overlay.mjs");
   await build({
-    entryPoints: [entry],
+    entryPoints: [join(desktop, "src/native-overlay.ts")],
     outfile: bundle,
     bundle: true,
     nodePaths: require.resolve.paths("effect") ?? [],
     platform: "node",
     format: "esm",
   });
-  const { NativeOverlay } = await import(pathToFileURL(bundle).href);
-  const config = { enabled: true, python, script: resolve("apps/desktop-native/main.py") };
+  const { NativeOverlay, loadNativeOverlayConfig } = await import(pathToFileURL(bundle).href);
+  const paths = { packaged: true, resourcesPath: temporary, appPath: desktop };
+  assert.equal(
+    loadNativeOverlayConfig(paths).executable,
+    join(temporary, "native-overlay", filename),
+  );
+  assert.equal(
+    loadNativeOverlayConfig({ ...paths, packaged: false }).executable,
+    join(desktop, "native-dist", filename),
+  );
+  const config = { enabled: true, executable: relocated };
   native = new NativeOverlay(config);
-  const initial = await native.request("inspect");
+  const countBeforeStartup = children.length;
+  const [initial] = await Promise.all([native.request("inspect"), native.request("inspect")]);
   assert.equal(initial.visible, false);
+  assert.equal(children.length, countBeforeStartup + 1, "Concurrent startup spawns one process");
+  const before = children.length;
   await Promise.all([
     native.request("show"),
     native.request("set_state", { phase: "thinking", reducedMotion: true }),
   ]);
-  // Bind the real AI tool, then deliver its declarative result to the real native process.
-  const toolBundle = join(temporary, "native-tool.mjs");
-  await build({
-    entryPoints: [resolve("packages/ai/src/tools/native-overlay-specs.ts")],
-    outfile: toolBundle,
-    bundle: true,
-    platform: "node",
-    format: "esm",
+  assert.equal(children.length, before, "Concurrent requests reuse a single child");
+  await native.request("annotate", {
+    items: [{ id: "region", kind: "rect", x: 0.1, y: 0.1, width: 0.2, height: 0.2 }],
   });
-  const { createNativeAnnotationTool, createNativeVisualizationTool } = await import(
-    pathToFileURL(toolBundle).href
-  );
-  const capturedAt = "2026-11-05T00:00:00.000Z";
-  const annotate = createNativeAnnotationTool(capturedAt);
-  const directive = await annotate.execute(
-    {
-      items: [{ id: "region", kind: "rect", x: 0.1, y: 0.1, width: 0.2, height: 0.2 }],
-    },
-    { toolCallId: "behavioral-native-annotation", messages: [] },
-  );
-  assert.equal(directive.requested, true);
-  assert.equal(directive.capturedAt, capturedAt);
-  await native.request("annotate", { items: directive.items });
+  const scene = {
+    title: "Companion deployment E2E",
+    cameraDistance: 450,
+    objects: [
+      {
+        id: "cube",
+        shape: "cube",
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+        color: "#8171ef",
+      },
+    ],
+  };
+  await native.request("visualize", { visible: true, interactive: false, scene });
   let state = await native.request("inspect");
-  assert.equal((await engineChildren()).length, 1, "concurrent startup must use one Qt process");
-  assert.equal(state.visible, true);
   assert.equal(state.phase, "thinking");
   assert.equal(state.reducedMotion, true);
   assert.equal(state.items.length, 1);
-  const scene = JSON.parse(await readFile("apps/desktop-native/tests/molecule-scene.json", "utf8"));
-  const spatial = await createNativeVisualizationTool(capturedAt).execute(
-    { scene, interactive: false },
-    { toolCallId: "behavioral-spatial-explanation", messages: [] },
-  );
-  assert.equal(spatial.capturedAt, capturedAt);
-  await native.request("visualize", {
-    visible: true,
-    interactive: spatial.interactive,
-    scene: spatial.scene,
-  });
-  state = await native.request("inspect");
-  assert.equal(state.visualizationVisible, true);
   assert.equal(state.sceneTitle, scene.title);
-  assert.equal(state.visualizationInteractive, false);
-  try {
-    const capture = await native.capture();
-    assert.equal(capture.mimeType, "image/png");
-    assert.ok(capture.data.startsWith("iVBORw0KGgo"));
-  } catch (error) {
-    if (process.env.QT_QPA_PLATFORM === "xcb" || !/capture unavailable/i.test(String(error)))
-      throw error;
-  }
-  await native.request("clear");
-  await native.request("visualize", { visible: false });
-  await native.request("set_state", { phase: "idle" });
-  await native.request("hide");
-  state = await native.request("inspect");
-  assert.equal(state.visible, false);
-  assert.equal(state.visualizationVisible, false);
-  assert.equal(state.items.length, 0);
+  assert.equal(state.visualizationVisible, true);
   await assert.rejects(
     native.request("annotate", { items: [{ id: "invalid", kind: "rect", x: -1, y: 0 }] }),
   );
+  await assert.rejects(
+    native.request("annotate", { items: ["x".repeat(1100000)] }),
+    /exceeded limit/,
+  );
+  await native.request("clear");
+  await native.request("visualize", { visible: false });
+  await native.request("hide");
+  state = await native.request("inspect");
+  assert.equal(state.visible, false);
+  assert.equal(state.items.length, 0);
   native.dispose();
-  await assertNoEngineChildren();
+  await exited(children.at(-1));
   await assert.rejects(native.request("show"), /closed/);
-  // Cancel immediately during startup; a late inspect cannot resurrect the process.
   native = new NativeOverlay(config);
   const cancelled = native.request("show");
   native.dispose();
   await assert.rejects(cancelled, /closed/);
-  await assertNoEngineChildren();
+  await exited(children.at(-1));
   native = new NativeOverlay(config);
   await native.request("inspect");
-  const [crashPid] = await engineChildren();
-  const crashed = native.capture();
-  await new Promise((done) => setImmediate(done));
-  process.kill(Number(crashPid), "SIGKILL");
-  await assert.rejects(crashed, /exited|input closed/);
-  await assertNoEngineChildren();
+  children.at(-1).child.kill("SIGKILL");
+  await exited(children.at(-1));
   await assert.rejects(native.request("show"), /closed/);
-
-  native = new NativeOverlay(config);
+  // Real host rejects malformed and unknown requests while keeping a usable stream.
+  const protocol = childProcess.spawn(relocated, [], { stdio: "pipe", windowsHide: true });
+  protocol.stderr.resume();
+  let raw = "";
+  const responses = [];
+  const completed = new Promise((resolve, reject) => {
+    protocol.stdout.on("data", (chunk) => {
+      raw += chunk.toString("utf8");
+      let end;
+      while ((end = raw.indexOf("\n")) >= 0) {
+        responses.push(JSON.parse(raw.slice(0, end)));
+        raw = raw.slice(end + 1);
+        if (responses.length === 3) resolve();
+      }
+    });
+    protocol.once("error", reject);
+    protocol.once("close", () => {
+      if (responses.length !== 3) reject(new Error("Protocol child exited early"));
+    });
+  });
+  protocol.stdin.write(
+    'not-json\n{"id":7,"method":"unknown","params":{}}\n{"id":8,"method":"inspect","params":{}}\n',
+  );
+  const protocolDeadline = setTimeout(() => protocol.kill("SIGKILL"), 8000);
+  try {
+    await completed;
+    assert.equal(responses[0].ok, false);
+    assert.equal(responses[1].id, 7);
+    assert.equal(responses[1].ok, false);
+    assert.equal(responses[2].id, 8);
+    assert.equal(responses[2].ok, true);
+  } finally {
+    clearTimeout(protocolDeadline);
+    protocol.stdin.end();
+  }
+  await exited(children.at(-1));
+  // EOF terminates the real executable, independently of adapter shutdown.
+  const eof = childProcess.spawn(relocated, [], { stdio: "pipe", windowsHide: true });
+  eof.stdout.resume();
+  eof.stderr.resume();
+  eof.stdin.end();
+  await exited(children.at(-1));
+  assert.equal(eof.exitCode, 0, "EOF is a clean shutdown");
+  const fixture =
+    values.fixture ??
+    join(
+      desktop,
+      "build/native",
+      process.platform === "win32" ? "overlay-protocol-fixture.exe" : "overlay-protocol-fixture",
+    );
+  assert.ok(isAbsolute(fixture), "Fixture override must be an absolute executable path");
+  for (const [mode, expected] of [
+    ["malformed", /protocol/],
+    ["oversized", /exceeded limit/],
+    ["stall", /timed out/],
+  ]) {
+    process.env.AVENIRE_OVERLAY_TEST_MODE = mode;
+    native = new NativeOverlay({ enabled: true, executable: fixture });
+    await assert.rejects(native.request("inspect"), expected);
+    await exited(children.at(-1));
+  }
+  process.env.AVENIRE_OVERLAY_TEST_MODE = "dismiss";
+  let dismissed = 0;
+  native = new NativeOverlay({ enabled: true, executable: fixture }, () => dismissed++);
   await native.request("inspect");
-  const [stalledPid] = await engineChildren();
-  process.kill(Number(stalledPid), "SIGSTOP");
-  await assert.rejects(native.request("inspect"), /timed out/);
-  await assertNoEngineChildren();
-
+  assert.ok(dismissed > 0, "Unsolicited dismiss event reaches the owner");
+  native.dispose();
+  await exited(children.at(-1));
+  native = new NativeOverlay({ enabled: true, executable: join(temporary, "missing", filename) });
+  await assert.rejects(native.request("inspect"), /could not start|input closed/);
+  native = new NativeOverlay({ enabled: true, executable: basename(executable) });
+  await assert.rejects(native.request("inspect"), /absolute executable/);
   console.log(
-    "PASS: real Qt child protocol, concurrent startup, state, annotations, visualization, cleanup, startup cancellation, crash and timeout",
+    "PASS: relocated Qt deployment, protocol/state/scene, disposal, cancellation, crash, EOF, malformed/oversized output, startup timeout, dismiss and missing executable",
   );
 } finally {
   native?.dispose();
+  for (const { child } of children)
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  childProcess.spawn = spawn;
+  syncBuiltinESMExports();
+  delete process.env.AVENIRE_OVERLAY_TEST_MODE;
   await rm(temporary, { recursive: true, force: true });
 }

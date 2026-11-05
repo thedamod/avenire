@@ -1,157 +1,123 @@
-# Native Ruth overlay engine
+# Native Ruth presentation companion
 
-A Qt Quick / Qt Quick 3D presentation process with no WebEngine or Chromium. Python
-coordinates requests; Qt's native scene graph renders annotations and 3D. Windows
-uses Direct3D11 by default, with platform defaults on other OSes. The graphics API
-is reported by `inspect`; it does not alone prove a physical GPU or a memory saving.
+The C++20 / Qt Quick host renders transparent annotations and Qt Quick 3D scenes in
+its own process. QML is compiled into executable resources. The application,
+authentication and Alt+Space prompt remain Electron. Python is used only by the
+subprocess behavior tests; it is not shipped or invoked by the application.
 
-The current integration moves overlay rendering out of Electron. The application,
-authentication and Alt+Space prompt still use Electron. This is an opt-in native
-engine integration, not a completed replacement of the desktop shell. Ruth can issue `native_annotate` directives on an ephemeral desktop turn with screen
-context. The prompt applies each directive once and rejects a mismatched capture
-timestamp, so stored instructions are not replayed onto a later screen. The `native_visualize` tool accepts bounded scenes with 1..32 colored primitives,
-transforms and a camera, with real mouse/keyboard rotation. No arbitrary QML,
-scripts, URLs or external meshes run. Native visualizations have no card, backplate,
-rounded container or decorative border; the scene floats directly over the app.
+## Build and distribution
 
-## Install and run
-
-Requires Python 3.10+ and Qt's platform runtime dependencies. Use a local venv:
+Install CMake 3.25+, Ninja, a C++20 compiler and Qt **6.8.3** (Core, Gui, Qml,
+Quick, Quick3D and ShaderTools). From the repository root:
 
 ```sh
-python -m venv .venv
-.venv/bin/python -m pip install -r apps/desktop-native/requirements.txt
-.venv/bin/python apps/desktop-native/main.py
+node apps/desktop/scripts/native-build.mjs --qt /absolute/path/to/Qt/6.8.3/gcc_64
 ```
 
-On Windows PowerShell:
+Use `msvc2022_64` / `macos` Qt kit directories on Windows / macOS. The build stages the
+executable, QML imports, plugins and platform libraries in
+`apps/desktop/native-dist`. Electron Builder copies that directory to
+`resources/native-overlay`, outside `app.asar`. Packaged builds resolve the host
+through `process.resourcesPath`; development resolves it from the desktop package.
+An operator can supply an absolute `AVENIRE_NATIVE_OVERLAY_EXECUTABLE` override.
+Model and renderer input cannot change the executable or its arguments.
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r apps/desktop-native/requirements.txt
-.\.venv\Scripts\python.exe apps/desktop-native/main.py
+Enable the feature before launching Electron:
+
+```sh
+AVENIRE_NATIVE_OVERLAY_ENABLED=true pnpm --filter @avenire/desktop dev
 ```
 
-The engine reads newline JSON on stdin and writes one response per line to stdout.
-Qt diagnostics go to stderr. EOF exits cleanly. No network listener is opened.
+The cross-platform workflow `.github/workflows/desktop-native.yml` builds, deploys
+and exercises a relocated native distribution on Linux, Windows and macOS.
+Its protected, manually requested signing jobs verify Authenticode on Windows and
+Developer ID signing, notarization and stapling on macOS. Credentials must be
+configured in the protected environment; unsigned build artifacts are labelled
+unsigned. Linux artifacts retain executable permissions. Build and signing jobs
+are configuration until they have actually passed on the target platform.
+
+Qt is a separately deployed dynamic dependency. **Qt Quick 3D is commercial or
+GPLv3**, rather than LGPL-only ([Qt 6.8 licensing](https://doc.qt.io/qt-6.8/qtquick3d-index.html)).
+A proprietary release needs an appropriate commercial license or a different 3D
+dependency; a GPL release needs its corresponding source and notices. This PR does
+not assign a license to Avenire or establish a commercial entitlement. The adapted
+Bibata cursor component is GPLv3 with attribution and source in this repository;
+a commercial Qt license does not change the cursor asset license. Local
+exploration and unsigned testing do not establish release licensing.
+No comparative RAM, latency or physical GPU claim has been measured. `inspect`
+reports the rendering API, which can also be backed by software drivers.
+
+## Process contract
+
+The private transport is newline-delimited JSON on inherited stdin/stdout. There
+is no listener, browser engine, external script loading or arbitrary asset path.
+Qt diagnostics use stderr. Parent EOF and `shutdown` exit the process. Electron
+bounds pending requests, kills a stalled child, and rejects late responses after
+session disposal. Existing trusted top-frame and prompt-generation checks remain
+in Electron main.
 
 ```json
 {"id":1,"method":"show","params":{}}
 {"id":2,"method":"set_state","params":{"phase":"thinking","reducedMotion":true}}
-{"id":3,"method":"annotate","params":{"items":[{"id":"target","kind":"rect","x":0.1,"y":0.2,"width":0.3,"height":0.2}]}}
+{"id":3,"method":"annotate","params":{"items":[{"id":"region","kind":"cursor","x":0.3,"y":0.4,"text":"This term controls the damping."}]}}
 {"id":4,"method":"visualize","params":{"visible":true,"interactive":true}}
 {"id":5,"method":"hide","params":{}}
 {"id":6,"method":"shutdown","params":{}}
 ```
 
-Other methods: `inspect`, `clear`, `capture`. Responses are `{id,ok:true,result}`
-or `{id,ok:false,error:{code,message}}`. Requests are bounded to 1 MiB, annotations
-to 128 items, and PNG captures to 768 KiB before base64. Images retain aspect ratio
-with a maximum 1280-pixel edge; the result includes actual image dimensions.
-Screen IDs are Qt screen names from `inspect`. Annotation coordinates are normalized
-to the selected display. Display-pinned annotations are not tracked against moving
-or scrolling app content yet. Labels use plain text; no remote QML/code is accepted.
+Other methods: `inspect`, `clear`, `capture`. Responses are
+`{id,ok:true,result}` or `{id,ok:false,error:{code,message}}`. Escape in the
+interactive scene emits `{event:"dismiss"}` and hides both native surfaces.
 
-Passive overlays request always-on-top, click-through and no-focus behavior. The
-interactive visualization is a separate, bounded window. It is static until input;
-the only animation is the thinking border, disabled for reduced motion or when
-hidden. Arrows use Qt Quick Shape geometry rather than a CPU-painted Canvas.
+Frames are capped at 1 MiB, queued work at 32 requests, annotations at 128 and
+plain-text labels at 512 characters. Coordinates are normalized to the selected
+screen and validated along with extents. Cursor annotations draw the Bibata Modern Ice pointer, a target
+ring and clamped explanatory label; they do not move the OS pointer. Rectangles,
+arrows and labels also remain available. Screen-pinned annotations do not track
+moving or scrolling document content.
 
-`hide` hides both surfaces. Escape from the interactive 3D window also dismisses
-the current prompt through its private stdio event. Capture hides both before sampling and restores only
-the latest requested visibility; concurrent capture refuses with `BUSY`. A hide
-arriving during capture cannot resurrect an overlay afterward. Capture returns
-screen pixels, not whole-document extraction, and can fail for protected content,
-Wayland permission limitations or unsupported capture backends.
+Scenes accept 1..32 bounded colored primitives and transforms, with native mouse
+and keyboard rotation. They float without a card or backplate. The passive overlay
+requests topmost, click-through and no-focus behavior. The interactive visualization
+is a separate 320x320 window. Compositors govern stacking; secure desktops and
+exclusive fullscreen can supersede ordinary topmost windows. Another topmost app
+can move ahead when focused; showing or restoring presentation raises the native
+surfaces again without requesting focus for the passive overlay.
 
-## Connect to the desktop application
+Capture hides both surfaces, allows the compositor to retire them, samples the
+selected display, and restores only the latest requested visibility. A concurrent
+hide cannot resurrect a surface. PNGs are capped at 768 KiB before base64 and a
+1280-pixel edge. Capture is a screenshot of visible content, not whole-document
+text extraction. It may fail on protected content or permission-restricted display
+servers; this implementation has no Wayland portal or macOS permission dialog UI.
 
-Set these in the environment that launches Avenire, before starting Electron:
+Alt+Space captures before focusing the prompt. A removable thumbnail shows the
+context attached to that ephemeral turn. The image is request-only model context,
+not a persisted message attachment or library item. Annotations and scenes apply
+once for the current capture/session. Provider retention is outside this local
+storage behavior. Full-document accessibility/text extraction remains separate work.
 
-```powershell
-$env:AVENIRE_NATIVE_OVERLAY_ENABLED = 'true'
-$env:AVENIRE_NATIVE_OVERLAY_PYTHON = (Resolve-Path '.\.venv\Scripts\python.exe').Path
-$env:AVENIRE_NATIVE_OVERLAY_SCRIPT = (Resolve-Path '.\apps\desktop-native\main.py').Path
-```
+## Behavioral and desktop E2E tests
 
-Use equivalent absolute paths on Linux/macOS. Both paths must be absolute; model
-and renderer input cannot change them. With the feature disabled, the ordinary
-prompt remains available. Failure to start Qt shows a screen-context-unavailable
-status while retaining text chat.
-
-Alt+Space captures the selected display before opening Ruth, then starts native
-presentation for that prompt session. IPC is restricted to the trusted top-frame
-`/prompt` document and current session generation. Actual chat submission/streaming,
-completion, errors and cancellation drive the thinking state. Hiding the prompt or
-exiting the app disposes the process; late responses cannot revive it.
-
-A removable screen thumbnail indicates when context is attached. The screenshot travels as bounded request-only `screenContext`, is attached as an
-AI SDK image for inference, and is not inserted into persisted message parts or the
-library. It is cleared from the client when the prompt hides. This does not assert
-anything about retention by model providers. Full-document text extraction and
-live provider inference were not exercised in these native tests.
-
-## Behavioral and E2E verification
-
-Protocol behavior launches the real engine (no mock Qt process):
+The transport suite launches the staged, relocated executable and failure-injection
+children through the real TypeScript process adapter:
 
 ```sh
-QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software python -m unittest discover -s apps/desktop-native/tests -p test_engine.py -v
+node apps/desktop/scripts/native-overlay-behavior.mjs
 ```
 
-For real desktop acceptance, explicitly opt in. It temporarily opens a synthetic
-900x600 target window at (80,80); all evidence is cropped to that region. Close other
-test overlays and avoid interacting with the target while the test runs.
-
-```powershell
-$env:AVENIRE_QT_VISUAL_E2E = '1'
-$env:AVENIRE_QT_EVIDENCE = "$env:TEMP\avenire-qt-evidence"
-$env:QT_QPA_PLATFORM = 'windows'
-python -m unittest discover -s apps/desktop-native/tests -p test_visual_e2e.py -v
-```
-
-A PowerShell wrapper runs protocol checks followed by the native desktop E2E:
-
-```powershell
-.\apps\desktop-native\tests\windows-e2e.ps1 -Python .\.venv\Scripts\python.exe
-```
-
-On isolated Linux X11, use a working X server/window manager and an alpha compositor
-without rectangular shadow darkening (e.g. xcompmgr `-n`). Set `QT_QPA_PLATFORM=xcb`,
-`DISPLAY`, the same two AVENIRE test variables, and install `xdotool` or set its path
-with `AVENIRE_XDOTOOL`. No display is started by these tests. Offscreen passing does
-not establish transparency or physical GPU rendering.
-
-The TypeScript process adapter's real-child behavioral suite also covers concurrent
-startup, disposal, startup cancellation, process crash and timeout:
+The native protocol suite needs only Python's standard library and launches the
+compiled host. Offscreen passing does not establish desktop rendering:
 
 ```sh
-QT_QPA_PLATFORM=xcb node apps/desktop/scripts/native-overlay-behavior.mjs /absolute/venv/bin/python
+AVENIRE_NATIVE_OVERLAY_EXECUTABLE=/absolute/native-dist/avenire-overlay \
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
+python -m unittest discover -s apps/desktop-native/tests -p test_engine.py -v
 ```
 
-That adapter harness uses Linux `/proc` and process signals; it is not a Windows
-harness. Windows native visual behavior is covered by `test_visual_e2e.py`.
-
-Actual captures and machine-readable results are under
-`docs/evidence/native-overlay/{windows,linux}`. Windows ran through PowerShell with
-portable Python 3.12.10 / PySide6 6.10.2 and reported Direct3D11. Linux used isolated
-Xvfb, Openbox and xcompmgr with OpenGL. No macOS, Wayland, signed distribution,
-full signed-in Alt+Space/provider round trip, physical-GPU identity or comparative
-memory/performance claim is established. Compositors control stacking: secure UI,
-exclusive fullscreen and other privileged windows can sit above the overlay.
-
-## Run above an installed Avenire window on Windows
-
-The app-scoped companion demo accepts an explicit Avenire HWND and checks its process
-identity before opening native surfaces. Keep Avenire focused, then run:
-
-```powershell
-python apps/desktop-native/tests/overlay_on_avenire.py --window-id HWND --out "$env:TEMP/avenire-live-overlay"
-```
-
-It captures only that app client region and stays up until Escape in the 3D window
-or a ten-minute timeout. The controller-architecture annotation coordinates are a
-manual demonstration for the captured paper view, not automatic document tracking.
-The app screenshot is committed only to the private PR evidence folder; the public
-HTML report embeds synthetic test images. This demo uses the installed Avenire
-shell with the companion, rather than claiming a new signed-in Alt+Space model run.
+Visual acceptance was run separately on isolated X11 and Windows: transparent
+compositor pixels, OS click-through, capture exclusion, 3D keyboard rotation and
+Escape dismissal. Synthetic fixtures and their generated images are not part of
+the final source tree. The sole retained visual artifact shows the native overlay
+on an actual Avenire window. Neither this capture nor offscreen tests establish
+a live authenticated model round trip or physical GPU performance.

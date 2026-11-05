@@ -145,7 +145,11 @@ else {
     .whenReady()
     .then(async () => {
       initializeCaptureLog(app.getPath("logs"));
-      nativeOverlayConfig = loadNativeOverlayConfig();
+      nativeOverlayConfig = loadNativeOverlayConfig({
+        packaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
+      });
       const userData = app.getPath("userData");
       deviceId = loadInstallIdentity(userData).deviceId;
       setCaptureDeviceId(deviceId);

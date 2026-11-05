@@ -8,13 +8,13 @@ import sys
 import threading
 import unittest
 
-MAIN = Path(__file__).resolve().parents[1] / "main.py"
+ENGINE = os.environ["AVENIRE_NATIVE_OVERLAY_EXECUTABLE"]
 
 
 class EngineTest(unittest.TestCase):
     def setUp(self):
         env = dict(os.environ, QT_QPA_PLATFORM=os.environ.get("QT_QPA_PLATFORM", "offscreen"))
-        self.process = subprocess.Popen([sys.executable, str(MAIN)], stdin=subprocess.PIPE,
+        self.process = subprocess.Popen([ENGINE], stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                         text=True, encoding="utf-8", env=env)
         self.messages = queue.Queue()
@@ -59,7 +59,7 @@ class EngineTest(unittest.TestCase):
         self.assertTrue(self.call("show")["result"]["flags"]["transparentForInput"])
         self.assertTrue(self.call("set_state", {"phase": "thinking", "reducedMotion": True})["result"]["reducedMotion"])
         self.assertFalse(self.call("annotate", {"items": [{"id": "x", "kind": "rect", "x": .9, "y": 0, "width": .2}]})["ok"])
-        self.assertTrue(self.call("annotate", {"items": [{"id": "x", "kind": "label", "x": .1, "y": .2, "text": "hello"}]})["ok"])
+        self.assertTrue(self.call("annotate", {"items": [{"id": "x", "kind": "cursor", "x": .1, "y": .2, "text": "hello"}]})["ok"])
         self.assertEqual(self.call("clear")["result"]["items"], [])
         self.assertEqual(self.call("not-a-method")["error"]["code"], "METHOD_NOT_FOUND")
         self.process.stdin.write("{malformed\n")
@@ -83,6 +83,37 @@ class EngineTest(unittest.TestCase):
         self.assertFalse(state["capturing"])
         self.call("shutdown")
         self.assertEqual(self.process.wait(timeout=5), 0)
+
+    def test_bounded_input_recovers_and_rejects_unsafe_scene(self):
+        self.process.stdin.write("x" * (1024 * 1024 + 1) + "\n")
+        self.process.stdin.flush()
+        self.assertEqual(self.receive()["error"]["code"], "INVALID_REQUEST")
+        before = self.call("inspect")["result"]
+        invalid = {"title": "unsafe", "cameraDistance": 450, "objects": [
+            {"id": "mesh", "shape": "file:///private/model.obj", "position": [0, 0, 0],
+             "rotation": [0, 0, 0], "scale": [1, 1, 1], "color": "#8171ef"}]}
+        self.assertFalse(self.call("visualize", {"visible": True, "scene": invalid})["ok"])
+        self.assertFalse(self.call("show", {"screenId": "does-not-exist"})["ok"])
+        after = self.call("inspect")["result"]
+        self.assertEqual(after["sceneTitle"], before["sceneTitle"])
+        self.assertFalse(after["visualizationVisible"])
+        self.assertFalse(after["visible"])
+
+    def test_thinking_animation_stops_when_window_hides(self):
+        self.call("show")
+        self.call("set_state", {"phase": "thinking", "reducedMotion": False})
+        self.assertTrue(self.call("inspect")["result"]["thinkingAnimationRunning"])
+        hidden = self.call("hide")["result"]
+        self.assertEqual(hidden["phase"], "thinking")
+        self.assertFalse(hidden["thinkingAnimationRunning"])
+
+    def test_startup_failure_reports_on_stderr_and_exits(self):
+        env = dict(os.environ, QT_QPA_PLATFORM="avenire-missing-test-plugin")
+        failed = subprocess.run([ENGINE], input="", capture_output=True, text=True,
+                                env=env, timeout=10)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual(failed.stdout, "")
+        self.assertIn("platform plugin", failed.stderr)
 
     def test_parent_eof_exits_cleanly(self):
         self.call("inspect")

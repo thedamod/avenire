@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Shapes
 
 Item {
@@ -6,6 +7,7 @@ Item {
     property string phase: "idle"
     property bool reducedMotion: false
     property var annotations: []
+    readonly property bool thinkingAnimationRunning: thinkingPulse.running
 
     Rectangle {
         anchors.fill: parent
@@ -17,7 +19,8 @@ Item {
             id: pulse
             property real value: 0.8
             SequentialAnimation on value {
-                running: root.visible && root.phase === "thinking" && !root.reducedMotion
+                id: thinkingPulse
+                running: root.Window.window !== null && root.Window.window.visible && root.phase === "thinking" && !root.reducedMotion
                 loops: Animation.Infinite
                 NumberAnimation { to: 0.4; duration: 1500 }
                 NumberAnimation { to: 0.9; duration: 1500 }
@@ -50,6 +53,25 @@ Item {
                 font.pixelSize: 20
                 style: Text.Outline
                 styleColor: "#202033"
+            }
+            Item {
+                visible: marker.modelData.kind === "cursor"
+                width: 32; height: 32
+                Rectangle {
+                    x: -7; y: -7; width: 18; height: 18
+                    radius: 9; color: "transparent"; border.width: 2; border.color: marker.ink
+                }
+                BibataCursor {}
+                Text {
+                    x: Math.max(-marker.x, Math.min(24, root.width - marker.x - width))
+                    y: Math.max(-marker.y, Math.min(24, root.height - marker.y - height))
+                    width: Math.min(280, root.width)
+                    text: marker.modelData.text || ""
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    color: marker.ink; font.pixelSize: 18
+                    style: Text.Outline; styleColor: "#202033"
+                }
             }
             Shape {
                 anchors.fill: parent

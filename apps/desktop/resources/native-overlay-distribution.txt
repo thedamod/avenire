@@ -1,0 +1,40 @@
+Build: node scripts/native-build.mjs --qt /absolute/Qt/6.8.3/<kit>
+Prerequisites: CMake 3.30.5, Ninja 1.11.1.1, C++20 compiler and Qt 6.8.3
+(Core, Qml, Quick, Quick3D and their Qt ShaderTools/QuickTimeline dependencies).
+
+Generated apps/desktop/native-dist is the entire deployable tree. Never copy only
+its executable. electron-builder copies this tree outside app.asar to
+resources/native-overlay. Windows/Linux executable: avenire-overlay(.exe).
+macOS root executable is a relative symlink into the deployed .app bundle; retain
+both the symlink and bundle so framework install names stay portable.
+Qt's CMake deployment support collects runtime libraries, platform plugins and QML
+imports. QML source is embedded by the native target, never loaded from the repo.
+
+AVENIRE_NATIVE_OVERLAY_ENABLED=true opts in. The optional absolute
+AVENIRE_NATIVE_OVERLAY_EXECUTABLE override is read through Effect Config only.
+Development resolves native-dist from Electron app.getAppPath(), independent of cwd.
+Do not set QT_PLUGIN_PATH, QML_IMPORT_PATH or LD_LIBRARY_PATH in production.
+
+CI verifies the staged executable after copying it to a temporary location, with
+SDK environment paths removed. Offscreen lifecycle tests do not prove compositor,
+transparency, click-through, screen capture permissions or GPU behavior.
+
+Unsigned CI artifacts are explicitly labelled unsigned. Manual signing requires
+protected environment approval and all platform credentials; missing credentials
+fail before signing. macOS signs nested native code with hardened runtime, verifies,
+notarizes and staples the bundle. Windows uses SignTool with SHA-256 and an RFC3161
+timestamp, then verifies. These jobs do not publish releases. Linux signs the tar archive with an explicitly selected GPG key, verifies the
+detached signature in a separate public-key-only keyring, and includes that public
+key and signature with the signed tar artifact. Linux GPG secrets are required
+when the protected manual signing job is requested. Full Electron app
+signing/notarization is still required when packaging a release application.
+
+Qt Quick 3D in Qt 6.8.3 is offered under a commercial Qt license or GPLv3,
+not LGPL alone. The application's own license is not selected or changed here.
+Ordinary build manifests declare distributionLicenseBasis=unselected and
+distributionReady=false. Protected manual signing requires the operator to choose
+commercial or GPLv3 explicitly and records that declaration. Signing does not
+validate license eligibility or mark an artifact distribution-ready.
+
+The E2E harness accepts --fixture /absolute/custom-build/overlay-protocol-fixture(.exe)
+when native:build uses --build /absolute/custom-build.

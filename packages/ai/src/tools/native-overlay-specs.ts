@@ -8,7 +8,7 @@ export const nativeAnnotateSpec = {
   description:
     "Draw passive annotations over the user's current screen while explaining it. " +
     "Use normalized 0..1 coordinates relative to the attached full-display screenshot. " +
-    "Choose rect, arrow (width/height point down and right), or plain-text label. " +
+    "Choose a cursor with text to point at and explain a region, a rect highlight, an arrow (width/height point down and right), or a plain-text label. " +
     "Replace the current annotation set with at most 32 items; an empty array clears it. " +
     "Keep annotations small and relevant, and never obscure the material. " +
     "This requests local presentation; it does not click, type, change documents, or verify display. " +

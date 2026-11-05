@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { isAbsolute } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 
@@ -15,19 +15,31 @@ export type OverlayCapture = DesktopScreenObservation;
 export type PromptCaptureContext = DesktopPromptCaptureContext;
 export interface NativeOverlayConfig {
   readonly enabled: boolean;
-  readonly python: string;
-  readonly script: string;
+  readonly executable: string;
 }
 
 /** Explicit operator configuration; renderer/model input never controls executable or argv. */
-export function loadNativeOverlayConfig(): NativeOverlayConfig {
-  return Effect.runSync(
+export function loadNativeOverlayConfig(paths: {
+  readonly packaged: boolean;
+  readonly resourcesPath: string;
+  readonly appPath: string;
+}): NativeOverlayConfig {
+  const configured = Effect.runSync(
     Config.all({
       enabled: Config.Boolean("AVENIRE_NATIVE_OVERLAY_ENABLED").pipe(Config.withDefault(false)),
-      python: Config.String("AVENIRE_NATIVE_OVERLAY_PYTHON").pipe(Config.withDefault("")),
-      script: Config.String("AVENIRE_NATIVE_OVERLAY_SCRIPT").pipe(Config.withDefault("")),
+      executable: Config.String("AVENIRE_NATIVE_OVERLAY_EXECUTABLE").pipe(Config.withDefault("")),
     }),
   );
+  const filename = process.platform === "win32" ? "avenire-overlay.exe" : "avenire-overlay";
+  // appPath is the desktop package root in development; never depend on the invoking cwd.
+  return {
+    enabled: configured.enabled,
+    executable:
+      configured.executable ||
+      (paths.packaged
+        ? join(paths.resourcesPath, "native-overlay", filename)
+        : resolve(paths.appPath, "native-dist", filename)),
+  };
 }
 
 const MAX_FRAME = 1024 * 1024 + 4096;
@@ -56,11 +68,11 @@ export class NativeOverlay {
   private start(): Promise<void> {
     if (this.disposed) return Promise.reject(new Error("Native overlay session closed"));
     if (this.starting) return this.starting;
-    if (!this.config.enabled || !isAbsolute(this.config.python) || !isAbsolute(this.config.script))
+    if (!this.config.enabled || !isAbsolute(this.config.executable))
       return Promise.reject(
-        new Error("Native overlay requires enabled configuration and absolute Python/script paths"),
+        new Error("Native overlay requires enabled configuration and an absolute executable path"),
       );
-    this.child = spawn(this.config.python, [this.config.script], {
+    this.child = spawn(this.config.executable, [], {
       shell: false,
       stdio: "pipe",
       windowsHide: true,
@@ -115,13 +127,16 @@ export class NativeOverlay {
       return Promise.reject(new Error("Native overlay session closed"));
     if (this.pending.size >= 32) return Promise.reject(new Error("Native overlay is busy"));
     const id = ++this.sequence;
+    const frame = JSON.stringify({ id, method, params }) + "\n";
+    if (Buffer.byteLength(frame) > MAX_FRAME)
+      return Promise.reject(new Error("Native overlay request exceeded limit"));
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
         () => this.fail(new Error(`Native overlay ${method} timed out`)),
         RESPONSE_TIMEOUT,
       );
       this.pending.set(id, { resolve, reject, timer });
-      this.child!.stdin.write(JSON.stringify({ id, method, params }) + "\n");
+      this.child!.stdin.write(frame);
     });
   }
 
@@ -184,7 +199,7 @@ export class NativeOverlay {
     this.pending.clear();
     const child = this.child;
     this.child = undefined;
-    if (child && child.exitCode === null) {
+    if (child && child.exitCode === null && child.signalCode === null) {
       child.stdin.end(
         JSON.stringify({ id: ++this.sequence, method: "shutdown", params: {} }) + "\n",
       );
