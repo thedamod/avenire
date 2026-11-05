@@ -9,7 +9,7 @@ on:
         ".github/workflows/desktop-native.yml",
       ]
   push:
-    branches: [main, feat/desktop-explorer]
+    branches: [main]
     paths: ["apps/desktop-native/**", "apps/desktop/**", ".github/workflows/desktop-native.yml"]
   workflow_dispatch:
     inputs:
