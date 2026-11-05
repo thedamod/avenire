@@ -2,6 +2,9 @@ import {
   DesktopOverlayState,
   DesktopOverlayAnnotation,
   DesktopNativeScene,
+  DesktopNativeDiagram,
+  DesktopCursorPosition,
+  DesktopNativeObservation,
 } from "@avenire/contracts";
 import {
   NativeOverlay,
@@ -1333,6 +1336,32 @@ ipcMain.handle("avenire:prompt-capture-context", (event) => {
   if (!trustedPrompt(event)) throw new Error("Untrusted native overlay IPC sender");
   return promptCaptureContext;
 });
+ipcMain.handle("avenire:native-observation", async (event, id: unknown) => {
+  const native = currentNative(event, id);
+  if (!native) throw new Error("Native overlay unavailable");
+  const screenId = promptCaptureContext.capture?.screenId;
+  const [position, raw] = await Promise.all([
+    native.request("get_cursor", screenId ? { screenId } : {}),
+    native.request("inspect"),
+  ]);
+  if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
+  const cursor = Schema.decodeUnknownSync(DesktopCursorPosition)(position);
+  const state = raw as Record<string, unknown>;
+  const rotation = state.rotation as { x: number; y: number };
+  return Schema.decodeUnknownSync(DesktopNativeObservation)({
+    cursor,
+    presentation: {
+      mode: state.visualizationMode,
+      visible: state.visualizationVisible,
+      interactive: state.visualizationInteractive,
+      title: state.sceneTitle,
+      ...(state.visualizationMode === "cart-pole" ? { diagram: state.diagram } : {}),
+      rotationX: rotation.x,
+      rotationY: rotation.y,
+      observedAt: cursor.observedAt,
+    },
+  });
+});
 ipcMain.handle("avenire:native-overlay-state", async (event, id: unknown, value: unknown) => {
   const native = currentNative(event, id);
   const state = Schema.decodeUnknownSync(DesktopOverlayState)(value);
@@ -1363,19 +1392,31 @@ ipcMain.handle("avenire:native-overlay-clear", async (event, id: unknown) => {
 });
 ipcMain.handle(
   "avenire:native-overlay-visualize",
-  async (event, id: unknown, visible: unknown, interactive: unknown, scene: unknown) => {
+  async (
+    event,
+    id: unknown,
+    visible: unknown,
+    interactive: unknown,
+    scene: unknown,
+    diagram: unknown,
+  ) => {
     const native = currentNative(event, id);
     if (
       typeof visible !== "boolean" ||
       (interactive !== undefined && typeof interactive !== "boolean")
     )
       throw new Error("Invalid visualization state");
+    if (scene !== undefined && diagram !== undefined)
+      throw new Error("Choose one presentation type");
     await native?.request("visualize", {
       visible,
       interactive: interactive ?? false,
       ...(scene === undefined
         ? {}
         : { scene: Schema.decodeUnknownSync(DesktopNativeScene)(scene) }),
+      ...(diagram === undefined
+        ? {}
+        : { diagram: Schema.decodeUnknownSync(DesktopNativeDiagram)(diagram) }),
     });
   },
 );

@@ -92,7 +92,18 @@ export function EphemeralPrompt({
         if (standalone && window.avenire?.getPromptCaptureContext && !screenOptOut.current) {
           const context = await window.avenire.getPromptCaptureContext();
           if (generation !== questionGeneration.current) return;
-          entry.setScreenContext(context.capture ?? undefined);
+          let capture = context.capture;
+          if (capture && window.avenire.getNativeObservation) {
+            try {
+              const observation = await window.avenire.getNativeObservation(context.sessionId);
+              if (generation !== questionGeneration.current) return;
+              capture = { ...capture, ...observation };
+            } catch {
+              if (generation !== questionGeneration.current) return;
+              setNativeError("Current pointer/diagram context unavailable");
+            }
+          }
+          entry.setScreenContext(capture ?? undefined);
         }
         await entry.ensureThread(text, folderId);
         if (generation === questionGeneration.current) await entry.send({ text });
@@ -184,7 +195,9 @@ export function EphemeralPrompt({
     if (reply?.role !== "assistant") return;
     for (const part of reply.parts) {
       if (
-        (part.type !== "tool-native_annotate" && part.type !== "tool-native_visualize") ||
+        (part.type !== "tool-native_annotate" &&
+          part.type !== "tool-native_visualize" &&
+          part.type !== "tool-native_diagram") ||
         part.state !== "output-available"
       )
         continue;
@@ -200,7 +213,8 @@ export function EphemeralPrompt({
               nativeSession,
               true,
               part.output.interactive,
-              part.output.scene,
+              part.type === "tool-native_visualize" ? part.output.scene : undefined,
+              part.type === "tool-native_diagram" ? part.output.diagram : undefined,
             );
       void presentation?.catch(() => {
         if (active) setNativeError("Native presentation unavailable");

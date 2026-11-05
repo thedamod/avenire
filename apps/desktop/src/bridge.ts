@@ -2,6 +2,8 @@ import type { OverlayState, OverlayAnnotation, PromptCaptureContext } from "./na
 import type {
   BlockedCategory,
   DesktopNativeScene,
+  DesktopNativeDiagram,
+  DesktopNativeObservation,
   CaptureSnapshot,
   DesktopCaptureUploads,
   DesktopPermission,
@@ -134,6 +136,7 @@ export interface AvenireDesktopBridge extends AvenireWindowBridge {
   readonly getOnboardingPreferences: () => Promise<UserSettingsPatch | null>;
   readonly acknowledgeOnboardingPreferences: () => Promise<void>;
   readonly getPromptCaptureContext: () => Promise<PromptCaptureContext>;
+  readonly getNativeObservation: (sessionId: number) => Promise<DesktopNativeObservation>;
   readonly setNativeOverlayState: (sessionId: number, state: OverlayState) => Promise<void>;
   readonly annotateNativeOverlay: (
     sessionId: number,
@@ -145,6 +148,7 @@ export interface AvenireDesktopBridge extends AvenireWindowBridge {
     visible: boolean,
     interactive?: boolean,
     scene?: DesktopNativeScene,
+    diagram?: DesktopNativeDiagram,
   ) => Promise<void>;
   readonly hidePrompt: () => Promise<void>;
   readonly onPromptHidden: (callback: () => void) => () => void;

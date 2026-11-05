@@ -6,6 +6,7 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 import unittest
 
 ENGINE = os.environ["AVENIRE_NATIVE_OVERLAY_EXECUTABLE"]
@@ -114,6 +115,39 @@ class EngineTest(unittest.TestCase):
         self.assertNotEqual(failed.returncode, 0)
         self.assertEqual(failed.stdout, "")
         self.assertIn("platform plugin", failed.stderr)
+
+    def test_read_only_cursor_and_parameterized_diagram(self):
+        point = self.call("get_cursor")["result"]
+        self.assertIsInstance(point["globalX"], int)
+        self.assertIsInstance(point["globalY"], int)
+        self.assertIn(point["screenId"], [s["id"] for s in self.call("inspect")["result"]["screens"]])
+        self.assertIn("observedAt", point)
+        self.assertFalse(self.call("get_cursor", {"screenId": "unknown-test-display"})["ok"])
+        diagram = {"kind": "cart-pole", "title": "Direct geometry", "angleDegrees": -20,
+                   "cartPosition": .2, "poleLength": 1.8, "showForce": True, "theme": "dark"}
+        state = self.call("visualize", {"visible": True, "interactive": False, "diagram": diagram})["result"]
+        self.assertEqual(state["visualizationMode"], "cart-pole")
+        self.assertEqual(state["diagram"], diagram)
+        self.assertFalse(state["visualizationInteractive"])
+        self.assertFalse(self.call("visualize", {"visible": True, "diagram": dict(diagram, angleDegrees=1000)})["ok"])
+        self.assertEqual(self.call("inspect")["result"]["diagram"], diagram)
+
+    def test_text_bubbles_stay_inside_display_at_edges(self):
+        state = self.call("show")["result"]
+        screen = next(s for s in state["screens"] if s["id"] == state["screenId"])
+        self.call("annotate", {"items": [{"id": kind, "kind": kind, "x": .99, "y": .99,
+            "text": "Readable annotation " * 20} for kind in ["cursor", "rect", "arrow", "label"]]})
+        for _ in range(20):
+            bubbles = self.call("inspect")["result"].get("annotationBubbles", [])
+            if len(bubbles) == 4 and all(b["width"] > 0 and b["height"] > 0 for b in bubbles): break
+            time.sleep(.02)
+        self.assertEqual(len(bubbles), 4)
+        for bubble in bubbles:
+            self.assertGreaterEqual(bubble["x"], 0)
+            self.assertGreaterEqual(bubble["y"], 0)
+            self.assertLessEqual(bubble["x"] + bubble["width"], screen["width"])
+            self.assertLessEqual(bubble["y"] + bubble["height"], screen["height"])
+        self.assertFalse(any("Binding loop" in line or "ReferenceError" in line for line in self.errors), "".join(self.errors))
 
     def test_parent_eof_exits_cleanly(self):
         self.call("inspect")

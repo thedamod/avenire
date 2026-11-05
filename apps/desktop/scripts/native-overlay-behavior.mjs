@@ -146,6 +146,23 @@ try {
   assert.equal(state.items.length, 1);
   assert.equal(state.sceneTitle, scene.title);
   assert.equal(state.visualizationVisible, true);
+  const pointer = await native.request("get_cursor");
+  assert.ok(Number.isInteger(pointer.globalX) && Number.isInteger(pointer.globalY));
+  assert.ok(typeof pointer.observedAt === "string");
+  const diagram = {
+    kind: "cart-pole",
+    title: "Data-driven 2D geometry",
+    angleDegrees: 15,
+    cartPosition: 0.1,
+    poleLength: 1.8,
+    showForce: true,
+    theme: "dark",
+  };
+  await native.request("visualize", { visible: true, interactive: false, diagram });
+  const geometry = await native.request("inspect");
+  assert.equal(geometry.visualizationMode, "cart-pole");
+  assert.deepEqual(geometry.diagram, diagram);
+
   await assert.rejects(
     native.request("annotate", { items: [{ id: "invalid", kind: "rect", x: -1, y: 0 }] }),
   );

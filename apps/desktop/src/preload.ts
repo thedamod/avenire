@@ -59,15 +59,16 @@ const bridge: AvenireDesktopBridge = {
   acknowledgeOnboardingPreferences: () =>
     ipcRenderer.invoke("avenire:onboarding-preferences-ack").then(() => undefined),
   getPromptCaptureContext: () => ipcRenderer.invoke("avenire:prompt-capture-context"),
+  getNativeObservation: (id) => ipcRenderer.invoke("avenire:native-observation", id),
   setNativeOverlayState: (id, state) =>
     ipcRenderer.invoke("avenire:native-overlay-state", id, state).then(() => undefined),
   annotateNativeOverlay: (id, items) =>
     ipcRenderer.invoke("avenire:native-overlay-annotate", id, items).then(() => undefined),
   clearNativeOverlay: (id) =>
     ipcRenderer.invoke("avenire:native-overlay-clear", id).then(() => undefined),
-  visualizeNativeOverlay: (id, visible, interactive, scene) =>
+  visualizeNativeOverlay: (id, visible, interactive, scene, diagram) =>
     ipcRenderer
-      .invoke("avenire:native-overlay-visualize", id, visible, interactive, scene)
+      .invoke("avenire:native-overlay-visualize", id, visible, interactive, scene, diagram)
       .then(() => undefined),
   hidePrompt: () => ipcRenderer.invoke("avenire:hide-prompt").then(() => undefined),
   onPromptHidden(callback) {

@@ -4,8 +4,10 @@
 #include <QQuickItem>
 #include <QSGRendererInterface>
 #include <QScreen>
+#include <QCursor>
 #include <QSurfaceFormat>
 #include <QJsonDocument>
+#include <QJSValue>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QBuffer>
@@ -122,6 +124,10 @@ public:
             require(!request.contains("params") || request["params"].isObject(), "Expected params object");
             const auto method = request["method"].toString();
             const auto params = request["params"].toObject();
+            if (method == "get_cursor") {
+                reply(id, cursorPosition(params.contains("screenId") ? select(params) : selected.data()));
+                return;
+            }
             if (method == "inspect") {}
             else if (method == "show") {
                 selected = select(params);
@@ -140,18 +146,33 @@ public:
             else if (method == "clear") { items = {}; sync(); }
             else if (method == "visualize") {
                 require(params["visible"].isBool() && (!params.contains("interactive") || params["interactive"].isBool()), "Invalid visualization options");
+                require(!(params.contains("scene") && params.contains("diagram")), "Choose one presentation type");
+                if (params.contains("diagram")) {
+                    const auto d = params["diagram"].toObject();
+                    require(params["diagram"].isObject() && d["kind"] == "cart-pole", "Invalid diagram kind");
+                    require(d["title"].isString() && d["title"].toString().size() <= 100, "Invalid diagram title");
+                    require(number(d["angleDegrees"], -75, 75) && number(d["cartPosition"], -1, 1) && number(d["poleLength"], .5, 3), "Invalid diagram geometry");
+                    require(d["showForce"].isBool() && QStringList{"light", "dark"}.contains(d["theme"].toString()), "Invalid diagram options");
+                    visual.rootObject()->setProperty("diagram", d.toVariantMap());
+                    visual.rootObject()->setProperty("sceneTitle", d["title"].toString());
+                    visual.rootObject()->setProperty("mode", "cart-pole");
+                    visual.resize(480, 340);
+                }
                 if (params.contains("scene")) {
                     const auto s = scene(params["scene"]);
+                    visual.rootObject()->setProperty("mode", "3d");
+                    visual.resize(320, 320);
                     visual.rootObject()->setProperty("objects", s["objects"].toArray().toVariantList());
                     visual.rootObject()->setProperty("sceneTitle", s["title"].toString());
                     visual.rootObject()->setProperty("cameraDistance", s["cameraDistance"].toDouble());
                 }
+                visual.rootObject()->setProperty("interactionEnabled", params["interactive"].toBool());
                 visual.setFlags(flags(!params["interactive"].toBool()));
                 visualWanted = params["visible"].toBool();
                 require(selected, "Selected display disconnected");
                 const auto area = bounds.isNull() ? selected->availableGeometry() : bounds;
                 visual.setScreen(selected);
-                visual.setPosition(area.right() - 340, area.bottom() - 340);
+                visual.setPosition(area.right() - visual.width() - 20, area.bottom() - visual.height() - 20);
                 visual.setVisible(visualWanted && !capturing);
                 if (visual.isVisible()) raiseSurface(visual);
             } else if (method == "capture") {
@@ -221,6 +242,19 @@ private:
             if (screen->name() == params["screenId"].toString()) return screen;
         throw std::runtime_error("Unknown screenId");
     }
+    QJsonObject cursorPosition(QScreen *screen) const {
+        require(screen, "Selected display disconnected");
+        const auto point = QCursor::pos();
+        const auto area = bounds.isNull() ? screen->geometry() : bounds;
+        const bool inside = area.contains(point);
+        QJsonObject result{{"globalX", point.x()}, {"globalY", point.y()}, {"screenId", screen->name()},
+            {"inBounds", inside}, {"observedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}};
+        if (inside) {
+            result.insert("x", double(point.x() - area.x()) / area.width());
+            result.insert("y", double(point.y() - area.y()) / area.height());
+        }
+        return result;
+    }
     void sync() {
         overlay.rootObject()->setProperty("phase", phase);
         overlay.rootObject()->setProperty("reducedMotion", reduced);
@@ -244,11 +278,19 @@ private:
         default: apiName = "Unknown";
         }
         auto root = visual.rootObject();
+        auto rawDiagram = root->property("diagram");
+        if (rawDiagram.metaType() == QMetaType::fromType<QJSValue>()) rawDiagram = rawDiagram.value<QJSValue>().toVariant();
+        auto diagram = QJsonObject::fromVariantMap(rawDiagram.toMap());
+        diagram.insert("angleDegrees", root->property("diagramAngleDegrees").toDouble());
+        diagram.insert("cartPosition", root->property("diagramCartPosition").toDouble());
+        const auto bubbleLayout = overlay.rootObject()->property("bubbleGeometry").value<QJSValue>().toVariant();
         return {{"visible", overlay.isVisible()}, {"screenId", selected ? selected->name() : QString()},
             {"phase", phase}, {"reducedMotion", reduced}, {"items", items}, {"capturing", capturing},
             {"thinkingAnimationRunning", overlay.rootObject()->property("thinkingAnimationRunning").toBool()},
             {"visualizationVisible", visual.isVisible()}, {"visualizationInteractive", !visual.flags().testFlag(Qt::WindowTransparentForInput)},
             {"rotation", QJsonObject{{"x", root->property("rx").toDouble()}, {"y", root->property("ry").toDouble()}}},
+            {"visualizationMode", root->property("mode").toString()},
+            {"diagram", diagram}, {"annotationBubbles", QJsonValue::fromVariant(bubbleLayout)},
             {"sceneTitle", root->property("sceneTitle").toString()}, {"visualFrames", static_cast<double>(visualFrames)},
             {"windowIds", QJsonObject{{"overlay", static_cast<double>(overlay.winId())}, {"visualization", static_cast<double>(visual.winId())}}},
             {"screens", screens}, {"graphicsApi", apiName}, {"softwareRendering", api == QSGRendererInterface::Software}, {"hardwareAcceleration", "unverified"},
@@ -257,6 +299,7 @@ private:
     void capture(QJsonValue id, QPointer<QScreen> screen) {
         try {
             require(screen, "Selected display disconnected");
+            const auto cursor = cursorPosition(screen);
             auto pixmap = bounds.isNull() ? screen->grabWindow(0) : screen->grabWindow(0,
                 bounds.x() - screen->geometry().x(), bounds.y() - screen->geometry().y(), bounds.width(), bounds.height());
             require(!pixmap.isNull(), "Screen capture unavailable");
@@ -272,7 +315,7 @@ private:
             require(data.size() <= MaxImage, "Screen image exceeds payload budget");
             reply(id, QJsonObject{{"mimeType", "image/png"}, {"data", QString::fromLatin1(data.toBase64())},
                 {"width", pixmap.width()}, {"height", pixmap.height()}, {"sourceWidth", sourceWidth}, {"sourceHeight", sourceHeight},
-                {"screenId", screen->name()}, {"capturedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}});
+                {"screenId", screen->name()}, {"capturedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}, {"cursor", cursor}});
         } catch (const std::exception &e) { fail(id, "CAPTURE_FAILED", QString::fromUtf8(e.what())); }
         capturing = false;
         overlay.setVisible(overlayWanted); visual.setVisible(visualWanted);

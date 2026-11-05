@@ -143,6 +143,7 @@ export class NativeOverlay {
   async request(
     method:
       | "inspect"
+      | "get_cursor"
       | "show"
       | "hide"
       | "set_state"

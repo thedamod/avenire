@@ -8,7 +8,7 @@ qt_add_executable(avenire-overlay main.cpp)
 qt_add_qml_module(avenire-overlay
     URI AvenireOverlay
     RESOURCE_PREFIX /avenire
-    QML_FILES Overlay.qml Visual.qml BibataCursor.qml EdgeGlow.qml
+    QML_FILES Overlay.qml Visual.qml BibataCursor.qml EdgeGlow.qml AnnotationBubble.qml CartPole.qml
 )
 qt_add_shaders(avenire-overlay edge_glow
     PREFIX /avenire/shaders

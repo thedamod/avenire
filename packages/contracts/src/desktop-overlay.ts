@@ -16,6 +16,47 @@ export const DesktopOverlayAnnotation = Schema.Struct({
 });
 export type DesktopOverlayAnnotation = typeof DesktopOverlayAnnotation.Type;
 
+/** Read-only pointer observation. x/y are normalized to the selected capture bounds. */
+export const DesktopCursorPosition = Schema.Struct({
+  globalX: Schema.Int,
+  globalY: Schema.Int,
+  screenId: Schema.String.check(Schema.isMaxLength(200)),
+  inBounds: Schema.Boolean,
+  x: Schema.optional(Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),
+  y: Schema.optional(Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),
+  observedAt: Schema.String.check(Schema.isMaxLength(100)),
+});
+export type DesktopCursorPosition = typeof DesktopCursorPosition.Type;
+
+/** Native direct-manipulation geometry, rather than an unconstrained script or simulation. */
+export const DesktopNativeDiagram = Schema.Struct({
+  kind: Schema.Literal("cart-pole"),
+  title: Schema.String.check(Schema.isMaxLength(100)),
+  angleDegrees: Schema.Finite.check(Schema.isBetween({ minimum: -75, maximum: 75 })),
+  cartPosition: Schema.Finite.check(Schema.isBetween({ minimum: -1, maximum: 1 })),
+  poleLength: Schema.Finite.check(Schema.isBetween({ minimum: 0.5, maximum: 3 })),
+  showForce: Schema.Boolean,
+  theme: Schema.Literals(["light", "dark"]),
+});
+export type DesktopNativeDiagram = typeof DesktopNativeDiagram.Type;
+
+export const DesktopPresentationObservation = Schema.Struct({
+  mode: Schema.Literals(["3d", "cart-pole"]),
+  visible: Schema.Boolean,
+  interactive: Schema.Boolean,
+  title: Schema.String.check(Schema.isMaxLength(100)),
+  diagram: Schema.optional(DesktopNativeDiagram),
+  rotationX: Schema.optional(Schema.Finite),
+  rotationY: Schema.optional(Schema.Finite),
+  observedAt: Schema.String.check(Schema.isMaxLength(100)),
+});
+export type DesktopPresentationObservation = typeof DesktopPresentationObservation.Type;
+export const DesktopNativeObservation = Schema.Struct({
+  cursor: DesktopCursorPosition,
+  presentation: DesktopPresentationObservation,
+});
+export type DesktopNativeObservation = typeof DesktopNativeObservation.Type;
+
 export const DesktopScreenObservation = Schema.Struct({
   mimeType: Schema.Literal("image/png"),
   data: Schema.String.check(Schema.isMaxLength(1_048_576)),
@@ -23,6 +64,8 @@ export const DesktopScreenObservation = Schema.Struct({
   height: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 8192 })),
   screenId: Schema.String.check(Schema.isMaxLength(200)),
   capturedAt: Schema.String.check(Schema.isMaxLength(100)),
+  cursor: Schema.optional(DesktopCursorPosition),
+  presentation: Schema.optional(DesktopPresentationObservation),
 });
 export type DesktopScreenObservation = typeof DesktopScreenObservation.Type;
 

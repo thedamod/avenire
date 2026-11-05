@@ -15,6 +15,9 @@ import { VISUAL_BUDGETS, VISUAL_RUNTIME } from "./page.ts";
 import { loadSkillTool } from "./skills.ts";
 import {
   createNativeAnnotationTool,
+  createNativeDiagramTool,
+  createNativeCursorTool,
+  createNativePresentationTool,
   createNativeVisualizationTool,
 } from "./native-overlay-specs.ts";
 
@@ -31,6 +34,10 @@ export type RuthToolServices =
 export interface RuthTurn {
   readonly userId: UserId;
   readonly nativeScreenCapturedAt?: string | undefined;
+  readonly nativeCursor?: import("@avenire/contracts").DesktopCursorPosition | undefined;
+  readonly nativePresentation?:
+    | import("@avenire/contracts").DesktopPresentationObservation
+    | undefined;
   readonly scope?: import("@avenire/contracts").ChatScope | undefined;
   readonly threadId: ThreadId;
   readonly page: PageContext;
@@ -40,9 +47,16 @@ export interface RuthTurn {
 }
 export const chatToolNames = Object.keys(ruthToolSpecs).filter(
   (name) =>
-    !["load_skill", "get_page_context", "ask_user", "native_annotate", "native_visualize"].includes(
-      name,
-    ),
+    ![
+      "load_skill",
+      "get_page_context",
+      "ask_user",
+      "native_annotate",
+      "native_visualize",
+      "native_diagram",
+      "native_cursor",
+      "native_presentation",
+    ].includes(name),
 );
 export const createRuthTools = (
   services: Context.Context<RuthToolServices>,
@@ -78,6 +92,23 @@ export const createRuthTools = (
       ? {
           native_annotate: createNativeAnnotationTool(turn.nativeScreenCapturedAt),
           native_visualize: createNativeVisualizationTool(turn.nativeScreenCapturedAt),
+          native_diagram: createNativeDiagramTool(turn.nativeScreenCapturedAt),
+          ...(turn.nativeCursor
+            ? {
+                native_cursor: createNativeCursorTool(
+                  turn.nativeScreenCapturedAt,
+                  turn.nativeCursor,
+                ),
+              }
+            : {}),
+          ...(turn.nativePresentation
+            ? {
+                native_presentation: createNativePresentationTool(
+                  turn.nativeScreenCapturedAt,
+                  turn.nativePresentation,
+                ),
+              }
+            : {}),
         }
       : {}),
     load_skill: loadSkillTool(),

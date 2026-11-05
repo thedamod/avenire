@@ -11,11 +11,18 @@ Item {
     property real cameraDistance: 450
     property string sceneTitle: "Spatial explanation"
     property var objects: [{ id: "cube", shape: "cube", position: [0,0,0], rotation: [0,0,0], scale: [1,1,1], color: "#8171ef" }]
-    Keys.onLeftPressed: ry -= 10
-    Keys.onRightPressed: ry += 10
-    Keys.onUpPressed: rx -= 10
-    Keys.onDownPressed: rx += 10
+    property string mode: "3d"
+    property var diagram: ({})
+    property bool interactionEnabled: false
+    readonly property real diagramAngleDegrees: cart.angleDegrees
+    readonly property real diagramCartPosition: cart.cartPosition
+    Keys.onLeftPressed: { if (mode === "3d" && interactionEnabled) ry -= 10; else if (interactionEnabled) cart.cartPosition = cart.clamp(cart.cartPosition - 0.05, -1, 1) }
+    Keys.onRightPressed: { if (mode === "3d" && interactionEnabled) ry += 10; else if (interactionEnabled) cart.cartPosition = cart.clamp(cart.cartPosition + 0.05, -1, 1) }
+    Keys.onUpPressed: { if (mode === "3d" && interactionEnabled) rx -= 10; else if (interactionEnabled) cart.angleDegrees = cart.clamp(cart.angleDegrees + 5, -75, 75) }
+    Keys.onDownPressed: { if (mode === "3d" && interactionEnabled) rx += 10; else if (interactionEnabled) cart.angleDegrees = cart.clamp(cart.angleDegrees - 5, -75, 75) }
+    CartPole { id: cart; anchors.fill: parent; visible: root.mode === "cart-pole"; diagram: root.diagram; interactionEnabled: root.interactionEnabled }
     View3D {
+        visible: root.mode === "3d"
         anchors.fill: parent
         environment: SceneEnvironment { backgroundMode: SceneEnvironment.Transparent }
         PerspectiveCamera { z: root.cameraDistance }
@@ -37,12 +44,15 @@ Item {
         }
     }
     Text {
+        visible: root.mode === "3d"
         anchors.top: parent.top; anchors.horizontalCenter: parent.horizontalCenter; anchors.topMargin: 12
         text: root.sceneTitle; textFormat: Text.PlainText
-        color: "#8070df"; font.pixelSize: 16; font.bold: true
+        color: "#a3a3a3"; font.pixelSize: 16; font.bold: true
         width: parent.width - 24; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
     }
     MouseArea {
+        visible: root.mode === "3d"
+        enabled: root.interactionEnabled
         anchors.fill: parent
         property real lastX
         property real lastY
