@@ -1,0 +1,58 @@
+---
+import cartpolePoster from "../assets/poster-cartpole.webp";
+import reportPoster from "../assets/poster-ruth-cloud.webp";
+import { Capture } from "../components/Capture.tsx";
+import CtaGlow from "../components/CtaGlow.tsx";
+import { FinalCta } from "../components/FinalCta.tsx";
+import { Files } from "../components/Files.tsx";
+import { Footer } from "../components/Footer.tsx";
+import { Hero } from "../components/Hero.tsx";
+import HeroArt from "../components/HeroArt.tsx";
+import { BroughtToYou } from "../components/BroughtToYou.tsx";
+import { Ruth } from "../components/Ruth.tsx";
+import { Statement } from "../components/Statement.tsx";
+import { Trust } from "../components/Trust.tsx";
+import VideoFrame from "../components/VideoFrame.tsx";
+import { broughtToYou, hero, ruth } from "../content.ts";
+import Base from "../layouts/Base.astro";
+
+const explainer = ruth.answers[2];
+---
+
+<Base title="Avenire · Your study material, organized and brought to you" description={hero.lead}>
+  <Hero>
+    <HeroArt slot="art" client:load />
+  </Hero>
+  <main>
+    <Statement />
+    <Capture />
+    <BroughtToYou>
+      <VideoFrame
+        slot="video"
+        client:visible
+        src={broughtToYou.video.src}
+        poster={reportPoster.src}
+        alt={broughtToYou.video.alt}
+      />
+    </BroughtToYou>
+    <Ruth>
+      {
+        explainer?.video && (
+          <VideoFrame
+            slot="explainer"
+            client:visible
+            src={explainer.video.src}
+            poster={cartpolePoster.src}
+            alt={explainer.alt}
+          />
+        )
+      }
+    </Ruth>
+    <Files />
+    <Trust />
+    <FinalCta>
+      <CtaGlow slot="glow" client:visible />
+    </FinalCta>
+  </main>
+  <Footer />
+</Base>
