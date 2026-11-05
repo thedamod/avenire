@@ -149,6 +149,21 @@ class EngineTest(unittest.TestCase):
             self.assertLessEqual(bubble["y"] + bubble["height"], screen["height"])
         self.assertFalse(any("Binding loop" in line or "ReferenceError" in line for line in self.errors), "".join(self.errors))
 
+    def test_diagram_stays_within_explicit_capture_bounds(self):
+        diagram = {"kind": "cart-pole", "title": "Confined figure", "angleDegrees": 20,
+                   "cartPosition": 0, "poleLength": 1.8, "showForce": True, "theme": "dark"}
+        requests = [{"id": 1, "method": "visualize", "params": {"visible": True, "diagram": diagram}},
+                    {"id": 2, "method": "shutdown", "params": {}}]
+        result = subprocess.run([ENGINE, "--geometry", "100,100,400,400"],
+            input="".join(json.dumps(r) + "\n" for r in requests), capture_output=True,
+            text=True, timeout=10, env=dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        bounds = json.loads(result.stdout.splitlines()[0])["result"]["visualizationBounds"]
+        self.assertGreaterEqual(bounds["x"], 100)
+        self.assertGreaterEqual(bounds["y"], 100)
+        self.assertLessEqual(bounds["x"] + bounds["width"], 500)
+        self.assertLessEqual(bounds["y"] + bounds["height"], 500)
+
     def test_parent_eof_exits_cleanly(self):
         self.call("inspect")
         self.process.stdin.close()

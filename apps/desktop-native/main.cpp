@@ -171,6 +171,8 @@ public:
                 visualWanted = params["visible"].toBool();
                 require(selected, "Selected display disconnected");
                 const auto area = bounds.isNull() ? selected->availableGeometry() : bounds;
+                visual.resize(qMin(visual.width(), qMax(1, area.width() - 40)),
+                              qMin(visual.height(), qMax(1, area.height() - 40)));
                 visual.setScreen(selected);
                 visual.setPosition(area.right() - visual.width() - 20, area.bottom() - visual.height() - 20);
                 visual.setVisible(visualWanted && !capturing);
@@ -289,6 +291,7 @@ private:
             {"thinkingAnimationRunning", overlay.rootObject()->property("thinkingAnimationRunning").toBool()},
             {"visualizationVisible", visual.isVisible()}, {"visualizationInteractive", !visual.flags().testFlag(Qt::WindowTransparentForInput)},
             {"rotation", QJsonObject{{"x", root->property("rx").toDouble()}, {"y", root->property("ry").toDouble()}}},
+            {"visualizationBounds", QJsonObject{{"x", visual.x()}, {"y", visual.y()}, {"width", visual.width()}, {"height", visual.height()}}},
             {"visualizationMode", root->property("mode").toString()},
             {"diagram", diagram}, {"annotationBubbles", QJsonValue::fromVariant(bubbleLayout)},
             {"sceneTitle", root->property("sceneTitle").toString()}, {"visualFrames", static_cast<double>(visualFrames)},
