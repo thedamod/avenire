@@ -1,5 +1,5 @@
 import { extname } from "node:path";
-import { isLocalFileApp } from "./research/src/capture/app-catalog.ts";
+import { isLocalFileApp } from "./support/app-catalog.ts";
 import { normalizeCapturePath, localBasename } from "./local-file.ts";
 import { formats } from "./upload.ts";
 

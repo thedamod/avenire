@@ -1,5 +1,9 @@
+import type { OverlayState, OverlayAnnotation, PromptCaptureContext } from "./native-overlay.ts";
 import type {
   BlockedCategory,
+  DesktopNativeScene,
+  DesktopNativeDiagram,
+  DesktopNativeObservation,
   CaptureSnapshot,
   DesktopCaptureUploads,
   DesktopPermission,
@@ -131,7 +135,25 @@ export interface AvenireDesktopBridge extends AvenireWindowBridge {
   readonly getCaptureShortcut: () => Promise<string | null>;
   readonly getOnboardingPreferences: () => Promise<UserSettingsPatch | null>;
   readonly acknowledgeOnboardingPreferences: () => Promise<void>;
+  readonly getPromptCaptureContext: () => Promise<PromptCaptureContext>;
+  readonly readScreen: (sessionId: number) => Promise<PromptCaptureContext>;
+  readonly onScreenInvalidated: (callback: (sessionId: number) => void) => () => void;
+  readonly getNativeObservation: (sessionId: number) => Promise<DesktopNativeObservation>;
+  readonly setNativeOverlayState: (sessionId: number, state: OverlayState) => Promise<void>;
+  readonly annotateNativeOverlay: (
+    sessionId: number,
+    items: readonly OverlayAnnotation[],
+  ) => Promise<void>;
+  readonly clearNativeOverlay: (sessionId: number) => Promise<void>;
+  readonly visualizeNativeOverlay: (
+    sessionId: number,
+    visible: boolean,
+    interactive?: boolean,
+    scene?: DesktopNativeScene,
+    diagram?: DesktopNativeDiagram,
+  ) => Promise<void>;
   readonly hidePrompt: () => Promise<void>;
+  readonly onPromptHidden: (callback: () => void) => () => void;
   readonly onPromptShown: (callback: () => void) => () => void;
   readonly setPromptBusy: (busy: boolean) => Promise<void>;
   readonly openInMain: (path: string) => Promise<boolean>;

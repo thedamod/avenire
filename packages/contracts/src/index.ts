@@ -17,3 +17,5 @@ export * from "./widget.ts";
 export * from "./assets.ts";
 
 export * from "./uploads.ts";
+
+export * from "./desktop-overlay.ts";

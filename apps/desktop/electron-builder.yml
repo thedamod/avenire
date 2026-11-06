@@ -3,6 +3,11 @@ productName: Avenire
 directories:
   app: dist
   output: release
+extraResources:
+  - from: native-dist
+    to: native-overlay
+    filter:
+      - "**/*"
 asar: true
 npmRebuild: false
 compression: normal

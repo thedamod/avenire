@@ -188,8 +188,11 @@ const ICONS: Record<string, WorkIcon> = {
   screen_record: "video",
   computer: "computer",
   screen_read: "computer",
+  read_screen: "computer",
   load_skill: "skill",
   get_page_context: "page",
+  native_annotate: "computer",
+  native_visualize: "widget",
   ask_user: "question",
   hydrate_files: "read",
   publish_output: "write",
@@ -281,11 +284,18 @@ export function toolEntry(part: LooseToolPart): WorkEntry {
       label = `Used the computer · ${action.replaceAll("_", " ")}`;
       break;
     }
+    case "read_screen":
     case "screen_read":
       label = "Read the screen";
       break;
     case "load_skill":
       label = busy ? "Preparing" : "Prepared the task";
+      break;
+    case "native_visualize":
+      label = busy ? "Preparing a spatial explanation" : "Requested a spatial explanation";
+      break;
+    case "native_annotate":
+      label = busy ? "Pointing out details on your screen" : "Requested screen annotations";
       break;
     case "get_page_context":
       label = "Checked the page layout";

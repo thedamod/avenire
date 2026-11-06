@@ -10,6 +10,7 @@ import type { RuthUIMessage } from "@avenire/ai/message-types";
 import {
   RUTH_CHAT_PATH,
   type ChatScope,
+  type DesktopScreenObservation,
   type FolderId,
   type PageContext,
   type ThreadId,
@@ -37,6 +38,20 @@ export class ThreadChat {
   threadId: ThreadId | undefined;
   scope: ChatScope | undefined;
   fast = false;
+  private nativeScreen: DesktopScreenObservation | undefined;
+  private screenReader: (() => Promise<DesktopScreenObservation>) | undefined;
+  setScreenReader(reader: (() => Promise<DesktopScreenObservation>) | undefined): void {
+    this.screenReader = reader;
+  }
+  get screenContext(): DesktopScreenObservation | undefined {
+    return this.nativeScreen;
+  }
+  setScreenContext(value: DesktopScreenObservation | undefined): void {
+    this.nativeScreen = value;
+  }
+  setMeasurement(measure: () => PageContext): void {
+    this.measure = measure;
+  }
   measure: () => PageContext = () => measurePage(null);
   hydrated: boolean;
   timings: ReadonlyMap<string, TurnTiming> = new Map();
@@ -71,6 +86,8 @@ export class ThreadChat {
           threadId: this.threadId,
           message: messages.at(-1),
           page: this.measure(),
+          ...(this.screenReader ? { nativeScreenAvailable: true } : {}),
+          ...(this.screenContext ? { screenContext: this.screenContext } : {}),
           ...(this.scope && (this.scope.folderIds?.length || this.scope.fileIds?.length)
             ? { scope: this.scope }
             : {}),
@@ -85,6 +102,35 @@ export class ThreadChat {
       sendAutomaticallyWhen: (options) =>
         lastAssistantMessageIsCompleteWithApprovalResponses(options) ||
         lastAssistantMessageIsCompleteWithToolCalls(options),
+      onToolCall: async ({ toolCall }) => {
+        if (toolCall.dynamic || toolCall.toolName !== "read_screen") return;
+        const reader = this.screenReader;
+        try {
+          if (!reader) throw new Error("Local screen capture is unavailable here.");
+          const capture = await reader();
+          if (reader !== this.screenReader) throw new Error("Local screen session closed.");
+          this.setScreenContext(capture);
+          // Do not await addToolOutput inside onToolCall (the SDK continues after this returns).
+          void this.chat.addToolOutput({
+            tool: "read_screen",
+            toolCallId: toolCall.toolCallId,
+            output: {
+              capturedAt: capture.capturedAt,
+              width: capture.width,
+              height: capture.height,
+            },
+          });
+        } catch {
+          this.setScreenContext(undefined);
+          void this.chat.addToolOutput({
+            tool: "read_screen",
+            toolCallId: toolCall.toolCallId,
+            state: "output-error",
+            errorText:
+              "Local screen capture is unavailable or the prompt was closed. Do not substitute the cloud desktop.",
+          });
+        }
+      },
       onFinish: () => {
         invalidate(this.api, ["threads"]);
       },
@@ -207,6 +253,8 @@ export class ThreadChat {
   }
 
   async send(options: SendOptions): Promise<ThreadId> {
+    // Fresh user messages never inherit pixels from earlier turns.
+    this.setScreenContext(undefined);
     const text = options.text.trim();
     if (!text) throw new Error("Type a message first.");
     const threadId = await this.ensureThread(text, options.folderId);

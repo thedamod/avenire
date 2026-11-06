@@ -13,6 +13,14 @@ import type * as Context from "effect/Context";
 import { askUserSpec, getPageContextSpec, type PageContextResult, ruthToolSpecs } from "./index.ts";
 import { VISUAL_BUDGETS, VISUAL_RUNTIME } from "./page.ts";
 import { loadSkillTool } from "./skills.ts";
+import {
+  readScreenSpec,
+  createNativeAnnotationTool,
+  createNativeDiagramTool,
+  createNativeCursorTool,
+  createNativePresentationTool,
+  createNativeVisualizationTool,
+} from "./native-overlay-specs.ts";
 
 import { makeComputerRegistry, type ComputerServices } from "./computer.ts";
 import { recordingRegistry } from "./recording.ts";
@@ -26,6 +34,12 @@ export type RuthToolServices =
   | AssetStore;
 export interface RuthTurn {
   readonly userId: UserId;
+  readonly nativeScreenAvailable?: boolean | undefined;
+  readonly nativeScreenCapturedAt?: string | undefined;
+  readonly nativeCursor?: import("@avenire/contracts").DesktopCursorPosition | undefined;
+  readonly nativePresentation?:
+    | import("@avenire/contracts").DesktopPresentationObservation
+    | undefined;
   readonly scope?: import("@avenire/contracts").ChatScope | undefined;
   readonly threadId: ThreadId;
   readonly page: PageContext;
@@ -34,7 +48,18 @@ export interface RuthTurn {
   readonly existingVisuals: PageContextResult["existingVisuals"];
 }
 export const chatToolNames = Object.keys(ruthToolSpecs).filter(
-  (name) => !["load_skill", "get_page_context", "ask_user"].includes(name),
+  (name) =>
+    ![
+      "load_skill",
+      "get_page_context",
+      "ask_user",
+      "read_screen",
+      "native_annotate",
+      "native_visualize",
+      "native_diagram",
+      "native_cursor",
+      "native_presentation",
+    ].includes(name),
 );
 export const createRuthTools = (
   services: Context.Context<RuthToolServices>,
@@ -64,6 +89,36 @@ export const createRuthTools = (
   );
   const boundTools: ToolSet = {
     ...tools,
+    ...(turn.nativeScreenAvailable &&
+    turn.page.surface === "ephemeral" &&
+    turn.page.platform === "desktop"
+      ? { read_screen: tool(readScreenSpec) }
+      : {}),
+    ...(turn.nativeScreenCapturedAt &&
+    turn.page.surface === "ephemeral" &&
+    turn.page.platform === "desktop"
+      ? {
+          native_annotate: createNativeAnnotationTool(turn.nativeScreenCapturedAt),
+          native_visualize: createNativeVisualizationTool(turn.nativeScreenCapturedAt),
+          native_diagram: createNativeDiagramTool(turn.nativeScreenCapturedAt),
+          ...(turn.nativeCursor
+            ? {
+                native_cursor: createNativeCursorTool(
+                  turn.nativeScreenCapturedAt,
+                  turn.nativeCursor,
+                ),
+              }
+            : {}),
+          ...(turn.nativePresentation
+            ? {
+                native_presentation: createNativePresentationTool(
+                  turn.nativeScreenCapturedAt,
+                  turn.nativePresentation,
+                ),
+              }
+            : {}),
+        }
+      : {}),
     load_skill: loadSkillTool(),
     get_page_context: tool({
       ...getPageContextSpec,

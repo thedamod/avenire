@@ -1,4 +1,18 @@
 import {
+  DesktopOverlayState,
+  DesktopOverlayAnnotation,
+  DesktopNativeScene,
+  DesktopNativeDiagram,
+  DesktopCursorPosition,
+  DesktopNativeObservation,
+} from "@avenire/contracts";
+import {
+  NativeOverlay,
+  loadNativeOverlayConfig,
+  type NativeOverlayConfig,
+  type PromptCaptureContext,
+} from "./native-overlay.ts";
+import {
   captureLog,
   captureError,
   initializeCaptureLog,
@@ -54,7 +68,7 @@ import { loadInstallIdentity } from "./capture/identity.ts";
 import { LocalOriginRegistry } from "./capture/registry.ts";
 import { PairingAuthority } from "./capture/pairing.ts";
 import { startForegroundPoll } from "./capture/foreground.ts";
-import { prewarmPowerShell } from "./capture/research/electron/collectors/ps-queue.ts";
+import { prewarmPowerShell } from "./capture/collectors/ps-queue.ts";
 import { CaptureProgressStream } from "./capture/progress.ts";
 import { captureItems, runCapturePipeline } from "./capture/pipeline.ts";
 import { executeReopen } from "./capture/reopen.ts";
@@ -71,6 +85,31 @@ let captureShortcut: string | undefined;
 let captureRunning = false;
 let promptWindow: BrowserWindow | undefined;
 let promptBusy = false;
+let nativeOverlayConfig: NativeOverlayConfig;
+let nativeOverlay: NativeOverlay | undefined;
+let promptGeneration = 0;
+let promptOpening = false;
+let promptNativeScreenId: string | undefined;
+let promptNativeDisplayBounds: Electron.Rectangle | undefined;
+let promptCaptureRunning = false;
+let nativePromptStarting: Promise<void> | undefined;
+let promptCaptureContext: PromptCaptureContext = { sessionId: 0, capture: null };
+
+function endNativePrompt(): void {
+  promptGeneration++;
+  promptOpening = false;
+  promptNativeScreenId = undefined;
+  promptNativeDisplayBounds = undefined;
+  nativePromptStarting = undefined;
+  nativeOverlay?.dispose();
+  nativeOverlay = undefined;
+  promptCaptureContext = { sessionId: promptGeneration, capture: null };
+}
+function hidePrompt(): void {
+  endNativePrompt();
+  promptWindow?.hide();
+}
+
 let setupWindow: BrowserWindow | undefined;
 let setup: DesktopSetup;
 let captureReady = false;
@@ -116,6 +155,11 @@ else {
     .whenReady()
     .then(async () => {
       initializeCaptureLog(app.getPath("logs"));
+      nativeOverlayConfig = loadNativeOverlayConfig({
+        packaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
+      });
       const userData = app.getPath("userData");
       deviceId = loadInstallIdentity(userData).deviceId;
       setCaptureDeviceId(deviceId);
@@ -381,15 +425,77 @@ function applyNavigationPolicy(target: BrowserWindow): void {
 }
 
 function togglePrompt(): void {
-  if (!setup?.completed) {
-    showSetup();
-    return;
+  void showPrompt().catch((error: unknown) => {
+    endNativePrompt();
+    captureLog("native-prompt-error", captureError(error));
+  });
+}
+async function initializeNativePrompt(generation: number): Promise<void> {
+  if (nativeOverlayConfig?.enabled) {
+    const native = new NativeOverlay(
+      nativeOverlayConfig,
+      () => {
+        if (generation === promptGeneration) hidePrompt();
+      },
+      () => {
+        if (generation !== promptGeneration) return;
+        promptCaptureContext = { sessionId: generation, capture: null };
+        promptWindow?.webContents.send("avenire:screen-invalidated", generation);
+      },
+    );
+    nativeOverlay = native;
+    try {
+      // Initialize only when a model requests read_screen, never on the hotkey path.
+      const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).bounds;
+      const inspection = (await native.request("inspect")) as {
+        screens?: Array<{ id: string; x: number; y: number; width: number; height: number }>;
+      };
+      if (generation !== promptGeneration) {
+        native.dispose();
+        throw new Error("Stale native overlay session");
+      }
+      // Electron and Qt round fractional-DPI monitor bounds differently on Windows.
+      // Permit one logical pixel of rounding, but never choose an ambiguous monitor.
+      const matches = inspection.screens?.filter((candidate) =>
+        (["x", "y", "width", "height"] as const).every(
+          (key) => Math.abs(candidate[key] - display[key]) <= 1,
+        ),
+      );
+      const selected = matches?.[0];
+      if (matches?.length !== 1 || !selected)
+        throw new Error("Native overlay could not match the selected display");
+      promptNativeScreenId = selected.id;
+      promptNativeDisplayBounds = display;
+      promptCaptureContext = { sessionId: generation, capture: null };
+      await native.request("show", { screenId: selected.id });
+    } catch (error) {
+      if (generation !== promptGeneration) {
+        native.dispose();
+        throw error;
+      }
+      captureLog("native-screen-context-error", captureError(error));
+      native.dispose();
+      nativeOverlay = undefined;
+      promptCaptureContext = {
+        sessionId: generation,
+        capture: null,
+        error: error instanceof Error ? error.message : "Native overlay unavailable",
+      };
+      throw error;
+    }
   }
-  if (promptWindow?.isFocused()) {
-    promptWindow.hide();
-    return;
-  }
-  if (!window || window.isDestroyed()) createWindow();
+  if (!nativeOverlay) throw new Error("Local screen capture is disabled");
+}
+function ensureNativePrompt(): Promise<void> {
+  if (nativeOverlay && promptNativeScreenId && !nativePromptStarting) return Promise.resolve();
+  const generation = promptGeneration;
+  return (nativePromptStarting ??= initializeNativePrompt(generation).finally(() => {
+    if (generation === promptGeneration) nativePromptStarting = undefined;
+  }));
+}
+/** Preload the authenticated prompt without showing it or starting Qt. */
+function ensurePromptWindow(): void {
+  if (!window || window.isDestroyed() || quitting) return;
   if (!promptWindow) {
     promptWindow = new BrowserWindow({
       width: 520,
@@ -416,24 +522,59 @@ function togglePrompt(): void {
     if (process.platform === "darwin") {
       promptWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     }
+    let promptLoaded = false;
     applyNavigationPolicy(promptWindow);
     promptWindow.on("blur", () => {
-      if (!promptBusy) promptWindow?.hide();
+      if (!promptBusy) hidePrompt();
+    });
+    promptWindow.on("hide", () => {
+      endNativePrompt();
+      promptWindow?.webContents.send("avenire:prompt-hidden");
     });
     promptWindow.on("closed", () => {
+      endNativePrompt();
       promptWindow = undefined;
       promptBusy = false;
     });
     promptWindow.webContents.on("render-process-gone", () => {
       promptBusy = false;
-      promptWindow?.hide();
+      hidePrompt();
+    });
+    promptWindow.webContents.on("did-start-navigation", (_event, _url, inPlace, mainFrame) => {
+      if (promptLoaded && mainFrame && !inPlace) hidePrompt();
     });
     promptWindow.webContents.on("did-finish-load", () => {
+      promptLoaded = true;
+      if (new URL(promptWindow!.webContents.getURL()).pathname !== "/prompt") endNativePrompt();
       promptBusy = false;
       if (promptWindow?.isFocused()) promptWindow.webContents.send("avenire:prompt-shown");
     });
     void loadApp(promptWindow, new URL("/prompt", appUrl).href);
   }
+}
+
+async function showPrompt(): Promise<void> {
+  if (!setup?.completed) {
+    showSetup();
+    return;
+  }
+  if (promptOpening || promptWindow?.isFocused()) {
+    hidePrompt();
+    return;
+  }
+  if (promptWindow?.isVisible()) {
+    promptWindow.focus();
+    promptWindow.webContents.send("avenire:prompt-shown");
+    return;
+  }
+  endNativePrompt();
+  const generation = promptGeneration;
+  promptOpening = true;
+  if (generation !== promptGeneration || quitting) return;
+  promptOpening = false;
+  if (!window || window.isDestroyed()) createWindow();
+  ensurePromptWindow();
+  if (!promptWindow) return;
   const { x, y, width, height } = screen.getDisplayNearestPoint(
     screen.getCursorScreenPoint(),
   ).workArea;
@@ -817,6 +958,9 @@ ipcMain.handle(
       lastOwner = nextOwner;
     }
     if (captureOwner !== nextOwner) {
+      // Hidden preloaded documents must not retain another signed-in user's state.
+      endNativePrompt();
+      promptWindow?.destroy();
       captureOverlay?.clear();
       clearNativeCache();
       resetTabsOwner();
@@ -832,6 +976,7 @@ ipcMain.handle(
           .catch(() => {}); // Offline users can still pair with a code or an existing secret.
     }
     captureOwner = nextOwner;
+    if (nextOwner && setup?.completed) ensurePromptWindow();
     readInBrowser =
       captureReady &&
       typeof options === "object" &&
@@ -1218,14 +1363,158 @@ ipcMain.handle("avenire:get-shortcut", (event) => {
   return captureShortcut ?? null;
 });
 
+/** Native controls belong only to the current, top-frame prompt document. */
+function trustedPrompt(event: Electron.IpcMainInvokeEvent): boolean {
+  return (
+    !!promptWindow &&
+    trustedSender(event, promptWindow) &&
+    new URL(event.senderFrame!.url).pathname === "/prompt"
+  );
+}
+function currentNative(event: Electron.IpcMainInvokeEvent, id: unknown): NativeOverlay | undefined {
+  if (!trustedPrompt(event)) throw new Error("Untrusted native overlay IPC sender");
+  if (id !== promptGeneration || !promptWindow?.isVisible())
+    throw new Error("Stale native overlay session");
+  return nativeOverlay;
+}
+ipcMain.handle("avenire:prompt-capture-context", (event) => {
+  if (!trustedPrompt(event)) throw new Error("Untrusted native overlay IPC sender");
+  return promptCaptureContext;
+});
+// Only the active prompt may request local pixels, and only through the client tool.
+ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
+  currentNative(event, id); // Validate the active prompt before spawning a child.
+  await ensureNativePrompt();
+  const native = currentNative(event, id);
+  if (!native || !promptNativeScreenId) throw new Error("Local screen capture unavailable");
+  if (promptCaptureRunning) throw new Error("Local screen capture already running");
+  const target = promptWindow!;
+  const opacity = target.getOpacity();
+  promptCaptureRunning = true;
+  try {
+    // Opacity preserves visibility/session and avoids blur/hide teardown during capture.
+    target.setOpacity(0);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
+    const area = promptNativeDisplayBounds!;
+    const frame = target.getBounds();
+    const left = Math.max(0, Math.min(1, (frame.x - area.x) / area.width));
+    const top = Math.max(0, Math.min(1, (frame.y - area.y) / area.height));
+    const right = Math.max(left, Math.min(1, (frame.x + frame.width - area.x) / area.width));
+    const bottom = Math.max(top, Math.min(1, (frame.y + frame.height - area.y) / area.height));
+    const capture = await native.capture(promptNativeScreenId, {
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    });
+    const observation = await readNativeObservation(native, capture.screenId);
+    if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
+    promptCaptureContext = { sessionId: promptGeneration, capture: { ...capture, ...observation } };
+    return promptCaptureContext;
+  } finally {
+    if (!target.isDestroyed()) target.setOpacity(opacity);
+    promptCaptureRunning = false;
+  }
+});
+async function readNativeObservation(native: NativeOverlay, screenId?: string) {
+  const [position, raw] = await Promise.all([
+    native.request("get_cursor", screenId ? { screenId } : {}),
+    native.request("inspect"),
+  ]);
+  const cursor = Schema.decodeUnknownSync(DesktopCursorPosition)(position);
+  const state = raw as Record<string, unknown>;
+  const rotation = state.rotation as { x: number; y: number };
+  return Schema.decodeUnknownSync(DesktopNativeObservation)({
+    cursor,
+    presentation: {
+      mode: state.visualizationMode,
+      visible: state.visualizationVisible,
+      interactive: state.visualizationInteractive,
+      title: state.sceneTitle,
+      ...(state.visualizationMode === "cart-pole" ? { diagram: state.diagram } : {}),
+      rotationX: rotation.x,
+      rotationY: rotation.y,
+      observedAt: cursor.observedAt,
+    },
+  });
+}
+ipcMain.handle("avenire:native-observation", async (event, id: unknown) => {
+  const native = currentNative(event, id);
+  if (!native) throw new Error("Native overlay unavailable");
+  const observation = await readNativeObservation(native, promptCaptureContext.capture?.screenId);
+  if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
+  return observation;
+});
+
+ipcMain.handle("avenire:native-overlay-state", async (event, id: unknown, value: unknown) => {
+  const native = currentNative(event, id);
+  const state = Schema.decodeUnknownSync(DesktopOverlayState)(value);
+  // Completion clears the thinking indicator while explanations remain until dismissal.
+  await native?.request("set_state", {
+    phase: promptCaptureContext.capture && state.phase === "thinking" ? "thinking" : "idle",
+    reducedMotion: state.reducedMotion,
+  });
+});
+ipcMain.handle("avenire:native-overlay-annotate", async (event, id: unknown, value: unknown) => {
+  const native = currentNative(event, id);
+  if (!native) throw new Error("Native overlay unavailable");
+  if (!Array.isArray(value) || value.length > 128) throw new Error("Invalid overlay annotations");
+  const ids = new Set<string>();
+  const items = value.map((item: unknown) => {
+    if (!item || typeof item !== "object") throw new Error("Invalid annotation");
+    const annotation = Schema.decodeUnknownSync(DesktopOverlayAnnotation)(item);
+    if (!annotation.id || ids.has(annotation.id)) throw new Error("Invalid annotation id");
+    ids.add(annotation.id);
+    if (annotation.x + (annotation.width ?? 0) > 1 || annotation.y + (annotation.height ?? 0) > 1)
+      throw new Error("Annotation exceeds display");
+    if (annotation.text && annotation.text.length > 512) throw new Error("Invalid annotation text");
+    if (annotation.color && !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(annotation.color))
+      throw new Error("Invalid annotation color");
+    return annotation;
+  });
+  await native?.request("annotate", { items });
+});
+ipcMain.handle("avenire:native-overlay-clear", async (event, id: unknown) => {
+  await currentNative(event, id)?.request("clear");
+});
+ipcMain.handle(
+  "avenire:native-overlay-visualize",
+  async (
+    event,
+    id: unknown,
+    visible: unknown,
+    interactive: unknown,
+    scene: unknown,
+    diagram: unknown,
+  ) => {
+    const native = currentNative(event, id);
+    if (
+      typeof visible !== "boolean" ||
+      (interactive !== undefined && typeof interactive !== "boolean")
+    )
+      throw new Error("Invalid visualization state");
+    if (scene !== undefined && diagram !== undefined)
+      throw new Error("Choose one presentation type");
+    await native?.request("visualize", {
+      visible,
+      interactive: interactive ?? false,
+      ...(scene === undefined
+        ? {}
+        : { scene: Schema.decodeUnknownSync(DesktopNativeScene)(scene) }),
+      ...(diagram === undefined
+        ? {}
+        : { diagram: Schema.decodeUnknownSync(DesktopNativeDiagram)(diagram) }),
+    });
+  },
+);
+
 ipcMain.handle("avenire:hide-prompt", (event) => {
-  if (!promptWindow || !trustedSender(event, promptWindow))
-    throw new Error("Untrusted desktop IPC sender");
-  promptWindow?.hide();
+  if (!trustedPrompt(event)) throw new Error("Untrusted desktop IPC sender");
+  hidePrompt();
 });
 ipcMain.handle("avenire:set-prompt-busy", (event, busy: unknown) => {
-  if (!promptWindow || !trustedSender(event, promptWindow))
-    throw new Error("Untrusted desktop IPC sender");
+  if (!trustedPrompt(event)) throw new Error("Untrusted desktop IPC sender");
   if (typeof busy !== "boolean") return;
   promptBusy = busy;
 });
@@ -1246,12 +1535,13 @@ ipcMain.handle("avenire:open-in-main", async (event, path: unknown) => {
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
-  promptWindow?.hide();
+  hidePrompt();
   return true;
 });
 
 app.on("before-quit", () => {
   quitting = true;
+  endNativePrompt();
 });
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();

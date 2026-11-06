@@ -1,10 +1,10 @@
 /** Adapted from context/research/background_worker's platform document-path collectors. */
-import type { ForegroundApp } from "./research/src/capture/types.ts";
+import type { ForegroundApp } from "./support/types.ts";
 import {
   createCaptureContext,
   type CaptureContext,
-} from "./research/electron/collectors/capture-context.ts";
-import { isLocalFileApp } from "./research/src/capture/app-catalog.ts";
+} from "./collectors/capture-context.ts";
+import { isLocalFileApp } from "./support/app-catalog.ts";
 
 export async function resolveDocumentPath(
   app: ForegroundApp,
@@ -13,22 +13,22 @@ export async function resolveDocumentPath(
 ): Promise<string | undefined> {
   if (!isLocalFileApp(app.appName)) return undefined;
   if (/^obsidian$/i.test(app.appName)) {
-    const { resolveObsidianNote } = await import("./research/electron/collectors/obsidian-note.ts");
+    const { resolveObsidianNote } = await import("./collectors/obsidian-note.ts");
     return resolveObsidianNote(notes);
   }
   if (process.platform === "linux") {
     const { resolveDocumentPathLinux } =
-      await import("./research/electron/collectors/document-path-linux.ts");
+      await import("./collectors/document-path-linux.ts");
     return resolveDocumentPathLinux(app, notes, ctx);
   }
   if (process.platform === "darwin") {
     const { resolveDocumentPathMac } =
-      await import("./research/electron/collectors/document-path-mac.ts");
+      await import("./collectors/document-path-mac.ts");
     return resolveDocumentPathMac(app, notes, ctx);
   }
   if (process.platform === "win32") {
     const { resolveDocumentPathWindows } =
-      await import("./research/electron/collectors/document-path-win.ts");
+      await import("./collectors/document-path-win.ts");
     return resolveDocumentPathWindows(app, notes, ctx);
   }
   return undefined;

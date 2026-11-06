@@ -20,7 +20,7 @@ export function measurePage(column: HTMLElement | null): PageContext {
   const phone = window.matchMedia(PHONE).matches;
   return {
     surface: "chat",
-    platform: phone ? "mobile" : window.avenire ? "desktop" : "web",
+    platform: window.avenire ? "desktop" : phone ? "mobile" : "web",
     contentWidthPx: Math.max(1, Math.round(column?.clientWidth ?? (phone ? 350 : 736))),
     colorScheme: document.documentElement.classList.contains("light") ? "light" : "dark",
     themeTokens: readThemeTokens(),

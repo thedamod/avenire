@@ -58,7 +58,30 @@ const bridge: AvenireDesktopBridge = {
   getOnboardingPreferences: () => ipcRenderer.invoke("avenire:onboarding-preferences"),
   acknowledgeOnboardingPreferences: () =>
     ipcRenderer.invoke("avenire:onboarding-preferences-ack").then(() => undefined),
+  getPromptCaptureContext: () => ipcRenderer.invoke("avenire:prompt-capture-context"),
+  readScreen: (id) => ipcRenderer.invoke("avenire:read-screen", id),
+  onScreenInvalidated(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, id: number) => callback(id);
+    ipcRenderer.on("avenire:screen-invalidated", listener);
+    return () => ipcRenderer.removeListener("avenire:screen-invalidated", listener);
+  },
+  getNativeObservation: (id) => ipcRenderer.invoke("avenire:native-observation", id),
+  setNativeOverlayState: (id, state) =>
+    ipcRenderer.invoke("avenire:native-overlay-state", id, state).then(() => undefined),
+  annotateNativeOverlay: (id, items) =>
+    ipcRenderer.invoke("avenire:native-overlay-annotate", id, items).then(() => undefined),
+  clearNativeOverlay: (id) =>
+    ipcRenderer.invoke("avenire:native-overlay-clear", id).then(() => undefined),
+  visualizeNativeOverlay: (id, visible, interactive, scene, diagram) =>
+    ipcRenderer
+      .invoke("avenire:native-overlay-visualize", id, visible, interactive, scene, diagram)
+      .then(() => undefined),
   hidePrompt: () => ipcRenderer.invoke("avenire:hide-prompt").then(() => undefined),
+  onPromptHidden(callback) {
+    const listener = () => callback();
+    ipcRenderer.on("avenire:prompt-hidden", listener);
+    return () => ipcRenderer.removeListener("avenire:prompt-hidden", listener);
+  },
   onPromptShown(callback) {
     const listener = () => callback();
     ipcRenderer.on("avenire:prompt-shown", listener);

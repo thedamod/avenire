@@ -9,6 +9,7 @@
 import * as Schema from "effect/Schema";
 
 import { FileId, FolderId, MessageId, ThreadId } from "./ids.ts";
+import { DesktopScreenObservation } from "./desktop-overlay.ts";
 
 /** Path the chat stream endpoint is mounted on, relative to the web server origin. */
 export const RUTH_CHAT_PATH = "/api/ruth/chat";
@@ -44,7 +45,7 @@ export type RuthMessage = typeof RuthMessage.Type;
 
 /** What the client knows about the page a visual will render into. */
 export const PageContext = Schema.Struct({
-  surface: Schema.Literals(["chat", "note", "library"]),
+  surface: Schema.Literals(["chat", "ephemeral", "note", "library"]),
   platform: Schema.Literals(["desktop", "web", "mobile"]),
   contentWidthPx: Schema.Int,
   colorScheme: Schema.Literals(["light", "dark"]),
@@ -72,6 +73,10 @@ export const RuthChatRequest = Schema.Struct({
   threadId: ThreadId,
   message: Schema.Unknown,
   page: PageContext,
+  /** Request-only screen context; never added to persisted chat messages. */
+  screenContext: Schema.optional(DesktopScreenObservation),
+  /** This client can fulfill the read_screen tool; no image is attached until requested. */
+  nativeScreenAvailable: Schema.optional(Schema.Boolean),
   scope: Schema.optional(ChatScope),
   fast: Schema.optional(Schema.Boolean),
   timeZone: Schema.optional(Schema.String),
