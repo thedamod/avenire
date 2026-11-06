@@ -37,11 +37,16 @@ childProcess.spawn = (...args) => {
     child.once("close", resolve);
     child.once("error", resolve);
   });
-  children.push({ child, done });
+  const entry = { child, done, stderr: "" };
+  child.stderr?.on("data", (chunk) => {
+    entry.stderr = (entry.stderr + chunk.toString("utf8")).slice(-8192);
+  });
+  children.push(entry);
   return child;
 };
 syncBuiltinESMExports();
 let native;
+let phase = "deployment validation";
 async function exited(child) {
   await Promise.race([
     child.done,
@@ -116,6 +121,7 @@ try {
     const qml = join(deployed, "avenire-overlay.app/Contents/Resources/qml");
     for (const module of ["QtQuick", "QtQuick/Window", "QtQuick/Shapes", "QtQuick3D"])
       assert.ok((await stat(join(qml, module, "qmldir"))).isFile());
+    phase = "canonical macOS bundle startup";
     const direct = new NativeOverlay({ enabled: true, executable: await realpath(relocated) });
     try {
       assert.equal((await direct.request("inspect")).visible, false);
@@ -124,6 +130,7 @@ try {
       await exited(children.at(-1));
     }
   }
+  phase = "relocated launcher lifecycle";
   const config = { enabled: true, executable: relocated };
   native = new NativeOverlay(config);
   const countBeforeStartup = children.length;
@@ -278,6 +285,13 @@ try {
   console.log(
     "PASS: relocated Qt deployment, protocol/state/scene, disposal, cancellation, crash, EOF, malformed/oversized output, startup timeout, dismiss and missing executable",
   );
+} catch (error) {
+  console.error(`Native E2E failed during ${phase}`);
+  for (const { child, stderr } of children) {
+    if (stderr)
+      console.error(`Child exit=${child.exitCode} signal=${child.signalCode}:\n${stderr}`);
+  }
+  throw error;
 } finally {
   native?.dispose();
   for (const { child } of children)
