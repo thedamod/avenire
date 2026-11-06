@@ -91,12 +91,14 @@ let promptGeneration = 0;
 let promptOpening = false;
 let promptNativeScreenId: string | undefined;
 let promptCaptureRunning = false;
+let nativePromptStarting: Promise<void> | undefined;
 let promptCaptureContext: PromptCaptureContext = { sessionId: 0, capture: null };
 
 function endNativePrompt(): void {
   promptGeneration++;
   promptOpening = false;
   promptNativeScreenId = undefined;
+  nativePromptStarting = undefined;
   nativeOverlay?.dispose();
   nativeOverlay = undefined;
   promptCaptureContext = { sessionId: promptGeneration, capture: null };
@@ -426,35 +428,22 @@ function togglePrompt(): void {
     captureLog("native-prompt-error", captureError(error));
   });
 }
-async function showPrompt(): Promise<void> {
-  if (!setup?.completed) {
-    showSetup();
-    return;
-  }
-  if (promptOpening || promptWindow?.isFocused()) {
-    hidePrompt();
-    return;
-  }
-  if (promptWindow?.isVisible()) {
-    promptWindow.focus();
-    promptWindow.webContents.send("avenire:prompt-shown");
-    return;
-  }
-  endNativePrompt();
-  const generation = promptGeneration;
-  promptOpening = true;
+async function initializeNativePrompt(generation: number): Promise<void> {
   if (nativeOverlayConfig?.enabled) {
     const native = new NativeOverlay(nativeOverlayConfig, () => {
       if (generation === promptGeneration) hidePrompt();
     });
     nativeOverlay = native;
     try {
-      // Capture before either native surfaces or the browser prompt become visible.
+      // Initialize only when a model requests read_screen, never on the hotkey path.
       const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).bounds;
       const inspection = (await native.request("inspect")) as {
         screens?: Array<{ id: string; x: number; y: number; width: number; height: number }>;
       };
-      if (generation !== promptGeneration) return;
+      if (generation !== promptGeneration) {
+        native.dispose();
+        throw new Error("Stale native overlay session");
+      }
       // Electron and Qt round fractional-DPI monitor bounds differently on Windows.
       // Permit one logical pixel of rounding, but never choose an ambiguous monitor.
       const matches = inspection.screens?.filter((candidate) =>
@@ -469,7 +458,10 @@ async function showPrompt(): Promise<void> {
       promptCaptureContext = { sessionId: generation, capture: null };
       await native.request("show", { screenId: selected.id });
     } catch (error) {
-      if (generation !== promptGeneration) return;
+      if (generation !== promptGeneration) {
+        native.dispose();
+        throw error;
+      }
       captureLog("native-screen-context-error", captureError(error));
       native.dispose();
       nativeOverlay = undefined;
@@ -478,11 +470,21 @@ async function showPrompt(): Promise<void> {
         capture: null,
         error: error instanceof Error ? error.message : "Native overlay unavailable",
       };
+      throw error;
     }
   }
-  if (generation !== promptGeneration || quitting) return;
-  promptOpening = false;
-  if (!window || window.isDestroyed()) createWindow();
+  if (!nativeOverlay) throw new Error("Local screen capture is disabled");
+}
+function ensureNativePrompt(): Promise<void> {
+  if (nativeOverlay && promptNativeScreenId && !nativePromptStarting) return Promise.resolve();
+  const generation = promptGeneration;
+  return (nativePromptStarting ??= initializeNativePrompt(generation).finally(() => {
+    if (generation === promptGeneration) nativePromptStarting = undefined;
+  }));
+}
+/** Preload the authenticated prompt without showing it or starting Qt. */
+function ensurePromptWindow(): void {
+  if (!window || window.isDestroyed() || quitting) return;
   if (!promptWindow) {
     promptWindow = new BrowserWindow({
       width: 520,
@@ -538,6 +540,30 @@ async function showPrompt(): Promise<void> {
     });
     void loadApp(promptWindow, new URL("/prompt", appUrl).href);
   }
+}
+
+async function showPrompt(): Promise<void> {
+  if (!setup?.completed) {
+    showSetup();
+    return;
+  }
+  if (promptOpening || promptWindow?.isFocused()) {
+    hidePrompt();
+    return;
+  }
+  if (promptWindow?.isVisible()) {
+    promptWindow.focus();
+    promptWindow.webContents.send("avenire:prompt-shown");
+    return;
+  }
+  endNativePrompt();
+  const generation = promptGeneration;
+  promptOpening = true;
+  if (generation !== promptGeneration || quitting) return;
+  promptOpening = false;
+  if (!window || window.isDestroyed()) createWindow();
+  ensurePromptWindow();
+  if (!promptWindow) return;
   const { x, y, width, height } = screen.getDisplayNearestPoint(
     screen.getCursorScreenPoint(),
   ).workArea;
@@ -921,6 +947,9 @@ ipcMain.handle(
       lastOwner = nextOwner;
     }
     if (captureOwner !== nextOwner) {
+      // Hidden preloaded documents must not retain another signed-in user's state.
+      endNativePrompt();
+      promptWindow?.destroy();
       captureOverlay?.clear();
       clearNativeCache();
       resetTabsOwner();
@@ -936,6 +965,7 @@ ipcMain.handle(
           .catch(() => {}); // Offline users can still pair with a code or an existing secret.
     }
     captureOwner = nextOwner;
+    if (nextOwner && setup?.completed) ensurePromptWindow();
     readInBrowser =
       captureReady &&
       typeof options === "object" &&
@@ -1342,6 +1372,8 @@ ipcMain.handle("avenire:prompt-capture-context", (event) => {
 });
 // Only the active prompt may request local pixels, and only through the client tool.
 ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
+  currentNative(event, id); // Validate the active prompt before spawning a child.
+  await ensureNativePrompt();
   const native = currentNative(event, id);
   if (!native || !promptNativeScreenId) throw new Error("Local screen capture unavailable");
   if (promptCaptureRunning) throw new Error("Local screen capture already running");
@@ -1397,7 +1429,10 @@ ipcMain.handle("avenire:native-overlay-state", async (event, id: unknown, value:
   const native = currentNative(event, id);
   const state = Schema.decodeUnknownSync(DesktopOverlayState)(value);
   // Completion clears the thinking indicator while explanations remain until dismissal.
-  await native?.request("set_state", { phase: state.phase, reducedMotion: state.reducedMotion });
+  await native?.request("set_state", {
+    phase: promptCaptureContext.capture && state.phase === "thinking" ? "thinking" : "idle",
+    reducedMotion: state.reducedMotion,
+  });
 });
 ipcMain.handle("avenire:native-overlay-annotate", async (event, id: unknown, value: unknown) => {
   const native = currentNative(event, id);

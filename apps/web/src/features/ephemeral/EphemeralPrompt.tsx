@@ -118,9 +118,15 @@ export function EphemeralPrompt({
     if (bridge?.readScreen)
       entry.setScreenReader(async () => {
         if (!active || screenOptOut.current) throw new Error("Screen context disabled");
+        const generation = questionGeneration.current;
         const context = await bridge.getPromptCaptureContext();
         const fresh = await bridge.readScreen(context.sessionId);
-        if (!active || screenOptOut.current || !fresh.capture)
+        if (
+          !active ||
+          generation !== questionGeneration.current ||
+          screenOptOut.current ||
+          !fresh.capture
+        )
           throw new Error("Screen session closed");
         setScreenContext(fresh.capture);
         setNativeSession(fresh.sessionId);
@@ -175,7 +181,7 @@ export function EphemeralPrompt({
     let active = true;
     void window.avenire
       ?.setNativeOverlayState?.(nativeSession, {
-        phase: chat.error || submissionFailed ? "error" : busy ? "thinking" : "idle",
+        phase: busy && screenContext && !chat.error && !submissionFailed ? "thinking" : "idle",
         reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
       })
       .catch(() => {
@@ -184,7 +190,7 @@ export function EphemeralPrompt({
     return () => {
       active = false;
     };
-  }, [standalone, nativeSession, busy, chat.error, submissionFailed]);
+  }, [standalone, nativeSession, busy, screenContext, chat.error, submissionFailed]);
   useEffect(() => {
     if (!standalone || nativeSession === null) return;
     let active = true;
