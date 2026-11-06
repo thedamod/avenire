@@ -61,9 +61,15 @@ export class NativeOverlay {
   private pending = new Map<number, Pending>();
   private readonly config: NativeOverlayConfig;
   private readonly onDismiss: (() => void) | undefined;
-  constructor(config: NativeOverlayConfig, onDismiss?: () => void) {
+  private readonly onScreenInvalidated: (() => void) | undefined;
+  constructor(
+    config: NativeOverlayConfig,
+    onDismiss?: () => void,
+    onScreenInvalidated?: () => void,
+  ) {
     this.config = config;
     this.onDismiss = onDismiss;
+    this.onScreenInvalidated = onScreenInvalidated;
   }
 
   private start(): Promise<void> {
@@ -99,6 +105,10 @@ export class NativeOverlay {
           const response = JSON.parse(line);
           if (response.event === "dismiss") {
             this.onDismiss?.();
+            continue;
+          }
+          if (response.event === "screen-invalidated") {
+            this.onScreenInvalidated?.();
             continue;
           }
           const pending = this.pending.get(response.id);
@@ -167,8 +177,14 @@ export class NativeOverlay {
     return this.send(method, params);
   }
 
-  async capture(screenId?: string): Promise<OverlayCapture> {
-    const result = await this.request("capture", screenId ? { screenId } : {});
+  async capture(
+    screenId?: string,
+    excludedRegion?: { x: number; y: number; width: number; height: number },
+  ): Promise<OverlayCapture> {
+    const result = await this.request("capture", {
+      ...(screenId ? { screenId } : {}),
+      ...(excludedRegion ? { excludedRegion } : {}),
+    });
     if (!result || typeof result !== "object") throw new Error("Invalid native capture");
     const value = result as OverlayCapture;
     if (

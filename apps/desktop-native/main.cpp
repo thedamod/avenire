@@ -14,6 +14,8 @@
 #include <QDateTime>
 #include <QTimer>
 #include <QPointer>
+#include <QPainter>
+#include "ScreenContextWatch.h"
 #include <QRegularExpression>
 #include <QCommandLineParser>
 #include <atomic>
@@ -109,6 +111,13 @@ public:
         connect(&visual, &QQuickWindow::frameSwapped, this, [this] { ++visualFrames; });
         connect(visual.rootObject(), SIGNAL(dismissRequested()), this, SLOT(dismiss()));
         sync();
+        if (QGuiApplication::platformName() != "offscreen")
+            contextWatch = new ScreenContextWatch(this, [this] {
+                observationInvalidated = true;
+                items = {}; phase = "idle"; visualWanted = false; visual.hide(); sync();
+                output({{"event", "screen-invalidated"}});
+            }, [this] { return !capturing && (phase == "thinking" || !items.isEmpty() || visualWanted); },
+               [this](QSize size) { return observationMask(size); });
     }
     void handle(const QByteArray &line) {
         QJsonValue id(QJsonValue::Null);
@@ -142,9 +151,13 @@ public:
                 require(QStringList{"idle", "thinking", "error"}.contains(params["phase"].toString()), "Invalid phase");
                 require(!params.contains("reducedMotion") || params["reducedMotion"].isBool(), "Invalid reducedMotion");
                 phase = params["phase"].toString(); reduced = params["reducedMotion"].toBool(); sync();
-            } else if (method == "annotate") { items = annotations(params["items"]); sync(); }
+            } else if (method == "annotate") {
+                require(!observationInvalidated, "Screen changed; read_screen again before annotating");
+                items = annotations(params["items"]); sync();
+            }
             else if (method == "clear") { items = {}; sync(); }
             else if (method == "visualize") {
+                require(!params["visible"].toBool() || !observationInvalidated, "Screen changed; read_screen again before visualizing");
                 require(params["visible"].isBool() && (!params.contains("interactive") || params["interactive"].isBool()), "Invalid visualization options");
                 require(!(params.contains("scene") && params.contains("diagram")), "Choose one presentation type");
                 if (params.contains("diagram")) {
@@ -180,6 +193,16 @@ public:
             } else if (method == "capture") {
                 auto screen = select(params);
                 if (capturing) { fail(id, "BUSY", "Capture already in progress"); return; }
+                excludedRegion = {};
+                if (params.contains("excludedRegion")) {
+                    const auto r = params["excludedRegion"].toObject();
+                    require(number(r["x"], 0, 1) && number(r["y"], 0, 1) && number(r["width"], 0, 1) && number(r["height"], 0, 1), "Invalid excluded region");
+                    require(r["x"].toDouble() + r["width"].toDouble() <= 1.000001 && r["y"].toDouble() + r["height"].toDouble() <= 1.000001, "Excluded region exceeds display");
+                    excludedRegion = QRectF(r["x"].toDouble(), r["y"].toDouble(), r["width"].toDouble(), r["height"].toDouble());
+                }
+                if (contextWatch) contextWatch->disarm();
+                observationInvalidated = true;
+                items = {}; sync();
                 capturing = true;
                 overlay.hide(); visual.hide();
                 // Let the compositor retire both surfaces before sampling.
@@ -206,6 +229,54 @@ private:
     QJsonArray items;
     bool reduced = false, capturing = false, overlayWanted = false, visualWanted = false;
     quint64 visualFrames = 0;
+    bool observationInvalidated = false;
+    QRectF excludedRegion;
+    ScreenContextWatch *contextWatch = nullptr;
+    QImage observationMask(QSize size) {
+        QImage mask(size, QImage::Format_RGB32); mask.fill(Qt::black);
+        QPainter painter(&mask);
+        const double width = qMax(1, overlay.width()), height = qMax(1, overlay.height());
+        painter.scale(size.width() / width, size.height() / height);
+        // Exclude the AI border, prompt, annotations, callouts and native diagrams.
+        painter.fillRect(QRectF(0, 0, width, 64), Qt::white);
+        painter.fillRect(QRectF(0, height - 64, width, 64), Qt::white);
+        painter.fillRect(QRectF(0, 0, 64, height), Qt::white);
+        painter.fillRect(QRectF(width - 64, 0, 64, height), Qt::white);
+        painter.fillRect(QRectF(excludedRegion.x() * width, excludedRegion.y() * height,
+            excludedRegion.width() * width, excludedRegion.height() * height).adjusted(-12, -12, 12, 12), Qt::white);
+        painter.setPen(QPen(Qt::white, 18)); painter.setBrush(Qt::NoBrush);
+        for (const auto &entry : items) {
+            const auto item = entry.toObject();
+            const QPointF point(item["x"].toDouble() * width, item["y"].toDouble() * height);
+            const QSizeF extent(item["width"].toDouble() * width, item["height"].toDouble() * height);
+            if (item["kind"] == "rect") painter.drawRect(QRectF(point, extent));
+            else if (item["kind"] == "arrow") {
+                const auto end = point + QPointF(extent.width(), extent.height());
+                painter.drawLine(point, end);
+                painter.fillRect(QRectF(end - QPointF(24, 24), QSizeF(48, 48)), Qt::white);
+            }
+            else if (item["kind"] == "cursor") painter.fillRect(QRectF(point - QPointF(28, 28), QSizeF(72, 72)), Qt::white);
+        }
+        auto rawBubbles = overlay.rootObject()->property("bubbleGeometry");
+        if (rawBubbles.metaType() == QMetaType::fromType<QJSValue>()) rawBubbles = rawBubbles.value<QJSValue>().toVariant();
+        const auto bubbles = rawBubbles.toList();
+        int index = 0;
+        for (const auto &entry : items) {
+            const auto item = entry.toObject();
+            if (item["text"].toString().isEmpty() || index >= bubbles.size()) continue;
+            const auto r = bubbles[index++].toMap();
+            const QRectF rect(r["x"].toDouble(), r["y"].toDouble(), r["width"].toDouble(), r["height"].toDouble());
+            painter.fillRect(rect.adjusted(-8, -8, 8, 8), Qt::white);
+            const QPointF target((item["x"].toDouble() + (item["kind"] == "arrow" ? item["width"].toDouble() : 0)) * width,
+                (item["y"].toDouble() + (item["kind"] == "arrow" ? item["height"].toDouble() : 0)) * height);
+            painter.drawLine(target, QPointF(qBound(rect.left(), target.x(), rect.right()), qBound(rect.top(), target.y(), rect.bottom())));
+        }
+        if (visual.isVisible()) {
+            const auto origin = bounds.isNull() ? selected->geometry().topLeft() : bounds.topLeft();
+            painter.fillRect(QRectF(visual.geometry().translated(-origin)).adjusted(-16, -16, 16, 16), Qt::white);
+        }
+        return mask;
+    }
     static Qt::WindowFlags flags(bool passive) {
         auto flags = Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool;
         if (passive) {
@@ -306,6 +377,8 @@ private:
             auto pixmap = bounds.isNull() ? screen->grabWindow(0) : screen->grabWindow(0,
                 bounds.x() - screen->geometry().x(), bounds.y() - screen->geometry().y(), bounds.width(), bounds.height());
             require(!pixmap.isNull(), "Screen capture unavailable");
+            const auto area = bounds.isNull() ? screen->geometry() : bounds;
+            if (contextWatch) contextWatch->arm(screen, area, pixmap);
             const int sourceWidth = pixmap.width(), sourceHeight = pixmap.height();
             if (pixmap.width() > 1280 || pixmap.height() > 1280) pixmap = pixmap.scaled(1280, 1280, Qt::KeepAspectRatio, Qt::SmoothTransformation);
             QByteArray data;
@@ -316,10 +389,14 @@ private:
                 pixmap = pixmap.scaled(qMax(1, int(pixmap.width() * .8)), qMax(1, int(pixmap.height() * .8)), Qt::KeepAspectRatio, Qt::SmoothTransformation);
             }
             require(data.size() <= MaxImage, "Screen image exceeds payload budget");
+            observationInvalidated = false;
             reply(id, QJsonObject{{"mimeType", "image/png"}, {"data", QString::fromLatin1(data.toBase64())},
                 {"width", pixmap.width()}, {"height", pixmap.height()}, {"sourceWidth", sourceWidth}, {"sourceHeight", sourceHeight},
                 {"screenId", screen->name()}, {"capturedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}, {"cursor", cursor}});
-        } catch (const std::exception &e) { fail(id, "CAPTURE_FAILED", QString::fromUtf8(e.what())); }
+        } catch (const std::exception &e) {
+            if (contextWatch) contextWatch->disarm();
+            fail(id, "CAPTURE_FAILED", QString::fromUtf8(e.what()));
+        }
         capturing = false;
         overlay.setVisible(overlayWanted); visual.setVisible(visualWanted);
         if (overlayWanted) raiseSurface(overlay);

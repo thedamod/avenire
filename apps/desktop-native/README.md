@@ -142,3 +142,9 @@ Escape dismissal. Synthetic fixtures and their generated images are not part of
 the final source tree. The sole retained visual artifact shows the native overlay
 on an actual Avenire window. Neither this capture nor offscreen tests establish
 a live authenticated model round trip or physical GPU performance.
+
+### Annotation lifetime
+
+A `read_screen` capture establishes a view-specific context. While it is thinking or showing a presentation, the companion compares a small local fingerprint every 500 ms using the shared Qt screen-capture backend. It masks the prompt window, annotation text and leaders, border, and the entire native visualization window so streaming text or interactive model rotation does not invalidate the source view. Samples are never saved or sent to the model; only the explicit `read_screen` image is supplied to Ruth.
+
+A detected content or display-geometry change clears annotations and the associated visualization, cancels the active client response, and rejects late presentation commands until a fresh capture. This is conservative invalidation, not document-element or scroll-position tracking. Windows, macOS and Linux use the same implementation; capture permissions/backend support still apply, including Wayland restrictions.

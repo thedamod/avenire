@@ -90,6 +90,7 @@ let nativeOverlay: NativeOverlay | undefined;
 let promptGeneration = 0;
 let promptOpening = false;
 let promptNativeScreenId: string | undefined;
+let promptNativeDisplayBounds: Electron.Rectangle | undefined;
 let promptCaptureRunning = false;
 let nativePromptStarting: Promise<void> | undefined;
 let promptCaptureContext: PromptCaptureContext = { sessionId: 0, capture: null };
@@ -98,6 +99,7 @@ function endNativePrompt(): void {
   promptGeneration++;
   promptOpening = false;
   promptNativeScreenId = undefined;
+  promptNativeDisplayBounds = undefined;
   nativePromptStarting = undefined;
   nativeOverlay?.dispose();
   nativeOverlay = undefined;
@@ -430,9 +432,17 @@ function togglePrompt(): void {
 }
 async function initializeNativePrompt(generation: number): Promise<void> {
   if (nativeOverlayConfig?.enabled) {
-    const native = new NativeOverlay(nativeOverlayConfig, () => {
-      if (generation === promptGeneration) hidePrompt();
-    });
+    const native = new NativeOverlay(
+      nativeOverlayConfig,
+      () => {
+        if (generation === promptGeneration) hidePrompt();
+      },
+      () => {
+        if (generation !== promptGeneration) return;
+        promptCaptureContext = { sessionId: generation, capture: null };
+        promptWindow?.webContents.send("avenire:screen-invalidated", generation);
+      },
+    );
     nativeOverlay = native;
     try {
       // Initialize only when a model requests read_screen, never on the hotkey path.
@@ -455,6 +465,7 @@ async function initializeNativePrompt(generation: number): Promise<void> {
       if (matches?.length !== 1 || !selected)
         throw new Error("Native overlay could not match the selected display");
       promptNativeScreenId = selected.id;
+      promptNativeDisplayBounds = display;
       promptCaptureContext = { sessionId: generation, capture: null };
       await native.request("show", { screenId: selected.id });
     } catch (error) {
@@ -1385,7 +1396,18 @@ ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
     target.setOpacity(0);
     await new Promise((resolve) => setTimeout(resolve, 80));
     if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
-    const capture = await native.capture(promptNativeScreenId);
+    const area = promptNativeDisplayBounds!;
+    const frame = target.getBounds();
+    const left = Math.max(0, Math.min(1, (frame.x - area.x) / area.width));
+    const top = Math.max(0, Math.min(1, (frame.y - area.y) / area.height));
+    const right = Math.max(left, Math.min(1, (frame.x + frame.width - area.x) / area.width));
+    const bottom = Math.max(top, Math.min(1, (frame.y + frame.height - area.y) / area.height));
+    const capture = await native.capture(promptNativeScreenId, {
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    });
     const observation = await readNativeObservation(native, capture.screenId);
     if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
     promptCaptureContext = { sessionId: promptGeneration, capture: { ...capture, ...observation } };

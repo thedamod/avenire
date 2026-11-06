@@ -129,6 +129,7 @@ export function EphemeralPrompt({
         )
           throw new Error("Screen session closed");
         setScreenContext(fresh.capture);
+        captureSession.current = fresh.sessionId;
         setNativeSession(fresh.sessionId);
         setNativeError(null);
         return fresh.capture;
@@ -155,6 +156,14 @@ export function EphemeralPrompt({
         });
     };
     refresh();
+    const invalidated = bridge?.onScreenInvalidated?.((id) => {
+      if (!active || captureSession.current !== id) return;
+      questionGeneration.current++;
+      entry.setScreenContext(undefined);
+      setScreenContext(null);
+      appliedAnnotations.current.clear();
+      void entry.chat.stop();
+    });
     const shown = bridge?.onPromptShown?.(refresh);
     const hidden = bridge?.onPromptHidden?.(() => {
       revision++;
@@ -174,6 +183,7 @@ export function EphemeralPrompt({
       void entry.chat.stop();
       shown?.();
       hidden?.();
+      invalidated?.();
     };
   }, [standalone, entry]);
   useEffect(() => {
