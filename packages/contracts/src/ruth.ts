@@ -75,6 +75,8 @@ export const RuthChatRequest = Schema.Struct({
   page: PageContext,
   /** Request-only screen context; never added to persisted chat messages. */
   screenContext: Schema.optional(DesktopScreenObservation),
+  /** This client can fulfill the read_screen tool; no image is attached until requested. */
+  nativeScreenAvailable: Schema.optional(Schema.Boolean),
   scope: Schema.optional(ChatScope),
   fast: Schema.optional(Schema.Boolean),
   timeZone: Schema.optional(Schema.String),

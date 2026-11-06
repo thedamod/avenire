@@ -89,11 +89,14 @@ let nativeOverlayConfig: NativeOverlayConfig;
 let nativeOverlay: NativeOverlay | undefined;
 let promptGeneration = 0;
 let promptOpening = false;
+let promptNativeScreenId: string | undefined;
+let promptCaptureRunning = false;
 let promptCaptureContext: PromptCaptureContext = { sessionId: 0, capture: null };
 
 function endNativePrompt(): void {
   promptGeneration++;
   promptOpening = false;
+  promptNativeScreenId = undefined;
   nativeOverlay?.dispose();
   nativeOverlay = undefined;
   promptCaptureContext = { sessionId: promptGeneration, capture: null };
@@ -452,21 +455,22 @@ async function showPrompt(): Promise<void> {
         screens?: Array<{ id: string; x: number; y: number; width: number; height: number }>;
       };
       if (generation !== promptGeneration) return;
-      const selected = inspection.screens?.find(
-        (candidate) =>
-          candidate.x === display.x &&
-          candidate.y === display.y &&
-          candidate.width === display.width &&
-          candidate.height === display.height,
+      // Electron and Qt round fractional-DPI monitor bounds differently on Windows.
+      // Permit one logical pixel of rounding, but never choose an ambiguous monitor.
+      const matches = inspection.screens?.filter((candidate) =>
+        (["x", "y", "width", "height"] as const).every(
+          (key) => Math.abs(candidate[key] - display[key]) <= 1,
+        ),
       );
-      // Never silently capture the primary display when monitor matching is ambiguous.
-      if (!selected) throw new Error("Native overlay could not match the selected display");
-      const capture = await native.capture(selected.id);
-      if (generation !== promptGeneration) return;
-      promptCaptureContext = { sessionId: generation, capture };
-      await native.request("show", { screenId: capture.screenId });
+      const selected = matches?.[0];
+      if (matches?.length !== 1 || !selected)
+        throw new Error("Native overlay could not match the selected display");
+      promptNativeScreenId = selected.id;
+      promptCaptureContext = { sessionId: generation, capture: null };
+      await native.request("show", { screenId: selected.id });
     } catch (error) {
       if (generation !== promptGeneration) return;
+      captureLog("native-screen-context-error", captureError(error));
       native.dispose();
       nativeOverlay = undefined;
       promptCaptureContext = {
@@ -1336,15 +1340,34 @@ ipcMain.handle("avenire:prompt-capture-context", (event) => {
   if (!trustedPrompt(event)) throw new Error("Untrusted native overlay IPC sender");
   return promptCaptureContext;
 });
-ipcMain.handle("avenire:native-observation", async (event, id: unknown) => {
+// Only the active prompt may request local pixels, and only through the client tool.
+ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
   const native = currentNative(event, id);
-  if (!native) throw new Error("Native overlay unavailable");
-  const screenId = promptCaptureContext.capture?.screenId;
+  if (!native || !promptNativeScreenId) throw new Error("Local screen capture unavailable");
+  if (promptCaptureRunning) throw new Error("Local screen capture already running");
+  const target = promptWindow!;
+  const opacity = target.getOpacity();
+  promptCaptureRunning = true;
+  try {
+    // Opacity preserves visibility/session and avoids blur/hide teardown during capture.
+    target.setOpacity(0);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
+    const capture = await native.capture(promptNativeScreenId);
+    const observation = await readNativeObservation(native, capture.screenId);
+    if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
+    promptCaptureContext = { sessionId: promptGeneration, capture: { ...capture, ...observation } };
+    return promptCaptureContext;
+  } finally {
+    if (!target.isDestroyed()) target.setOpacity(opacity);
+    promptCaptureRunning = false;
+  }
+});
+async function readNativeObservation(native: NativeOverlay, screenId?: string) {
   const [position, raw] = await Promise.all([
     native.request("get_cursor", screenId ? { screenId } : {}),
     native.request("inspect"),
   ]);
-  if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
   const cursor = Schema.decodeUnknownSync(DesktopCursorPosition)(position);
   const state = raw as Record<string, unknown>;
   const rotation = state.rotation as { x: number; y: number };
@@ -1361,7 +1384,15 @@ ipcMain.handle("avenire:native-observation", async (event, id: unknown) => {
       observedAt: cursor.observedAt,
     },
   });
+}
+ipcMain.handle("avenire:native-observation", async (event, id: unknown) => {
+  const native = currentNative(event, id);
+  if (!native) throw new Error("Native overlay unavailable");
+  const observation = await readNativeObservation(native, promptCaptureContext.capture?.screenId);
+  if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
+  return observation;
 });
+
 ipcMain.handle("avenire:native-overlay-state", async (event, id: unknown, value: unknown) => {
   const native = currentNative(event, id);
   const state = Schema.decodeUnknownSync(DesktopOverlayState)(value);

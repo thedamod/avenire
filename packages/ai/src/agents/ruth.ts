@@ -77,6 +77,7 @@ export interface ChatInput {
   readonly message: unknown;
   readonly page: PageContext;
   readonly screenContext?: import("@avenire/contracts").DesktopScreenObservation | undefined;
+  readonly nativeScreenAvailable?: boolean | undefined;
   readonly fast?: boolean | undefined;
   readonly timeZone?: string | undefined;
 }
@@ -339,6 +340,7 @@ const makeRuth = Effect.gen(function* () {
           (thread.folderId ? { folderIds: [FolderId.make(thread.folderId)] } : undefined),
         threadId: input.threadId,
         page: input.page,
+        nativeScreenAvailable: input.nativeScreenAvailable,
         nativeScreenCapturedAt: input.screenContext?.capturedAt,
         nativeCursor: input.screenContext?.cursor,
         nativePresentation: input.screenContext?.presentation,

@@ -188,6 +188,7 @@ const ICONS: Record<string, WorkIcon> = {
   screen_record: "video",
   computer: "computer",
   screen_read: "computer",
+  read_screen: "computer",
   load_skill: "skill",
   get_page_context: "page",
   native_annotate: "computer",
@@ -283,6 +284,7 @@ export function toolEntry(part: LooseToolPart): WorkEntry {
       label = `Used the computer · ${action.replaceAll("_", " ")}`;
       break;
     }
+    case "read_screen":
     case "screen_read":
       label = "Read the screen";
       break;

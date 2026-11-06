@@ -14,6 +14,7 @@ import { askUserSpec, getPageContextSpec, type PageContextResult, ruthToolSpecs 
 import { VISUAL_BUDGETS, VISUAL_RUNTIME } from "./page.ts";
 import { loadSkillTool } from "./skills.ts";
 import {
+  readScreenSpec,
   createNativeAnnotationTool,
   createNativeDiagramTool,
   createNativeCursorTool,
@@ -33,6 +34,7 @@ export type RuthToolServices =
   | AssetStore;
 export interface RuthTurn {
   readonly userId: UserId;
+  readonly nativeScreenAvailable?: boolean | undefined;
   readonly nativeScreenCapturedAt?: string | undefined;
   readonly nativeCursor?: import("@avenire/contracts").DesktopCursorPosition | undefined;
   readonly nativePresentation?:
@@ -51,6 +53,7 @@ export const chatToolNames = Object.keys(ruthToolSpecs).filter(
       "load_skill",
       "get_page_context",
       "ask_user",
+      "read_screen",
       "native_annotate",
       "native_visualize",
       "native_diagram",
@@ -86,6 +89,11 @@ export const createRuthTools = (
   );
   const boundTools: ToolSet = {
     ...tools,
+    ...(turn.nativeScreenAvailable &&
+    turn.page.surface === "ephemeral" &&
+    turn.page.platform === "desktop"
+      ? { read_screen: tool(readScreenSpec) }
+      : {}),
     ...(turn.nativeScreenCapturedAt &&
     turn.page.surface === "ephemeral" &&
     turn.page.platform === "desktop"

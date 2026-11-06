@@ -85,26 +85,10 @@ export function EphemeralPrompt({
       const text = question.trim();
       if (!text) return;
       setDraft("");
+      setScreenContext(null);
       setSubmissionFailed(false);
       const generation = questionGeneration.current;
       void (async () => {
-        // Resolve initial IPC context even if a pre-filled question submits before the shown effect.
-        if (standalone && window.avenire?.getPromptCaptureContext && !screenOptOut.current) {
-          const context = await window.avenire.getPromptCaptureContext();
-          if (generation !== questionGeneration.current) return;
-          let capture = context.capture;
-          if (capture && window.avenire.getNativeObservation) {
-            try {
-              const observation = await window.avenire.getNativeObservation(context.sessionId);
-              if (generation !== questionGeneration.current) return;
-              capture = { ...capture, ...observation };
-            } catch {
-              if (generation !== questionGeneration.current) return;
-              setNativeError("Current pointer/diagram context unavailable");
-            }
-          }
-          entry.setScreenContext(capture ?? undefined);
-        }
         await entry.ensureThread(text, folderId);
         if (generation === questionGeneration.current) await entry.send({ text });
       })().catch((cause: unknown) => {
@@ -131,6 +115,18 @@ export function EphemeralPrompt({
     if (!standalone) return;
     const bridge = window.avenire;
     let active = true;
+    if (bridge?.readScreen)
+      entry.setScreenReader(async () => {
+        if (!active || screenOptOut.current) throw new Error("Screen context disabled");
+        const context = await bridge.getPromptCaptureContext();
+        const fresh = await bridge.readScreen(context.sessionId);
+        if (!active || screenOptOut.current || !fresh.capture)
+          throw new Error("Screen session closed");
+        setScreenContext(fresh.capture);
+        setNativeSession(fresh.sessionId);
+        setNativeError(null);
+        return fresh.capture;
+      });
     let revision = 0;
     const refresh = () => {
       const current = ++revision;
@@ -143,7 +139,7 @@ export function EphemeralPrompt({
             captureSession.current = context.sessionId;
             screenOptOut.current = false;
           }
-          entry.setScreenContext(screenOptOut.current ? undefined : (context.capture ?? undefined));
+          entry.setScreenContext(undefined);
           setScreenContext(screenOptOut.current ? null : context.capture);
           setNativeSession(context.sessionId);
           setNativeError(context.error ?? null);
@@ -166,6 +162,7 @@ export function EphemeralPrompt({
     });
     return () => {
       active = false;
+      entry.setScreenReader(undefined);
       questionGeneration.current++;
       entry.setScreenContext(undefined);
       void entry.chat.stop();

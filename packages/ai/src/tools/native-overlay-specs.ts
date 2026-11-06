@@ -10,6 +10,20 @@ import { tool } from "ai";
 import * as Schema from "effect/Schema";
 import { standardSchema } from "./schema.ts";
 
+/** Client-side tool: pixels travel only in the immediate continuation request, not chat history. */
+export const readScreenSpec = {
+  description:
+    "Read a fresh screenshot of the user's local display when their question depends on visible material, such as 'this muscle'. Use only when needed; do not read for unrelated questions or continuously monitor. The prompt and AI overlays are excluded. After inspecting it, answer with native_annotate bubbles pointing to relevant regions rather than a duplicate chat explanation. This is the local screen; screen_read/computer refer to a separate cloud desktop.",
+  inputSchema: standardSchema(Schema.Struct({})),
+  outputSchema: standardSchema(
+    Schema.Struct({
+      capturedAt: Schema.String,
+      width: Schema.Int,
+      height: Schema.Int,
+    }),
+  ),
+};
+
 export const nativeAnnotateSpec = {
   description:
     "Draw passive annotations over the user's current screen while explaining it. " +
@@ -78,6 +92,7 @@ export const nativePresentationSpec = {
 };
 
 export const nativeOverlayToolSpecs = {
+  read_screen: tool(readScreenSpec),
   native_annotate: tool(nativeAnnotateSpec),
   native_visualize: tool(nativeVisualizeSpec),
   native_diagram: tool(nativeDiagramSpec),

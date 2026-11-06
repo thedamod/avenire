@@ -59,6 +59,7 @@ const bridge: AvenireDesktopBridge = {
   acknowledgeOnboardingPreferences: () =>
     ipcRenderer.invoke("avenire:onboarding-preferences-ack").then(() => undefined),
   getPromptCaptureContext: () => ipcRenderer.invoke("avenire:prompt-capture-context"),
+  readScreen: (id) => ipcRenderer.invoke("avenire:read-screen", id),
   getNativeObservation: (id) => ipcRenderer.invoke("avenire:native-observation", id),
   setNativeOverlayState: (id, state) =>
     ipcRenderer.invoke("avenire:native-overlay-state", id, state).then(() => undefined),
