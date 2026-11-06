@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -72,7 +73,15 @@ export class NativeOverlay {
       return Promise.reject(
         new Error("Native overlay requires enabled configuration and an absolute executable path"),
       );
-    this.child = spawn(this.config.executable, [], {
+    let executable: string;
+    try {
+      // Qt on macOS derives bundle resources from the launch path. A root symlink
+      // resolves the Mach-O but leaves Qt unable to locate bundled QML imports.
+      executable = realpathSync(this.config.executable);
+    } catch {
+      return Promise.reject(new Error("Native overlay could not start"));
+    }
+    this.child = spawn(executable, [], {
       shell: false,
       stdio: "pipe",
       windowsHide: true,

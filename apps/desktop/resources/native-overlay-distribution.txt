@@ -6,7 +6,8 @@ Generated apps/desktop/native-dist is the entire deployable tree. Never copy onl
 its executable. electron-builder copies this tree outside app.asar to
 resources/native-overlay. Windows/Linux executable: avenire-overlay(.exe).
 macOS root executable is a relative symlink into the deployed .app bundle; retain
-both the symlink and bundle so framework install names stay portable.
+both the symlink and bundle so framework install names stay portable. Electron
+resolves the symlink before spawning so Qt finds its bundled QML resources.
 Qt's CMake deployment support collects runtime libraries, platform plugins and QML
 imports. QML source is embedded by the native target, never loaded from the repo.
 

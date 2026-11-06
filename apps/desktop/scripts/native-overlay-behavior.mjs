@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import childProcess from "node:child_process";
 import { syncBuiltinESMExports, createRequire } from "node:module";
-import { mkdtemp, rm, readFile, cp, stat, readdir, realpath } from "node:fs/promises";
+import { mkdtemp, rm, readFile, cp, stat, readdir, realpath, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { parseArgs } from "node:util";
 import { resolve, join, dirname, basename, isAbsolute } from "node:path";
@@ -131,12 +131,19 @@ try {
     }
   }
   phase = "relocated launcher lifecycle";
-  const config = { enabled: true, executable: relocated };
+  const launcher = process.platform === "win32" ? relocated : join(deployed, "overlay-launcher");
+  if (launcher !== relocated) await symlink(filename, launcher);
+  const config = { enabled: true, executable: launcher };
   native = new NativeOverlay(config);
   const countBeforeStartup = children.length;
   const [initial] = await Promise.all([native.request("inspect"), native.request("inspect")]);
   assert.equal(initial.visible, false);
   assert.equal(children.length, countBeforeStartup + 1, "Concurrent startup spawns one process");
+  assert.equal(
+    children.at(-1).child.spawnfile,
+    await realpath(launcher),
+    "Launch the canonical executable so Qt recognizes its macOS bundle through aliases",
+  );
   const before = children.length;
   await Promise.all([
     native.request("show"),
@@ -211,7 +218,10 @@ try {
   await exited(children.at(-1));
   await assert.rejects(native.request("show"), /closed/);
   // Real host rejects malformed and unknown requests while keeping a usable stream.
-  const protocol = childProcess.spawn(relocated, [], { stdio: "pipe", windowsHide: true });
+  const protocol = childProcess.spawn(await realpath(relocated), [], {
+    stdio: "pipe",
+    windowsHide: true,
+  });
   protocol.stderr.resume();
   let raw = "";
   const responses = [];
@@ -247,7 +257,10 @@ try {
   }
   await exited(children.at(-1));
   // EOF terminates the real executable, independently of adapter shutdown.
-  const eof = childProcess.spawn(relocated, [], { stdio: "pipe", windowsHide: true });
+  const eof = childProcess.spawn(await realpath(relocated), [], {
+    stdio: "pipe",
+    windowsHide: true,
+  });
   eof.stdout.resume();
   eof.stderr.resume();
   eof.stdin.end();

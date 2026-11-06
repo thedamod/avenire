@@ -52,7 +52,8 @@ await cp(join(desktop, "resources/licenses"), join(stage, "licenses"), {
 });
 if (process.platform === "darwin") {
   // Retain the native bundle layout and its portable framework install names. Electron
-  // spawns this root entry; the symlink and bundle must both survive extraResources.
+  // resolves this alias before spawning so Qt recognizes its bundle resources.
+  // The symlink and bundle must both survive extraResources.
   await rm(join(stage, "avenire-overlay"), { force: true });
   await symlink(
     "avenire-overlay.app/Contents/MacOS/avenire-overlay",
