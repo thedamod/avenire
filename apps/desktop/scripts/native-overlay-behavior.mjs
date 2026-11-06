@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import childProcess from "node:child_process";
 import { syncBuiltinESMExports, createRequire } from "node:module";
-import { mkdtemp, rm, readFile, cp, stat, readdir } from "node:fs/promises";
+import { mkdtemp, rm, readFile, cp, stat, readdir, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { parseArgs } from "node:util";
 import { resolve, join, dirname, basename, isAbsolute } from "node:path";
@@ -110,6 +110,20 @@ try {
     loadNativeOverlayConfig({ ...paths, packaged: false }).executable,
     join(desktop, "native-dist", filename),
   );
+  if (process.platform === "darwin") {
+    // The launcher symlink and the Mach-O inside the bundle must both work.
+    // Launching only the root alias masked QML modules deployed outside .app.
+    const qml = join(deployed, "avenire-overlay.app/Contents/Resources/qml");
+    for (const module of ["QtQuick", "QtQuick/Window", "QtQuick/Shapes", "QtQuick3D"])
+      assert.ok((await stat(join(qml, module, "qmldir"))).isFile());
+    const direct = new NativeOverlay({ enabled: true, executable: await realpath(relocated) });
+    try {
+      assert.equal((await direct.request("inspect")).visible, false);
+    } finally {
+      direct.dispose();
+      await exited(children.at(-1));
+    }
+  }
   const config = { enabled: true, executable: relocated };
   native = new NativeOverlay(config);
   const countBeforeStartup = children.length;

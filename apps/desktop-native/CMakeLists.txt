@@ -5,6 +5,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Qml Quick Quick3D ShaderTools)
 qt_standard_project_setup(REQUIRES 6.8)
 qt_add_executable(avenire-overlay main.cpp)
+if(APPLE)
+    # Qt finalizes QML deployment at the end of this directory. Set the bundle
+    # layout here, before it records QML/plugin destinations for the target.
+    set_target_properties(avenire-overlay PROPERTIES MACOSX_BUNDLE TRUE)
+endif()
 qt_add_qml_module(avenire-overlay
     URI AvenireOverlay
     RESOURCE_PREFIX /avenire

@@ -11,7 +11,6 @@ add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../../../desktop-native" native)
 qt_import_plugins(avenire-overlay INCLUDE Qt6::QOffscreenIntegrationPlugin)
 if(APPLE)
   set_target_properties(avenire-overlay PROPERTIES
-    MACOSX_BUNDLE TRUE
     MACOSX_BUNDLE_GUI_IDENTIFIER "space.avenire.native-overlay"
     MACOSX_BUNDLE_BUNDLE_NAME "Ruth presentation"
     MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0"
