@@ -1,13 +1,27 @@
+![Avenire: your study material, organized and brought to you](https://avenire.space/og.png)
+
 # Avenire
 
-Avenire is a TypeScript/pnpm knowledge-base monorepo with Ruth chat, background Cloud tasks, and interactive learning figures. See [AGENTS.md](AGENTS.md) for the package layout and development conventions.
+Avenire is a study companion that brings your material together, keeps it organized, and helps you make sense of it. Save what you are studying and let Ruth, your AI assistant, turn it into useful work that is ready when you need it.
 
-## Interactive figures
+## Your study material, in one place
 
-Ruth's `explainer` skill combines a restrained visual language with numerical modelling. Simple physical systems such as pendulums use direct simulations; machines use their actual mechanisms and cutaways; abstract concepts use analogies when they make the causal relationship clearer. Widgets stay concise, with explanation and derivations in chat. Failed previews are repaired and previewed again before delivery.
+Capture open tabs, papers, PDFs and videos in one go, or save material through the browser extension. Avenire also supports sources such as web pages, documents, audio and Markdown. Related material is organized into notebooks, so you can find it again without sorting everything by hand.
 
-Our figure styling, isometric components, craft principles and source examples derive from [Anatomy by Ryan / wheresryan22](https://github.com/wheresryan22/anatomy), MIT licensed, pinned at `dbf697a527bbf7d358668e1557cb1e35ff725d46`. Attribution belongs here and in the vendored README/LICENSE, rather than the model-facing skill names or bodies. The adapted pinned source toolchain lives in `packages/cloud/assets/figures/` and `/opt/avenire/figures` in snapshot v6; the browser runtime is in `packages/widget-kit/src/iso/`. See [the source license](packages/cloud/assets/figures/LICENSE) and [widget-kit attribution](packages/widget-kit/README.md).
+Search across your sources, write notes alongside them, and pick up where you left off. Your library is available across the web, desktop and mobile.
 
-The math runtime includes MIT-licensed [pmndrs/math](https://github.com/pmndrs/math) plus our numerical solvers; see `packages/widget-kit/src/math/LICENSE` and `packages/widget-kit/API.md`. Widget figure tokens use the neutral `--figure-*` namespace; runtime and example sources use that same namespace. App shadcn colours are separate.
+## Meet Ruth
 
-Chat and Cloud have no model step-count cap. They continue until a final answer/report, approval boundary, cancellation or an existing runtime/resource limit. Sandbox commands remain bounded; Cloud spend/action and wall-clock limits remain in place. Failed previews return diagnostics and screenshots to the same model for repair, without a separate fixer agent.
+Ask Ruth questions about your material and get answers grounded in your sources, with citations to help you follow them back. Ruth can also help you explore ideas through charts, interactive figures and short explainer videos.
+
+With Ruth Cloud, you can ask Ruth to work in the background: bring together papers into a report, prepare summaries and notes, or make a quiz from what you are studying. Schedule work for later and return to the results when they are ready.
+
+### Coming soon: explain what's on your screen
+
+On desktop, Ruth will be able to look at the visible screen when needed to answer your question. It can explain what you are looking at with annotations placed directly over the material and interactive figures alongside it. Screen context is requested on demand.
+
+## You stay in control
+
+Ruth proposes changes to your files for you to accept or skip. Capturing pages behind a sign-in is optional, and deleted notes and notebooks stay in Trash for 30 days.
+
+Explore Avenire and get early access at [avenire.space](https://avenire.space).
