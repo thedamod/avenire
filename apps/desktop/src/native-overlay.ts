@@ -77,7 +77,8 @@ export class NativeOverlay {
     try {
       // Qt on macOS derives bundle resources from the launch path. A root symlink
       // resolves the Mach-O but leaves Qt unable to locate bundled QML imports.
-      executable = realpathSync(this.config.executable);
+      // The native resolver also expands Windows 8.3 directory aliases.
+      executable = realpathSync.native(this.config.executable);
     } catch {
       return Promise.reject(new Error("Native overlay could not start"));
     }

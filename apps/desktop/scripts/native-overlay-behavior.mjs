@@ -300,6 +300,7 @@ try {
   );
 } catch (error) {
   console.error(`Native E2E failed during ${phase}`);
+  console.error(error);
   for (const { child, stderr } of children) {
     if (stderr)
       console.error(`Child exit=${child.exitCode} signal=${child.signalCode}:\n${stderr}`);
@@ -308,9 +309,13 @@ try {
 } finally {
   native?.dispose();
   for (const { child } of children)
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    if (child.exitCode === null && child.signalCode === null) {
+      child.ref();
+      child.kill("SIGKILL");
+    }
+  await Promise.all(children.map(exited));
   childProcess.spawn = spawn;
   syncBuiltinESMExports();
   delete process.env.AVENIRE_OVERLAY_TEST_MODE;
-  await rm(temporary, { recursive: true, force: true });
+  await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
