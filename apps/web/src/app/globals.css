@@ -1,6 +1,14 @@
 @import "@avenire/ui/globals.css";
 @source "../**/*.{ts,tsx}";
 
+@font-face {
+  font-family: "Geist Serif";
+  src: url("./fonts/GeistSerif-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Custom upload content must collapse with Sonner's outer toast when stacked. */
 [data-sonner-toast].source-upload-toast {
   overflow: hidden;

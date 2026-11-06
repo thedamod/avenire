@@ -86,8 +86,9 @@ export function AskComposer({
             color: "#EDEDED",
             fontSize: expanded ? 16 : 15,
             lineHeight: expanded ? 22 : 20,
+            fontFamily: "Geist",
             ...(Platform.OS === "web"
-              ? { outlineWidth: 0, fontFamily: "system-ui" }
+              ? { outlineWidth: 0 }
               : {}),
           }}
         />

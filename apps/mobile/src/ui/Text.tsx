@@ -1,5 +1,4 @@
 import {
-  Platform,
   StyleSheet,
   Text as NativeText,
   type TextProps as NativeTextProps,
@@ -30,7 +29,7 @@ export function Text({ variant = "body", color, weight, style, ...props }: TextP
     <NativeText
       {...props}
       style={[
-        { color: colors.fg, fontFamily: Platform.OS === "web" ? "system-ui" : undefined },
+        { color: colors.fg, fontFamily: "Geist" },
         textVariants[variant],
         color ? { color: color in colors ? colors[color as ColorToken] : color } : undefined,
         weight ? { fontWeight: weight } : undefined,
