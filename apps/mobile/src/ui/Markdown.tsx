@@ -4,7 +4,7 @@ import { useMarkdown, type MarkedStyles } from "react-native-marked";
 import { colors } from "../theme/tokens";
 
 const mono = Platform.select({ web: "'Geist Mono', ui-monospace, monospace", default: "GeistMono" });
-const sans = Platform.OS === "web" ? "system-ui" : undefined;
+const sans = "Geist";
 
 /** `chat` = Ruth's replies (16/24), `note` = note pages and output sheets (16/26, M10). */
 const sizes = {

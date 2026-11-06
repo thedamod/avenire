@@ -7,7 +7,7 @@ import { Pressable, Text } from "../../../ui";
 import { citationLabel, type Citation, type CitationMap } from "./citations";
 
 const mono = Platform.select({ web: "'Geist Mono', ui-monospace, monospace", default: "GeistMono" });
-const sans = Platform.OS === "web" ? "system-ui" : undefined;
+const sans = "Geist";
 
 /** `chat` = Ruth's replies (16/24), `note` = note pages and output sheets (15/23). */
 const sizes = {

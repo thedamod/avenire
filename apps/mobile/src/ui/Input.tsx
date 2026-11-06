@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Platform, TextInput, View, type TextInputProps } from "react-native";
+import { TextInput, View, type TextInputProps } from "react-native";
 import { colors } from "../theme/tokens";
 import { Text } from "./Text";
 export interface InputProps extends TextInputProps {
@@ -43,7 +43,7 @@ export function Input({
           backgroundColor: colors["surface-2"],
           color: colors.fg,
           fontSize: 14,
-          fontFamily: Platform.OS === "web" ? "system-ui" : undefined,
+          fontFamily: "Geist",
           outlineWidth: 0,
         },
         style,
