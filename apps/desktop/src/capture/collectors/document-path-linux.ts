@@ -86,7 +86,7 @@ export function pathsFromCmdline(cmdline: string, cwd?: string): string[] {
     if (opt) arg = opt[1]!;
     if (/^file:\/\//i.test(arg)) {
       try {
-        arg = fileURLToPath(arg);
+        arg = fileURLToPath(arg, { windows: false });
       } catch {
         continue;
       }

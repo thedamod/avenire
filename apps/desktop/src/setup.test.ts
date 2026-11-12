@@ -53,7 +53,7 @@ it("does not prompt or collect on first launch and persists the choice to contin
     hotkeysEnabled: false,
     notificationsEnabled: true,
   });
-  expect((await stat(path)).mode & 0o777).toBe(0o600);
+  if (process.platform !== "win32") expect((await stat(path)).mode & 0o777).toBe(0o600);
   const reloaded = new DesktopSetup(path, "darwin");
   await reloaded.load();
   expect(reloaded.completed).toBe(true);

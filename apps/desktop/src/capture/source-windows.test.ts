@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile, rm, truncate } from "node:fs/promises";
+import { realpath, mkdtemp, writeFile, rm, truncate } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vite-plus/test";
@@ -7,6 +7,7 @@ import { acquireAndUploadSource } from "./source-acquisition.ts";
 import { uploadCapturedFiles } from "./upload.ts";
 import { LocalOriginRegistry } from "./registry.ts";
 import { UploadGate } from "./hash-cache.ts";
+import { readableLocalPath } from "./local-file.ts";
 import type { CaptureSnapshot } from "@avenire/contracts";
 
 const mocks = vi.hoisted(() => ({ open: vi.fn() }));
@@ -24,7 +25,7 @@ afterEach(async () => {
   );
 });
 async function setup() {
-  const directory = await mkdtemp(join(tmpdir(), "capture-windows-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "capture-windows-")));
   directories.push(directory);
   const path = join(directory, "Essay.docx");
   await writeFile(path, "open document original bytes");
@@ -79,7 +80,7 @@ it("accepts changing Windows ctime while checking both mtime and size for real c
     const h = await setup();
     mocks.open.mockImplementation(async (...args: Parameters<typeof fs.open>) => {
       const handle = await fs.open(...args);
-      if (args[0] === h.path) {
+      if (args[0] === readableLocalPath(h.path)) {
         const stat = handle.stat.bind(handle);
         let count = 0;
         vi.spyOn(handle, "stat").mockImplementation(async () => {
@@ -113,7 +114,7 @@ it.each(["EBUSY", "EPERM"])(
     let attempts = 0;
     const times: number[] = [];
     mocks.open.mockImplementation(async (...args: Parameters<typeof fs.open>) => {
-      if (args[0] === h.path) {
+      if (args[0] === readableLocalPath(h.path)) {
         times.push(Date.now() - start);
         if (!attempts++) throw Object.assign(new Error("locked"), { code });
       }

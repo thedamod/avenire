@@ -44,7 +44,7 @@ export function parseAxWindows(
       let filePath: string | undefined;
       try {
         if (typeof row.document === "string" && row.document.startsWith("file:"))
-          filePath = fileURLToPath(row.document);
+          filePath = fileURLToPath(row.document, { windows: false });
       } catch {
         /* unavailable AXDocument */
       }

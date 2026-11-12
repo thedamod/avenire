@@ -421,7 +421,7 @@ it("uses custom title bars and permits chrome IPC only from the exact applicatio
   expect(main.options).toMatchObject({
     titleBarStyle: "hidden",
     titleBarOverlay: { height: 40 },
-    icon: expect.stringContaining("icon.png"),
+    icon: expect.stringContaining(process.platform === "win32" ? "icon.ico" : "icon.png"),
   });
   const trusted = { sender: main.webContents, senderFrame: main.webContents.mainFrame };
   expect(mocks.ipc.get("avenire:window-chrome")!(trusted)).toMatchObject({ height: 40 });

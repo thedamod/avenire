@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from "node:fs/promises";
+import { realpath, mkdtemp, mkdir, writeFile, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -53,7 +53,7 @@ afterEach(async () => {
   );
 });
 async function harness(knownDownloads: () => readonly RegisteredDownload[] = () => []) {
-  const directory = await mkdtemp(join(tmpdir(), "capture-channel-test-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "capture-channel-test-")));
   directories.push(directory);
   const pairing = new PairingAuthority(join(directory, "pairings.json"));
   await pairing.load();

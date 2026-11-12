@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { realpath, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vite-plus/test";
@@ -14,7 +14,7 @@ afterEach(async () => {
 });
 const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" as LibraryFile["id"];
 async function harness() {
-  const directory = await mkdtemp(join(tmpdir(), "capture-reopen-test-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "capture-reopen-test-")));
   directories.push(directory);
   const registry = new LocalOriginRegistry(join(directory, "registry.json"));
   await registry.load();

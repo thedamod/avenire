@@ -1,11 +1,11 @@
-import { mkdtemp, mkdir, writeFile, stat, symlink, rm, utimes } from "node:fs/promises";
+import { realpath, mkdtemp, mkdir, writeFile, stat, symlink, rm, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vite-plus/test";
 import { validateBrowserDownload } from "./download-validation.ts";
 
 it("accepts only a matching regular download within its capture directory and time window", async () => {
-  const root = await mkdtemp(join(tmpdir(), "capture-download-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "capture-download-")));
   const id = "capture-request";
   const path = join(root, "Avenire", id, "notes.pdf");
   try {
@@ -63,7 +63,7 @@ it("accepts only a matching regular download within its capture directory and ti
 });
 
 it("rejects HTML saved with a PDF filename and MIME with an honest host-specific reason", async () => {
-  const root = await mkdtemp(join(tmpdir(), "capture-download-html-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "capture-download-html-")));
   const id = "capture-request";
   const path = join(root, "Avenire", id, "notes.pdf");
   try {

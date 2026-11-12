@@ -186,6 +186,5 @@ export function mprisUrlToPath(url: string): string | undefined {
     // malformed % sequences — use the raw path rather than dropping it
   }
   if (/^\/[A-Za-z]:\//.test(path)) path = path.slice(1);
-  if (process.platform === "win32") path = path.replace(/\//g, "\\");
   return path || undefined;
 }

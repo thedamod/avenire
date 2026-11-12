@@ -19,7 +19,10 @@ vi.mock("./foreground.ts", () => ({ collectForeground: mocks.foreground }));
 vi.mock("./tabs.ts", () => ({
   latestTabs: () => [
     {
-      url: "file:///tmp/Browser%20Study.pdf",
+      url:
+        process.platform === "win32"
+          ? "file:///C:/tmp/Browser%20Study.pdf"
+          : "file:///tmp/Browser%20Study.pdf",
       title: "Browser Study",
       tabId: 1,
       windowId: 1,
@@ -47,7 +50,10 @@ it("keeps foreground collectors off until opted in and resolves browser file URL
     {
       appName: "Browser",
       title: "Browser Study",
-      filePath: "/tmp/Browser Study.pdf",
+      filePath:
+        process.platform === "win32"
+          ? String.raw`C:\tmp\Browser Study.pdf`
+          : "/tmp/Browser Study.pdf",
       foreground: true,
     },
   ]);
