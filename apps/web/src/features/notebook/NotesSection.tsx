@@ -36,7 +36,7 @@ export function NotesSection({
       {notes === undefined ? (
         <NotesSkeleton />
       ) : notes.length === 0 ? (
-        <EmptyLine>No notes yet. Write one, or ask Ruth to draft one from these sources.</EmptyLine>
+        <EmptyLine>No notes yet. Write one, or ask Ava to draft one from these sources.</EmptyLine>
       ) : (
         <ul
           className={cn(

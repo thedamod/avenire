@@ -57,10 +57,10 @@ export function AskComposer({
           ref={input}
           autoFocus={autoFocus}
           accessibilityLabel={
-            searching ? "Search your files or ask Ruth" : "Ask Ruth a follow-up"
+            searching ? "Search your files or ask Ava" : "Ask Ava a follow-up"
           }
           placeholder={
-            searching ? "Search or ask Ruth" : "Ask Ruth, @ a source or note"
+            searching ? "Search or ask Ava" : "Ask Ava, @ a source or note"
           }
           placeholderTextColor="#6E6E6E"
           value={value}
@@ -101,13 +101,13 @@ export function AskComposer({
               onPress={() =>
                 Alert.alert(
                   "Voice input",
-                  "Use your keyboard's dictation microphone to speak to Ruth.",
+                  "Use your keyboard's dictation microphone to speak to Ava.",
                 )
               }
             />
             <IconButton
               icon="up"
-              accessibilityLabel="Send follow-up to Ruth"
+              accessibilityLabel="Send follow-up to Ava"
               size={34}
               hitSlop={5}
               color="#0B1020"
@@ -181,8 +181,8 @@ export function AskComposer({
             accessibilityRole="button"
             accessibilityLabel={
               searching
-                ? "Ask Ruth about this question"
-                : "Send follow-up to Ruth"
+                ? "Ask Ava about this question"
+                : "Send follow-up to Ava"
             }
             disabled={empty || busy}
             hitSlop={{ top: 5, bottom: 5 }}
@@ -206,7 +206,7 @@ export function AskComposer({
                   fontWeight: "600",
                 }}
               >
-                Ask Ruth
+                Ask Ava
               </Text>
             ) : (
               <Icon name="up" color="#0B1020" />

@@ -281,11 +281,11 @@ function Content({
           />
         </Row>
         <Row
-          title="Ruth can change files"
+          title="Ava can change files"
           description="Default for new tasks. You can change it per task."
         >
           <Choice
-            label="Ruth can change files"
+            label="Ava can change files"
             value={settings.fileChanges}
             options={[
               { value: "propose", label: "Propose, I accept" },
@@ -296,7 +296,7 @@ function Content({
         </Row>
         <Row
           title="Sort Unfiled sources every night"
-          description="Ruth proposes notebooks for new captures. Uses no runs."
+          description="Ava proposes notebooks for new captures. Uses no runs."
         >
           <Toggle
             label="Sort Unfiled sources every night"
@@ -348,9 +348,9 @@ function Content({
             onChange={(morningReport) => void save({ notifications: { morningReport } })}
           />
         </Row>
-        <Row title="Ruth needs you" description="When a run is waiting for your answer">
+        <Row title="Ava needs you" description="When a run is waiting for your answer">
           <Toggle
-            label="Ruth needs you"
+            label="Ava needs you"
             checked={settings.notifications.needsYou}
             onChange={(needsYou) => void save({ notifications: { needsYou } })}
           />

@@ -142,7 +142,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
       Effect.catchCause((cause) =>
         Cause.hasInterrupts(cause)
           ? Effect.interrupt
-          : Effect.logWarning(`Ruth Cloud ${step} failed`).pipe(Effect.as(undefined)),
+          : Effect.logWarning(`Ava Cloud ${step} failed`).pipe(Effect.as(undefined)),
       ),
     );
   const execute = Effect.fn("RuthCloud.execute")(function* ({ runId, lease }: CloudClaim) {
@@ -169,7 +169,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
     const hydrations: HydrationResult[] = [];
     const hydrationFailures: string[] = [];
     const logStep = (step: string) =>
-      Effect.logInfo("Ruth Cloud step", { step, userId, runId, taskId: run.taskId });
+      Effect.logInfo("Ava Cloud step", { step, userId, runId, taskId: run.taskId });
     const snapshot = () => database.use((db) => db.query.cloudRun.findFirst({ where: ownedWhere }));
     const cancelled = Effect.fn("RuthCloud.checkCancellation")(function* () {
       const current = yield* snapshot();
@@ -204,7 +204,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         sandbox: box.sandbox,
         recordingId: id,
         ctx: { userId, runId },
-        title: "Ruth Cloud session recording",
+        title: "Ava Cloud session recording",
       }).pipe(Effect.provideService(AssetStore, assets));
       recording = { id: finalized.asset.id, url: finalized.asset.url };
       // Keep the identity through report commit so a crash can recover the same asset/link.
@@ -290,7 +290,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
       yield* database.use((db) =>
         db
           .insert(ruthThread)
-          .values({ id: proposedThreadId, userId, kind: "ruth-cloud", title: "Ruth Cloud" })
+          .values({ id: proposedThreadId, userId, kind: "ruth-cloud", title: "Ava Cloud" })
           .onConflictDoNothing({
             target: ruthThread.userId,
             where: eq(ruthThread.kind, "ruth-cloud"),
@@ -389,7 +389,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
               })
         ).pipe(
           Effect.catchTag("EmailSendError", (failure) =>
-            Effect.logWarning("Ruth Cloud report email failed", { runId, error: failure.message }),
+            Effect.logWarning("Ava Cloud report email failed", { runId, error: failure.message }),
           ),
         );
       }
@@ -733,7 +733,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
         });
         const current = yield* cancelled();
         if (current.error) return yield* new RuthCloudError({ runId, reason: current.error });
-        yield* finishReport("succeeded", current.summary ?? result.text ?? "Ruth Cloud finished.");
+        yield* finishReport("succeeded", current.summary ?? result.text ?? "Ava Cloud finished.");
       });
       const remaining = Math.max(
         1,
@@ -793,7 +793,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
                 })
                 .where(fencedWhere),
             );
-            yield* Effect.logWarning("Ruth Cloud will resume after an infrastructure failure", {
+            yield* Effect.logWarning("Ava Cloud will resume after an infrastructure failure", {
               runId,
               failures: failures + 1,
               error: describeFailure(Option.getOrUndefined(error)),
@@ -802,7 +802,7 @@ export const makeRuthCloud = Effect.fn("RuthCloud.make")(function* (options: Rut
           }
           yield* finishReport(
             cancelledRun ? "cancelled" : "failed",
-            current.summary ?? "Ruth Cloud could not finish this task.",
+            current.summary ?? "Ava Cloud could not finish this task.",
             cancelledRun
               ? undefined
               : (describeFailure(Option.getOrUndefined(error)) ?? "The Cloud executor failed."),

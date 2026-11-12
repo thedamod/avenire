@@ -76,7 +76,7 @@ export const NotebookComposer = forwardRef<
       placeholder={
         isMobile ? "Search this notebook or ask" : "Search this notebook or ask a question"
       }
-      aria-label="Search this notebook or ask Ruth"
+      aria-label="Search this notebook or ask Ava"
       enterKeyHint="send"
       className="block w-full resize-none bg-transparent text-[16px] leading-[22px] text-foreground caret-ruth outline-none placeholder:text-muted-foreground md:text-[20px] md:leading-7 md:tracking-[-0.01em]"
     />
@@ -123,7 +123,7 @@ export const NotebookComposer = forwardRef<
               onClick={onAsk}
               className="inline-flex h-8 items-center gap-2 rounded-full border border-ruth-line bg-ruth-tint pr-1.5 pl-3 text-[13px] font-semibold text-ruth-text transition-colors hover:bg-ruth/20 disabled:opacity-70"
             >
-              Ask Ruth
+              Ask Ava
               <Kbd className="h-5 border-b border-ruth-line bg-ruth/15 text-ruth-text">Enter</Kbd>
             </button>
           </div>
@@ -166,7 +166,7 @@ export const NotebookComposer = forwardRef<
           {open ? null : (
             <button
               type="button"
-              aria-label="Ask Ruth"
+              aria-label="Ask Ava"
               disabled={empty}
               onClick={onAsk}
               className="inline-flex size-[34px] shrink-0 items-center justify-center rounded-full bg-ruth text-ruth-foreground disabled:opacity-60"
@@ -203,7 +203,7 @@ export const NotebookComposer = forwardRef<
               onClick={onAsk}
               className="h-[34px] rounded-full bg-ruth px-3.5 text-[15px] font-semibold text-ruth-foreground disabled:opacity-60"
             >
-              Ask Ruth
+              Ask Ava
             </button>
           </div>
         ) : null}

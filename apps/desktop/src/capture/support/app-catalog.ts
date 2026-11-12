@@ -67,7 +67,7 @@ export function isSelfApp(name: string): boolean {
 // file managers, system UI, launchers, terminals and IDEs never qualify.
 // Notepad++ is limited to .md/.txt by native-file.ts. Every app also needs a resolved file.
 export const LOCAL_FILE_APPS =
-  /^(?:preview|acrobat(?: reader)?|acrord32|adobe acrobat(?: reader)?|sumatrapdf|okular|evince|zathura|foxit(?:pdfreader|reader|phantompdf| pdf reader)?|winword|(?:microsoft )?word|(?:microsoft )?excel|powerpnt|(?:microsoft )?powerpoint|(?:microsoft )?onenote|pages|numbers|keynote|libreoffice(?: writer| calc| impress)?|soffice(?:\.bin)?|obsidian|typora|notepad\+\+|vlc(?: media player)?|quicktime(?: ?player)?|iina|mpv(?:-bundle)?|mplayer|mpc(?:-hc|-be|hc|be)?(?:64)?|wmplayer|windows media player|media player|microsoft\.media\.player|music\.ui|video\.ui|groove ?music|films ?& ?tv|movies ?& ?tv|potplayer(?:mini)?(?:64)?|calibre|ebook-viewer|zotero)$/i;
+  /^(?:preview|acrobat(?: reader)?|acrord32|adobe acrobat(?: reader)?|sumatrapdf|okular|evince|zathura|foxit(?:pdfreader|reader|phantompdf| pdf reader)?|winword|(?:microsoft )?word|(?:microsoft )?excel|powerpnt|(?:microsoft )?powerpoint|(?:microsoft )?onenote|pages|numbers|keynote|libreoffice(?:[ -](?:writer|calc|impress))?|soffice(?:\.bin)?|obsidian|typora|notepad\+\+|vlc(?: media player)?|quicktime(?: ?player)?|iina|mpv(?:-bundle)?|mplayer|mpc(?:-hc|-be|hc|be)?(?:64)?|wmplayer|windows media player|media player|microsoft\.media\.player|music\.ui|video\.ui|groove ?music|films ?& ?tv|movies ?& ?tv|potplayer(?:mini)?(?:64)?|calibre|ebook-viewer|zotero)$/i;
 export function isLocalFileApp(name: string): boolean {
   return LOCAL_FILE_APPS.test(name.trim().replace(/\.exe$/i, ""));
 }

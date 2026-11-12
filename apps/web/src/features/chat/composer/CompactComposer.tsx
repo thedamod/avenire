@@ -52,7 +52,7 @@ export function scopeWith(
  */
 export function CompactComposer({
   draftKey,
-  placeholder = "Ask Ruth about this",
+  placeholder = "Ask Ava about this",
   scope,
   scopeLabel = "This note",
   onSubmit,

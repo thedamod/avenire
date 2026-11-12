@@ -199,7 +199,7 @@ export function MessageList({
         ) : null}
         {!loading && !report && !rows.length && !error ? (
           <EmptyState
-            title="Ask Ruth"
+            title="Ask Ava"
             description="Ask a question about your sources or notes."
             icon="moon"
           />
@@ -418,7 +418,7 @@ function ThreadRow({
         <View accessibilityLiveRegion="polite" style={{ gap: 8 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Icon name="spinner" size={14} color={colors.accent} />
-            <Text color="accent-text">Ruth is working…</Text>
+            <Text color="accent-text">Ava is working…</Text>
           </View>
           <Skeleton width="55%" />
         </View>
@@ -441,7 +441,7 @@ function Reasoning({ text }: { text: string }) {
     <View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Ruth's reasoning"
+        accessibilityLabel="Ava's reasoning"
         accessibilityState={{ expanded: open }}
         onPress={() => setOpen(!open)}
         style={{ minHeight: 44, justifyContent: "center" }}

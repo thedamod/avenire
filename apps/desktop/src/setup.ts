@@ -27,6 +27,7 @@ export class DesktopSetup {
   preferencesSynced = false;
   private automationGranted = false;
   private foregroundTools = false;
+  private foregroundWayland = false;
   private permissionRequest: Promise<void> | undefined;
 
   private readonly path: string;
@@ -70,9 +71,18 @@ export class DesktopSetup {
         console.warn("Desktop setup state could not be read; setup will run again.");
     }
     if (this.platform === "linux") {
-      // Wayland does not expose foreground windows through xdotool. Never imply it does.
       const wayland = await import("./config.ts").then((config) => config.isWayland);
-      if (!wayland) {
+      if (wayland) {
+        try {
+          const result = await command("hyprctl", ["activewindow", "-j"], { timeout: 1200 });
+          const value: unknown = JSON.parse(result.stdout);
+          this.foregroundTools = value !== null && typeof value === "object" && !Array.isArray(value);
+          this.foregroundWayland = this.foregroundTools;
+        } catch {
+          this.foregroundTools = false;
+          this.foregroundWayland = false;
+        }
+      } else {
         const results = await Promise.allSettled([
           command("xdotool", ["version"], { timeout: 1200 }),
           command("xprop", ["-version"], { timeout: 1200 }),
@@ -111,8 +121,10 @@ export class DesktopSetup {
         this.platform === "win32"
           ? "Windows can read the active app and window title without a separate OS prompt."
           : this.foregroundTools
-            ? "Foreground capture uses xdotool and xprop in your X11 session."
-            : "Foreground capture needs X11, xdotool and xprop. Wayland users can use browser capture or upload sources instead.",
+            ? this.foregroundWayland
+              ? "Foreground capture uses Hyprland to read the active app and window title."
+              : "Foreground capture uses xdotool and xprop in your X11 session."
+            : "Foreground capture needs Hyprland on Wayland, or xdotool and xprop on X11. Browser capture and uploads are also available.",
     };
   }
 

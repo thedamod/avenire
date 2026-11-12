@@ -45,7 +45,7 @@ export function TaskSourcesSelect({
         <Button
           type="button"
           variant="outline"
-          aria-label={`Ruth can read: ${count} selected`}
+          aria-label={`Ava can read: ${count} selected`}
           className="h-11 w-full min-w-0 max-w-full justify-between gap-3 overflow-hidden px-3 font-normal md:h-9"
         >
           <span
@@ -78,7 +78,7 @@ export function TaskSourcesSelect({
         </div>
         <ScrollFade
           role="group"
-          aria-label="Sources Ruth can read"
+          aria-label="Sources Ava can read"
           className="max-h-[min(280px,40dvh)] overflow-y-auto p-1.5"
         >
           {showCaptures ? (

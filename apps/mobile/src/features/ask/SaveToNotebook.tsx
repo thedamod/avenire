@@ -78,7 +78,7 @@ export function SaveToNotebook({
       const note = await call(api, (client) =>
         client["library.createNote"]({
           title:
-            title.replace(/\s+/g, " ").trim().slice(0, 200) || "Ruth's answer",
+            title.replace(/\s+/g, " ").trim().slice(0, 200) || "Ava's answer",
           markdown,
           folderIds: [destination.id],
           source: "chat",
@@ -126,7 +126,7 @@ export function SaveToNotebook({
             <Pressable
               key={folder.id}
               accessibilityRole="radio"
-              accessibilityLabel={`Save to ${folder.name}${folder.id === guess ? ", Ruth's guess" : ""}`}
+              accessibilityLabel={`Save to ${folder.name}${folder.id === guess ? ", Ava's guess" : ""}`}
               accessibilityState={{
                 checked: !naming && selected === folder.id,
               }}
@@ -166,7 +166,7 @@ export function SaveToNotebook({
                 {folder.name}
               </Text>
               {folder.id === guess ? (
-                <Text variant="meta">Ruth's guess</Text>
+                <Text variant="meta">Ava's guess</Text>
               ) : null}
               {!naming && selected === folder.id ? (
                 <Icon name="check" color="#ABC4FF" strokeWidth={1.8} />

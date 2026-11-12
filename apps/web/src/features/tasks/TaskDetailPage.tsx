@@ -82,7 +82,7 @@ export function TaskDetailPage({ taskId }: { taskId: CloudTaskId }) {
     setBusy(true);
     try {
       await call(api, (client) => client["cloud.runTaskNow"]({ taskId }));
-      toast("Ruth started it. You'll see it in the morning report.");
+      toast("Ava started it. You'll see it in the morning report.");
       void runs.refetch();
     } catch (cause) {
       toast.error(`Couldn't start it: ${errorMessage(cause)}`);
@@ -239,7 +239,7 @@ export function TaskDetailPage({ taskId }: { taskId: CloudTaskId }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this task?</AlertDialogTitle>
             <AlertDialogDescription>
-              Ruth stops running it. Past morning reports and anything you accepted stay.
+              Ava stops running it. Past morning reports and anything you accepted stay.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

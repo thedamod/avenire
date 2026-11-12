@@ -19,6 +19,8 @@ import {
   captureLogPath,
 } from "./capture/diagnostics.ts";
 import * as Path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import * as Schema from "effect/Schema";
 import {
@@ -54,6 +56,7 @@ import {
   defaultCaptureShortcut,
   defaultPromptShortcut,
   fallbackPromptShortcut,
+  isWayland,
 } from "./config.ts";
 import { instantCapture, setCaptureDeviceId, collectSnapshot } from "./capture/collect.ts";
 import { applyPolicy } from "@avenire/capture/policy";
@@ -107,7 +110,7 @@ function endNativePrompt(): void {
 }
 function hidePrompt(): void {
   endNativePrompt();
-  promptWindow?.hide();
+  promptWindow?.destroy();
 }
 
 let setupWindow: BrowserWindow | undefined;
@@ -145,12 +148,18 @@ const chromeOptions = {
   titleBarOverlay: { color: "#0b0b0b", symbolColor: "#a3a3a3", height: 40 },
   trafficLightPosition: { x: 12, y: 12 },
   autoHideMenuBar: true,
-  icon: Path.join(__dirname, "icon.png"),
+  icon: Path.join(__dirname, process.platform === "win32" ? "icon.ico" : "icon.png"),
 };
 
+let pendingPromptShortcut = process.argv.includes("--avenire-prompt");
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on("second-instance", showMain);
+  app.on("second-instance", (_event, argv) => {
+    if (argv.includes("--avenire-prompt")) {
+      if (setup) togglePrompt();
+      else pendingPromptShortcut = true;
+    } else showMain();
+  });
   app
     .whenReady()
     .then(async () => {
@@ -159,6 +168,7 @@ else {
         packaged: app.isPackaged,
         resourcesPath: process.resourcesPath,
         appPath: app.getAppPath(),
+        wayland: process.platform === "linux" && isWayland,
       });
       const userData = app.getPath("userData");
       deviceId = loadInstallIdentity(userData).deviceId;
@@ -179,7 +189,10 @@ else {
           { label: "Desktop", submenu: [{ label: "Desktop setup…", click: showSetup }] },
         ]),
       );
-      showMain();
+      if (pendingPromptShortcut) {
+        pendingPromptShortcut = false;
+        togglePrompt();
+      } else showMain();
       captureOverlay = new CaptureOverlay(
         Path.join(__dirname, "capture-overlay.html"),
         Path.join(__dirname, "overlay-preload.cjs"),
@@ -312,7 +325,7 @@ async function loadApp(target: BrowserWindow, url = appUrl): Promise<void> {
   }
 }
 
-function createWindow(): void {
+function createWindow(showOnReady = true): void {
   window = new BrowserWindow({
     ...chromeOptions,
     width: 1200,
@@ -355,7 +368,7 @@ function createWindow(): void {
   );
   target.once("ready-to-show", () => {
     target.webContents.setBackgroundThrottling(true);
-    target.show();
+    if (showOnReady) target.show();
   });
   target.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
     if (isMainFrame && !isInPlace) {
@@ -498,6 +511,8 @@ function ensurePromptWindow(): void {
   if (!window || window.isDestroyed() || quitting) return;
   if (!promptWindow) {
     promptWindow = new BrowserWindow({
+      icon: chromeOptions.icon,
+      title: "Avenire Ask Ava",
       width: 520,
       height: 420,
       show: false,
@@ -518,16 +533,26 @@ function ensurePromptWindow(): void {
         nodeIntegration: false,
       },
     });
+    promptWindow.on("page-title-updated", (event) => event.preventDefault());
     promptWindow.setAlwaysOnTop(true, "floating");
     if (process.platform === "darwin") {
       promptWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     }
     let promptLoaded = false;
+    let promptHadFocus = false;
+    let promptShownAt = 0;
     applyNavigationPolicy(promptWindow);
+    promptWindow.on("show", () => {
+      promptShownAt = Date.now();
+    });
+    promptWindow.on("focus", () => {
+      promptHadFocus = true;
+    });
     promptWindow.on("blur", () => {
-      if (!promptBusy) hidePrompt();
+      if (!(process.platform === "linux" && isWayland) && promptHadFocus && !promptBusy && Date.now() - promptShownAt > 750) hidePrompt();
     });
     promptWindow.on("hide", () => {
+      promptHadFocus = false;
       endNativePrompt();
       promptWindow?.webContents.send("avenire:prompt-hidden");
     });
@@ -572,17 +597,17 @@ async function showPrompt(): Promise<void> {
   promptOpening = true;
   if (generation !== promptGeneration || quitting) return;
   promptOpening = false;
-  if (!window || window.isDestroyed()) createWindow();
+  if (!window || window.isDestroyed()) createWindow(false);
   ensurePromptWindow();
   if (!promptWindow) return;
   const { x, y, width, height } = screen.getDisplayNearestPoint(
     screen.getCursorScreenPoint(),
   ).workArea;
-  const promptWidth = Math.min(520, width);
+  const promptWidth = Math.min(400, width);
   const promptHeight = Math.min(420, height);
   promptWindow.setBounds({
-    x: x + width - promptWidth,
-    y: y + height - promptHeight,
+    x: x + width - promptWidth - 12,
+    y: y + height - promptHeight - 12,
     width: promptWidth,
     height: promptHeight,
   });
@@ -595,6 +620,7 @@ async function showPrompt(): Promise<void> {
 function openAsset(url: string): void {
   if (!window || window.isDestroyed()) return;
   const asset = new BrowserWindow({
+    icon: chromeOptions.icon,
     width: 1000,
     height: 760,
     parent: window,
@@ -976,7 +1002,6 @@ ipcMain.handle(
           .catch(() => {}); // Offline users can still pair with a code or an existing secret.
     }
     captureOwner = nextOwner;
-    if (nextOwner && setup?.completed) ensurePromptWindow();
     readInBrowser =
       captureReady &&
       typeof options === "object" &&
@@ -1315,7 +1340,7 @@ ipcMain.handle("avenire:setup-notifications", (event) => {
   setupNotifications = true;
   new Notification({
     title: "Avenire",
-    body: "You’ll hear from Ruth when your morning report is ready.",
+    body: "You’ll hear from Ava when your morning report is ready.",
   }).show();
   return true;
 });
@@ -1384,6 +1409,61 @@ ipcMain.handle("avenire:prompt-capture-context", (event) => {
 // Only the active prompt may request local pixels, and only through the client tool.
 ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
   currentNative(event, id); // Validate the active prompt before spawning a child.
+  if (process.platform === "linux" && isWayland) {
+    if (promptCaptureRunning) throw new Error("Local screen capture already running");
+    const target = promptWindow!;
+    const pointer = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(pointer);
+    const area = display.bounds;
+    const opacity = target.getOpacity();
+    const existingOverlay = nativeOverlay;
+    const existingScreenId = promptNativeScreenId;
+    let overlayRestored = false;
+    promptCaptureRunning = true;
+    try {
+      if (existingOverlay && existingScreenId) await existingOverlay.request("hide");
+      target.setOpacity(0);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      currentNative(event, id);
+      const { stdout } = await promisify(execFile)("grim", ["-c", "-g", `${area.x},${area.y} ${area.width}x${area.height}`, "-"], { encoding: "buffer", timeout: 5000, maxBuffer: 32 * 1024 * 1024 });
+      currentNative(event, id);
+      let image = nativeImage.createFromBuffer(stdout);
+      if (image.isEmpty()) throw new Error("Screen capture unavailable");
+      let size = image.getSize();
+      if (Math.max(size.width, size.height) > 1280) image = image.resize({ width: Math.max(1, Math.round(size.width * 1280 / Math.max(size.width, size.height))), height: Math.max(1, Math.round(size.height * 1280 / Math.max(size.width, size.height))) });
+      let png = image.toPNG();
+      while (png.length > 786000 && image.getSize().width > 100 && image.getSize().height > 100) {
+        size = image.getSize();
+        image = image.resize({ width: Math.max(1, Math.floor(size.width * 0.8)), height: Math.max(1, Math.floor(size.height * 0.8)) });
+        png = image.toPNG();
+      }
+      if (png.length > 786000) throw new Error("Screen image exceeds payload budget");
+      size = image.getSize();
+      const capturedAt = new Date().toISOString();
+      const inBounds = pointer.x >= area.x && pointer.x < area.x + area.width && pointer.y >= area.y && pointer.y < area.y + area.height;
+      let presentation: import("@avenire/contracts").DesktopPresentationObservation | undefined;
+      try {
+        await ensureNativePrompt();
+        if (existingOverlay && existingScreenId && nativeOverlay === existingOverlay) {
+          await existingOverlay.request("show", { screenId: existingScreenId });
+          overlayRestored = true;
+        }
+        if (nativeOverlay && promptNativeScreenId)
+          presentation = (await readNativeObservation(nativeOverlay, promptNativeScreenId)).presentation;
+      } catch (error) {
+        captureLog("native-presentation-unavailable", captureError(error));
+      }
+      currentNative(event, id);
+      const screenId = promptNativeScreenId ?? String(display.id);
+      promptCaptureContext = { sessionId: promptGeneration, capture: { mimeType: "image/png", data: png.toString("base64"), width: size.width, height: size.height, screenId, capturedAt, cursor: { globalX: pointer.x, globalY: pointer.y, screenId, inBounds, ...(inBounds ? { x: (pointer.x - area.x) / area.width, y: (pointer.y - area.y) / area.height } : {}), observedAt: capturedAt }, ...(presentation ? { presentation } : {}) } };
+      return promptCaptureContext;
+    } finally {
+      if (!overlayRestored && existingOverlay && existingScreenId && nativeOverlay === existingOverlay && !target.isDestroyed())
+        void existingOverlay.request("show", { screenId: existingScreenId }).catch((error) => captureLog("native-presentation-restore-error", captureError(error)));
+      if (!target.isDestroyed()) target.setOpacity(opacity);
+      promptCaptureRunning = false;
+    }
+  }
   await ensureNativePrompt();
   const native = currentNative(event, id);
   if (!native || !promptNativeScreenId) throw new Error("Local screen capture unavailable");

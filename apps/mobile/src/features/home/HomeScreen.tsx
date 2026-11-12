@@ -140,7 +140,7 @@ export function HomeScreen({ navigation }: ScreenProps<"Home">) {
       action: () => navigation.navigate("Tasks"),
     },
     {
-      label: "Ruth's clusters",
+      label: "Ava's clusters",
       icon: "folder",
       action: () => navigation.navigate("ClusterReview"),
     },
@@ -267,7 +267,7 @@ export function HomeScreen({ navigation }: ScreenProps<"Home">) {
                 {library.folders?.some((folder) => folder.suggested) ? (
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Review Ruth's suggested notebooks"
+                    accessibilityLabel="Review Ava's suggested notebooks"
                     onPress={() => navigation.navigate("ClusterReview")}
                     style={{
                       marginHorizontal: 20,
@@ -282,7 +282,7 @@ export function HomeScreen({ navigation }: ScreenProps<"Home">) {
                     }}
                   >
                     <Text style={{ flex: 1 }}>
-                      Ruth grouped your unfiled sources into new notebooks.
+                      Ava grouped your unfiled sources into new notebooks.
                     </Text>
                     <Text variant="label" color="fg">
                       Review
@@ -353,7 +353,7 @@ export function HomeScreen({ navigation }: ScreenProps<"Home">) {
               ) : !library.notes?.length && !library.error ? (
                 <EmptyState
                   title="No notes yet."
-                  description="Write a note, or save one of Ruth's answers."
+                  description="Write a note, or save one of Ava's answers."
                 />
               ) : (
                 library.notes?.map((note) => {
@@ -434,7 +434,7 @@ export function HomeScreen({ navigation }: ScreenProps<"Home">) {
                           ) : null}
                           {ruth ? (
                             <Text variant="meta" color="accent-text">
-                              Written by Ruth
+                              Written by Ava
                             </Text>
                           ) : null}
                         </View>
@@ -522,7 +522,7 @@ export function HomeScreen({ navigation }: ScreenProps<"Home">) {
                       lineHeight: 18,
                     }}
                   >
-                    Ask Ruth below, or leave her a task for tonight.
+                    Ask Ava below, or leave her a task for tonight.
                   </Text>
                 </View>
               ) : (
@@ -582,7 +582,7 @@ export function HomeScreen({ navigation }: ScreenProps<"Home">) {
         </ScrollView>
       </ScrollFade>
       <Composer
-        placeholder="Search or ask Ruth"
+        placeholder="Search or ask Ava"
         value={draft}
         onChangeText={setDraft}
         onFocus={ask}
@@ -593,14 +593,14 @@ export function HomeScreen({ navigation }: ScreenProps<"Home">) {
           <>
             <IconButton
               icon="mic"
-              accessibilityLabel="Open Ask Ruth composer"
+              accessibilityLabel="Open Ask Ava composer"
               size={38}
               hitSlop={3}
               onPress={ask}
             />
             <IconButton
               icon="up"
-              accessibilityLabel="Ask Ruth"
+              accessibilityLabel="Ask Ava"
               size={34}
               hitSlop={5}
               color="#0B1020"

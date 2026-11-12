@@ -253,7 +253,7 @@ export function TasksPage() {
             )
           ) : tasks.length === 0 ? (
             <p className="py-8 text-center text-[13.5px] text-muted-foreground">
-              No scheduled tasks. Leave Ruth something to do overnight.
+              No scheduled tasks. Leave Ava something to do overnight.
             </p>
           ) : null}
         </div>

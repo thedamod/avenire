@@ -308,7 +308,7 @@ export function DesktopOnboarding({ bridge }: { bridge: AvenireSetupBridge }) {
           <div className="onboarding-shortcut-table">
             {(["capture", "prompt"] as const).map((kind) => (
               <div key={kind} className="onboarding-shortcut-row">
-                <span>{kind === "capture" ? "Capture" : "Ask Ruth"}</span>
+                <span>{kind === "capture" ? "Capture" : "Ask Ava"}</span>
                 <ShortcutKeys
                   value={shortcuts[kind]}
                   mac={mac}

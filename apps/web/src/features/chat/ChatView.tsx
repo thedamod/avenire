@@ -101,7 +101,7 @@ export function ChatView({
         setFollowSignal((value) => value + 1);
         void entry
           .send({ text, references })
-          .catch((cause: unknown) => toast.error(`Couldn't reach Ruth: ${errorMessage(cause)}`));
+          .catch((cause: unknown) => toast.error(`Couldn't reach Ava: ${errorMessage(cause)}`));
       } catch (cause) {
         toast.error(`Couldn't start the chat: ${errorMessage(cause)}`);
         return false;
@@ -219,7 +219,7 @@ export function ChatView({
     />
   ) : unanswered ? (
     <ErrorTray
-      message="Ruth didn't reply to this message."
+      message="Ava didn't reply to this message."
       onRetry={() => void entry.chat.regenerate().catch(fail)}
     />
   ) : null;
@@ -294,7 +294,7 @@ export function ChatView({
         {empty ? (
           <div className="pointer-events-none absolute inset-x-0 top-[28%] mx-auto max-w-[46rem] px-5 text-center @min-[776px]/chat-view:px-0">
             <p className="text-[15px] text-foreground-soft">
-              {folder ? `Ask Ruth about ${folder.name}.` : "Ask Ruth about your notes and sources."}
+              {folder ? `Ask Ava about ${folder.name}.` : "Ask Ava about your notes and sources."}
             </p>
             <p className="mt-1 text-[13px] text-muted-foreground">
               Type @ to point at a source or note.
@@ -312,7 +312,7 @@ export function ChatView({
               placeholder={
                 question?.allowCustom
                   ? "Or type your own answer"
-                  : "Ask Ruth, @ a source or note, or / for commands"
+                  : "Ask Ava, @ a source or note, or / for commands"
               }
               busy={busy && !question}
               onStop={() => void entry.chat.stop()}

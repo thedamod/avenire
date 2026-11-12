@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -17,6 +17,7 @@ export type PromptCaptureContext = DesktopPromptCaptureContext;
 export interface NativeOverlayConfig {
   readonly enabled: boolean;
   readonly executable: string;
+  readonly xwayland?: boolean;
 }
 
 /** Explicit operator configuration; renderer/model input never controls executable or argv. */
@@ -24,22 +25,26 @@ export function loadNativeOverlayConfig(paths: {
   readonly packaged: boolean;
   readonly resourcesPath: string;
   readonly appPath: string;
+  readonly wayland?: boolean;
 }): NativeOverlayConfig {
+  const filename = process.platform === "win32" ? "avenire-overlay.exe" : "avenire-overlay";
+  const bundled = paths.packaged
+    ? join(paths.resourcesPath, "native-overlay", filename)
+    : resolve(paths.appPath, "native-dist", filename);
   const configured = Effect.runSync(
     Config.all({
-      enabled: Config.Boolean("AVENIRE_NATIVE_OVERLAY_ENABLED").pipe(Config.withDefault(false)),
+      enabled: Config.Boolean("AVENIRE_NATIVE_OVERLAY_ENABLED").pipe(Config.withDefault(Boolean(paths.wayland && existsSync(bundled)))),
       executable: Config.String("AVENIRE_NATIVE_OVERLAY_EXECUTABLE").pipe(Config.withDefault("")),
+      display: Config.String("DISPLAY").pipe(Config.withDefault("")),
     }),
   );
-  const filename = process.platform === "win32" ? "avenire-overlay.exe" : "avenire-overlay";
   // appPath is the desktop package root in development; never depend on the invoking cwd.
   return {
     enabled: configured.enabled,
     executable:
       configured.executable ||
-      (paths.packaged
-        ? join(paths.resourcesPath, "native-overlay", filename)
-        : resolve(paths.appPath, "native-dist", filename)),
+      bundled,
+    xwayland: Boolean(paths.wayland && configured.display),
   };
 }
 
@@ -88,7 +93,7 @@ export class NativeOverlay {
     } catch {
       return Promise.reject(new Error("Native overlay could not start"));
     }
-    this.child = spawn(executable, [], {
+    this.child = spawn(executable, this.config.xwayland ? ["-platform", "xcb"] : [], {
       shell: false,
       stdio: "pipe",
       windowsHide: true,

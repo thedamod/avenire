@@ -191,7 +191,7 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
       if (value && !notifications.granted && !(await notifications.request())) {
         Alert.alert(
           "Notifications are off",
-          "Allow Avenire notifications in your phone's Settings to hear from Ruth.",
+          "Allow Avenire notifications in your phone's Settings to hear from Ava.",
           [
             { text: "Cancel", style: "cancel" },
             {
@@ -365,7 +365,7 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
                   onPress={() => setChoice("time")}
                 />
                 <Row
-                  title="Ruth can change files"
+                  title="Ava can change files"
                   value={
                     preferences.fileChanges === "propose"
                       ? "Propose, I accept"
@@ -406,10 +406,10 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
                   )}
                 />
                 <Row
-                  title="When Ruth needs you"
+                  title="When Ava needs you"
                   subtitle="Approvals, questions, failed runs"
                   trailing={toggle(
-                    "When Ruth needs you notifications",
+                    "When Ava needs you notifications",
                     notifications.granted &&
                       preferences.notifications.needsYou &&
                       preferences.notifications.runFailed,
@@ -513,7 +513,7 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
         onClose={() => setChoice(undefined)}
       />
       <ChoiceSheet
-        title="Ruth can change files"
+        title="Ava can change files"
         visible={choice === "changes"}
         value={preferences?.fileChanges ?? "propose"}
         options={[
@@ -623,7 +623,7 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
             {panel === "privacy" ? (
               <>
                 <Text color="fg">Your files are private to you.</Text>
-                <Text>Ruth works on copies in Cloud and proposes changes for you to accept.</Text>
+                <Text>Ava works on copies in Cloud and proposes changes for you to accept.</Text>
                 <Button accessibilityLabel="Export data, coming soon" disabled variant="secondary">
                   Export data · coming soon
                 </Button>

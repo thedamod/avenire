@@ -158,7 +158,7 @@ export function ChatHeader({ thread, folder, onRename, onFullAccess, onDelete }:
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="Delete this chat?"
-        description="The conversation is removed for good. Notes Ruth saved stay in your notebooks."
+        description="The conversation is removed for good. Notes Ava saved stay in your notebooks."
       >
         <div className="flex justify-end gap-2 px-5 pb-4 max-md:flex-col-reverse md:px-6 md:pb-6">
           <Button variant="secondary" onClick={() => setConfirmDelete(false)}>

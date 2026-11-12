@@ -101,7 +101,7 @@ export function MorningToast({
             }}
           >
             {title ??
-              (failed ? "Last night's run didn't finish." : "Ruth finished 3 things overnight.")}
+              (failed ? "Last night's run didn't finish." : "Ava finished 3 things overnight.")}
           </Text>
           <Text
             numberOfLines={1}

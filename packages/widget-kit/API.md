@@ -1,4 +1,4 @@
-# Ruth widget kits
+# Ava widget kits
 
 Use inside a sandboxed widget's inline `<script type="module">`. Import only absolute paths on the widget origin: `/kits/math.js`, `/kits/iso.js`, and optionally `/kits/iso-gl.js`. The scripts make no network requests. `math.js` includes the pmndrs/math source plus the numerics below. The isometric source is MIT licensed by Ryan; pmndrs/math is MIT licensed by Isaac Mason. See `src/math/LICENSE`, `src/iso/LICENSE` and the built `LICENSES.txt`.
 

@@ -203,7 +203,7 @@ export function HomePage() {
                 {clusters.length ? (
                   <div className="flex items-center gap-3 border-l-2 border-ruth-line py-1 pl-3 text-[13px]">
                     <span className="min-w-0 flex-1 text-foreground-soft">
-                      Ruth grouped your unfiled sources into{" "}
+                      Ava grouped your unfiled sources into{" "}
                       {plural(clusters.length, "new notebook")}.
                     </span>
                     <Link
@@ -263,7 +263,7 @@ export function HomePage() {
                 <div className="rounded-[10px] border border-dashed border-input px-5 py-8 text-center">
                   <p className="text-[13.5px] text-foreground-soft">No chats or tasks yet.</p>
                   <p className="mt-1 text-[12.5px] text-muted-foreground">
-                    Ask Ruth something above, or leave her a task to do overnight.
+                    Ask Ava something above, or leave her a task to do overnight.
                   </p>
                 </div>
               ) : (

@@ -1,4 +1,4 @@
-# Native Ruth presentation companion
+# Native Ava presentation companion
 
 The C++20 / Qt Quick host renders transparent annotations and Qt Quick 3D scenes in
 its own process. QML is compiled into executable resources. The application,
@@ -56,7 +56,7 @@ manipulation, not a simulated controller. The existing 3D renderer stays optiona
 `get_cursor` reads the OS pointer without moving it: global Qt logical pixels,
 normalized coordinates within the selected capture bounds, screen ID and an
 observation timestamp. The prompt refreshes pointer and current native presentation
-state before each submission. Ruth can inspect these through `native_cursor` and
+state before each submission. Ava can inspect these through `native_cursor` and
 `native_presentation`, and request parameter changes through `native_diagram` or
 `native_visualize`. These observations are per-turn snapshots, not continuous
 same-turn desktop feedback. Trusted prompt/session checks protect the read IPC too.
@@ -145,6 +145,6 @@ a live authenticated model round trip or physical GPU performance.
 
 ### Annotation lifetime
 
-A `read_screen` capture establishes a view-specific context. While it is thinking or showing a presentation, the companion compares a small local fingerprint every 500 ms using the shared Qt screen-capture backend. It masks the prompt window, annotation text and leaders, border, and the entire native visualization window so streaming text or interactive model rotation does not invalidate the source view. Samples are never saved or sent to the model; only the explicit `read_screen` image is supplied to Ruth.
+A `read_screen` capture establishes a view-specific context. While it is thinking or showing a presentation, the companion compares a small local fingerprint every 500 ms using the shared Qt screen-capture backend. It masks the prompt window, annotation text and leaders, border, and the entire native visualization window so streaming text or interactive model rotation does not invalidate the source view. Samples are never saved or sent to the model; only the explicit `read_screen` image is supplied to Ava.
 
 A detected content or display-geometry change clears annotations and the associated visualization, cancels the active client response, and rejects late presentation commands until a fresh capture. This is conservative invalidation, not document-element or scroll-position tracking. Windows, macOS and Linux use the same implementation; capture permissions/backend support still apply, including Wayland restrictions.

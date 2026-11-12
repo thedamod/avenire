@@ -1,5 +1,6 @@
 appId: space.avenire.desktop
 productName: Avenire
+executableName: avenire
 directories:
   app: dist
   output: release
@@ -20,6 +21,7 @@ files:
   - capture-overlay.html
   - capture-overlay.css
   - desktop-config.json
+  - "*.ico"
   - "*.png"
   - "*.svg"
   - "*.woff2"

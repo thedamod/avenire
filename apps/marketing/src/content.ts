@@ -6,7 +6,7 @@ export const nav = {
   links: [
     { label: "Capture", href: "#capture" },
     { label: "Brought to you", href: "#brought-to-you" },
-    { label: "Ruth", href: "#ruth" },
+    { label: "Ava", href: "#ruth" },
     { label: "Your files", href: "#files" },
   ],
   signIn: { label: "Sign in", href: `${appUrl}/sign-in` },
@@ -24,7 +24,7 @@ export const hero = {
   bright: "They come to you.",
   lead: "Everything you study, filed and handed back to you.",
   screenshotAlt:
-    "Avenire home: your notebooks, recent notes and what Ruth has ready for you, in one place.",
+    "Avenire home: your notebooks, recent notes and what Ava has ready for you, in one place.",
 };
 
 export const statement = {
@@ -60,27 +60,27 @@ export const broughtToYou = {
   id: "brought-to-you",
   eyebrow: "02 · Brought to you",
   dim: "You don’t go looking for it.",
-  bright: "Ruth brings it to you.",
+  bright: "Ava brings it to you.",
   aside:
-    "Ruth turns your sources into notes, summaries and quizzes and puts them where you’ll see them. You approve every change.",
+    "Ava turns your sources into notes, summaries and quizzes and puts them where you’ll see them. You approve every change.",
   video: {
     src: "/media/ruth-cloud.mp4",
-    alt: "Ruth turning four papers on a CartPole controller into a cited report, with the sources beside it.",
+    alt: "Ava turning four papers on a CartPole controller into a cited report, with the sources beside it.",
   },
 };
 
 export const ruth = {
   id: "ruth",
-  eyebrow: "03 · Ruth",
+  eyebrow: "03 · Ava",
   dim: "Ask about your own material.",
-  bright: "Ruth picks how to answer.",
+  bright: "Ava picks how to answer.",
   aside: "Summon it with ⌥ Space. Answers come from your own notes.",
   shortcut: "⌥ Space",
   answers: [
     {
       question: "Why can’t any engine beat Carnot?",
       title: "A cited answer, a sentence at a time",
-      alt: "Ruth answering with citations from your thermodynamics notes.",
+      alt: "Ava answering with citations from your thermodynamics notes.",
     },
     {
       question: "Fit my lab 4 cooling readings.",
@@ -119,7 +119,7 @@ export const trust = {
   points: [
     {
       title: "Approvals first",
-      copy: "Ruth proposes. Every new, moved or edited file waits for your Accept or Skip.",
+      copy: "Ava proposes. Every new, moved or edited file waits for your Accept or Skip.",
     },
     {
       title: "30 days to change your mind",
@@ -146,7 +146,7 @@ export const footer = {
       links: [
         { label: "Capture", href: "#capture" },
         { label: "Brought to you", href: "#brought-to-you" },
-        { label: "Ruth", href: "#ruth" },
+        { label: "Ava", href: "#ruth" },
         { label: "Your files", href: "#files" },
       ],
     },

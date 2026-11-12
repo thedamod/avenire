@@ -65,7 +65,7 @@ export class RuthError extends Schema.TaggedError<RuthError>()("RuthError", {
 }) {
   override get message(): string {
     const detail = this.cause instanceof Error ? this.cause.message : String(this.cause);
-    return `Ruth could not ${this.operation}: ${detail}`;
+    return `Ava could not ${this.operation}: ${detail}`;
   }
 }
 
@@ -398,7 +398,7 @@ const makeRuth = Effect.gen(function* () {
             ? { ...replyMetadata, finishedAt: new Date().toISOString() }
             : undefined,
       onError: (error) => {
-        Effect.runForkWith(services)(Effect.logError("Ruth chat stream failed", { error }));
+        Effect.runForkWith(services)(Effect.logError("Ava chat stream failed", { error }));
         return ruthStreamError(error);
       },
       onEnd: ({ responseMessage, messages, isAborted, isCancelled }) =>
@@ -422,7 +422,7 @@ const makeRuth = Effect.gen(function* () {
                       })
                     : Effect.void,
                 ),
-                Effect.catchCause((cause) => Effect.logError("Could not save Ruth's reply", cause)),
+                Effect.catchCause((cause) => Effect.logError("Could not save Ava's reply", cause)),
               ),
             ),
     });

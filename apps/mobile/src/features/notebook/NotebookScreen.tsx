@@ -25,7 +25,7 @@ import { plural, relativeTime, useNotebook, useNotebookActions } from "./data";
 function NoteRow({ file, onPress }: { file: LibraryFile; onPress: () => void }) {
   const by =
     file.source === "ruth-cloud" || file.source === "ruth"
-      ? "Written by Ruth"
+      ? "Written by Ava"
       : file.source === "chat"
         ? "Saved from a chat"
         : "Your note";
@@ -47,7 +47,7 @@ function NoteRow({ file, onPress }: { file: LibraryFile; onPress: () => void }) 
           {file.preview}
         </Text>
       ) : null}
-      <Text variant="meta" color={by === "Written by Ruth" ? "accent-text" : "fg-3"}>
+      <Text variant="meta" color={by === "Written by Ava" ? "accent-text" : "fg-3"}>
         {by}
       </Text>
     </Pressable>
@@ -332,7 +332,7 @@ function NotebookPage({ route, navigation }: ScreenProps<"Notebook">) {
         placeholder="Search this notebook or ask"
         sending={sourceActions.busy}
         controls={[
-          { key: "ruth", icon: "moon", label: "Ruth" },
+          { key: "ruth", icon: "moon", label: "Ava" },
           { key: "notebook", icon: "folder", label: folder?.name ?? "This notebook" },
         ]}
       />

@@ -46,12 +46,11 @@ Item {
             }
             Item {
                 visible: marker.modelData.kind === "cursor"
-                width: 32; height: 32
+                width: 20; height: 20
                 Rectangle {
-                    x: -7; y: -7; width: 18; height: 18
-                    radius: 9; color: "transparent"; border.width: 2; border.color: marker.ink
+                    x: -7; y: -7; width: 14; height: 14
+                    radius: 7; color: "#e51b1918"; border.width: 2; border.color: marker.ink
                 }
-                BibataCursor {}
 
             }
             Shape {

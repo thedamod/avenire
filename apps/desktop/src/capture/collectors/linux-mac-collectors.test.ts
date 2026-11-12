@@ -5,8 +5,40 @@ import { describe, expect, it } from "vite-plus/test";
 import { getBackgroundMediaLinux } from "./background-media-linux.ts";
 import { resolveDocumentPathLinux } from "./document-path-linux.ts";
 import { createCaptureContext } from "./capture-context.ts";
+import { nativeFile } from "../native-file.ts";
+import { formats } from "../upload.ts";
 
 describe.runIf(process.platform === "linux")("linux collectors (live, never throw)", () => {
+  it.each([
+    ["odt", "application/vnd.oasis.opendocument.text", "LibreOffice Writer"],
+    ["ods", "application/vnd.oasis.opendocument.spreadsheet", "LibreOffice Calc"],
+    ["odp", "application/vnd.oasis.opendocument.presentation", "LibreOffice Impress"],
+  ])(
+    "recovers an open .%s document through the native capture boundary",
+    async (ext, mime, appName) => {
+      const dir = mkdtempSync(join(tmpdir(), "avn-office-"));
+      const path = join(dir, `Study notes.${ext}`);
+      writeFileSync(path, "fixture");
+      const fd = openSync(path, "r");
+      try {
+        const resolved = await resolveDocumentPathLinux({
+          bundleIdOrExe: "soffice.bin",
+          appName,
+          windowTitle: `Study notes.${ext} — ${appName}`,
+          processId: process.pid,
+          isPrivateWindow: false,
+        });
+        expect(resolved).toBe(path);
+        for (const name of [appName, "libreoffice", "soffice", "soffice.bin"]) {
+          expect(nativeFile(name, resolved)).toBe(path);
+        }
+        expect(formats[ext]).toEqual(["document", mime]);
+      } finally {
+        closeSync(fd);
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
   it("resolveDocumentPathLinux finds an fd-held scannable file and memoizes", async () => {
     const dir = mkdtempSync(join(tmpdir(), "avn-"));
     const f = join(dir, "essay.pdf");

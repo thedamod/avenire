@@ -38,7 +38,7 @@ pnpm dev:desktop
 The default OS title bar is hidden on the setup and app windows. A shared 40px app bar
 uses the existing design tokens and web favicon; native caption buttons preserve window
 controls and Windows snap behavior. The bar follows the app theme, reserves space for
-macOS traffic lights, and leaves the existing Ruth prompt overlay unchanged. App, installer
+macOS traffic lights, and leaves the existing Ava prompt overlay unchanged. App, installer
 and tray icons come from the web's existing branding assets; the build generates a
 1024px PNG and a multiresolution Windows ICO from the web favicon SVG.
 
@@ -63,7 +63,7 @@ and shared Button, Input, Chip and Kbd controls using the same UI tokens and bun
 The brand mesh is a still, so setup does not run an ongoing animation loop.
 
 Global hotkeys register only after Allow. Not now keeps them disabled. Conflicting shortcuts
-can be changed; Ask Ruth offers Alt+Shift+Space when Alt+Space is occupied. The Try it step
+can be changed; Ask Ava offers Alt+Shift+Space when Alt+Space is occupied. The Try it step
 stages policy-filtered sources locally and Undo discards them. On completion, the hosted app
 opens for sign-in; study context, source choices, report time, timezone and notification choice
 sync through settings.update before the authenticated capture consumer becomes ready. The
@@ -76,8 +76,10 @@ macOS requests Accessibility and Automation only from explicit buttons. The Syst
 permission check does not retain its returned title. Office can request its own Automation
 grant on the first document capture. These collectors use metadata/file paths rather than
 screen images, so they do not request Screen Recording, camera, microphone or Full Disk Access.
-Linux foreground capture requires an X11 session with `xdotool` and `xprop`; Wayland is
-reported as unavailable. Browser-tab capture and ordinary uploads remain available.
+Linux foreground capture supports Hyprland on Wayland through `hyprctl`, and X11 through
+`xdotool` and `xprop`. Local screen reading on Wayland requires `grim`; annotations use the
+bundled Qt overlay with XWayland. Other Wayland compositors may not expose these capabilities.
+Browser-tab capture and ordinary uploads remain available.
 
 Google sign-in opens the system browser. `/desktop/authorize` asks the user to confirm
 their account, issues a one-minute single-use token through a server action, and returns it
@@ -126,7 +128,7 @@ macOS production distribution requires signing/notarization credentials supplied
 owner; hardened-runtime and Apple Events entitlements are included. No auto-updater is configured.
 The V8 compile cache is enabled before the main bundle in packaged builds and skipped for
 AppImage's changing mount paths. Hidden startup is temporarily unthrottled until first paint;
-hidden/minimized windows use normal throttling afterward. The Ruth overlay is created on demand.
+hidden/minimized windows use normal throttling afterward. The Ava overlay is created on demand.
 
 Validate OS permissions, first/warm launch, idle CPU/RSS, shortcut ownership, tray behavior,
 provider sign-in, real document upload/indexing, and signed installers on each target OS.

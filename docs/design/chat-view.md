@@ -1,6 +1,6 @@
-# Ruth chat view
+# Ava chat view
 
-Design for the Ruth conversation surface (desktop/web sheet and the mobile screen). It takes
+Design for the Ava conversation surface (desktop/web sheet and the mobile screen). It takes
 its rendering ideas from t3code's chat (`context/t3code`, source map at the end), its
 composer behaviour from v1 (`context/avenire/apps/web/src/components/chat/multimodal-input.tsx`),
 and its message model from the Vercel AI SDK. This is a design, not wiring: the sync layer
@@ -13,7 +13,7 @@ comes first, and these components consume whatever it produces.
 2. **The AI SDK message is the data model.** There's no separate file model. Text,
    reasoning, tool calls (with approval), files and custom data are `UIMessage` parts, as in
    v1 (`ai` 7, `@ai-sdk/react`).
-3. **Visuals are inline HTML in markdown.** Ruth writes `<avenire-chart>` /
+3. **Visuals are inline HTML in markdown.** Ava writes `<avenire-chart>` /
    `<avenire-sim>` tags inside its markdown, so it can place a visual mid-explanation and
    wrap it in its own layout. Before writing one it calls `get_page_context` to learn the
    page (surface, width, theme, kits). The renderer allowlists those tags and mounts real
@@ -30,18 +30,18 @@ comes first, and these components consume whatever it produces.
 | Need                                                              | `UIMessage` part                                                                                                                                                |
 | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Prose, including `<avenire-*>` visual tags                        | `text`                                                                                                                                                          |
-| Ruth's reasoning summary                                          | `reasoning` (collapsed by default)                                                                                                                              |
+| Ava's reasoning summary                                          | `reasoning` (collapsed by default)                                                                                                                              |
 | `search_materials`, `read_file`, `run_python`, `get_page_context` | `tool-<name>` with `input-streaming` → `input-available` → `output-available` / `output-error`                                                                  |
 | File action                                                       | `tool-propose_file_action` with `needsApproval: !thread.fullAccess`; state `approval-requested` → `approval-responded`, answered with `addToolApprovalResponse` |
 | A question for the user                                           | `tool-ask_user`, a client-side tool with no `execute`, answered with `addToolOutput` (choices / free text)                                                      |
 | A subagent (the video agent)                                      | `data-subagent` part `{ subagentId, kind, status, stage, progress }`, updated in place by id                                                                    |
-| A Ruth Cloud run                                                  | `data-cloud-run` part `{ runId }`, rendered from live run state                                                                                                 |
+| A Ava Cloud run                                                  | `data-cloud-run` part `{ runId }`, rendered from live run state                                                                                                 |
 | User attachments                                                  | `file` parts with an `attachmentId` (upload state lives outside the message; see §6.4)                                                                          |
 
 **Page facts travel with the request.** `DefaultChatTransport` sends
 `{ threadId, fast, page }` in the body, where `page` is `{ surface, platform,
 contentWidthPx, colorScheme, themeTokens, fonts }` measured from the chat column. The server
-merges it with runtime constants when Ruth calls `get_page_context`, so the tool never
+merges it with runtime constants when Ava calls `get_page_context`, so the tool never
 waits on the client. Resizing between turns just changes the next request's `page`.
 
 **Questions from subagents.** A subagent's question is an `ask_user` tool part carrying
@@ -124,7 +124,7 @@ Use `@legendapp/list` on web (`@legendapp/list/react`) and mobile
 
 `TimelineMinimap` equivalent, web/desktop only:
 
-- One tick per user message. Hovering previews that question and the start of Ruth's
+- One tick per user message. Hovering previews that question and the start of Ava's
   answer; clicking calls `scrollToIndex` on that row; ↑/↓ buttons step between turns.
 - On scroll, compare measured row positions with the viewport to mark ticks in view and
   the current turn. Mutate only data attributes, and animate with transform/opacity.
@@ -177,7 +177,7 @@ Use TipTap (as t3code does) so references are real inline tokens, not text:
 - Pasting a URL offers to turn it into a capture token.
 - **Serialization:** the editor produces `{ text, references[] }`. The text carries stable
   placeholders (`@[file:itm_…]`) and the references are sent as a typed message metadata
-  field, so Ruth gets both the user's wording and exact ids.
+  field, so Ava gets both the user's wording and exact ids.
 - Draft persistence per thread stores the TipTap JSON (Zustand `persist` on web, device
   storage on mobile).
 
@@ -186,12 +186,12 @@ Use TipTap (as t3code does) so references are real inline tokens, not text:
 - No model or thinking pickers.
 - **Fast** (⚡): a lighter model and a shorter tool budget for quick answers.
 - **Full access:** the user's call. Turning it on overrides the approval protection, and
-  Ruth applies file actions in this thread without asking (`ruth.setFullAccess`, stored on
+  Ava applies file actions in this thread without asking (`ruth.setFullAccess`, stored on
   the thread; a settings default for new threads). Actions still log to the thread and
   stay undoable, and delete still means archive. Approvals are on until the user changes
   it, and a persistent badge shows while Full access is on.
 - Voice input (mic) as in v1.
-- While Ruth is working: Stop. Sending again queues the message for after the turn.
+- While Ava is working: Stop. Sending again queues the message for after the turn.
 
 ### 6.4 Attachments never block send
 
@@ -205,7 +205,7 @@ Matching ChatGPT (and replacing v1, which held the submission until every upload
    each referenced attachment's `uploaded` signal (bounded, around 60 s). Text-only work
    (search over existing material) can start meanwhile.
 4. **Failure is per attachment.** A failed upload marks its chip on the _sent_ message
-   with Retry. The turn continues without it, and Ruth is told the attachment didn't
+   with Retry. The turn continues without it, and Ava is told the attachment didn't
    arrive. Retrying adds it to a follow-up turn.
 5. Uploads continue if the user switches threads, and they're tracked in a small upload
    store outside the composer.
@@ -219,7 +219,7 @@ docked **above** the composer, never replacing it, so the draft is preserved.
   rename, archive, create note) with a preview (target folder, new title, note excerpt),
   plus Approve / Decline. The turn continues once it's answered. Hidden in Full access
   mode.
-- **Question** (an `ask_user` tool part, from Ruth or a subagent): one question at a time,
+- **Question** (an `ask_user` tool part, from Ava or a subagent): one question at a time,
   with choice buttons and optional free text. It shows a progress indicator if there are
   several, and an origin label for subagents. Free-form study questions are answered in
   the normal composer, not the banner.
@@ -228,7 +228,7 @@ docked **above** the composer, never replacing it, so the draft is preserved.
 
 ## 7. Subagents and background work
 
-Ruth does delegate. The **video agent** is the first subagent (see the widget-renderer
+Ava does delegate. The **video agent** is the first subagent (see the widget-renderer
 vision §4.5), and nightly Cloud runs may fan out per folder later.
 
 - **In the timeline**, a `data-subagent` part renders as t3code's grouped card: avatar or
@@ -237,8 +237,8 @@ vision §4.5), and nightly Cloud runs may fan out per folder later.
   opens the subagent's transcript in a side sheet.
 - **When the subagent finishes**, its card turns into the produced visual row (the video),
   with a link back to the transcript.
-- **Ruth Cloud runs** render as `data-cloud-run` cards linked to the run detail (live
-  status, recording, artifacts). The shell shows a small "Ruth Cloud" indicator while a run
+- **Ava Cloud runs** render as `data-cloud-run` cards linked to the run detail (live
+  status, recording, artifacts). The shell shows a small "Ava Cloud" indicator while a run
   is active, with a sheet listing runs (like t3code's `ThreadAgentsSheet`).
 
 ## 8. Performance checklist

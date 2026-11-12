@@ -54,7 +54,7 @@ export const MorningDigest = ({
   </Layout>
 );
 MorningDigest.PreviewProps = {
-  name: "Ruth",
+  name: "Ava",
   date: "2026-10-21",
   taskTitle: "Nightly study digest",
   summary: "Your thermodynamics notes were reviewed and a short quiz is ready.",

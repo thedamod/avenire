@@ -13,7 +13,7 @@ import { standardSchema, standardObjectSchema } from "./schema.ts";
 /** Client-side tool: pixels travel only in the immediate continuation request, not chat history. */
 export const readScreenSpec = {
   description:
-    "Read a fresh screenshot of the user's local display when their question depends on visible material, such as 'this muscle'. Use only when needed; do not read for unrelated questions or continuously monitor. The prompt and AI overlays are excluded. After inspecting it, answer with native_annotate bubbles pointing to relevant regions rather than a duplicate chat explanation. This is the local screen; screen_read/computer refer to a separate cloud desktop.",
+    "Read a fresh screenshot of the user's local display when their question depends on visible material, such as 'this muscle'. Use only when needed; do not read for unrelated questions or continuously monitor. The prompt and AI overlays are excluded. Describe what you see in your reply; use native annotations only when those tools are available. This is the local screen; screen_read/computer refer to a separate cloud desktop.",
   inputSchema: standardObjectSchema(Schema.Struct({})),
   outputSchema: standardSchema(
     Schema.Struct({
@@ -30,7 +30,7 @@ export const nativeAnnotateSpec = {
     "Use normalized 0..1 coordinates relative to the attached full-display screenshot. " +
     "Choose a cursor with text to point at and explain a region, a rect highlight, an arrow (width/height point down and right), or a label. Every text annotation appears in a compact readable bubble with a leader. Prefer short labels and restrained warm or neutral colors. " +
     "Replace the current annotation set with at most 32 items; an empty array clears it. " +
-    "Keep annotations small and relevant, and never obscure the material. " +
+    "Use concise labels of at most 8 words; put explanations in the chat response. Keep annotations small and relevant, and never obscure the material. " +
     "This requests local presentation; it does not click, type, change documents, or verify display. " +
     "The client applies it only while the matching screen capture is still active.",
   inputSchema: standardObjectSchema(

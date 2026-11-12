@@ -37,6 +37,13 @@ export async function readForeground(): Promise<{
       const { execPowerShell } = await import("./collectors/ps-queue.ts");
       const { stdout } = await execPowerShell(WINDOWS_FOREGROUND_SCRIPT, { timeout: 1200, notes });
       [appName = "", title = "", pidText = ""] = stdout.trim().split(/\r?\n/);
+    } else if ((await import("../config.ts")).isWayland) {
+      const value: unknown = JSON.parse(await command("hyprctl", ["activewindow", "-j"]));
+      if (!value || typeof value !== "object") throw new Error("Invalid Hyprland response");
+      const window = value as Record<string, unknown>;
+      appName = typeof window.class === "string" ? window.class : "";
+      title = typeof window.title === "string" ? window.title : "";
+      pidText = typeof window.pid === "number" ? String(window.pid) : "";
     } else {
       title = await command("xdotool", ["getactivewindow", "getwindowname"]);
       try {
@@ -47,7 +54,7 @@ export async function readForeground(): Promise<{
       } catch {
         return {
           windows: title ? [{ appName: "", title, foreground: true }] : [],
-          notes: ["Linux Wayland or unavailable xprop: foreground app name could not be read."],
+          notes: ["Linux xprop unavailable: foreground app name could not be read."],
         };
       }
     }
@@ -67,7 +74,7 @@ export async function readForeground(): Promise<{
   } catch (error) {
     const note =
       process.platform === "linux"
-        ? "Foreground window unavailable (Wayland does not expose a standard global window API)."
+        ? "Foreground window unavailable (Wayland requires a supported compositor such as Hyprland)."
         : `Foreground window collector failed: ${error instanceof Error ? error.message : "unknown error"}`;
     return { windows: [], notes: [note] };
   }

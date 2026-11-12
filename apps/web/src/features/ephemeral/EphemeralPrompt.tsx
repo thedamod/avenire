@@ -94,7 +94,7 @@ export function EphemeralPrompt({
       })().catch((cause: unknown) => {
         if (generation !== questionGeneration.current) return;
         setSubmissionFailed(true);
-        toast.error(`Couldn't reach Ruth: ${errorMessage(cause)}`);
+        toast.error(`Couldn't reach Ava: ${errorMessage(cause)}`);
       });
     },
     [entry, folderId, standalone],
@@ -329,7 +329,7 @@ export function EphemeralPrompt({
     <div
       ref={root}
       role="dialog"
-      aria-label="Ask Ruth"
+      aria-label="Ask Ava"
       className="flex w-full flex-col gap-2.5 [text-shadow:0_0_14px_#0b0b0b,0_0_4px_#0b0b0b]"
     >
       <form
@@ -344,8 +344,8 @@ export function EphemeralPrompt({
           ref={input}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          aria-label={question ? "Ask a follow-up" : "Ask Ruth"}
-          placeholder={question || "Ask Ruth anything"}
+          aria-label={question ? "Ask a follow-up" : "Ask Ava"}
+          placeholder={question || "Ask Ava anything"}
           disabled={busy}
           className={cn(
             "min-w-0 flex-1 bg-transparent text-[13.5px] text-foreground outline-none",
@@ -354,7 +354,7 @@ export function EphemeralPrompt({
         />
       </form>
 
-      {status ? <p className="text-[12.5px] text-ruth-text">Ruth · {status}</p> : null}
+      {status ? <p className="text-[12.5px] text-ruth-text">Ava · {status}</p> : null}
 
       {sentences ? (
         <div aria-live="polite" className="flex flex-col gap-3">
@@ -435,7 +435,7 @@ export function EphemeralPrompt({
 
       {needsYou && !busy ? (
         <p className="text-[13px] text-foreground-soft">
-          Ruth needs your answer to continue ·{" "}
+          Ava needs your answer to continue ·{" "}
           <button type="button" className="text-ruth-text hover:opacity-80" onClick={openInChat}>
             Open in chat
           </button>
@@ -468,7 +468,7 @@ export function EphemeralPrompt({
 
       {standalone && nativeError ? (
         <p role="status" className="text-xs text-muted-foreground">
-          Screen context unavailable. Ruth can still answer your question.
+          Screen context unavailable. Ava can still answer your question.
         </p>
       ) : null}
 

@@ -94,7 +94,7 @@ export const createRuthTools = (
     turn.page.platform === "desktop"
       ? { read_screen: tool(readScreenSpec) }
       : {}),
-    ...(turn.nativeScreenCapturedAt &&
+    ...(turn.nativeScreenCapturedAt && turn.nativePresentation &&
     turn.page.surface === "ephemeral" &&
     turn.page.platform === "desktop"
       ? {

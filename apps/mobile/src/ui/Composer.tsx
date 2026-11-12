@@ -44,14 +44,14 @@ export interface ComposerProps {
   style?: StyleProp<ViewStyle>;
 }
 const defaultControls: readonly ComposerControl[] = [
-  { key: "ruth", icon: "moon", label: "Ruth" },
+  { key: "ruth", icon: "moon", label: "Ava" },
   { key: "notebook", icon: "folder", label: "All notebooks" },
   { key: "time", icon: "clock", label: "Now" },
 ];
 
 /** Floating docks need Screen edges without bottom; inline galleries set floating=false. */
 export function Composer({
-  placeholder = "Ask Ruth, @ a source or note",
+  placeholder = "Ask Ava, @ a source or note",
   value,
   onChangeText,
   onSend,

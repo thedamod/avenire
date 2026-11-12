@@ -34,16 +34,16 @@ export function RuthModelMenu({
 }) {
   return (
     <DropdownMenu modal={false} {...(open === undefined ? {} : { open, onOpenChange })}>
-      <DropdownMenuTrigger className={control} aria-label="Ruth mode">
+      <DropdownMenuTrigger className={control} aria-label="Ava mode">
         {fast ? <Zap className="size-3.5" /> : <Moon className="size-3.5" />}
-        <span>{fast ? "Fast" : "Ruth"}</span>
+        <span>{fast ? "Fast" : "Ava"}</span>
         <ChevronDown className="size-3 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="w-64">
         {(
           [
-            [false, "Ruth", "Searches your material and explains in depth", Moon],
-            [true, "Ruth Fast", "Quicker answers with fewer tools", Zap],
+            [false, "Ava", "Searches your material and explains in depth", Moon],
+            [true, "Ava Fast", "Quicker answers with fewer tools", Zap],
           ] as const
         ).map(([value, label, detail, Icon]) => (
           <DropdownMenuItem
@@ -90,7 +90,7 @@ export function ScopePicker({
         <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="max-h-80 w-60">
-        <DropdownMenuLabel>Ruth searches</DropdownMenuLabel>
+        <DropdownMenuLabel>Ava searches</DropdownMenuLabel>
         <DropdownMenuItem onSelect={() => onChange(null)}>
           <Library className="size-3.5" />
           <span className="flex-1">{thisNoteLabel ?? "All notebooks"}</span>
@@ -131,7 +131,7 @@ export function WhenMenu({
           <Clock className="mt-0.5 size-3.5" />
           <span className="flex min-w-0 flex-1 flex-col">
             <span>Now</span>
-            <span className="text-xs text-muted-foreground">Ruth answers here</span>
+            <span className="text-xs text-muted-foreground">Ava answers here</span>
           </span>
           <Check className="mt-0.5 size-3.5 text-ruth" />
         </DropdownMenuItem>
@@ -139,7 +139,7 @@ export function WhenMenu({
           <Moon className="mt-0.5 size-3.5" />
           <span className="flex min-w-0 flex-1 flex-col">
             <span>Tonight</span>
-            <span className="text-xs text-muted-foreground">Ruth Cloud works on it overnight</span>
+            <span className="text-xs text-muted-foreground">Ava Cloud works on it overnight</span>
           </span>
         </DropdownMenuItem>
       </DropdownMenuContent>

@@ -84,7 +84,7 @@ it.effect("accept rechecks the CURRENT hash; conflicts leave the original untouc
       yield* (yield* CloudReview).resolve(cloudCtx.userId, id, "accept");
       expect(f.rows("pending_approval")[0]).toMatchObject({
         status: "conflict",
-        conflict: "Changed in your library on 2026-10-09 after Ruth Cloud copied it",
+        conflict: "Changed in your library on 2026-10-09 after Ava Cloud copied it",
         resolvedAt: null,
       });
       expect(new TextDecoder().decode(yield* storage.get(StorageKey.make("original")))).toBe(

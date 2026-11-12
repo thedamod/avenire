@@ -9,7 +9,7 @@ Use the Daytona thread sandbox for computation and shareable files. Python 3 sci
 
 The working directory is `/home/daytona/work`. Prefer relative paths such as `afterburner.html`; absolute writes must stay under `/home/daytona` or `/tmp`. `/mnt`, `/mnt/data` and local host paths are unavailable. Keep the same sandbox path through write, build, preview and render. `/opt/avenire/figures` is a read-only source reference; copy sources into the working directory before editing or building.
 
-In Ruth Cloud, use the run output directory and `box_write` / `box_exec` / `box_read` instead of the chat sandbox tools. `preview_widget` reads Cloud paths, and `publish_output` / `publish_asset` publish HTML as a wrapped widget. The executor closes the persistent workspace; do not call `sandbox_close` or `render_widget` in Cloud.
+In Ava Cloud, use the run output directory and `box_write` / `box_exec` / `box_read` instead of the chat sandbox tools. `preview_widget` reads Cloud paths, and `publish_output` / `publish_asset` publish HTML as a wrapped widget. The executor closes the persistent workspace; do not call `sandbox_close` or `render_widget` in Cloud.
 
 1. `sandbox_write({ path: "work.py", content: "..." })` writes code/data.
 2. `sandbox_exec({ command: "python work.py" })` computes; inspect exit status and concise stdout/stderr. Use the tool's supported timeout for long renders and stay within output caps. Break long jobs into inspect and final render stages.

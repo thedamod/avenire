@@ -62,7 +62,7 @@ export function SearchResults({
     return (
       <EmptyState
         title="No matching files."
-        description="Try another search, or tap Ask Ruth for an explanation."
+        description="Try another search, or tap Ask Ava for an explanation."
       />
     );
   const fileById = new Map(files?.map((file) => [file.id, file]));

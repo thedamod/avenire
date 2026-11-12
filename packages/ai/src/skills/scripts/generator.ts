@@ -82,11 +82,11 @@ const readEntries = async (): Promise<ReadonlyArray<SkillEntry>> => {
     ...sectionEntries,
     {
       id: "kit-api",
-      title: "Ruth widget kits",
+      title: "Ava widget kits",
       description: "Use the exact math, isometric SVG and WebGL kit exports in standalone widgets.",
       section: "tool-guidelines",
       path: path.relative(ROOT_DIR, KIT_API_FILE).split(path.sep).join("/"),
-      content: `---\nname: kit-api\ndescription: Use the exact math, isometric SVG and WebGL kit exports in standalone widgets.\n---\n\nUse this source for API signatures. Its literal demo colours show kit mechanics; use Avenire tokens from \`style\` in Ruth widgets.\n\n${kitApi}`,
+      content: `---\nname: kit-api\ndescription: Use the exact math, isometric SVG and WebGL kit exports in standalone widgets.\n---\n\nUse this source for API signatures. Its literal demo colours show kit mechanics; use Avenire tokens from \`style\` in Ava widgets.\n\n${kitApi}`,
     },
   ];
   const duplicate = entries.find((entry, index) =>
