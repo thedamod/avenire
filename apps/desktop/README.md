@@ -133,3 +133,22 @@ hidden/minimized windows use normal throttling afterward. The Ava overlay is cre
 Validate OS permissions, first/warm launch, idle CPU/RSS, shortcut ownership, tray behavior,
 provider sign-in, real document upload/indexing, and signed installers on each target OS.
 Unit/build/browser-fixture checks do not establish those native behaviors.
+
+### Screen-read privacy and validation
+
+Full-display `read_screen` currently fails closed on every platform. The existing
+source collectors omit browser windows, lack authoritative bounds, and can return
+partial results. Hyprland's client inventory is useful for rejecting known sensitive
+sources but excludes layer-shell surfaces and is not atomic with `grim`; matching
+before/after inventories alone cannot prove the captured frame is safe. No pixels
+reach the renderer/model through this path. A compositor/portal adapter that provides
+reliable frame privacy coverage (including masking protected surfaces) is required
+before enabling screen reads. Native presentation availability is consequently not
+advertised to the prompt. Ordinary read-only use does not gain an approval requirement.
+
+`pnpm --filter @avenire/desktop test` runs unit tests in a clean checkout, without
+native deployment artifacts. `native:build` followed by `native:behavior` explicitly
+runs deployment/process integration checks. CI builds the native deployment before
+those checks. Native suspension, monitor retention, crash recovery and renderer
+fallback regressions are included; real multi-monitor rendering still needs a Qt
+build and suitable desktop session.

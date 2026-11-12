@@ -73,6 +73,8 @@ jobs:
         run: |
           corepack enable
           pnpm install --frozen-lockfile
+      - name: Desktop unit suite (no native deployment prerequisite)
+        run: pnpm --filter @avenire/desktop test
       - name: CMake build and platform deployment
         shell: bash
         run: node apps/desktop/scripts/native-build.mjs --qt "$RUNNER_TEMP/qt/6.8.3/${{ matrix.kit }}"

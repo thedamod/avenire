@@ -79,7 +79,22 @@ in Electron main.
 {"id":6,"method":"shutdown","params":{}}
 ```
 
-Other methods: `inspect`, `clear`, `capture`. Responses are
+Other methods: `inspect`, `clear`, `capture`, `select_screen`, `suspend_capture`,
+`resume_capture`. `select_screen({screenId})` rejects absent, unknown or ambiguous
+IDs and returns `{screenId,bounds:{x,y,width,height}}`. Capture and show without an
+ID retain this selection. Electron must map that exact screen to its capture backend;
+a later pointer position must not choose another display. Selection is rejected
+while capture is suspended or in progress.
+
+For an external capture backend, `suspend_capture` hides both surfaces while retaining
+requested visibility and interactive figure state. `resume_capture({fresh:false})`
+restores that state after a failed read; `fresh:true` clears old screen annotations,
+accepts a fresh observation and restores the figure unchanged. Fresh resume accepts
+an optional normalized `excludedRegion` for the prompt, validated with the same
+bounds as capture, and primes the local change baseline before restoring surfaces.
+A concurrent `hide`
+remains authoritative. Late presentation commands are rejected during suspension.
+Responses are
 `{id,ok:true,result}` or `{id,ok:false,error:{code,message}}`. Escape in the
 interactive scene emits `{event:"dismiss"}` and hides both native surfaces.
 
@@ -145,6 +160,16 @@ a live authenticated model round trip or physical GPU performance.
 
 ### Annotation lifetime
 
-A `read_screen` capture establishes a view-specific context. While it is thinking or showing a presentation, the companion compares a small local fingerprint every 500 ms using the shared Qt screen-capture backend. It masks the prompt window, annotation text and leaders, border, and the entire native visualization window so streaming text or interactive model rotation does not invalidate the source view. Samples are never saved or sent to the model; only the explicit `read_screen` image is supplied to Ava.
+A `read_screen` capture establishes a view-specific context. While it is thinking or
+showing a presentation, the companion compares a 160x90 local fingerprint using the
+shared Qt screen-capture backend. It polls at 500 ms for the first eight comparisons,
+then at 2 s, with a conservative 60 s snapshot lifetime. Expiration invalidates the
+view even if it appears unchanged; late presentation requires another explicit read.
+The timer stops while inactive or capture-suspended and resumes with presentation
+activity. Pixmaps are scaled before conversion to a CPU image. The backend still
+uses full-resolution `grabWindow` on the GUI thread, so capture allocation and GUI
+latency remain backend-dependent and unmeasured; these lifecycle bounds are not a
+measured performance improvement. There is no portable compositor change notification
+in this implementation. Change detection can lag by the current polling interval. It masks the prompt window, annotation text and leaders, border, and the entire native visualization window so streaming text or interactive model rotation does not invalidate the source view. Samples are never saved or sent to the model; only the explicit `read_screen` image is supplied to Ava.
 
 A detected content or display-geometry change clears annotations and the associated visualization, cancels the active client response, and rejects late presentation commands until a fresh capture. This is conservative invalidation, not document-element or scroll-position tracking. Windows, macOS and Linux use the same implementation; capture permissions/backend support still apply, including Wayland restrictions.

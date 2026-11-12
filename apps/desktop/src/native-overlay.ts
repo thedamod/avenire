@@ -33,7 +33,9 @@ export function loadNativeOverlayConfig(paths: {
     : resolve(paths.appPath, "native-dist", filename);
   const configured = Effect.runSync(
     Config.all({
-      enabled: Config.Boolean("AVENIRE_NATIVE_OVERLAY_ENABLED").pipe(Config.withDefault(Boolean(paths.wayland && existsSync(bundled)))),
+      enabled: Config.Boolean("AVENIRE_NATIVE_OVERLAY_ENABLED").pipe(
+        Config.withDefault(existsSync(bundled)),
+      ),
       executable: Config.String("AVENIRE_NATIVE_OVERLAY_EXECUTABLE").pipe(Config.withDefault("")),
       display: Config.String("DISPLAY").pipe(Config.withDefault("")),
     }),
@@ -41,9 +43,7 @@ export function loadNativeOverlayConfig(paths: {
   // appPath is the desktop package root in development; never depend on the invoking cwd.
   return {
     enabled: configured.enabled,
-    executable:
-      configured.executable ||
-      bundled,
+    executable: configured.executable || bundled,
     xwayland: Boolean(paths.wayland && configured.display),
   };
 }
@@ -65,16 +65,23 @@ export class NativeOverlay {
   private buffer = Buffer.alloc(0);
   private pending = new Map<number, Pending>();
   private readonly config: NativeOverlayConfig;
+  private readonly onFailure: (() => void) | undefined;
   private readonly onDismiss: (() => void) | undefined;
   private readonly onScreenInvalidated: (() => void) | undefined;
   constructor(
     config: NativeOverlayConfig,
     onDismiss?: () => void,
     onScreenInvalidated?: () => void,
+    onFailure?: () => void,
   ) {
     this.config = config;
+    this.onFailure = onFailure;
     this.onDismiss = onDismiss;
     this.onScreenInvalidated = onScreenInvalidated;
+  }
+
+  get available(): boolean {
+    return !this.disposed;
   }
 
   private start(): Promise<void> {
@@ -175,7 +182,10 @@ export class NativeOverlay {
       | "annotate"
       | "clear"
       | "visualize"
-      | "capture",
+      | "capture"
+      | "suspend_capture"
+      | "resume_capture"
+      | "select_screen",
     params: object = {},
   ): Promise<unknown> {
     await this.start();
@@ -212,6 +222,8 @@ export class NativeOverlay {
   }
 
   private fail(error: Error): void {
+    if (this.disposed) return;
+    this.onFailure?.();
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(error);

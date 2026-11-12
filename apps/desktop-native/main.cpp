@@ -54,6 +54,14 @@ bool hexColor(QJsonValue value, bool alpha = false) {
     static const QRegularExpression rgba("^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$");
     return value.isString() && (alpha ? rgba : rgb).match(value.toString()).hasMatch();
 }
+QRectF captureExclusion(const QJsonObject &params) {
+    if (!params.contains("excludedRegion")) return {};
+    require(params["excludedRegion"].isObject(), "Invalid excluded region");
+    const auto r = params["excludedRegion"].toObject();
+    require(number(r["x"], 0, 1) && number(r["y"], 0, 1) && number(r["width"], 0, 1) && number(r["height"], 0, 1), "Invalid excluded region");
+    require(r["x"].toDouble() + r["width"].toDouble() <= 1.000001 && r["y"].toDouble() + r["height"].toDouble() <= 1.000001, "Excluded region exceeds display");
+    return QRectF(r["x"].toDouble(), r["y"].toDouble(), r["width"].toDouble(), r["height"].toDouble());
+}
 QJsonArray annotations(QJsonValue value) {
     require(value.isArray() && value.toArray().size() <= 128, "Expected at most 128 annotations");
     QSet<QString> ids;
@@ -116,7 +124,7 @@ public:
                 observationInvalidated = true;
                 items = {}; phase = "idle"; visualWanted = false; visual.hide(); sync();
                 output({{"event", "screen-invalidated"}});
-            }, [this] { return !capturing && (phase == "thinking" || !items.isEmpty() || visualWanted); },
+            }, [this] { return !capturing && !captureSuspended && (overlayWanted || visualWanted) && (phase == "thinking" || !items.isEmpty() || visualWanted); },
                [this](QSize size) { return observationMask(size); });
     }
     void handle(const QByteArray &line) {
@@ -138,26 +146,71 @@ public:
                 return;
             }
             if (method == "inspect") {}
+            else if (method == "select_screen") {
+                require(!capturing && !captureSuspended, "Capture in progress");
+                require(params.contains("screenId"), "Expected screenId");
+                auto screen = select(params);
+                if (selected != screen) {
+                    if (contextWatch) contextWatch->disarm();
+                    observationInvalidated = true; items = {}; sync();
+                }
+                selected = screen;
+                overlay.setScreen(selected);
+                const auto area = bounds.isNull() ? selected->geometry() : bounds;
+                overlay.setGeometry(area);
+                reply(id, QJsonObject{{"screenId", selected->name()}, {"bounds", QJsonObject{
+                    {"x", area.x()}, {"y", area.y()}, {"width", area.width()}, {"height", area.height()}}}});
+                return;
+            } else if (method == "suspend_capture") {
+                require(!capturing && !captureSuspended, "Capture in progress");
+                captureSuspended = true;
+                if (contextWatch) contextWatch->pause();
+                overlay.hide(); visual.hide();
+            } else if (method == "resume_capture") {
+                require(captureSuspended && params["fresh"].isBool(), "Expected suspended capture and fresh flag");
+                require(selected, "Selected display disconnected");
+                const auto nextExcludedRegion = captureExclusion(params);
+                if (params["fresh"].toBool() && contextWatch) {
+                    const auto area = bounds.isNull() ? selected->geometry() : bounds;
+                    const auto pixels = selected->grabWindow(0, area.x() - selected->geometry().x(),
+                        area.y() - selected->geometry().y(), area.width(), area.height());
+                    require(!pixels.isNull(), "Screen change monitoring unavailable");
+                    contextWatch->arm(selected, area, pixels);
+                }
+                captureSuspended = false;
+                if (params["fresh"].toBool()) {
+                    excludedRegion = nextExcludedRegion;
+                    items = {}; observationInvalidated = false; sync();
+                }
+                if (contextWatch) contextWatch->resume();
+                overlay.setVisible(overlayWanted); visual.setVisible(visualWanted);
+                if (overlayWanted) raiseSurface(overlay);
+                if (visualWanted) raiseSurface(visual);
+            }
             else if (method == "show") {
-                selected = select(params);
+                auto screen = select(params);
+                require((!capturing && !captureSuspended) || screen == selected, "Capture in progress");
+                selected = screen;
                 overlay.setScreen(selected);
                 overlay.setGeometry(bounds.isNull() ? selected->geometry() : bounds);
                 overlayWanted = true;
-                if (!capturing) { overlay.show(); raiseSurface(overlay); }
+                if (!capturing && !captureSuspended) { overlay.show(); raiseSurface(overlay); }
+                if (contextWatch) contextWatch->resume();
             } else if (method == "hide") {
                 overlayWanted = visualWanted = false;
                 overlay.hide(); visual.hide();
+                if (contextWatch) contextWatch->pause();
             } else if (method == "set_state") {
                 require(QStringList{"idle", "thinking", "error"}.contains(params["phase"].toString()), "Invalid phase");
                 require(!params.contains("reducedMotion") || params["reducedMotion"].isBool(), "Invalid reducedMotion");
                 phase = params["phase"].toString(); reduced = params["reducedMotion"].toBool(); sync();
             } else if (method == "annotate") {
-                require(!observationInvalidated, "Screen changed; read_screen again before annotating");
+                require(!observationInvalidated && !capturing && !captureSuspended, "Screen changed or capture in progress; read_screen again before annotating");
                 items = annotations(params["items"]); sync();
             }
             else if (method == "clear") { items = {}; sync(); }
             else if (method == "visualize") {
-                require(!params["visible"].toBool() || !observationInvalidated, "Screen changed; read_screen again before visualizing");
+                require(!params["visible"].toBool() || (!observationInvalidated && !capturing && !captureSuspended), "Screen changed or capture in progress; read_screen again before visualizing");
                 require(params["visible"].isBool() && (!params.contains("interactive") || params["interactive"].isBool()), "Invalid visualization options");
                 require(!(params.contains("scene") && params.contains("diagram")), "Choose one presentation type");
                 if (params.contains("diagram")) {
@@ -188,18 +241,16 @@ public:
                               qMin(visual.height(), qMax(1, area.height() - 40)));
                 visual.setScreen(selected);
                 visual.setPosition(area.right() - visual.width() - 20, area.bottom() - visual.height() - 20);
-                visual.setVisible(visualWanted && !capturing);
+                visual.setVisible(visualWanted && !capturing && !captureSuspended);
                 if (visual.isVisible()) raiseSurface(visual);
+                if (contextWatch) contextWatch->resume();
             } else if (method == "capture") {
                 auto screen = select(params);
-                if (capturing) { fail(id, "BUSY", "Capture already in progress"); return; }
-                excludedRegion = {};
-                if (params.contains("excludedRegion")) {
-                    const auto r = params["excludedRegion"].toObject();
-                    require(number(r["x"], 0, 1) && number(r["y"], 0, 1) && number(r["width"], 0, 1) && number(r["height"], 0, 1), "Invalid excluded region");
-                    require(r["x"].toDouble() + r["width"].toDouble() <= 1.000001 && r["y"].toDouble() + r["height"].toDouble() <= 1.000001, "Excluded region exceeds display");
-                    excludedRegion = QRectF(r["x"].toDouble(), r["y"].toDouble(), r["width"].toDouble(), r["height"].toDouble());
-                }
+                if (capturing || captureSuspended) { fail(id, "BUSY", "Capture already in progress"); return; }
+                selected = screen;
+                overlay.setScreen(selected);
+                overlay.setGeometry(bounds.isNull() ? selected->geometry() : bounds);
+                excludedRegion = captureExclusion(params);
                 if (contextWatch) contextWatch->disarm();
                 observationInvalidated = true;
                 items = {}; sync();
@@ -219,6 +270,7 @@ public:
 private slots:
     void dismiss() {
         overlayWanted = visualWanted = false; overlay.hide(); visual.hide();
+        if (contextWatch) contextWatch->pause();
         output({{"event", "dismiss"}});
     }
 private:
@@ -227,6 +279,7 @@ private:
     QRect bounds;
     QString phase = "idle";
     QJsonArray items;
+    bool captureSuspended = false;
     bool reduced = false, capturing = false, overlayWanted = false, visualWanted = false;
     quint64 visualFrames = 0;
     bool observationInvalidated = false;
@@ -305,15 +358,20 @@ private:
         view.setSource(QUrl("qrc:/avenire/AvenireOverlay/" + file));
         require(view.status() != QQuickView::Error && view.rootObject(), "Embedded QML failed to load");
     }
-    static QScreen *select(const QJsonObject &params) {
+    QScreen *select(const QJsonObject &params) const {
         if (!params.contains("screenId")) {
-            auto screen = QGuiApplication::primaryScreen();
-            require(screen, "No graphical screen available"); return screen;
+            require(selected, "Selected display disconnected"); return selected;
         }
         require(params["screenId"].isString(), "Invalid screenId");
-        for (auto screen : QGuiApplication::screens())
-            if (screen->name() == params["screenId"].toString()) return screen;
-        throw std::runtime_error("Unknown screenId");
+        require(params["screenId"].toString().size() <= 200, "Invalid screenId");
+        QScreen *match = nullptr;
+        for (auto screen : QGuiApplication::screens()) {
+            if (screen->name() != params["screenId"].toString()) continue;
+            require(!match, "Ambiguous screenId");
+            match = screen;
+        }
+        require(match, "Unknown screenId");
+        return match;
     }
     QJsonObject cursorPosition(QScreen *screen) const {
         require(screen, "Selected display disconnected");
@@ -332,6 +390,7 @@ private:
         overlay.rootObject()->setProperty("phase", phase);
         overlay.rootObject()->setProperty("reducedMotion", reduced);
         overlay.rootObject()->setProperty("annotations", items.toVariantList());
+        if (contextWatch) contextWatch->resume();
     }
     QJsonObject state() {
         QJsonArray screens;
@@ -358,7 +417,7 @@ private:
         diagram.insert("cartPosition", root->property("diagramCartPosition").toDouble());
         const auto bubbleLayout = overlay.rootObject()->property("bubbleGeometry").value<QJSValue>().toVariant();
         return {{"visible", overlay.isVisible()}, {"screenId", selected ? selected->name() : QString()},
-            {"phase", phase}, {"reducedMotion", reduced}, {"items", items}, {"capturing", capturing},
+            {"phase", phase}, {"reducedMotion", reduced}, {"items", items}, {"capturing", capturing}, {"captureSuspended", captureSuspended},
             {"thinkingAnimationRunning", overlay.rootObject()->property("thinkingAnimationRunning").toBool()},
             {"visualizationVisible", visual.isVisible()}, {"visualizationInteractive", !visual.flags().testFlag(Qt::WindowTransparentForInput)},
             {"rotation", QJsonObject{{"x", root->property("rx").toDouble()}, {"y", root->property("ry").toDouble()}}},
@@ -401,6 +460,7 @@ private:
         overlay.setVisible(overlayWanted); visual.setVisible(visualWanted);
         if (overlayWanted) raiseSurface(overlay);
         if (visualWanted) raiseSurface(visual);
+        if (contextWatch) contextWatch->resume();
     }
 };
 

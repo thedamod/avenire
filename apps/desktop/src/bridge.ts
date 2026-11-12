@@ -136,6 +136,7 @@ export interface AvenireDesktopBridge extends AvenireWindowBridge {
   readonly getOnboardingPreferences: () => Promise<UserSettingsPatch | null>;
   readonly acknowledgeOnboardingPreferences: () => Promise<void>;
   readonly getPromptCaptureContext: () => Promise<PromptCaptureContext>;
+  readonly nativeOverlayAvailable: () => Promise<boolean>;
   readonly readScreen: (sessionId: number) => Promise<PromptCaptureContext>;
   readonly onScreenInvalidated: (callback: (sessionId: number) => void) => () => void;
   readonly getNativeObservation: (sessionId: number) => Promise<DesktopNativeObservation>;

@@ -13,7 +13,7 @@ import { standardSchema, standardObjectSchema } from "./schema.ts";
 /** Client-side tool: pixels travel only in the immediate continuation request, not chat history. */
 export const readScreenSpec = {
   description:
-    "Read a fresh screenshot of the user's local display when their question depends on visible material, such as 'this muscle'. Use only when needed; do not read for unrelated questions or continuously monitor. The prompt and AI overlays are excluded. Describe what you see in your reply; use native annotations only when those tools are available. This is the local screen; screen_read/computer refer to a separate cloud desktop.",
+    "Read a fresh screenshot of the user's local display when their question depends on visible material, such as 'this muscle'. Use only when needed; do not read for unrelated questions or continuously monitor. The client applies capture privacy policy and excludes the prompt and AI overlays; capture can fail when privacy or display identity cannot be established. Describe what you see in your reply; use native annotations only when those tools are available. This is the local screen; screen_read/computer refer to a separate cloud desktop.",
   inputSchema: standardObjectSchema(Schema.Struct({})),
   outputSchema: standardSchema(
     Schema.Struct({
@@ -30,7 +30,7 @@ export const nativeAnnotateSpec = {
     "Use normalized 0..1 coordinates relative to the attached full-display screenshot. " +
     "Choose a cursor with text to point at and explain a region, a rect highlight, an arrow (width/height point down and right), or a label. Every text annotation appears in a compact readable bubble with a leader. Prefer short labels and restrained warm or neutral colors. " +
     "Replace the current annotation set with at most 32 items; an empty array clears it. " +
-    "Use concise labels of at most 8 words; put explanations in the chat response. Keep annotations small and relevant, and never obscure the material. " +
+    "Use short, complete explanatory labels; the client preserves their text as a fallback if rendering fails. If annotations contain only shapes, explain them in chat. Keep annotations small and relevant, and never obscure the material. " +
     "This requests local presentation; it does not click, type, change documents, or verify display. " +
     "The client applies it only while the matching screen capture is still active.",
   inputSchema: standardObjectSchema(
@@ -46,7 +46,7 @@ export const nativeAnnotateSpec = {
 };
 export const nativeVisualizeSpec = {
   description:
-    "For a cart-pole explanation prefer native_diagram. Show a small interactive native 3D explanation over the user's screen. Supply 1..32 colored primitive objects (cube, sphere, cylinder, cone, plane) with position, Euler rotation in degrees and scale vectors. A unit primitive is about 100 scene units. Use a concise title and cameraDistance 200..1500. The user can drag or use arrow keys to rotate. This requests local presentation for the current capture; it does not verify rendering. No executable code or external assets are supported.",
+    "For a cart-pole explanation prefer native_diagram. Show a small interactive native 3D explanation over the user's screen. Supply 1..32 colored primitive objects (cube, sphere, cylinder, cone, plane) with position, Euler rotation in degrees and scale vectors. A unit primitive is about 100 scene units. Use a concise title and cameraDistance 200..1500. The user can drag or use arrow keys to rotate. This requests local presentation for the current capture; it does not verify rendering. Include a concise explanation in chat so it remains useful if the figure cannot be displayed. No executable code or external assets are supported.",
   inputSchema: standardObjectSchema(
     Schema.Struct({ scene: DesktopNativeScene, interactive: Schema.Boolean }),
   ),
@@ -61,7 +61,7 @@ export const nativeVisualizeSpec = {
 };
 export const nativeDiagramSpec = {
   description:
-    "Show a transparent 2D cart-pole explanation with angle, cart position, pole length and force indicator. Choose light/dark ink to contrast with the screenshot. This is direct-manipulation geometry, not a physics/controller simulation. The user can drag or use arrow keys when interactive. Update parameters with another request to change the model. Current user adjustments are observed on the next submitted turn through native_presentation; execution is requested, not attested by this server tool. No external code/assets or desktop clicks are supported.",
+    "Show a transparent 2D cart-pole explanation with angle, cart position, pole length and force indicator. Choose light/dark ink to contrast with the screenshot. This is direct-manipulation geometry, not a physics/controller simulation. The user can drag or use arrow keys when interactive. Update parameters with another request to change the model. Current user adjustments are observed on the next submitted turn through native_presentation; execution is requested, not attested by this server tool. Include a concise chat explanation so the answer remains useful if the figure cannot be displayed. No external code/assets or desktop clicks are supported.",
   inputSchema: standardObjectSchema(
     Schema.Struct({ diagram: DesktopNativeDiagram, interactive: Schema.Boolean }),
   ),

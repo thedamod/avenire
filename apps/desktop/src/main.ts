@@ -1,3 +1,4 @@
+import { screenPrivacySnapshot } from "./screen-privacy.ts";
 import {
   DesktopOverlayState,
   DesktopOverlayAnnotation,
@@ -455,6 +456,18 @@ async function initializeNativePrompt(generation: number): Promise<void> {
         promptCaptureContext = { sessionId: generation, capture: null };
         promptWindow?.webContents.send("avenire:screen-invalidated", generation);
       },
+      () => {
+        if (generation !== promptGeneration || nativeOverlay !== native) return;
+        nativeOverlay = undefined;
+        promptNativeScreenId = undefined;
+        promptNativeDisplayBounds = undefined;
+        promptCaptureContext = {
+          sessionId: generation,
+          capture: null,
+          error: "Native presentation stopped; request a fresh screen read",
+        };
+        promptWindow?.webContents.send("avenire:screen-invalidated", generation);
+      },
     );
     nativeOverlay = native;
     try {
@@ -500,7 +513,8 @@ async function initializeNativePrompt(generation: number): Promise<void> {
   if (!nativeOverlay) throw new Error("Local screen capture is disabled");
 }
 function ensureNativePrompt(): Promise<void> {
-  if (nativeOverlay && promptNativeScreenId && !nativePromptStarting) return Promise.resolve();
+  if (nativeOverlay?.available && promptNativeScreenId && !nativePromptStarting)
+    return Promise.resolve();
   const generation = promptGeneration;
   return (nativePromptStarting ??= initializeNativePrompt(generation).finally(() => {
     if (generation === promptGeneration) nativePromptStarting = undefined;
@@ -549,7 +563,13 @@ function ensurePromptWindow(): void {
       promptHadFocus = true;
     });
     promptWindow.on("blur", () => {
-      if (!(process.platform === "linux" && isWayland) && promptHadFocus && !promptBusy && Date.now() - promptShownAt > 750) hidePrompt();
+      if (
+        !(process.platform === "linux" && isWayland) &&
+        promptHadFocus &&
+        !promptBusy &&
+        Date.now() - promptShownAt > 750
+      )
+        hidePrompt();
     });
     promptWindow.on("hide", () => {
       promptHadFocus = false;
@@ -1406,94 +1426,178 @@ ipcMain.handle("avenire:prompt-capture-context", (event) => {
   if (!trustedPrompt(event)) throw new Error("Untrusted native overlay IPC sender");
   return promptCaptureContext;
 });
+ipcMain.handle("avenire:native-overlay-available", async (event) => {
+  if (!trustedPrompt(event) || !promptWindow?.isVisible() || !nativeOverlayConfig?.enabled)
+    return false;
+  try {
+    await ensureNativePrompt();
+    await screenPrivacySnapshot(
+      promptNativeDisplayBounds!,
+      process.platform === "linux" && isWayland,
+    );
+    return !!nativeOverlay?.available;
+  } catch {
+    return false;
+  }
+});
 // Only the active prompt may request local pixels, and only through the client tool.
 ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
   currentNative(event, id); // Validate the active prompt before spawning a child.
-  if (process.platform === "linux" && isWayland) {
-    if (promptCaptureRunning) throw new Error("Local screen capture already running");
-    const target = promptWindow!;
-    const pointer = screen.getCursorScreenPoint();
-    const display = screen.getDisplayNearestPoint(pointer);
-    const area = display.bounds;
-    const opacity = target.getOpacity();
-    const existingOverlay = nativeOverlay;
-    const existingScreenId = promptNativeScreenId;
-    let overlayRestored = false;
-    promptCaptureRunning = true;
-    try {
-      if (existingOverlay && existingScreenId) await existingOverlay.request("hide");
-      target.setOpacity(0);
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      currentNative(event, id);
-      const { stdout } = await promisify(execFile)("grim", ["-c", "-g", `${area.x},${area.y} ${area.width}x${area.height}`, "-"], { encoding: "buffer", timeout: 5000, maxBuffer: 32 * 1024 * 1024 });
-      currentNative(event, id);
-      let image = nativeImage.createFromBuffer(stdout);
-      if (image.isEmpty()) throw new Error("Screen capture unavailable");
-      let size = image.getSize();
-      if (Math.max(size.width, size.height) > 1280) image = image.resize({ width: Math.max(1, Math.round(size.width * 1280 / Math.max(size.width, size.height))), height: Math.max(1, Math.round(size.height * 1280 / Math.max(size.width, size.height))) });
-      let png = image.toPNG();
-      while (png.length > 786000 && image.getSize().width > 100 && image.getSize().height > 100) {
-        size = image.getSize();
-        image = image.resize({ width: Math.max(1, Math.floor(size.width * 0.8)), height: Math.max(1, Math.floor(size.height * 0.8)) });
-        png = image.toPNG();
-      }
-      if (png.length > 786000) throw new Error("Screen image exceeds payload budget");
-      size = image.getSize();
-      const capturedAt = new Date().toISOString();
-      const inBounds = pointer.x >= area.x && pointer.x < area.x + area.width && pointer.y >= area.y && pointer.y < area.y + area.height;
-      let presentation: import("@avenire/contracts").DesktopPresentationObservation | undefined;
-      try {
-        await ensureNativePrompt();
-        if (existingOverlay && existingScreenId && nativeOverlay === existingOverlay) {
-          await existingOverlay.request("show", { screenId: existingScreenId });
-          overlayRestored = true;
-        }
-        if (nativeOverlay && promptNativeScreenId)
-          presentation = (await readNativeObservation(nativeOverlay, promptNativeScreenId)).presentation;
-      } catch (error) {
-        captureLog("native-presentation-unavailable", captureError(error));
-      }
-      currentNative(event, id);
-      const screenId = promptNativeScreenId ?? String(display.id);
-      promptCaptureContext = { sessionId: promptGeneration, capture: { mimeType: "image/png", data: png.toString("base64"), width: size.width, height: size.height, screenId, capturedAt, cursor: { globalX: pointer.x, globalY: pointer.y, screenId, inBounds, ...(inBounds ? { x: (pointer.x - area.x) / area.width, y: (pointer.y - area.y) / area.height } : {}), observedAt: capturedAt }, ...(presentation ? { presentation } : {}) } };
-      return promptCaptureContext;
-    } finally {
-      if (!overlayRestored && existingOverlay && existingScreenId && nativeOverlay === existingOverlay && !target.isDestroyed())
-        void existingOverlay.request("show", { screenId: existingScreenId }).catch((error) => captureLog("native-presentation-restore-error", captureError(error)));
-      if (!target.isDestroyed()) target.setOpacity(opacity);
-      promptCaptureRunning = false;
-    }
-  }
-  await ensureNativePrompt();
-  const native = currentNative(event, id);
-  if (!native || !promptNativeScreenId) throw new Error("Local screen capture unavailable");
   if (promptCaptureRunning) throw new Error("Local screen capture already running");
-  const target = promptWindow!;
-  const opacity = target.getOpacity();
   promptCaptureRunning = true;
   try {
-    // Opacity preserves visibility/session and avoids blur/hide teardown during capture.
-    target.setOpacity(0);
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
-    const area = promptNativeDisplayBounds!;
-    const frame = target.getBounds();
-    const left = Math.max(0, Math.min(1, (frame.x - area.x) / area.width));
-    const top = Math.max(0, Math.min(1, (frame.y - area.y) / area.height));
-    const right = Math.max(left, Math.min(1, (frame.x + frame.width - area.x) / area.width));
-    const bottom = Math.max(top, Math.min(1, (frame.y + frame.height - area.y) / area.height));
-    const capture = await native.capture(promptNativeScreenId, {
-      x: left,
-      y: top,
-      width: right - left,
-      height: bottom - top,
-    });
-    const observation = await readNativeObservation(native, capture.screenId);
-    if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
-    promptCaptureContext = { sessionId: promptGeneration, capture: { ...capture, ...observation } };
-    return promptCaptureContext;
+    promptCaptureContext = { sessionId: promptGeneration, capture: null };
+    if (process.platform === "linux" && isWayland) {
+      const target = promptWindow!;
+      await ensureNativePrompt();
+      currentNative(event, id);
+      const selectedOverlay = nativeOverlay!;
+      const area = promptNativeDisplayBounds!;
+      const selectedScreenId = promptNativeScreenId!;
+      const pointer = screen.getCursorScreenPoint();
+      const privacyBefore = await screenPrivacySnapshot(area, true);
+      const opacity = target.getOpacity();
+      const existingOverlay = nativeOverlay;
+      const existingScreenId = promptNativeScreenId;
+      let overlayRestored = false;
+      try {
+        if (existingOverlay && existingScreenId) await existingOverlay.request("suspend_capture");
+        target.setOpacity(0);
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        currentNative(event, id);
+        const { stdout } = await promisify(execFile)(
+          "grim",
+          ["-c", "-g", `${area.x},${area.y} ${area.width}x${area.height}`, "-"],
+          { encoding: "buffer", timeout: 5000, maxBuffer: 32 * 1024 * 1024 },
+        );
+        currentNative(event, id);
+        if (nativeOverlay !== selectedOverlay || promptNativeScreenId !== selectedScreenId)
+          throw new Error("Stale native display selection");
+        if ((await screenPrivacySnapshot(area, true)) !== privacyBefore)
+          throw new Error("Screen changed during privacy verification; request a fresh read");
+        let image = nativeImage.createFromBuffer(stdout);
+        if (image.isEmpty()) throw new Error("Screen capture unavailable");
+        let size = image.getSize();
+        if (Math.max(size.width, size.height) > 1280)
+          image = image.resize({
+            width: Math.max(1, Math.round((size.width * 1280) / Math.max(size.width, size.height))),
+            height: Math.max(
+              1,
+              Math.round((size.height * 1280) / Math.max(size.width, size.height)),
+            ),
+          });
+        let png = image.toPNG();
+        while (png.length > 786000 && image.getSize().width > 100 && image.getSize().height > 100) {
+          size = image.getSize();
+          image = image.resize({
+            width: Math.max(1, Math.floor(size.width * 0.8)),
+            height: Math.max(1, Math.floor(size.height * 0.8)),
+          });
+          png = image.toPNG();
+        }
+        if (png.length > 786000) throw new Error("Screen image exceeds payload budget");
+        size = image.getSize();
+        const capturedAt = new Date().toISOString();
+        const inBounds =
+          pointer.x >= area.x &&
+          pointer.x < area.x + area.width &&
+          pointer.y >= area.y &&
+          pointer.y < area.y + area.height;
+        const frame = target.getBounds();
+        const left = Math.max(0, Math.min(1, (frame.x - area.x) / area.width));
+        const top = Math.max(0, Math.min(1, (frame.y - area.y) / area.height));
+        const right = Math.max(left, Math.min(1, (frame.x + frame.width - area.x) / area.width));
+        const bottom = Math.max(top, Math.min(1, (frame.y + frame.height - area.y) / area.height));
+        await selectedOverlay.request("resume_capture", {
+          fresh: true,
+          excludedRegion: {
+            x: left,
+            y: top,
+            width: right - left,
+            height: bottom - top,
+          },
+        });
+        overlayRestored = true;
+        const { presentation } = await readNativeObservation(selectedOverlay, selectedScreenId);
+        if (currentNative(event, id) !== selectedOverlay)
+          throw new Error("Stale native overlay session");
+        const screenId = selectedScreenId;
+        promptCaptureContext = {
+          sessionId: promptGeneration,
+          capture: {
+            mimeType: "image/png",
+            data: png.toString("base64"),
+            width: size.width,
+            height: size.height,
+            screenId,
+            capturedAt,
+            cursor: {
+              globalX: pointer.x,
+              globalY: pointer.y,
+              screenId,
+              inBounds,
+              ...(inBounds
+                ? { x: (pointer.x - area.x) / area.width, y: (pointer.y - area.y) / area.height }
+                : {}),
+              observedAt: capturedAt,
+            },
+            ...(presentation ? { presentation } : {}),
+          },
+        };
+        return promptCaptureContext;
+      } finally {
+        if (
+          !overlayRestored &&
+          existingOverlay &&
+          existingScreenId &&
+          nativeOverlay === existingOverlay &&
+          !target.isDestroyed()
+        )
+          void existingOverlay
+            .request("resume_capture", { fresh: false })
+            .catch((error) => captureLog("native-presentation-restore-error", captureError(error)));
+        if (!target.isDestroyed()) target.setOpacity(opacity);
+      }
+    }
+    // No authoritative complete window inventory is available for Qt capture yet.
+    // Foreground-only permission checks cannot protect adjacent sensitive windows.
+    await screenPrivacySnapshot(
+      promptNativeDisplayBounds ?? { x: 0, y: 0, width: 1, height: 1 },
+      false,
+    );
+    await ensureNativePrompt();
+    const native = currentNative(event, id);
+    if (!native || !promptNativeScreenId) throw new Error("Local screen capture unavailable");
+    const target = promptWindow!;
+    const opacity = target.getOpacity();
+    try {
+      // Opacity preserves visibility/session and avoids blur/hide teardown during capture.
+      target.setOpacity(0);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
+      const area = promptNativeDisplayBounds!;
+      const frame = target.getBounds();
+      const left = Math.max(0, Math.min(1, (frame.x - area.x) / area.width));
+      const top = Math.max(0, Math.min(1, (frame.y - area.y) / area.height));
+      const right = Math.max(left, Math.min(1, (frame.x + frame.width - area.x) / area.width));
+      const bottom = Math.max(top, Math.min(1, (frame.y + frame.height - area.y) / area.height));
+      const capture = await native.capture(promptNativeScreenId, {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+      });
+      const observation = await readNativeObservation(native, capture.screenId);
+      if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
+      promptCaptureContext = {
+        sessionId: promptGeneration,
+        capture: { ...capture, ...observation },
+      };
+      return promptCaptureContext;
+    } finally {
+      if (!target.isDestroyed()) target.setOpacity(opacity);
+    }
   } finally {
-    if (!target.isDestroyed()) target.setOpacity(opacity);
     promptCaptureRunning = false;
   }
 });

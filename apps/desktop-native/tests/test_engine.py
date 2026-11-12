@@ -164,6 +164,57 @@ class EngineTest(unittest.TestCase):
         self.assertLessEqual(bounds["x"] + bounds["width"], 500)
         self.assertLessEqual(bounds["y"] + bounds["height"], 500)
 
+    def test_capture_suspension_preserves_figure_and_clears_only_fresh_annotations(self):
+        self.call("show")
+        diagram = {"kind": "cart-pole", "title": "Preserve manipulation", "angleDegrees": 21,
+                   "cartPosition": .3, "poleLength": 1.8, "showForce": True, "theme": "dark"}
+        self.call("visualize", {"visible": True, "interactive": True, "diagram": diagram})
+        items = [{"id": "old", "kind": "label", "x": .2, "y": .3, "text": "Old view"}]
+        self.call("annotate", {"items": items})
+        suspended = self.call("suspend_capture")["result"]
+        self.assertTrue(suspended["captureSuspended"])
+        self.assertFalse(suspended["visible"])
+        self.assertFalse(suspended["visualizationVisible"])
+        self.assertFalse(self.call("annotate", {"items": items})["ok"])
+        self.assertFalse(self.call("resume_capture", {"fresh": "yes"})["ok"])
+        self.assertFalse(self.call("resume_capture", {"fresh": True, "excludedRegion": {"x": .9, "y": 0, "width": .2, "height": .1}})["ok"])
+        failed_capture = self.call("resume_capture", {"fresh": False})["result"]
+        self.assertEqual(failed_capture["items"], items)
+        self.assertTrue(failed_capture["visualizationVisible"])
+        self.call("suspend_capture")
+        fresh = self.call("resume_capture", {"fresh": True})["result"]
+        self.assertEqual(fresh["items"], [])
+        self.assertTrue(fresh["visible"])
+        self.assertTrue(fresh["visualizationVisible"])
+        self.assertTrue(fresh["visualizationInteractive"])
+        self.assertEqual(fresh["diagram"], diagram)
+        self.assertFalse(fresh["captureSuspended"])
+
+    def test_hide_during_external_capture_does_not_resurrect_figure(self):
+        self.call("show")
+        self.call("visualize", {"visible": True, "interactive": True})
+        self.call("suspend_capture")
+        self.call("hide")
+        state = self.call("resume_capture", {"fresh": True})["result"]
+        self.assertFalse(state["visible"])
+        self.assertFalse(state["visualizationVisible"])
+
+    def test_explicit_screen_selection_is_retained_and_invalid_selection_is_atomic(self):
+        initial = self.call("inspect")["result"]
+        for screen in initial["screens"]:
+            selected = self.call("select_screen", {"screenId": screen["id"]})
+            self.assertTrue(selected["ok"])
+            self.assertEqual(selected["result"]["screenId"], screen["id"])
+            self.assertEqual(selected["result"]["bounds"], {k: screen[k] for k in ["x", "y", "width", "height"]})
+            self.assertEqual(self.call("show")["result"]["screenId"], screen["id"])
+            self.assertEqual(self.call("get_cursor")["result"]["screenId"], screen["id"])
+        before = self.call("inspect")["result"]["screenId"]
+        self.assertFalse(self.call("select_screen", {"screenId": "nonexistent"})["ok"])
+        self.assertEqual(self.call("inspect")["result"]["screenId"], before)
+        self.call("suspend_capture")
+        self.assertFalse(self.call("select_screen", {"screenId": before})["ok"])
+        self.call("resume_capture", {"fresh": False})
+
     def test_parent_eof_exits_cleanly(self):
         self.call("inspect")
         self.process.stdin.close()
