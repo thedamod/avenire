@@ -6,6 +6,7 @@ import { loadNativeOverlayConfig } from "./native-overlay.ts";
 afterEach(() => vi.unstubAllEnvs());
 it("enables an installed companion outside Wayland and preserves explicit disable", () => {
   vi.stubEnv("AVENIRE_NATIVE_OVERLAY_ENABLED", undefined);
+  vi.stubEnv("DISPLAY", ":1");
   const root = mkdtempSync(join(tmpdir(), "avenire-native-test-"));
   mkdirSync(join(root, "native-dist"));
   writeFileSync(
@@ -25,7 +26,6 @@ it("enables an installed companion outside Wayland and preserves explicit disabl
         wayland: false,
       }).enabled,
     ).toBe(true);
-    vi.stubEnv("DISPLAY", ":1");
     expect(
       loadNativeOverlayConfig({
         packaged: false,
