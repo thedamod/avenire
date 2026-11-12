@@ -1,4 +1,4 @@
-import { screenPrivacySnapshot } from "./screen-privacy.ts";
+import { screenSharingPermission } from "./screen-privacy.ts";
 import {
   DesktopOverlayState,
   DesktopOverlayAnnotation,
@@ -97,9 +97,14 @@ let promptNativeScreenId: string | undefined;
 let promptNativeDisplayBounds: Electron.Rectangle | undefined;
 let promptCaptureRunning = false;
 let nativePromptStarting: Promise<void> | undefined;
+let promptScreenSession: string | undefined;
 let promptCaptureContext: PromptCaptureContext = { sessionId: 0, capture: null };
 
+let screenPermissionTimer: ReturnType<typeof setInterval> | undefined;
 function endNativePrompt(): void {
+  clearInterval(screenPermissionTimer);
+  screenPermissionTimer = undefined;
+  promptScreenSession = undefined;
   promptGeneration++;
   promptOpening = false;
   promptNativeScreenId = undefined;
@@ -1422,24 +1427,35 @@ function currentNative(event: Electron.IpcMainInvokeEvent, id: unknown): NativeO
     throw new Error("Stale native overlay session");
   return nativeOverlay;
 }
-ipcMain.handle("avenire:prompt-capture-context", (event) => {
+ipcMain.handle("avenire:prompt-capture-context", async (event) => {
   if (!trustedPrompt(event)) throw new Error("Untrusted native overlay IPC sender");
+  if (promptCaptureContext.capture) {
+    const generation = promptGeneration;
+    try {
+      const permission = await promptScreenPermission(event, generation);
+      if (!permission.enabled || permission.sessionId !== promptScreenSession) endNativePrompt();
+    } catch (error) {
+      if (generation === promptGeneration) endNativePrompt();
+      throw error;
+    }
+  }
   return promptCaptureContext;
 });
-ipcMain.handle("avenire:native-overlay-available", async (event) => {
-  if (!trustedPrompt(event) || !promptWindow?.isVisible() || !nativeOverlayConfig?.enabled)
-    return false;
-  try {
-    await ensureNativePrompt();
-    await screenPrivacySnapshot(
-      promptNativeDisplayBounds!,
-      process.platform === "linux" && isWayland,
-    );
-    return !!nativeOverlay?.available;
-  } catch {
-    return false;
-  }
-});
+// Capability discovery never starts Qt, inspects a display or acquires pixels.
+// Consent is deliberately not a capability: disabled reads return an actionable result.
+ipcMain.handle(
+  "avenire:native-overlay-available",
+  (event) => trustedPrompt(event) && !!promptWindow?.isVisible() && !!nativeOverlayConfig?.enabled,
+);
+async function promptScreenPermission(event: Electron.IpcMainInvokeEvent, id: unknown) {
+  currentNative(event, id);
+  if (!nativeOverlayConfig?.enabled) throw new Error("Screen capture disabled by operator");
+  const owner = captureOwner;
+  const permission = await screenSharingPermission(event.sender.session, appUrl, owner);
+  currentNative(event, id);
+  if (captureOwner !== owner) throw new Error("Your account changed. Reopen the prompt.");
+  return permission;
+}
 // Only the active prompt may request local pixels, and only through the client tool.
 ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
   currentNative(event, id); // Validate the active prompt before spawning a child.
@@ -1447,6 +1463,27 @@ ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
   promptCaptureRunning = true;
   try {
     promptCaptureContext = { sessionId: promptGeneration, capture: null };
+    const permission = await promptScreenPermission(event, id);
+    if (!permission.enabled) {
+      endNativePrompt();
+      return {
+        status: "disabled" as const,
+        message:
+          "Screen sharing is off. Enable Share screen with Ava in Settings → Capture to let me explain what’s on your screen." as const,
+      };
+    }
+    promptScreenSession = permission.sessionId;
+    const verify = async () => {
+      const latest = await promptScreenPermission(event, id);
+      if (!latest.enabled || latest.sessionId !== permission.sessionId)
+        throw new Error("Screen-sharing permission revoked or account changed");
+    };
+    clearInterval(screenPermissionTimer);
+    screenPermissionTimer = setInterval(() => {
+      void verify().catch(() => {
+        if (id === promptGeneration) hidePrompt();
+      });
+    }, 1000);
     if (process.platform === "linux" && isWayland) {
       const target = promptWindow!;
       await ensureNativePrompt();
@@ -1455,7 +1492,7 @@ ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
       const area = promptNativeDisplayBounds!;
       const selectedScreenId = promptNativeScreenId!;
       const pointer = screen.getCursorScreenPoint();
-      const privacyBefore = await screenPrivacySnapshot(area, true);
+      await verify();
       const opacity = target.getOpacity();
       const existingOverlay = nativeOverlay;
       const existingScreenId = promptNativeScreenId;
@@ -1465,6 +1502,7 @@ ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
         target.setOpacity(0);
         await new Promise((resolve) => setTimeout(resolve, 150));
         currentNative(event, id);
+        await verify();
         const { stdout } = await promisify(execFile)(
           "grim",
           ["-c", "-g", `${area.x},${area.y} ${area.width}x${area.height}`, "-"],
@@ -1473,8 +1511,7 @@ ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
         currentNative(event, id);
         if (nativeOverlay !== selectedOverlay || promptNativeScreenId !== selectedScreenId)
           throw new Error("Stale native display selection");
-        if ((await screenPrivacySnapshot(area, true)) !== privacyBefore)
-          throw new Error("Screen changed during privacy verification; request a fresh read");
+        await verify();
         let image = nativeImage.createFromBuffer(stdout);
         if (image.isEmpty()) throw new Error("Screen capture unavailable");
         let size = image.getSize();
@@ -1521,6 +1558,7 @@ ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
         const { presentation } = await readNativeObservation(selectedOverlay, selectedScreenId);
         if (currentNative(event, id) !== selectedOverlay)
           throw new Error("Stale native overlay session");
+        await verify();
         const screenId = selectedScreenId;
         promptCaptureContext = {
           sessionId: promptGeneration,
@@ -1559,12 +1597,6 @@ ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
         if (!target.isDestroyed()) target.setOpacity(opacity);
       }
     }
-    // No authoritative complete window inventory is available for Qt capture yet.
-    // Foreground-only permission checks cannot protect adjacent sensitive windows.
-    await screenPrivacySnapshot(
-      promptNativeDisplayBounds ?? { x: 0, y: 0, width: 1, height: 1 },
-      false,
-    );
     await ensureNativePrompt();
     const native = currentNative(event, id);
     if (!native || !promptNativeScreenId) throw new Error("Local screen capture unavailable");
@@ -1581,6 +1613,7 @@ ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
       const top = Math.max(0, Math.min(1, (frame.y - area.y) / area.height));
       const right = Math.max(left, Math.min(1, (frame.x + frame.width - area.x) / area.width));
       const bottom = Math.max(top, Math.min(1, (frame.y + frame.height - area.y) / area.height));
+      await verify();
       const capture = await native.capture(promptNativeScreenId, {
         x: left,
         y: top,
@@ -1589,6 +1622,7 @@ ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
       });
       const observation = await readNativeObservation(native, capture.screenId);
       if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
+      await verify();
       promptCaptureContext = {
         sessionId: promptGeneration,
         capture: { ...capture, ...observation },
@@ -1597,6 +1631,9 @@ ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
     } finally {
       if (!target.isDestroyed()) target.setOpacity(opacity);
     }
+  } catch (error) {
+    if (id === promptGeneration) endNativePrompt();
+    throw error;
   } finally {
     promptCaptureRunning = false;
   }

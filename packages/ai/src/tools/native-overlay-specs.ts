@@ -1,5 +1,6 @@
 /** Declarative local presentation. The server never connects directly to a user's desktop. */
 import {
+  ReadScreenResult,
   DesktopOverlayAnnotation,
   DesktopNativeScene,
   DesktopNativeDiagram,
@@ -13,15 +14,9 @@ import { standardSchema, standardObjectSchema } from "./schema.ts";
 /** Client-side tool: pixels travel only in the immediate continuation request, not chat history. */
 export const readScreenSpec = {
   description:
-    "Read a fresh screenshot of the user's local display when their question depends on visible material, such as 'this muscle'. Use only when needed; do not read for unrelated questions or continuously monitor. The client applies capture privacy policy and excludes the prompt and AI overlays; capture can fail when privacy or display identity cannot be established. Describe what you see in your reply; use native annotations only when those tools are available. This is the local screen; screen_read/computer refer to a separate cloud desktop.",
+    "Read a fresh screenshot of the user's local display when their question depends on visible material, such as 'this muscle'. Use only when needed; do not read for unrelated questions or continuously monitor. The account owner must enable Share screen with Ava in Settings → Capture. If status is disabled, explain that screen sharing is off and name that setting; no screenshot was captured or shared. Do not retry to bypass this setting or nag about it on unrelated questions. Enabled reads share the entire selected display, including sensitive visible windows; source-saving filters do not protect these images. The client excludes the prompt and AI overlays where supported; capture can fail if permission or display identity cannot be established. Describe what you see in your reply; use native annotations only when those tools are available. This is the local screen; screen_read/computer refer to a separate cloud desktop.",
   inputSchema: standardObjectSchema(Schema.Struct({})),
-  outputSchema: standardSchema(
-    Schema.Struct({
-      capturedAt: Schema.String,
-      width: Schema.Int,
-      height: Schema.Int,
-    }),
-  ),
+  outputSchema: standardSchema(ReadScreenResult),
 };
 
 export const nativeAnnotateSpec = {

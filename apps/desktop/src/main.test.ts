@@ -2,7 +2,11 @@ import { expect, it, vi } from "vite-plus/test";
 import { pathToFileURL } from "node:url";
 
 const mocks = vi.hoisted(() => {
-  const session = { setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn() };
+  const session = {
+    fetch: vi.fn(),
+    setPermissionRequestHandler: vi.fn(),
+    setPermissionCheckHandler: vi.fn(),
+  };
   const windows: Array<{
     options: Record<string, any>;
     webContents: {
@@ -23,6 +27,10 @@ const mocks = vi.hoisted(() => {
   }> = [];
   const ipc = new Map<string, (...args: any[]) => unknown>();
   return {
+    nativeEnabled: false,
+    nativeRequest: vi.fn(async (_method: string, _params?: unknown): Promise<any> => ({})),
+    nativeCapture: vi.fn(async (): Promise<any> => ({})),
+    nativeCreated: vi.fn(),
     completed: true,
     instantError: undefined as Error | undefined,
     browserTabs: [] as import("@avenire/contracts").CapturedTab[],
@@ -151,6 +159,23 @@ vi.mock("./setup.ts", () => ({
     });
   },
 }));
+vi.mock("./native-overlay.ts", () => ({
+  loadNativeOverlayConfig: () => ({
+    get enabled() {
+      return mocks.nativeEnabled;
+    },
+    executable: "/fake",
+  }),
+  NativeOverlay: class {
+    constructor() {
+      mocks.nativeCreated();
+    }
+    available = true;
+    request = mocks.nativeRequest;
+    capture = mocks.nativeCapture;
+    dispose = vi.fn();
+  },
+}));
 vi.mock("electron", () => ({
   app: {
     requestSingleInstanceLock: () => true,
@@ -212,7 +237,10 @@ vi.mock("electron", () => ({
   },
   screen: {
     getCursorScreenPoint: () => ({ x: -100, y: 100 }),
-    getDisplayNearestPoint: () => ({ workArea: { x: -1920, y: 0, width: 1920, height: 1040 } }),
+    getDisplayNearestPoint: () => ({
+      bounds: { x: -1920, y: 0, width: 1920, height: 1080 },
+      workArea: { x: -1920, y: 0, width: 1920, height: 1040 },
+    }),
   },
   globalShortcut: {
     register: vi.fn((accelerator: string, callback: () => void) => {
@@ -838,4 +866,91 @@ it("first launch stays in bundled setup and validates its exact frame before com
   );
   // Finishing setup drains its staged snapshot after authentication, without collecting again.
   expect(mocks.collect).not.toHaveBeenCalled();
+});
+
+it("keeps disabled screen reads discoverable without native startup; checks owner, operator and revocation", async () => {
+  await import("./main.ts");
+  const main = mocks.windows.at(-1)!;
+  const appSender = { sender: main.webContents, senderFrame: main.webContents.mainFrame };
+  mocks.ipc.get("avenire:capture-ready")!(appSender, true, "screen-owner");
+  mocks.nativeEnabled = true;
+  mocks.shortcuts.get("Alt+Space")!();
+  const prompt = mocks.windows.at(-1)! as any;
+  prompt.webContents.mainFrame.url = "https://app.avenire.space/prompt";
+  prompt.isVisible = () => true;
+  prompt.getOpacity = () => 1;
+  prompt.setOpacity = vi.fn();
+  const event = { sender: prompt.webContents, senderFrame: prompt.webContents.mainFrame };
+  const context = async () =>
+    (await mocks.ipc.get("avenire:prompt-capture-context")!(event)) as any;
+  const read = async () =>
+    mocks.ipc.get("avenire:read-screen")!(event, (await context()).sessionId) as Promise<any>;
+  expect(mocks.ipc.get("avenire:native-overlay-available")!(event)).toBe(true);
+  expect(mocks.nativeCreated).not.toHaveBeenCalled();
+  expect(mocks.session.fetch).not.toHaveBeenCalled();
+  const grant = { userId: "screen-owner", sessionId: "screen-session", enabled: false };
+  mocks.session.fetch.mockImplementation(async () => Response.json(grant));
+  expect(await read()).toMatchObject({
+    status: "disabled",
+    message: expect.stringContaining("Settings → Capture"),
+  });
+  expect(mocks.nativeCreated).not.toHaveBeenCalled();
+  expect(mocks.nativeCapture).not.toHaveBeenCalled();
+  mocks.nativeEnabled = false;
+  await expect(read()).rejects.toThrow("operator");
+  expect(mocks.nativeCreated).not.toHaveBeenCalled();
+  mocks.nativeEnabled = true;
+  grant.enabled = true;
+  prompt.getBounds = () => ({ x: 0, y: 0, width: 400, height: 420 });
+  mocks.nativeRequest.mockImplementation(async (method) =>
+    method === "get_cursor"
+      ? {
+          globalX: 0,
+          globalY: 0,
+          screenId: "display",
+          inBounds: false,
+          observedAt: "now",
+        }
+      : {
+          screens: [{ id: "display", x: -1920, y: 0, width: 1920, height: 1080 }],
+          rotation: { x: 0, y: 0 },
+          visualizationMode: "3d",
+          visualizationVisible: false,
+          visualizationInteractive: false,
+          sceneTitle: "",
+        },
+  );
+  mocks.nativeCapture.mockImplementation(async () => ({
+    screenId: "display",
+    data: "png",
+    mimeType: "image/png",
+    capturedAt: "now",
+    width: 100,
+    height: 100,
+  }));
+  expect((await read()).capture.data).toBe("png");
+  expect(mocks.nativeCreated).toHaveBeenCalledOnce();
+  mocks.nativeCapture.mockImplementationOnce(async () => {
+    grant.enabled = false;
+    return {
+      screenId: "display",
+      data: "secret",
+      mimeType: "image/png",
+      capturedAt: "now",
+      width: 100,
+      height: 100,
+    };
+  });
+  await expect(read()).rejects.toThrow("revoked");
+  expect((await context()).capture).toBeNull();
+  grant.enabled = true;
+  mocks.session.fetch.mockRejectedValueOnce(new Error("offline"));
+  await expect(read()).rejects.toThrow("offline");
+  const created = mocks.nativeCreated.mock.calls.length;
+  mocks.session.fetch.mockResolvedValueOnce(Response.json({ ...grant, userId: "another-owner" }));
+  await expect(read()).rejects.toThrow("account changed");
+  expect(mocks.nativeCreated).toHaveBeenCalledTimes(created);
+  const stale = (await context()).sessionId;
+  mocks.ipc.get("avenire:capture-ready")!(appSender, false);
+  await expect(mocks.ipc.get("avenire:read-screen")!(event, stale)).rejects.toThrow("Stale");
 });

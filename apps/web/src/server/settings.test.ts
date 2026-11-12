@@ -103,3 +103,41 @@ it.effect("onboarding merges preferences and preserves the first completion time
     ),
   );
 });
+
+it.effect(
+  "old saved JSON is default-off and explicit screen-sharing enable/disable persists",
+  () => {
+    const f = recordingDatabase();
+    const viewer = { id: UserId.make("screen-owner"), name: "Owner", email: "owner@test" };
+    const { shareScreenWithAi: _removed, ...old } = defaultSettings();
+    f.rows("user").push({ id: viewer.id });
+    f.rows("user_settings").push({ userId: viewer.id, preferences: old });
+    return Effect.gen(function* () {
+      const service = yield* Settings;
+      expect(yield* service.screenSharing(viewer)).toBe(false);
+      expect((yield* service.update(viewer, {})).shareScreenWithAi).toBe(false);
+      expect((yield* service.update(viewer, { shareScreenWithAi: true })).shareScreenWithAi).toBe(
+        true,
+      );
+      expect(yield* service.screenSharing(viewer)).toBe(true);
+      expect((yield* service.update(viewer, { shareScreenWithAi: false })).shareScreenWithAi).toBe(
+        false,
+      );
+      expect(yield* service.screenSharing(viewer)).toBe(false);
+      expect(f.rows("user_settings")[0]!.preferences).toMatchObject({ shareScreenWithAi: false });
+    }).pipe(
+      Effect.provide(
+        SettingsLive.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(Database, f.database),
+              Layer.succeed(CloudTasks, {
+                ensureDefaultTask: () => Effect.void,
+              } as unknown as CloudTasks["Service"]),
+            ),
+          ),
+        ),
+      ),
+    );
+  },
+);

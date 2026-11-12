@@ -39,8 +39,16 @@ export class ThreadChat {
   scope: ChatScope | undefined;
   fast = false;
   private nativeScreen: DesktopScreenObservation | undefined;
-  private screenReader: (() => Promise<DesktopScreenObservation>) | undefined;
-  setScreenReader(reader: (() => Promise<DesktopScreenObservation>) | undefined): void {
+  private screenReader:
+    | (() => Promise<DesktopScreenObservation | import("@avenire/contracts").ScreenSharingDisabled>)
+    | undefined;
+  setScreenReader(
+    reader:
+      | (() => Promise<
+          DesktopScreenObservation | import("@avenire/contracts").ScreenSharingDisabled
+        >)
+      | undefined,
+  ): void {
     this.screenReader = reader;
   }
   get screenContext(): DesktopScreenObservation | undefined {
@@ -109,12 +117,22 @@ export class ThreadChat {
           if (!reader) throw new Error("Local screen capture is unavailable here.");
           const capture = await reader();
           if (reader !== this.screenReader) throw new Error("Local screen session closed.");
+          if ("status" in capture) {
+            this.setScreenContext(undefined);
+            void this.chat.addToolOutput({
+              tool: "read_screen",
+              toolCallId: toolCall.toolCallId,
+              output: capture,
+            });
+            return;
+          }
           this.setScreenContext(capture);
           // Do not await addToolOutput inside onToolCall (the SDK continues after this returns).
           void this.chat.addToolOutput({
             tool: "read_screen",
             toolCallId: toolCall.toolCallId,
             output: {
+              status: "captured",
               capturedAt: capture.capturedAt,
               width: capture.width,
               height: capture.height,

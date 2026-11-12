@@ -107,3 +107,25 @@ export const DesktopNativeScene = Schema.Struct({
   ).check(Schema.isMinLength(1), Schema.isMaxLength(32)),
 });
 export type DesktopNativeScene = typeof DesktopNativeScene.Type;
+
+export const ScreenSharingDisabled = Schema.Struct({
+  status: Schema.Literal("disabled"),
+  message: Schema.Literal(
+    "Screen sharing is off. Enable Share screen with Ava in Settings → Capture to let me explain what’s on your screen.",
+  ),
+});
+export type ScreenSharingDisabled = typeof ScreenSharingDisabled.Type;
+export const ReadScreenResult = Schema.Union([
+  ScreenSharingDisabled,
+  Schema.Struct({
+    status: Schema.Literal("captured"),
+    capturedAt: Schema.String,
+    width: Schema.Int,
+    height: Schema.Int,
+  }),
+]);
+export const DesktopReadScreenResult = Schema.Union([
+  ScreenSharingDisabled,
+  DesktopPromptCaptureContext,
+]);
+export type DesktopReadScreenResult = typeof DesktopReadScreenResult.Type;

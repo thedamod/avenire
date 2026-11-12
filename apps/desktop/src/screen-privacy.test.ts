@@ -1,51 +1,37 @@
 import { expect, it, vi } from "vite-plus/test";
-vi.mock("node:child_process", () => ({
-  execFile: (_cmd: string, args: string[], _options: unknown, callback: Function) => {
-    const monitors = [
-      { x: 0, y: 0, width: 1920, height: 1080, name: "DP-1", scale: 1, transform: 0 },
-    ];
-    callback(null, JSON.stringify(args.includes("monitors") ? monitors : []), "");
-  },
-}));
-import { verifyScreenInventory, screenPrivacySnapshot } from "./screen-privacy.ts";
-const area = { x: 0, y: 0, width: 1920, height: 1080 };
-const monitor = { ...area, name: "DP-1", scale: 1, transform: 0 };
-const editor = { class: "code", title: "Notes", address: "0x1", mapped: true };
-it("accepts a complete non-sensitive inventory on a uniquely mapped display", () => {
-  expect(verifyScreenInventory([editor], [monitor], area)).toContain("DP-1");
+import { screenSharingPermission } from "./screen-privacy.ts";
+const origin = "https://app.avenire.space/subpath";
+const permission = { userId: "owner", sessionId: "session", enabled: false };
+it("reads current owner's explicit opt-in over the authenticated exact-origin session", async () => {
+  const fetch = vi.fn(async () => Response.json(permission));
+  expect(await screenSharingPermission({ fetch } as any, origin, "owner")).toEqual(permission);
+  expect(fetch).toHaveBeenCalledWith(
+    "https://app.avenire.space/api/settings/screen-sharing",
+    expect.objectContaining({ credentials: "include", redirect: "error", cache: "no-store" }),
+  );
+  fetch.mockResolvedValueOnce(Response.json({ ...permission, enabled: true }));
+  expect((await screenSharingPermission({ fetch } as any, origin, "owner")).enabled).toBe(true);
+  expect((await screenSharingPermission({ fetch } as any, origin, "owner")).enabled).toBe(false);
 });
-it("blocks an adjacent password manager even when the editor is foreground", () => {
-  expect(() =>
-    verifyScreenInventory([editor, { ...editor, class: "Bitwarden" }], [monitor], area),
-  ).toThrow("sensitive");
-});
-it("blocks private windows and browsers whose visible URL cannot be verified", () => {
-  for (const source of [
-    { ...editor, title: "Private Browsing" },
-    { ...editor, class: "firefox" },
-  ])
-    expect(() => verifyScreenInventory([source], [monitor], area)).toThrow();
-});
-it("rejects partial inventories, ambiguous geometry, rotated displays and unavailable adapters", async () => {
-  for (const [clients, monitors] of [
-    [null, [monitor]],
-    [[{}], [monitor]],
-    [[editor], []],
-    [[editor], [monitor, monitor]],
-    [[editor], [{ ...monitor, transform: 1 }]],
-  ])
-    expect(() => verifyScreenInventory(clients, monitors, area)).toThrow();
-  await expect(screenPrivacySnapshot(area, false)).rejects.toThrow("unavailable");
-});
-it("uses logical scaled display bounds and rejects mismatched display pixels", () => {
-  expect(
-    verifyScreenInventory([editor], [{ ...monitor, width: 3840, height: 2160, scale: 2 }], area),
-  ).toContain("DP-1");
-  expect(() => verifyScreenInventory([editor], [{ ...monitor, x: 1920 }], area)).toThrow("mapping");
-});
-
-it("does not treat a complete client inventory as atomic privacy coverage", async () => {
-  await expect(screenPrivacySnapshot(area, true)).rejects.toThrow(
-    "privacy coverage could not be verified",
+it("fails closed on sign-out, another owner, missing session, malformed data or fetch failure", async () => {
+  const fetch = vi.fn(async () => Response.json(permission));
+  await expect(screenSharingPermission({ fetch } as any, origin, undefined)).rejects.toThrow();
+  expect(fetch).not.toHaveBeenCalled();
+  await Promise.all(
+    [
+      Response.json({ ...permission, userId: "other" }),
+      Response.json({ ...permission, sessionId: "" }),
+      Response.json({ enabled: true }),
+      new Response(null, { status: 401 }),
+    ].map(async (response) => {
+      const failedFetch = vi.fn(async () => response);
+      await expect(
+        screenSharingPermission({ fetch: failedFetch } as any, origin, "owner"),
+      ).rejects.toThrow();
+    }),
+  );
+  fetch.mockRejectedValueOnce(new Error("offline"));
+  await expect(screenSharingPermission({ fetch } as any, origin, "owner")).rejects.toThrow(
+    "offline",
   );
 });

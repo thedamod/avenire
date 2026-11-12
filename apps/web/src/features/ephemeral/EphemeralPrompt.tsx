@@ -128,7 +128,18 @@ export function EphemeralPrompt({
       if (!bridge?.nativeOverlayAvailable || !(await bridge.nativeOverlayAvailable()))
         throw new Error("Local screen capture unavailable");
       const context = await bridge.getPromptCaptureContext();
-      const fresh = await bridge.readScreen(context.sessionId);
+      const fresh = await bridge.readScreen(context.sessionId).catch((error) => {
+        presentations.current.reset();
+        setScreenContext(null);
+        setNativeSession(null);
+        throw error;
+      });
+      if ("status" in fresh) {
+        presentations.current.reset();
+        setScreenContext(null);
+        setNativeSession(null);
+        return fresh;
+      }
       if (
         !active ||
         generation !== questionGeneration.current ||

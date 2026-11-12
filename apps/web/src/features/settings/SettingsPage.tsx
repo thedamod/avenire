@@ -308,6 +308,16 @@ function Content({
 
       <Section id="capture" title="Capture">
         <Row
+          title="Share screen with Ava"
+          description="Off by default. When a question needs screen context, Ava can request a snapshot of your entire selected display, including personal or sensitive visible windows, for AI processing. You control what is displayed. Opening the prompt never captures automatically. Turning this off blocks future captures and clears local screen context; answers already in chats remain."
+        >
+          <Toggle
+            label="Share screen with Ava"
+            checked={settings.shareScreenWithAi === true}
+            onChange={(shareScreenWithAi) => void save({ shareScreenWithAi })}
+          />
+        </Row>
+        <Row
           title="Capture shortcut"
           description={
             bridge

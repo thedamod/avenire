@@ -424,6 +424,15 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
               >
                 <Row
                   first
+                  title="Share screen with Ava"
+                  subtitle="Off by default. For questions needing screen context, Ava may request your entire selected computer display, including personal or sensitive windows, for AI processing. You control what is visible. Opening the prompt never captures. Turning off blocks future captures and clears local screen context; chat answers remain."
+                  trailing={toggle(
+                    "Share screen with Ava",
+                    preferences.shareScreenWithAi === true,
+                    (shareScreenWithAi) => void settings.save({ shareScreenWithAi }),
+                  )}
+                />
+                <Row
                   title="Capture pages you're logged into"
                   subtitle="Applies to capture on your computer"
                   trailing={toggle(

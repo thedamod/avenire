@@ -136,15 +136,20 @@ Unit/build/browser-fixture checks do not establish those native behaviors.
 
 ### Screen-read privacy and validation
 
-Full-display `read_screen` currently fails closed on every platform. The existing
-source collectors omit browser windows, lack authoritative bounds, and can return
-partial results. Hyprland's client inventory is useful for rejecting known sensitive
-sources but excludes layer-shell surfaces and is not atomic with `grim`; matching
-before/after inventories alone cannot prove the captured frame is safe. No pixels
-reach the renderer/model through this path. A compositor/portal adapter that provides
-reliable frame privacy coverage (including masking protected surfaces) is required
-before enabling screen reads. Native presentation availability is consequently not
-advertised to the prompt. Ordinary read-only use does not gain an approval requirement.
+Full-display `read_screen` requires the current account owner's **Share screen with Ava**
+setting in **Settings → Capture**, off by default. It authorizes entire selected-display
+snapshots, including visible sensitive content; source-saving filters do not protect these
+images. Disabled reads remain discoverable and return an actionable `disabled` result
+without starting Qt or acquiring pixels. Capability discovery and prompt opening do not
+start Qt, inspect native displays or capture. Explicit operator disable still wins.
+
+Electron checks the live authenticated account preference before pixel acquisition and
+again before delivery. Failed lookups, account/session changes and stale prompt callbacks
+fail closed. Active contexts recheck permission every second and close the prompt and
+presentation on revocation or lookup failure; future reads always check immediately.
+Native capture is initialized only on an explicit permitted read. OS capture permission,
+backend availability and unique display mapping remain required. Screenshots are sent
+only in request context, not canonical chat/library history. Derived chat answers remain.
 
 `pnpm --filter @avenire/desktop test` runs unit tests in a clean checkout, without
 native deployment artifacts. `native:build` followed by `native:behavior` explicitly
