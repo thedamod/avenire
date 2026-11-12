@@ -150,10 +150,12 @@ public:
                 require(!capturing && !captureSuspended, "Capture in progress");
                 require(params.contains("screenId"), "Expected screenId");
                 auto screen = select(params);
-                if (selected != screen) {
-                    if (contextWatch) contextWatch->disarm();
-                    observationInvalidated = true; items = {}; sync();
-                }
+                // This explicitly starts a fresh observation, even on the same
+                // monitor. Old fingerprints must not cancel the new capture.
+                if (contextWatch) contextWatch->disarm();
+                observationInvalidated = true; items = {}; phase = "idle";
+                if (selected != screen) { visualWanted = false; visual.hide(); }
+                sync();
                 selected = screen;
                 overlay.setScreen(selected);
                 const auto area = bounds.isNull() ? selected->geometry() : bounds;

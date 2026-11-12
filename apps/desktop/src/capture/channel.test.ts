@@ -640,6 +640,11 @@ it("reuses owner-registry downloads after an authenticated browser reconnects", 
     mimeType: "application/pdf",
     url: "https://school.test/file",
   };
+  // Reconnect behavior does not depend on OS wall-clock/filesystem clock precision.
+  // Keep the acceptance endpoint after the actual file mtime; the validator suite
+  // separately exercises both sides of the strict timestamp boundary.
+  const endpoint = Math.max(Date.now(), Math.ceil((await stat(path)).mtimeMs));
+  vi.spyOn(Date, "now").mockReturnValue(endpoint);
   c.send({
     _tag: "CaptureResult",
     version: 1,

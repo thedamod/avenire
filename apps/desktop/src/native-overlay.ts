@@ -44,7 +44,7 @@ export function loadNativeOverlayConfig(paths: {
   return {
     enabled: configured.enabled,
     executable: configured.executable || bundled,
-    xwayland: Boolean(paths.wayland && configured.display),
+    xwayland: Boolean(process.platform === "linux" && paths.wayland && configured.display),
   };
 }
 

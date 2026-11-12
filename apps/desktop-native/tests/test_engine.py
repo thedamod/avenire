@@ -215,6 +215,21 @@ class EngineTest(unittest.TestCase):
         self.assertFalse(self.call("select_screen", {"screenId": before})["ok"])
         self.call("resume_capture", {"fresh": False})
 
+    def test_same_screen_refresh_rejects_stale_annotations_but_preserves_figure(self):
+        self.call("show")
+        self.call("visualize", {"visible": True, "interactive": True})
+        items = [{"id": "old", "kind": "label", "x": .2, "y": .3, "text": "Old view"}]
+        self.call("annotate", {"items": items})
+        screen = self.call("inspect")["result"]["screenId"]
+        self.assertTrue(self.call("select_screen", {"screenId": screen})["ok"])
+        refreshed = self.call("inspect")["result"]
+        self.assertEqual(refreshed["items"], [])
+        self.assertTrue(refreshed["visualizationVisible"])
+        self.assertFalse(self.call("annotate", {"items": items})["ok"])
+        self.call("suspend_capture")
+        self.assertTrue(self.call("resume_capture", {"fresh": True})["ok"])
+        self.assertTrue(self.call("annotate", {"items": items})["ok"])
+
     def test_parent_eof_exits_cleanly(self):
         self.call("inspect")
         self.process.stdin.close()

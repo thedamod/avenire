@@ -212,11 +212,13 @@ try {
   native.dispose();
   await assert.rejects(cancelled, /closed/);
   await exited(children.at(-1));
-  native = new NativeOverlay(config);
+  let terminalFailures = 0;
+  native = new NativeOverlay(config, undefined, undefined, () => terminalFailures++);
   await native.request("inspect");
   children.at(-1).child.kill("SIGKILL");
   await exited(children.at(-1));
   await assert.rejects(native.request("show"), /closed/);
+  assert.equal(terminalFailures, 1, "A crashed native process invalidates its owner exactly once");
   // Real host rejects malformed and unknown requests while keeping a usable stream.
   const protocol = childProcess.spawn(await realpath(relocated), [], {
     stdio: "pipe",

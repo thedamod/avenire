@@ -3,6 +3,7 @@ import { enableCompileCache } from "node:module";
 import { join } from "node:path";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
+import { usesWayland } from "./display-selection.ts";
 
 // Wayland forbids global window positioning and cursor coordinates. The capture
 // popup needs both for corner placement and hover interaction. Keep capture
@@ -17,7 +18,7 @@ if (process.platform === "linux" && !app.commandLine.hasSwitch("ozone-platform")
       x11: Config.String("DISPLAY").pipe(Config.withDefault("")),
     }),
   );
-  if ((display.session === "wayland" || display.wayland.length > 0) && display.x11.length > 0)
+  if (usesWayland(process.platform, display.session, display.wayland) && display.x11.length > 0)
     app.commandLine.appendSwitch("ozone-platform", "x11");
 }
 

@@ -77,8 +77,15 @@ permission check does not retain its returned title. Office can request its own 
 grant on the first document capture. These collectors use metadata/file paths rather than
 screen images, so they do not request Screen Recording, camera, microphone or Full Disk Access.
 Linux foreground capture supports Hyprland on Wayland through `hyprctl`, and X11 through
-`xdotool` and `xprop`. Local screen reading on Wayland requires `grim`; annotations use the
-bundled Qt overlay with XWayland. Other Wayland compositors may not expose these capabilities.
+`xdotool` and `xprop`. Local screen reading on Wayland requires `grim` and a Hyprland monitor inventory; annotations use the
+bundled Qt overlay with XWayland. Genuine X11 sessions reuse Qt's existing X11
+capture path; an inherited Wayland environment variable does not override an explicit
+X11 session. XWayland's presence inside a Wayland session does not establish that it
+can capture native Wayland windows, so screen pixels still use the compositor path.
+The explicit read verifies that a unique, active, unrotated, unmirrored Hyprland output's
+logical bounds agree with Electron/Qt, captures that named output with `grim -o`, and
+rechecks its geometry before delivery. Unsupported compositor inventories, rotated or
+mirrored layouts, and ambiguous scale mappings reject the read rather than guess.
 Browser-tab capture and ordinary uploads remain available.
 
 Google sign-in opens the system browser. `/desktop/authorize` asks the user to confirm
@@ -147,12 +154,21 @@ Electron checks the live authenticated account preference before pixel acquisiti
 again before delivery. Failed lookups, account/session changes and stale prompt callbacks
 fail closed. Active contexts recheck permission every five seconds and close the prompt and
 presentation on revocation or lookup failure; future reads always check immediately.
-Native capture is initialized only on an explicit permitted read. OS capture permission,
+Each permitted read selects the monitor under the cursor at the start of that read,
+including subsequent reads in the same chat. Pointer movement during acquisition does
+not change that read's selected display; disconnects or geometry changes reject delivery.
+Automatic sensitive-window masking is [planned](../../docs/TODO.md); current snapshots
+are unmasked. Native capture is initialized only on an explicit permitted read. OS capture permission,
 backend availability and unique display mapping remain required. Screenshots are sent
 only in request context, not canonical chat/library history. Derived chat answers remain.
 
-`pnpm --filter @avenire/desktop test` runs unit tests in a clean checkout, without
-native deployment artifacts. `native:build` followed by `native:behavior` explicitly
+On Linux Wayland, capture currently requires Hyprland's monitor metadata and `grim`.
+Electron's logical display bounds must map uniquely to an enabled, unrotated,
+unmirrored Hyprland output; ambiguous or changed mappings fail closed. An XWayland
+`DISPLAY` alone cannot identify native Wayland windows.
+
+`pnpm --filter @avenire/desktop test` runs curated behavioral and integration tests
+in a clean checkout, without native deployment artifacts. `native:build` followed by `native:behavior` explicitly
 runs deployment/process integration checks. CI builds the native deployment before
 those checks. Native suspension, monitor retention, crash recovery and renderer
 fallback regressions are included; real multi-monitor rendering still needs a Qt
