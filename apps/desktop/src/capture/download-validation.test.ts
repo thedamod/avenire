@@ -89,3 +89,31 @@ it("rejects HTML saved with a PDF filename and MIME with an honest host-specific
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("accepts sub-millisecond file timestamps in the final wall-clock millisecond only", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "capture-download-clock-")));
+  const captureId = "fractional-timestamp";
+  const path = join(root, "Avenire", captureId, "notes.pdf");
+  try {
+    await mkdir(join(root, "Avenire", captureId), { recursive: true });
+    await writeFile(path, "%PDF-hello");
+    const seconds = Math.floor(Date.now() / 1000);
+    await utimes(path, seconds, seconds + 0.0005);
+    const info = await stat(path);
+    const end = Math.floor(info.mtimeMs);
+    const download = {
+      path,
+      captureId,
+      sizeBytes: info.size,
+      mimeType: "application/pdf",
+      url: "https://school.test/file",
+    };
+    const window = { captureId, startedAt: end - 1000, endedAt: end };
+    expect(await validateBrowserDownload(download, root, window)).toBe(path);
+    await expect(
+      validateBrowserDownload(download, root, { ...window, endedAt: end - 1 }),
+    ).rejects.toThrow(/outside capture window/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

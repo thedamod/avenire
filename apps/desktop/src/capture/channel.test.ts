@@ -627,7 +627,8 @@ it("reuses owner-registry downloads after an authenticated browser reconnects", 
   const c = await client(h.url);
   await authenticate(c);
   await report(c);
-  const captured = h.channel.capture([tab], true);
+  const failures = vi.fn();
+  const captured = h.channel.capture([tab], true, undefined, undefined, failures);
   const request = await c.next("CaptureRequest");
   const path = join(h.directory, "Avenire", request.requestId, "Handout.pdf");
   await mkdir(join(path, ".."), { recursive: true });
@@ -646,7 +647,10 @@ it("reuses owner-registry downloads after an authenticated browser reconnects", 
     pages: [{ ...page, download }],
     skipped: [],
   });
-  const result = (await captured)[0]!;
+  const results = await captured;
+  expect(failures).not.toHaveBeenCalled();
+  expect(results).toHaveLength(1);
+  const result = results[0]!;
   known.push({
     path,
     sizeBytes: download.sizeBytes,
