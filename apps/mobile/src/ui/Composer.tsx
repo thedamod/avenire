@@ -112,7 +112,7 @@ export function Composer({
         fontSize: isExpanded ? 16 : 15,
         lineHeight: isExpanded ? 22 : 20,
         color: colors.fg,
-        fontFamily: Platform.OS === "web" ? "system-ui" : undefined,
+        fontFamily: "Geist",
         outlineWidth: 0,
       }}
     />

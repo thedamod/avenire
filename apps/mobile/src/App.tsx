@@ -22,7 +22,10 @@ SplashScreen.setOptions({ duration: 300, fade: true });
 const hideSplash = () => void SplashScreen.hideAsync().catch(() => undefined);
 
 export default function App() {
-  const [fontsLoaded, fontError] = useFonts({ GeistMono: GeistMono_400Regular });
+  const [fontsLoaded, fontError] = useFonts({
+    Geist: require("../assets/fonts/Geist-Variable.ttf"),
+    GeistMono: GeistMono_400Regular,
+  });
   const config = Constants.expoConfig?.extra;
   useEffect(() => {
     if (fontsLoaded || fontError) hideSplash();
