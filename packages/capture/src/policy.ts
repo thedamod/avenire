@@ -119,7 +119,7 @@ const appRules: readonly Rule[] = [
   },
 ];
 
-export function blockedCategory(
+function blockedCategory(
   url: string | undefined,
   appName: string,
   title: string,

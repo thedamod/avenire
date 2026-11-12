@@ -1479,11 +1479,19 @@ ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
         throw new Error("Screen-sharing permission revoked or account changed");
     };
     clearInterval(screenPermissionTimer);
+    let checkingPermission = false;
     screenPermissionTimer = setInterval(() => {
-      void verify().catch(() => {
-        if (id === promptGeneration) hidePrompt();
-      });
-    }, 1000);
+      // A slow permission endpoint must not accumulate concurrent background requests.
+      if (checkingPermission) return;
+      checkingPermission = true;
+      void verify()
+        .catch(() => {
+          if (id === promptGeneration) hidePrompt();
+        })
+        .finally(() => {
+          checkingPermission = false;
+        });
+    }, 5000);
     if (process.platform === "linux" && isWayland) {
       const target = promptWindow!;
       await ensureNativePrompt();

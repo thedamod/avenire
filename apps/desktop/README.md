@@ -145,7 +145,7 @@ start Qt, inspect native displays or capture. Explicit operator disable still wi
 
 Electron checks the live authenticated account preference before pixel acquisition and
 again before delivery. Failed lookups, account/session changes and stale prompt callbacks
-fail closed. Active contexts recheck permission every second and close the prompt and
+fail closed. Active contexts recheck permission every five seconds and close the prompt and
 presentation on revocation or lookup failure; future reads always check immediately.
 Native capture is initialized only on an explicit permitted read. OS capture permission,
 backend availability and unique display mapping remain required. Screenshots are sent

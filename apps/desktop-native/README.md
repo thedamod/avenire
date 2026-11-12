@@ -127,8 +127,9 @@ hide cannot resurrect a surface. PNGs are capped at 768 KiB before base64 and a
 text extraction. It may fail on protected content or permission-restricted display
 servers; this implementation has no Wayland portal or macOS permission dialog UI.
 
-Alt+Space captures before focusing the prompt. A removable thumbnail shows the
-context attached to that ephemeral turn. The image is request-only model context,
+Alt+Space opens the prompt without capturing. Ava can request a fresh snapshot
+when screen context is needed and sharing is enabled. A removable thumbnail shows
+the context attached to that ephemeral turn. The image is request-only model context,
 not a persisted message attachment or library item. Annotations and scenes apply
 once for the current capture/session. Provider retention is outside this local
 storage behavior. Full-document accessibility/text extraction remains separate work.

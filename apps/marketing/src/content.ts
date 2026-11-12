@@ -156,6 +156,7 @@ export const footer = {
         { label: "Sign in", href: `${appUrl}/sign-in` },
         { label: "Get early access", href: "#early-access" },
         { label: "Contact", href: "mailto:hello@avenire.space" },
+        { label: "Privacy", href: "/privacy" },
       ],
     },
   ],

@@ -43,3 +43,12 @@ it("continues to the model with a validated actionable disabled result and no im
   expect(ruthToolSpecs.read_screen.description).toContain("Do not retry");
   expect(ruthToolSpecs.read_screen.description).toContain("unrelated questions");
 });
+
+it("accepts persisted read_screen outputs from before the status field was introduced", () => {
+  const legacy = { capturedAt: "2026-11-12T12:00:00Z", width: 1280, height: 720 };
+  expect(Schema.decodeUnknownSync(ReadScreenResult)(legacy)).toEqual(legacy);
+  expect(Schema.decodeUnknownSync(ReadScreenResult)({ ...legacy, status: "captured" })).toEqual({
+    ...legacy,
+    status: "captured",
+  });
+});

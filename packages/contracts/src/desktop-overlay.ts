@@ -118,7 +118,8 @@ export type ScreenSharingDisabled = typeof ScreenSharingDisabled.Type;
 export const ReadScreenResult = Schema.Union([
   ScreenSharingDisabled,
   Schema.Struct({
-    status: Schema.Literal("captured"),
+    // Persisted tool results from before screen-sharing opt-in have no status.
+    status: Schema.optionalKey(Schema.Literal("captured")),
     capturedAt: Schema.String,
     width: Schema.Int,
     height: Schema.Int,

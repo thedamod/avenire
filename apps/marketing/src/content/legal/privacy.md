@@ -4,7 +4,7 @@ description: What Avenire collects, why, who processes it, and how to get it del
 updated: 2026-11-12
 ---
 
-Avenire is a study app: it saves what you study, files it into notebooks, and an assistant called Ruth works on it with you. To do that, we have to hold your study material. This page explains what we collect, what we do with it, and what you can change. If anything here is unclear, email [hello@avenire.space](mailto:hello@avenire.space).
+Avenire is a study app: it saves what you study, files it into notebooks, and an assistant called Ava works on it with you. To do that, we have to hold your study material. This page explains what we collect, what we do with it, and what you can change. If anything here is unclear, email [hello@avenire.space](mailto:hello@avenire.space).
 
 ## What we collect
 
@@ -12,7 +12,7 @@ Avenire is a study app: it saves what you study, files it into notebooks, and an
 
 - Your name, email address and, if you sign up with a password, a hash of it. If you sign in with Google, we receive your name, email address and profile picture from Google.
 - For each signed-in device: when the session started and expires, its IP address and its browser or device name. Settings shows your active sessions and lets you sign out of all of them.
-- Your settings, such as what Avenire may capture and how Ruth handles changes to your files.
+- Your settings, such as what Avenire may capture and how Ava handles changes to your files.
 
 ### What you capture
 
@@ -40,20 +40,20 @@ The snapshot and accompanying context are sent through Avenire to the configured
 
 During an active screen explanation, the desktop companion may compare local screen fingerprints to detect changes and clear stale presentations. These samples are not saved or sent to AI providers. Turning sharing off blocks future snapshots; pending captures are checked again before delivery. Local retained screen context and presentations are cleared when revocation is detected. It does not remove answers already retained in chats or recall information already sent for processing.
 
-### What you and Ruth create
+### What you and Ava create
 
-Your notes, notebooks, chats with Ruth, and the files, charts and videos Ruth makes for you.
+Your notes, notebooks, chats with Ava, and the files, charts and videos Ava makes for you.
 
 ### How the product is used
 
 We use PostHog to understand how Avenire is used:
 
 - **On the website and in the apps:** pages viewed and errors, without linking them to your account.
-- **When Ruth uses a tool**, such as searching your library: the tool's name, whether it worked and how long it took, linked to your account. **Not** your messages or files.
+- **When Ava uses a tool**, such as searching your library: the tool's name, whether it worked and how long it took, linked to your account. **Not** your messages or files.
 
 ## How we use it
 
-We use your information to run Avenire for you: to save, organize and search your material, to let Ruth answer questions and prepare notes, to sign you in and keep your account secure, to send you emails you've asked for (account verification, password resets, and summaries of Ruth's work if you turn them on), and to find and fix problems.
+We use your information to run Avenire for you: to save, organize and search your material, to let Ava answer questions and prepare notes, to sign you in and keep your account secure, to send you emails you've asked for (account verification, password resets, and summaries of Ava's work if you turn them on), and to find and fix problems.
 
 We don't sell your information, we don't show ads, and we don't use your library to train AI models.
 
@@ -61,8 +61,8 @@ We don't sell your information, we don't show ads, and we don't use your library
 
 Some of the work is done by other companies on our behalf. Each receives only what it needs for its job:
 
-- **AI models.** When you ask Ruth something, or Ruth works on your library, your request and the relevant parts of your material go to the model that answers. Ruth's models run through **OpenRouter** (which routes to **Anthropic**) and **Fireworks**. **Groq** writes chat titles and helps file and transcribe material. **Mistral** reads text from scanned pages and images. **Cohere** indexes your material so it can be searched, and ranks search results.
-- **Daytona** runs the sandboxes where Ruth executes code and makes files. It receives the files Ruth needs for that task.
+- **AI models.** When you ask Ava something, or Ava works on your library, your request and the relevant parts of your material go to the model that answers. Ava's models run through **OpenRouter** (which routes to **Anthropic**) and **Fireworks**. **Groq** writes chat titles and helps file and transcribe material. **Mistral** reads text from scanned pages and images. **Cohere** indexes your material so it can be searched, and ranks search results.
+- **Daytona** runs the sandboxes where Ava executes code and makes files. It receives the files Ava needs for that task.
 - **Resend** sends our emails, so it receives your email address and the content of each email.
 - **PostHog** records the usage information described above.
 - **Google**, if you sign in with Google.
@@ -72,14 +72,14 @@ Some of the work is done by other companies on our behalf. Each receives only wh
 
 - **Your library** is kept while your account exists.
 - **Deleted files** stay in Trash for 30 days, so you can restore them, and are then deleted for good. You can empty Trash sooner.
-- **Ruth's sandboxes for a chat** are deleted after at most 60 minutes. **Ruth's workspace for scheduled tasks** keeps copies of the files a task uses, so the next run can pick up where it left off. You can set a task to delete its workspace after each run.
+- **Ava's sandboxes for a chat** are deleted after at most 60 minutes. **Ava's workspace for scheduled tasks** keeps copies of the files a task uses, so the next run can pick up where it left off. You can set a task to delete its workspace after each run.
 - **Files you start uploading but never finish** are discarded after an hour.
 
 ## Your choices
 
 - Choose whether Ava may request whole-display snapshots with Share screen with Ava in Settings → Capture (off by default).
 - Choose whether Avenire may capture signed-in pages, and how it treats paywalled pages.
-- Choose whether Ruth's changes to your files wait for your approval. By default, edits, moves, renames and deletions all do.
+- Choose whether Ava's changes to your files wait for your approval. By default, edits, moves, renames and deletions all do.
 - Sign out of every device from Settings.
 - **Delete your account or get a copy of your data**: email [hello@avenire.space](mailto:hello@avenire.space) from the address on your account. Deleting your account deletes your library, notes, chats and settings. We're building both into Settings.
 
