@@ -39,7 +39,7 @@ function hitLocation(
   if (hit.fileKind === "note") {
     const folder = file?.folderIds[0] ? folderById.get(file.folderIds[0]) : undefined;
     const owner =
-      file?.source === "ruth" || file?.source === "ruth-cloud" ? "Ruth's note" : "Your note";
+      file?.source === "ruth" || file?.source === "ruth-cloud" ? "Ava's note" : "Your note";
     return folder ? `${owner} · ${folder.name}` : owner;
   }
   const { page, slide, startSec, endSec, heading, sheet } = hit.location;
@@ -98,7 +98,7 @@ export function SearchResults({
         <span>
           {loading ? "Searching…" : `${hits.length} matching file${hits.length === 1 ? "" : "s"}`}
         </span>
-        <span>Want an explanation? Press Enter to ask Ruth</span>
+        <span>Want an explanation? Press Enter to ask Ava</span>
       </div>
       <p className="text-[13px] text-muted-foreground md:hidden">
         {loading ? "Searching…" : `${hits.length} matching file${hits.length === 1 ? "" : "s"}`}
@@ -119,7 +119,7 @@ export function SearchResults({
         <ErrorRow error={result.error} onRetry={() => void result.refetch()} />
       ) : hits.length === 0 ? (
         <div className="rounded-[10px] border border-dashed border-input px-5 py-8 text-center text-[13px] text-muted-foreground">
-          Nothing in your files matches that. Press Enter to ask Ruth instead.
+          Nothing in your files matches that. Press Enter to ask Ava instead.
         </div>
       ) : (
         hits.map((hit) => (

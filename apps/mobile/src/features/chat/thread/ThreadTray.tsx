@@ -67,7 +67,7 @@ export function ErrorTray({ message, onRetry, onDismiss }: { message: string; on
     <Animated.View entering={FadeIn.duration(200).easing(Easing.bezier(...motion.easing.out)).reduceMotion(ReduceMotion.System)} exiting={FadeOut.duration(150).reduceMotion(ReduceMotion.System)} style={[styles.tray, { flexDirection: "row", alignItems: "center", gap: 8, paddingTop: 8 }]}>
       <Icon name="help" size={15} color={colors.red} />
       <View style={{ flex: 1, minWidth: 0, gap: 1 }}>
-        <Text style={{ fontSize: 13.5, lineHeight: 17, fontWeight: "600", color: colors.fg }}>Ruth stopped</Text>
+        <Text style={{ fontSize: 13.5, lineHeight: 17, fontWeight: "600", color: colors.fg }}>Ava stopped</Text>
         <Text variant="meta" numberOfLines={2}>{message}</Text>
       </View>
       {onDismiss ? <TrayButton variant="ghost" onPress={onDismiss}>Dismiss</TrayButton> : null}

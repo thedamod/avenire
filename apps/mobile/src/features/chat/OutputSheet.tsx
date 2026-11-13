@@ -135,7 +135,7 @@ export function OutputSheet({ route, navigation }: ScreenProps<"Output">) {
     body = (
       <EmptyState
         title={`No ${selected === "revision" ? "revision notes" : selected} yet`}
-        description="Outputs appear here when Ruth has made them."
+        description="Outputs appear here when Ava has made them."
         icon={selected === "widget" ? "widget" : "doc"}
       />
     );

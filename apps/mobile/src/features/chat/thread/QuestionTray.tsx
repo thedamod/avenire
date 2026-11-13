@@ -16,7 +16,7 @@ export function QuestionTray({ question, total, busy, onAnswer, onSkip }: {
     if (busy) return;
     setSelected((current) => question.multiSelect ? current.includes(choice) ? current.filter((item) => item !== choice) : [...current, choice] : [choice]);
   };
-  return <ThreadTray title={question.question} meta={question.multiSelect ? "Choose any that apply" : "Ruth needs one answer to continue"} expanded={expanded} onToggle={() => setExpanded(!expanded)} step={total > 1 ? `1/${total}` : undefined}
+  return <ThreadTray title={question.question} meta={question.multiSelect ? "Choose any that apply" : "Ava needs one answer to continue"} expanded={expanded} onToggle={() => setExpanded(!expanded)} step={total > 1 ? `1/${total}` : undefined}
     footer={<><TrayButton variant="ghost" disabled={busy} onPress={onSkip}>Skip</TrayButton><View style={{ flex: 1 }} />{question.choices.length ? <TrayButton disabled={busy || !selected.length} onPress={() => onAnswer(selected)}>{total > 1 ? "Next" : "Send"}</TrayButton> : null}</>}>
     {question.choices.map((choice, index) => {
       const { label, detail } = splitChoice(choice);

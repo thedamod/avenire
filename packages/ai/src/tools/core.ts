@@ -168,7 +168,7 @@ export const runTool = <A, E, R>(
             errorCode: Option.isSome(failure) ? failure.value.code : null,
             durationMs: end - start,
           };
-          yield* Effect.logInfo("Ruth tool call", properties);
+          yield* Effect.logInfo("Ava tool call", properties);
           yield* analytics.capture({ distinctId: ctx.userId, event: "ruth_tool_call", properties });
         }),
       ),

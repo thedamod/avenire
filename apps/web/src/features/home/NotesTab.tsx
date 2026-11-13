@@ -14,9 +14,9 @@ import { ListSkeleton } from "./states";
 export function notePreview(note: LibraryFile): string {
   const by =
     note.source === "ruth" || note.source === "ruth-cloud"
-      ? "Written by Ruth"
+      ? "Written by Ava"
       : note.source === "chat"
-        ? "Saved from Ruth"
+        ? "Saved from Ava"
         : null;
   return [by, note.preview?.trim() || null].filter(Boolean).join(" · ") || "Empty note";
 }
@@ -52,7 +52,7 @@ export function NotesTab({
       {notes === undefined ? (
         <ListSkeleton rows={4} />
       ) : notes.length === 0 ? (
-        <EmptyLine>No notes yet. Write one, or save an answer from Ruth.</EmptyLine>
+        <EmptyLine>No notes yet. Write one, or save an answer from Ava.</EmptyLine>
       ) : (
         <div
           className={cn(

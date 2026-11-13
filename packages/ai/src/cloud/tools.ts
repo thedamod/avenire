@@ -66,12 +66,12 @@ const fail = (tool: string, message: string, code: RuthToolError["code"] = "inva
 const requireRun = (ctx: AgentContext, tool: string) =>
   ctx.runId
     ? Effect.succeed(ctx.runId)
-    : Effect.fail(fail(tool, "A run is required for Ruth Cloud tools."));
+    : Effect.fail(fail(tool, "A run is required for Ava Cloud tools."));
 const runningBox = Effect.fn("RuthCloud.runningBox")(function* (ctx: AgentContext, tool: string) {
   const boxes = yield* CloudBoxes;
   const box = yield* boxes.running(ctx.userId);
   if (Option.isNone(box))
-    return yield* fail(tool, "The Ruth Cloud workspace is not running.", "sandbox_unavailable");
+    return yield* fail(tool, "The Ava Cloud workspace is not running.", "sandbox_unavailable");
   return box.value;
 });
 const hashBytes = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -210,7 +210,7 @@ export const detectConflict = (
 ): string | null =>
   baseHash === currentHash
     ? null
-    : `Changed in your library on ${modifiedAt instanceof Date ? modifiedAt.toISOString().slice(0, 10) : (modifiedAt?.slice(0, 10) ?? "an unknown date")} after Ruth Cloud copied it`;
+    : `Changed in your library on ${modifiedAt instanceof Date ? modifiedAt.toISOString().slice(0, 10) : (modifiedAt?.slice(0, 10) ?? "an unknown date")} after Ava Cloud copied it`;
 
 const extractedBytes = Effect.fn("RuthCloud.extractedBytes")(function* (
   ctx: AgentContext,

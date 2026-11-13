@@ -144,7 +144,7 @@ export function NotePage({ fileId }: { fileId: FileId }) {
       router.push(`/chat/${thread.id}?${params.toString()}`);
       return true;
     } catch (cause) {
-      toast.error(`Couldn't reach Ruth: ${errorMessage(cause)}`);
+      toast.error(`Couldn't reach Ava: ${errorMessage(cause)}`);
       return false;
     }
   }
@@ -279,7 +279,7 @@ export function NotePage({ fileId }: { fileId: FileId }) {
       <NoteComposerDock hidden={isMobile && editing}>
         <CompactComposer
           draftKey={`note:${fileId}`}
-          placeholder="Ask about this note, or tell Ruth what to add"
+          placeholder="Ask about this note, or tell Ava what to add"
           scope={{ fileIds: [fileId] }}
           scopeLabel="This note"
           onSubmit={ask}
@@ -383,9 +383,9 @@ function MetaLine({
   if (!file) return <Skeleton className="mt-2.5 h-3 w-64" />;
   const by =
     file.source === "ruth-cloud"
-      ? "Written by Ruth overnight"
+      ? "Written by Ava overnight"
       : file.source === "ruth"
-        ? "Written by Ruth"
+        ? "Written by Ava"
         : file.source === "chat"
           ? "Saved from a chat"
           : "Your note";

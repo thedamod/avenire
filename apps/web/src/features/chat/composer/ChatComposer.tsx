@@ -81,7 +81,7 @@ interface Upload {
 export function ChatComposer({
   variant = "full",
   draftKey,
-  placeholder = "Ask Ruth, @ a source or note, or / for commands",
+  placeholder = "Ask Ava, @ a source or note, or / for commands",
   busy = false,
   onStop,
   disabled = false,
@@ -416,7 +416,7 @@ export function ChatComposer({
             ref={textarea}
             value={text}
             rows={1}
-            aria-label="Message Ruth"
+            aria-label="Message Ava"
             placeholder={placeholder}
             disabled={disabled}
             enterKeyHint={touch ? "enter" : "send"}

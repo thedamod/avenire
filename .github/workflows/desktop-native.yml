@@ -1,0 +1,229 @@
+name: Desktop native companion
+on:
+  pull_request:
+    paths:
+      [
+        "apps/desktop-native/**",
+        "apps/desktop/**",
+        "packages/contracts/src/desktop-overlay.ts",
+        ".github/workflows/desktop-native.yml",
+      ]
+  push:
+    branches: [main]
+    paths: ["apps/desktop-native/**", "apps/desktop/**", ".github/workflows/desktop-native.yml"]
+  workflow_dispatch:
+    inputs:
+      sign:
+        description: "Sign and notarize using the protected desktop-signing environment (fails if credentials are missing)"
+        type: boolean
+        default: false
+      distribution_license_basis:
+        description: "Distribution basis declared by the operator; signing requires commercial or GPLv3. This does not license Avenire."
+        type: choice
+        required: true
+        default: unselected
+        options: [unselected, commercial, GPLv3]
+permissions:
+  contents: read
+jobs:
+  native:
+    name: Build, deploy and lifecycle (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            host: linux
+            arch: linux_gcc_64
+            kit: gcc_64
+          - os: windows-2022
+            host: windows
+            arch: win64_msvc2022_64
+            kit: msvc2022_64
+          - os: macos-15
+            host: mac
+            arch: clang_64
+            kit: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.12.10"
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: "24.18.0"
+      - name: Linux Qt system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev libvulkan-dev patchelf libxcb-cursor0 libfontconfig1 libdbus-1-3
+      - name: MSVC developer environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+        with:
+          arch: x64
+      - name: Pinned Qt and build tools
+        shell: bash
+        run: |
+          python -m pip install aqtinstall==3.3.0 cmake==3.30.5 ninja==1.11.1.1
+          python -m aqt install-qt ${{ matrix.host }} desktop 6.8.3 ${{ matrix.arch }} --outputdir "$RUNNER_TEMP/qt" --modules qtquick3d qtquicktimeline qtshadertools
+      - name: Install workspace dependencies
+        shell: bash
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+      - name: Focused desktop behavior and security suite
+        run: pnpm --filter @avenire/desktop test
+      - name: CMake build and platform deployment
+        shell: bash
+        run: node apps/desktop/scripts/native-build.mjs --qt "$RUNNER_TEMP/qt/6.8.3/${{ matrix.kit }}"
+      - name: Relocated deployment and real process lifecycle E2E
+        run: node apps/desktop/scripts/native-overlay-behavior.mjs
+      - name: Native subprocess behavior
+        shell: bash
+        run: |
+          python - <<'PYTHON'
+          import os, pathlib, sys, unittest
+          executable = "avenire-overlay.exe" if sys.platform == "win32" else "avenire-overlay"
+          os.environ["AVENIRE_NATIVE_OVERLAY_EXECUTABLE"] = str(pathlib.Path("apps/desktop/native-dist", executable).resolve())
+          os.environ.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software")
+          suite = unittest.defaultTestLoader.discover("apps/desktop-native/tests", pattern="test_engine.py")
+          sys.exit(not unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful())
+          PYTHON
+      - name: Preserve native permissions and bundle symlinks
+        shell: bash
+        run: tar -czf "native-overlay-${{ runner.os }}-unsigned.tar.gz" -C apps/desktop native-dist
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: native-overlay-${{ runner.os }}-unsigned
+          path: native-overlay-${{ runner.os }}-unsigned.tar.gz
+          if-no-files-found: error
+  sign:
+    name: Sign and verify (${{ matrix.os }})
+    if: github.event_name == 'workflow_dispatch' && inputs.sign
+    needs: native
+    environment: desktop-signing
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Require explicit distribution license basis
+        shell: bash
+        env:
+          LICENSE_BASIS: ${{ inputs.distribution_license_basis }}
+        run: |
+          case "$LICENSE_BASIS" in commercial|GPLv3) ;; *) echo 'Qt Quick 3D requires an explicit commercial or GPLv3 distribution basis before signing'; exit 1 ;; esac
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          name: native-overlay-${{ runner.os }}-unsigned
+      - name: Extract unsigned deployment
+        shell: bash
+        run: tar -xzf "native-overlay-${{ runner.os }}-unsigned.tar.gz"
+      - name: Windows Authenticode signing and verification
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (!$env:CERTIFICATE -or !$env:CERTIFICATE_PASSWORD) { throw 'Required Windows signing secrets are missing' }
+          $pfx = Join-Path $env:RUNNER_TEMP 'desktop-signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERTIFICATE))
+          try {
+            $tool = (Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+            if (!$tool) { throw 'Windows SDK SignTool is required' }
+            $files = Get-ChildItem native-dist -Recurse -File | Where-Object { $_.Extension -in '.exe', '.dll' }
+            if (!$files) { throw 'No native code to sign' }
+            foreach ($file in $files) {
+              & $tool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:CERTIFICATE_PASSWORD $file.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Signing failed: $($file.Name)" }
+              & $tool verify /pa /all /v $file.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Signature verification failed: $($file.Name)" }
+            }
+          } finally { Remove-Item $pfx -Force -ErrorAction SilentlyContinue }
+      - name: macOS Developer ID signing, notarization and stapling
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for key in CERTIFICATE CERTIFICATE_PASSWORD SIGN_IDENTITY APPLE_ID APPLE_TEAM_ID APPLE_APP_PASSWORD; do
+            test -n "${!key}" || { echo "Required macOS signing secret is missing: $key"; exit 1; }
+          done
+          keychain="$RUNNER_TEMP/desktop-signing.keychain-db"
+          certificate="$RUNNER_TEMP/desktop-signing.p12"
+          password="$(openssl rand -hex 32)"
+          trap 'security delete-keychain "$keychain" || true; rm -f "$certificate"' EXIT
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$certificate"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$certificate" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          bundle=native-dist/avenire-overlay.app
+          # Sign inner Mach-O code and frameworks first; no --deep signing shortcut.
+          while IFS= read -r -d '' file; do
+            if file -b "$file" | grep -q 'Mach-O'; then
+              codesign --force --timestamp --options runtime --keychain "$keychain" --sign "$SIGN_IDENTITY" "$file"
+            fi
+          done < <(find "$bundle" -type f -print0)
+          while IFS= read -r -d '' framework; do
+            codesign --force --timestamp --options runtime --keychain "$keychain" --sign "$SIGN_IDENTITY" "$framework"
+          done < <(find "$bundle" -depth -type d -name '*.framework' -print0)
+          codesign --force --timestamp --options runtime --entitlements apps/desktop/resources/entitlements.native.mac.plist --keychain "$keychain" --sign "$SIGN_IDENTITY" "$bundle"
+          codesign --verify --deep --strict --verbose=2 "$bundle"
+          ditto -c -k --keepParent "$bundle" "$RUNNER_TEMP/native-notarization.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/native-notarization.zip" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple "$bundle"
+          xcrun stapler validate "$bundle"
+          spctl --assess --type execute --verbose=2 "$bundle"
+      - name: Record verified signing and archive
+        shell: bash
+        env:
+          LICENSE_BASIS: ${{ inputs.distribution_license_basis }}
+        run: |
+          node -e 'const fs=require("fs");const p="native-dist/deployment.json";const m=JSON.parse(fs.readFileSync(p));m.signing=process.platform==="darwin"?"codesigned-notarized-stapled":process.platform==="win32"?"authenticode-verified":"gpg-detached";m.distributionLicenseBasis=process.env.LICENSE_BASIS;m.distributionReady=false;fs.writeFileSync(p,JSON.stringify(m,null,2)+"\n")'
+          tar -czf "native-overlay-${{ runner.os }}-signed.tar.gz" native-dist
+      - name: Linux detached GPG signature and independent verification
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          GPG_PRIVATE_KEY_BASE64: ${{ secrets.LINUX_GPG_PRIVATE_KEY_BASE64 }}
+          GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+          GPG_KEY_FINGERPRINT: ${{ secrets.LINUX_GPG_KEY_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          for key in GPG_PRIVATE_KEY_BASE64 GPG_PASSPHRASE GPG_KEY_FINGERPRINT; do
+            test -n "${!key}" || { echo "Required Linux signing secret is missing: $key"; exit 1; }
+          done
+          [[ "$GPG_KEY_FINGERPRINT" =~ ^[A-Fa-f0-9]{40}$|^[A-Fa-f0-9]{64}$ ]] || { echo 'Invalid signing key fingerprint'; exit 1; }
+          export GNUPGHOME
+          GNUPGHOME="$(mktemp -d "$RUNNER_TEMP/native-signing.XXXXXX")"
+          verifier="$(mktemp -d "$RUNNER_TEMP/native-verifier.XXXXXX")"
+          chmod 700 "$GNUPGHOME" "$verifier"
+          trap 'gpgconf --kill all || true; rm -rf "$GNUPGHOME" "$verifier"' EXIT
+          printf '%s' "$GPG_PRIVATE_KEY_BASE64" | base64 --decode | gpg --batch --import
+          archive=native-overlay-Linux-signed.tar.gz
+          public=native-overlay-Linux-signed-public-key.asc
+          gpg --batch --armor --export "$GPG_KEY_FINGERPRINT" > "$public"
+          test -s "$public"
+          printf '%s' "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 --local-user "$GPG_KEY_FINGERPRINT" --armor --detach-sign --output "$archive.asc" "$archive"
+          gpg --homedir "$verifier" --batch --import "$public"
+          gpg --homedir "$verifier" --batch --verify "$archive.asc" "$archive"
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: native-overlay-${{ runner.os }}-signed
+          path: native-overlay-${{ runner.os }}-signed*
+          if-no-files-found: error

@@ -77,8 +77,8 @@ export function HomeComposer(props: ComposerProps) {
       onChange={(event) => onValueChange(event.target.value)}
       onKeyDown={onKeyDown}
       onFocus={() => setFocused(true)}
-      placeholder={isMobile ? "Search or ask Ruth" : "Search your files, web, ask AI anything"}
-      aria-label="Search your files or ask Ruth"
+      placeholder={isMobile ? "Search or ask Ava" : "Search your files, web, ask AI anything"}
+      aria-label="Search your files or ask Ava"
       enterKeyHint="send"
       className="block w-full resize-none bg-transparent text-[16px] leading-[22px] text-foreground caret-ruth outline-none placeholder:text-muted-foreground md:text-[22px] md:leading-[30px] md:tracking-[-0.01em]"
     />
@@ -118,7 +118,7 @@ export function HomeComposer(props: ComposerProps) {
               onClick={onAsk}
               className="inline-flex h-8 items-center gap-2 rounded-full border border-ruth-line bg-ruth-tint pr-1.5 pl-3 text-[13px] font-semibold text-ruth-text transition-colors hover:bg-ruth/20 disabled:opacity-70"
             >
-              Ask Ruth
+              Ask Ava
               <Kbd className="h-5 border-b border-ruth-line bg-ruth/15 text-ruth-text">Enter</Kbd>
             </button>
           </div>
@@ -156,7 +156,7 @@ export function HomeComposer(props: ComposerProps) {
         {open ? null : (
           <button
             type="button"
-            aria-label="Ask Ruth"
+            aria-label="Ask Ava"
             disabled={empty}
             onClick={onAsk}
             className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-ruth text-ruth-foreground disabled:opacity-60"
@@ -197,7 +197,7 @@ export function HomeComposer(props: ComposerProps) {
               onClick={onAsk}
               className="h-[34px] rounded-full bg-ruth px-3.5 text-[15px] font-semibold text-ruth-foreground disabled:opacity-60"
             >
-              Ask Ruth
+              Ask Ava
             </button>
           </div>
         </div>

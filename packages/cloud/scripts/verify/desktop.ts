@@ -199,7 +199,7 @@ export async function desktop(h: Harness) {
     "unmaximized Chromium and native window edge pixels",
     async () => {
       await exec(
-        `wmctrl -r 'Ruth input verification' -b remove,maximized_vert,maximized_horz; wmctrl -r 'Ruth input verification' -e 0,770,470,790,350; wmctrl -a 'Ruth input verification'`,
+        `wmctrl -r 'Ava input verification' -b remove,maximized_vert,maximized_horz; wmctrl -r 'Ava input verification' -e 0,770,470,790,350; wmctrl -a 'Ava input verification'`,
       );
       await sleep(700);
       const outputs = await shot("browser-unmaximized", 1000, 620);
@@ -389,7 +389,7 @@ export async function desktop(h: Harness) {
         const t = p({ x: 420, y: 250 });
         await box.computerUse.mouse.click(t.x, t.y);
         await box.computerUse.keyboard.hotkey("ctrl+a");
-        await box.computerUse.keyboard.type(`Ruth ${profile.id}: 0123456789`, 15);
+        await box.computerUse.keyboard.type(`Ava ${profile.id}: 0123456789`, 15);
         await box.computerUse.keyboard.press("enter");
         await box.computerUse.keyboard.type("Exact input.", 15);
         const report = await cdp('({events,text:document.querySelector("#text").value})');
@@ -397,7 +397,7 @@ export async function desktop(h: Harness) {
         const doubles = report.events.filter((e: any) => e.type === "dblclick");
         const wheels = report.events.filter((e: any) => e.type === "wheel");
         const pointerUps = report.events.filter((e: any) => e.type === "pointerup");
-        const expected = `Ruth ${profile.id}: 0123456789\nExact input.`;
+        const expected = `Ava ${profile.id}: 0123456789\nExact input.`;
         if (
           clicks.length !== 7 ||
           doubles.length !== 1 ||
@@ -457,7 +457,7 @@ export async function desktop(h: Harness) {
         await box.computerUse.keyboard.press("enter");
         await sleep(800);
         await box.computerUse.mouse.click(420, 250);
-        await box.computerUse.keyboard.type("Avenire Ruth — recording verification", 60);
+        await box.computerUse.keyboard.type("Avenire Ava — recording verification", 60);
         await box.computerUse.keyboard.press("enter");
         await box.computerUse.mouse.scroll(800, 550, "down", 4);
         await sleep(900);

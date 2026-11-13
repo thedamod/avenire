@@ -312,7 +312,7 @@ export function AskScreen({ navigation, route }: ScreenProps<"Ask">) {
                 />
               ) : (
                 <EmptyState
-                  title="Search or ask Ruth"
+                  title="Search or ask Ava"
                   description="Find a passage in your material, or ask for an explanation."
                 />
               )
@@ -329,7 +329,7 @@ export function AskScreen({ navigation, route }: ScreenProps<"Ask">) {
                 </View>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`${workExpanded ? "Hide" : "Show"} Ruth's work, ${elapsed} seconds`}
+                  accessibilityLabel={`${workExpanded ? "Hide" : "Show"} Ava's work, ${elapsed} seconds`}
                   accessibilityState={{ expanded: workExpanded }}
                   onPress={() => setWorkExpanded((value) => !value)}
                   hitSlop={{ top: 8, bottom: 8 }}
@@ -474,7 +474,7 @@ export function AskScreen({ navigation, route }: ScreenProps<"Ask">) {
                 ) : null}
                 {needsYou && !chat.busy ? (
                   <View style={{ gap: 6 }}>
-                    <Text>Ruth needs your answer to continue.</Text>
+                    <Text>Ava needs your answer to continue.</Text>
                     <Button
                       variant="link"
                       accessibilityLabel="Continue this conversation in chat"
@@ -576,7 +576,7 @@ export function AskScreen({ navigation, route }: ScreenProps<"Ask">) {
           >
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Stop Ruth, working for ${elapsed} seconds`}
+              accessibilityLabel={`Stop Ava, working for ${elapsed} seconds`}
               onPress={() => void chat.stop()}
               hitSlop={3}
               style={styles.working}

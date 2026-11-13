@@ -1,0 +1,7 @@
+Bibata Cursor by the Bibata contributors, including Anshuman (ful1e5).
+Source: https://github.com/ful1e5/Bibata_Cursor/tree/ddb09273cde49faeb6a32282660ff4293f52d6e0
+Asset: svg/groups/modern/left_ptr.svg (GPL-3.0).
+Adapted in apps/desktop-native/BibataCursor.qml as Qt Quick Shape geometry,
+scaled to 32 logical pixels and using the Modern Ice white/black colors.
+The adapted cursor component remains GPL-3.0; this notice does not assign
+a license to Avenire or its other code.

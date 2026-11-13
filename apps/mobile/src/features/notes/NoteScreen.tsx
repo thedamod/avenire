@@ -44,9 +44,9 @@ function NotePage({ route, navigation }: ScreenProps<"Note">) {
   const file = note.file;
   const by =
     file?.source === "ruth-cloud"
-      ? "Written by Ruth overnight"
+      ? "Written by Ava overnight"
       : file?.source === "ruth"
-        ? "Written by Ruth"
+        ? "Written by Ava"
         : file?.source === "chat"
           ? "Saved from a chat"
           : "Your note";
@@ -252,7 +252,7 @@ function NotePage({ route, navigation }: ScreenProps<"Note">) {
         expanded={false}
         disabled={!note.note}
         sending={sourceActions.busy}
-        placeholder="Ask Ruth about this note"
+        placeholder="Ask Ava about this note"
         leading={<Icon name="moon" size={18} color="#ABC4FF" />}
         tray={
           <View

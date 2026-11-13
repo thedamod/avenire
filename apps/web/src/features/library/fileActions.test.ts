@@ -83,7 +83,7 @@ describe("buildFileActions", () => {
     expect(ids).not.toContain("copy");
     expect(ids).not.toContain("rename");
     expect(actions.find((action) => action.id === "move")?.label).toBe("Move 3 sources to");
-    expect(actions.find((action) => action.id === "ask")?.label).toBe("Ask Ruth about them");
+    expect(actions.find((action) => action.id === "ask")?.label).toBe("Ask Ava about them");
     expect(actions.find((action) => action.id === "trash")).toMatchObject({
       label: "Move 3 sources to Trash",
       destructive: true,

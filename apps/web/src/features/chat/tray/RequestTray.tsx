@@ -206,7 +206,7 @@ export function QuestionTray({
           question.multiSelect
             ? "Choose any that apply"
             : question.choices.length
-              ? "Ruth needs one answer to continue"
+              ? "Ava needs one answer to continue"
               : "Type your answer below"
         }
         {...(questions.length > 1 ? { step: `1/${questions.length}` } : {})}
@@ -271,7 +271,7 @@ export function ErrorTray({
       <AlertCircle className="size-[15px] shrink-0 text-destructive" />
       <div className="flex min-w-0 flex-1 items-baseline gap-x-2 gap-y-0.5 max-md:flex-wrap">
         <span className="shrink-0 text-sm leading-5 font-semibold text-foreground">
-          Ruth stopped
+          Ava stopped
         </span>
         <span className="min-w-0 truncate text-xs text-muted-foreground">{message}</span>
       </div>

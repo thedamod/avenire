@@ -360,7 +360,7 @@ export function SourcesSelectScreen({ route, navigation }: ScreenProps<"SourcesS
             },
             {
               icon: "moon",
-              accessibilityLabel: "Ask Ruth about selected sources",
+              accessibilityLabel: "Ask Ava about selected sources",
               color: "#ABC4FF",
               disabled: actions.busy,
               onPress: () => void ask(),

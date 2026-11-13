@@ -51,7 +51,7 @@ export function pendingRequests(messages: readonly RuthUIMessage[]): PendingRequ
       const choices = field(tool.input, "choices");
       questions.push({
         toolCallId: tool.toolCallId,
-        question: String(field(tool.input, "question") ?? "Ruth has a question"),
+        question: String(field(tool.input, "question") ?? "Ava has a question"),
         choices: Array.isArray(choices) ? choices.map(String) : [],
         multiSelect: field(tool.input, "multiSelect") === true,
         allowCustom: field(tool.input, "allowCustom") !== false,

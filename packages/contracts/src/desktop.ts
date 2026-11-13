@@ -36,6 +36,15 @@ export const DesktopSetupChoice = Schema.Struct({
 });
 export type DesktopSetupChoice = typeof DesktopSetupChoice.Type;
 
+/** Read-only status of global shortcut setup. */
+export const DesktopShortcutSetupStatus = Schema.Struct({
+  backend: Schema.Literals(["native", "hyprland", "unsupported"]),
+  state: Schema.Literals(["not-configured", "ready", "conflict", "unavailable"]),
+  note: Schema.String.check(Schema.isMaxLength(500)),
+  conflicts: Schema.Struct({ capture: Schema.Boolean, prompt: Schema.Boolean }),
+});
+export type DesktopShortcutSetupStatus = typeof DesktopShortcutSetupStatus.Type;
+
 export const DesktopSetupStatus = Schema.Struct({
   completed: Schema.Boolean,
   foregroundCapture: Schema.Boolean,
@@ -49,6 +58,7 @@ export const DesktopSetupStatus = Schema.Struct({
   captureShortcut: Schema.NullOr(Schema.String),
   promptShortcut: Schema.NullOr(Schema.String),
   requestedShortcuts: Schema.optionalKey(DesktopShortcuts),
+  shortcutSetup: Schema.optionalKey(DesktopShortcutSetupStatus),
   shortcutConflicts: Schema.optionalKey(
     Schema.Struct({ capture: Schema.Boolean, prompt: Schema.Boolean }),
   ),

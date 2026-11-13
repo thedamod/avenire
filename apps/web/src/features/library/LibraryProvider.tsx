@@ -306,7 +306,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
           if (scope?.fileIds?.length) params.set("files", scope.fileIds.join(","));
           router.push(`/chat/${thread.id}?${params.toString()}`);
         } catch (cause) {
-          toast.error(`Couldn't reach Ruth: ${errorMessage(cause)}`);
+          toast.error(`Couldn't reach Ava: ${errorMessage(cause)}`);
         }
       },
     }),

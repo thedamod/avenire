@@ -127,7 +127,7 @@ function RowBody({ row }: { readonly row: ChatRow }) {
           className="flex min-h-[30px] items-center gap-2.5 text-[14px] text-foreground-soft transition-colors hover:text-foreground"
         >
           <Sparkles className="size-3.5 shrink-0 text-ruth" />
-          Ruth Cloud is working on this · Open
+          Ava Cloud is working on this · Open
           <ChevronRight className="size-3 text-muted-foreground" />
         </Link>
       );

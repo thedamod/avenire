@@ -171,7 +171,7 @@ function NewNotebookForm({
         </fieldset>
         <div className="mt-auto flex flex-col items-stretch gap-3 pt-6 pb-[max(16px,env(safe-area-inset-bottom))] md:flex-row md:items-center md:pb-0">
           <p className="text-center text-xs text-muted-foreground md:mr-auto md:text-left">
-            Ruth can file new captures here automatically
+            Ava can file new captures here automatically
           </p>
           <Button type="button" variant="ghost" className="hidden md:inline-flex" onClick={onClose}>
             Cancel

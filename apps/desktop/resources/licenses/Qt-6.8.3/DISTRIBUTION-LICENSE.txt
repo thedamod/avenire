@@ -1,0 +1,23 @@
+Qt 6.8.3 companion distribution notice
+
+Qt Quick 3D is available under a commercial Qt license or GNU GPL version 3.
+It is not an LGPL-only dependency. Other deployed Qt modules and third-party
+components have their own license alternatives and notices in this directory.
+
+Including these texts does not select a license for Avenire, relicense the host
+application, or establish commercial Qt entitlement. The operator must establish
+a distribution basis and satisfy its terms before distributing the application.
+
+Ordinary build artifacts record distributionLicenseBasis=unselected and
+ distributionReady=false. Protected manual signing requires an explicit commercial
+or GPLv3 declaration, which is recorded in deployment.json. A signature verifies
+artifact identity and integrity; signing does not validate licensing or set
+ distributionReady=true.
+
+Qt's module licensing documentation:
+https://doc.qt.io/qt-6.8/qtquick3d-index.html
+https://doc.qt.io/qt-6.8/licensing.html
+
+Exact 6.8.3 source archive URLs and SHA-256 hashes are recorded in sources.json.
+The complete GPLv3 text is supplied as GPL-3.0-only.txt. Per-module NOTICES files
+preserve upstream license texts and third-party attribution records.

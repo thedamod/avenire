@@ -96,7 +96,7 @@ export function CitationSheet({ route, navigation }: ScreenProps<"Citation">) {
     body = target.page ? (
       <>
         <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
-          <CitedLabel>Cited in Ruth's answer</CitedLabel>
+          <CitedLabel>Cited in Ava's answer</CitedLabel>
         </View>
         <PdfLoadingFrame />
       </>
@@ -125,7 +125,7 @@ export function CitationSheet({ route, navigation }: ScreenProps<"Citation">) {
       <>
         {target.page ? (
           <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
-            <CitedLabel>Cited in Ruth's answer</CitedLabel>
+            <CitedLabel>Cited in Ava's answer</CitedLabel>
           </View>
         ) : null}
         <PdfSource

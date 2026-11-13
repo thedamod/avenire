@@ -24,6 +24,8 @@ export const UserSettings = Schema.Struct({
    * their own session, instead of the server fetching public URLs anonymously.
    */
   captureLoggedInPages: Schema.Boolean,
+  /** Explicit account-owner opt-in for on-demand whole-display AI screen context. */
+  shareScreenWithAi: Schema.optionalKey(Schema.Boolean),
   /** What capture keeps when a page is behind a paywall. */
   paywalledPages: Schema.Literals(["title-abstract", "skip"]),
   notifications: Schema.Struct({
@@ -42,6 +44,7 @@ export const UserSettingsPatch = Schema.Struct({
   fileChanges: Schema.optionalKey(UserSettings.fields.fileChanges),
   sortUnfiledNightly: Schema.optionalKey(Schema.Boolean),
   captureLoggedInPages: Schema.optionalKey(Schema.Boolean),
+  shareScreenWithAi: Schema.optionalKey(Schema.Boolean),
   paywalledPages: Schema.optionalKey(UserSettings.fields.paywalledPages),
   notifications: Schema.optionalKey(
     Schema.Struct({
@@ -108,3 +111,12 @@ export const SettingsSnapshot = Schema.Struct({
   usage: Usage,
 });
 export type SettingsSnapshot = typeof SettingsSnapshot.Type;
+
+/** Authenticated desktop permission lookup; never cached or inferred from model inputs. */
+export const ScreenSharingPermissionPath = "/api/settings/screen-sharing";
+export const ScreenSharingPermission = Schema.Struct({
+  userId: Schema.String,
+  sessionId: Schema.String,
+  enabled: Schema.Boolean,
+});
+export type ScreenSharingPermission = typeof ScreenSharingPermission.Type;

@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from "node:fs/promises";
+import { realpath, mkdtemp, mkdir, writeFile, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -53,7 +53,7 @@ afterEach(async () => {
   );
 });
 async function harness(knownDownloads: () => readonly RegisteredDownload[] = () => []) {
-  const directory = await mkdtemp(join(tmpdir(), "capture-channel-test-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "capture-channel-test-")));
   directories.push(directory);
   const pairing = new PairingAuthority(join(directory, "pairings.json"));
   await pairing.load();
@@ -627,7 +627,8 @@ it("reuses owner-registry downloads after an authenticated browser reconnects", 
   const c = await client(h.url);
   await authenticate(c);
   await report(c);
-  const captured = h.channel.capture([tab], true);
+  const failures = vi.fn();
+  const captured = h.channel.capture([tab], true, undefined, undefined, failures);
   const request = await c.next("CaptureRequest");
   const path = join(h.directory, "Avenire", request.requestId, "Handout.pdf");
   await mkdir(join(path, ".."), { recursive: true });
@@ -639,6 +640,11 @@ it("reuses owner-registry downloads after an authenticated browser reconnects", 
     mimeType: "application/pdf",
     url: "https://school.test/file",
   };
+  // Reconnect behavior does not depend on OS wall-clock/filesystem clock precision.
+  // Keep the acceptance endpoint after the actual file mtime; the validator suite
+  // separately exercises both sides of the strict timestamp boundary.
+  const endpoint = Math.max(Date.now(), Math.ceil((await stat(path)).mtimeMs));
+  vi.spyOn(Date, "now").mockReturnValue(endpoint);
   c.send({
     _tag: "CaptureResult",
     version: 1,
@@ -646,7 +652,10 @@ it("reuses owner-registry downloads after an authenticated browser reconnects", 
     pages: [{ ...page, download }],
     skipped: [],
   });
-  const result = (await captured)[0]!;
+  const results = await captured;
+  expect(failures).not.toHaveBeenCalled();
+  expect(results).toHaveLength(1);
+  const result = results[0]!;
   known.push({
     path,
     sizeBytes: download.sizeBytes,

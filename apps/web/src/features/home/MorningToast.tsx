@@ -103,7 +103,7 @@ function ReportToast({ run }: { run: CloudRun }) {
       </span>
       <span className="relative flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-sm leading-[18px] font-semibold text-[#F4F6FF]">
-          Ruth finished {count} thing{count === 1 ? "" : "s"} overnight.
+          Ava finished {count} thing{count === 1 ? "" : "s"} overnight.
         </span>
         <span className="truncate text-xs leading-4 text-[#C8D0F0]">
           {summary}

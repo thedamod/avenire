@@ -1,11 +1,11 @@
-import { mkdtemp, mkdir, writeFile, stat, symlink, rm, utimes } from "node:fs/promises";
+import { realpath, mkdtemp, mkdir, writeFile, stat, symlink, rm, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vite-plus/test";
 import { validateBrowserDownload } from "./download-validation.ts";
 
 it("accepts only a matching regular download within its capture directory and time window", async () => {
-  const root = await mkdtemp(join(tmpdir(), "capture-download-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "capture-download-")));
   const id = "capture-request";
   const path = join(root, "Avenire", id, "notes.pdf");
   try {
@@ -63,7 +63,7 @@ it("accepts only a matching regular download within its capture directory and ti
 });
 
 it("rejects HTML saved with a PDF filename and MIME with an honest host-specific reason", async () => {
-  const root = await mkdtemp(join(tmpdir(), "capture-download-html-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "capture-download-html-")));
   const id = "capture-request";
   const path = join(root, "Avenire", id, "notes.pdf");
   try {
@@ -85,6 +85,34 @@ it("rejects HTML saved with a PDF filename and MIME with an honest host-specific
     ).rejects.toThrow(
       "The site returned a web page instead of the file (you may need to sign in on school.test)",
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("accepts sub-millisecond file timestamps in the final wall-clock millisecond only", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "capture-download-clock-")));
+  const captureId = "fractional-timestamp";
+  const path = join(root, "Avenire", captureId, "notes.pdf");
+  try {
+    await mkdir(join(root, "Avenire", captureId), { recursive: true });
+    await writeFile(path, "%PDF-hello");
+    const seconds = Math.floor(Date.now() / 1000);
+    await utimes(path, seconds, seconds + 0.0005);
+    const info = await stat(path);
+    const end = Math.floor(info.mtimeMs);
+    const download = {
+      path,
+      captureId,
+      sizeBytes: info.size,
+      mimeType: "application/pdf",
+      url: "https://school.test/file",
+    };
+    const window = { captureId, startedAt: end - 1000, endedAt: end };
+    expect(await validateBrowserDownload(download, root, window)).toBe(path);
+    await expect(
+      validateBrowserDownload(download, root, { ...window, endedAt: end - 1 }),
+    ).rejects.toThrow(/outside capture window/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

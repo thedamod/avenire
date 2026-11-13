@@ -89,7 +89,7 @@ it.effect(
     });
   },
 );
-it.effect("tells Ruth why a tool refused, but not what an unexpected failure said", () => {
+it.effect("tells Ava why a tool refused, but not what an unexpected failure said", () => {
   const model = scriptedModel([
     {
       toolCalls: [

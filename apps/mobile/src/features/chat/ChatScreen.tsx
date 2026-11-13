@@ -151,9 +151,9 @@ function ThreadScreen({ navigation, route, thread, report, runId }: ScreenProps<
       </View>
       <View style={{ paddingBottom: Math.max(insets.bottom, 12), paddingTop: 8 }}>
         <Composer floating={false} value={draft} onChangeText={setDraft} onSend={(value) => handle(() => send(value))} onAdd={() => setSourcesOpen(!sourcesOpen)}
-          placeholder={question ? question.allowCustom ? "Or type your own answer" : "Choose an answer above" : "Ask Ruth, @ a source or note"}
+          placeholder={question ? question.allowCustom ? "Or type your own answer" : "Choose an answer above" : "Ask Ava, @ a source or note"}
           disabled={!thread.ready || thread.pending || Boolean(question && !question.allowCustom)} sending={streaming} controls={[]}
-          trailing={streaming ? <IconButton icon="pause" size={34} hitSlop={5} accessibilityLabel="Stop Ruth's reply" onPress={() => handle(() => thread.stop())} /> : undefined} />
+          trailing={streaming ? <IconButton icon="pause" size={34} hitSlop={5} accessibilityLabel="Stop Ava's reply" onPress={() => handle(() => thread.stop())} /> : undefined} />
       </View>
     </KeyboardAvoidingView>
   </Screen>;

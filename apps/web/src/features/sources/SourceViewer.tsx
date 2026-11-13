@@ -215,7 +215,7 @@ export function SourceViewerBody({
         <div className={cn("flex flex-col gap-3", compact ? "px-5" : "px-1")}>
           {region ? (
             <span>
-              <CitedChip>Cited in Ruth's answer</CitedChip>
+              <CitedChip>Cited in Ava's answer</CitedChip>
             </span>
           ) : null}
           {file.preview ? (
@@ -273,7 +273,7 @@ export function SourceViewerBody({
           doesn't push the frame down. */}
       {framed && (page || q || compact) ? (
         <div className={cn("flex min-h-8 shrink-0 items-center gap-2", gutter)}>
-          {page || q ? <CitedChip>Cited in Ruth's answer</CitedChip> : null}
+          {page || q ? <CitedChip>Cited in Ava's answer</CitedChip> : null}
           <span className="flex-1" />
           {compact && openOriginal ? <OpenOriginal onClick={openOriginal} /> : null}
         </div>
@@ -366,13 +366,13 @@ function StateNotice({
     switch (state.kind) {
       case "processing":
         return {
-          text: `${state.label}… Search and citations work once Ruth has read it.`,
+          text: `${state.label}… Search and citations work once Ava has read it.`,
           tone: "text-foreground-soft",
           rule: "border-input",
         };
       case "paused":
         return {
-          text: "Paused. Ruth won't read it until you resume.",
+          text: "Paused. Ava won't read it until you resume.",
           tone: "text-foreground-soft",
           rule: "border-input",
           action: { label: "Resume", run: onRetry },

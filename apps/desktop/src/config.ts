@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateAppUrl } from "./app-url.ts";
+import { usesWayland } from "./display-selection.ts";
 
 function buildAppUrl(): string {
   if (!app.isPackaged) return "http://localhost:3000";
@@ -24,6 +25,7 @@ const config = Effect.runSync(
     powerShellOneShot: Config.String("AVENIRE_PS_ONESHOT").pipe(Config.withDefault("")),
     captureAppData: Config.String("APPDATA").pipe(Config.withDefault("")),
     captureConfigHome: Config.String("XDG_CONFIG_HOME").pipe(Config.withDefault("")),
+    appImage: Config.String("APPIMAGE").pipe(Config.withDefault("")),
     extensionIds: Config.String("AVENIRE_EXTENSION_IDS").pipe(Config.withDefault("")),
   }),
 );
@@ -32,10 +34,11 @@ export const defaultCaptureShortcut = DEFAULT_DESKTOP_CAPTURE_SHORTCUT;
 export const defaultPromptShortcut = config.promptShortcut;
 export const fallbackPromptShortcut = "Alt+Shift+Space";
 export const extensionReceiverPort = 17842;
-export const isWayland = config.sessionType === "wayland" || config.waylandDisplay.length > 0;
+export const isWayland = usesWayland(process.platform, config.sessionType, config.waylandDisplay);
 export const powerShellOneShot = config.powerShellOneShot.length > 0;
 export const captureAppData = config.captureAppData;
 export const captureConfigHome = config.captureConfigHome;
+export const linuxAppImage = config.appImage;
 export const extensionIds = new Set([
   "gdegpabcfhonkcnecpgaekplbfmopace",
   ...config.extensionIds

@@ -22,7 +22,7 @@ text selection. No cards inside cards: sections are separated by hairlines, list
 
 The page sells two things: Avenire **keeps your material in order** (capture, notebooks
 that file themselves, one library), and it **brings you the part you need** so you don't
-go searching for it. Lead with those. Ruth's background work is how that happens, not the
+go searching for it. Lead with those. Ava's background work is how that happens, not the
 pitch: don't frame the product around overnight runs, mornings or "while you're away".
 Plain, concrete sentences; name real things (PDFs, lectures, notebooks), not abstractions.
 

@@ -298,7 +298,7 @@ normalize(content)))` before `ILIKE` (`:1440`), which the `gin_trgm_ops` index o
 ### 1.6 Retrieval in v2 today
 
 `packages/ingestion/src/retrieval.ts` is about 200 lines: per-user dense + lexical, RRF,
-two chunks per file. Ruth calls it through `search_materials` and can read neighbours
+two chunks per file. Ava calls it through `search_materials` and can read neighbours
 itself with `read_file` (`packages/ai/src/tools/ruth.ts`). Commit `9112434` fixed three
 §2.5 files:
 
@@ -313,7 +313,7 @@ itself with `read_file` (`packages/ai/src/tools/ruth.ts`). Commit `9112434` fixe
 | Embedding model guard                          | Missing: `chunk.embedding_model` exists but isn't filtered on                                                                                                                                                    |
 | Exact/identifier lane (formulas, code, quotes) | Missing                                                                                                                                                                                                          |
 | Reranker                                       | Missing                                                                                                                                                                                                          |
-| Calibrated relevance / abstention              | Missing. `SearchHit.score` is the RRF score (≈ 0.016–0.033), which tells Ruth nothing about relevance                                                                                                            |
+| Calibrated relevance / abstention              | Missing. `SearchHit.score` is the RRF score (≈ 0.016–0.033), which tells Ava nothing about relevance                                                                                                            |
 | Timestamp/page-aware queries                   | Missing                                                                                                                                                                                                          |
 | Neighbour expansion                            | Agent-driven via `read_file`. That's cheaper than v1, but costs a tool round trip                                                                                                                                |
 | Benchmark                                      | `packages/retrieval-benchmark` reports recall@10 / P@10 / MRR / nDCG@10 per query type. It has no video lane and no abstention metric                                                                            |
@@ -400,7 +400,7 @@ re-chunk, not a second record. There's no cue table:
   version and cacheable forever.
 - **Seek from a search hit:** the hit's `location.startSec`; with `cues`, the player can
   highlight the exact cue run that matched.
-- **Ruth quoting a moment:** `read_file` already returns chunk content and location;
+- **Ava quoting a moment:** `read_file` already returns chunk content and location;
   finer quotes come from the cue range in the document.
 - **Re-chunking** (new window size, chapters) reads cues from the document, with no
   re-fetch or re-transcription.
@@ -417,10 +417,10 @@ otherwise chunks are diffed by hash and only changed chunks are embedded and wri
 
 Principles from §1.5. **Fuse by rank, never by raw score.** **Every stage must be
 measurable on the benchmark before it ships**, because v1's constants and fallbacks
-compounded unmeasured. **Prefer an index-backed SQL lane over an LLM call.** **Let Ruth
+compounded unmeasured. **Prefer an index-backed SQL lane over an LLM call.** **Let Ava
 own query rewriting**: it already writes the `search_materials` query, so there's no
 per-query expansion or HyDE, and the one LLM call in search (aspect planning) only runs
-when Ruth asks for `depth: "deep"`.
+when Ava asks for `depth: "deep"`.
 
 `Retrieval.search` (`packages/ingestion/src/retrieval/`) runs these steps:
 
@@ -455,11 +455,11 @@ when Ruth asks for `depth: "deep"`.
    keep fused order with `reranked: false` and `relevance: null`; no other stage's score
    is passed off as relevance.
 6. **Abstain** when the best relevance is below `RETRIEVAL_MIN_RELEVANCE` (default 0.1,
-   to be fitted on the no-answer lane): no hits, `abstained: true`, so Ruth says the
+   to be fitted on the no-answer lane): no hits, `abstained: true`, so Ava says the
    materials don't cover it. There are no intent-based bypasses.
 7. **Shape**: two chunks per file, then `limit`.
 
-**Deep search** (`depth: "deep"`, chosen by Ruth for comparisons and multi-step
+**Deep search** (`depth: "deep"`, chosen by Ava for comparisons and multi-step
 questions) fixes v1's coverage gaps (§1.5 decomposition; audit files 8–9): the planner
 splits the question into at most four standalone aspects, each aspect adds its own
 semantic and lexical lists, the graph walk goes two hops, the pool is reranked against
@@ -508,17 +508,17 @@ Remaining steps:
 - **One `outline` chunk per video.** Title, channel or source, and chapters with
   timestamps (YouTube chapters when present, otherwise generated once at ingest). It
   replaces v1's metadata stub and is where "what's in the SVD lecture" lands. Its hits
-  carry `startSec` pointers, so Ruth can `read_file` at the right ordinal.
+  carry `startSec` pointers, so Ava can `read_file` at the right ordinal.
 - **Slides as their own `slide` chunks** (§2.3), embedded as OCR text rather than
   image + duplicated transcript (v1 #8). The per-file cap counts a slide and the
   transcript chunk at the same timestamp as one slot.
-- **No modality multipliers.** When the user means a video, Ruth passes
+- **No modality multipliers.** When the user means a video, Ava passes
   `kinds: ["video"]`; otherwise every kind competes on rank (v1 #1–2).
 - **Rerank documents carry title and time** (§2.5 rerank), so the cross-encoder judges a
   fragment in context (v1 #7).
 
 Deliberately not ported from v1: regex intent detection and modality multipliers (use
-`kinds` filters chosen by Ruth instead), LLM query expansion and HyDE, decomposition on
+`kinds` filters chosen by Ava instead), LLM query expansion and HyDE, decomposition on
 every query (deep search does it only on request), learner-signal boosts, the fast/slow router and shadow calibration, the
 warm-up job, and token-overlap "quality" telemetry. Any of these can come back only with
 a benchmark result showing it helps.

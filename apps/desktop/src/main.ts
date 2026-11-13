@@ -1,3 +1,31 @@
+import { homedir } from "node:os";
+import { HyprlandShortcuts } from "./hyprland-shortcuts.ts";
+import type {
+  DesktopShortcutSetupStatus,
+  DesktopShortcuts as ShortcutChoices,
+} from "@avenire/contracts";
+import { screenSharingPermission } from "./screen-privacy.ts";
+import {
+  matchNativeScreen,
+  displayStillPresent,
+  matchHyprlandOutput,
+  sameWaylandOutput,
+  type NativeScreen,
+} from "./display-selection.ts";
+import {
+  DesktopOverlayState,
+  DesktopOverlayAnnotation,
+  DesktopNativeScene,
+  DesktopNativeDiagram,
+  DesktopCursorPosition,
+  DesktopNativeObservation,
+} from "@avenire/contracts";
+import {
+  NativeOverlay,
+  loadNativeOverlayConfig,
+  type NativeOverlayConfig,
+  type PromptCaptureContext,
+} from "./native-overlay.ts";
 import {
   captureLog,
   captureError,
@@ -5,6 +33,8 @@ import {
   captureLogPath,
 } from "./capture/diagnostics.ts";
 import * as Path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import * as Schema from "effect/Schema";
 import {
@@ -40,6 +70,9 @@ import {
   defaultCaptureShortcut,
   defaultPromptShortcut,
   fallbackPromptShortcut,
+  captureConfigHome,
+  linuxAppImage,
+  isWayland,
 } from "./config.ts";
 import { instantCapture, setCaptureDeviceId, collectSnapshot } from "./capture/collect.ts";
 import { applyPolicy } from "@avenire/capture/policy";
@@ -54,7 +87,7 @@ import { loadInstallIdentity } from "./capture/identity.ts";
 import { LocalOriginRegistry } from "./capture/registry.ts";
 import { PairingAuthority } from "./capture/pairing.ts";
 import { startForegroundPoll } from "./capture/foreground.ts";
-import { prewarmPowerShell } from "./capture/research/electron/collectors/ps-queue.ts";
+import { prewarmPowerShell } from "./capture/collectors/ps-queue.ts";
 import { CaptureProgressStream } from "./capture/progress.ts";
 import { captureItems, runCapturePipeline } from "./capture/pipeline.ts";
 import { executeReopen } from "./capture/reopen.ts";
@@ -71,8 +104,40 @@ let captureShortcut: string | undefined;
 let captureRunning = false;
 let promptWindow: BrowserWindow | undefined;
 let promptBusy = false;
+let nativeOverlayConfig: NativeOverlayConfig;
+let nativeOverlay: NativeOverlay | undefined;
+let promptGeneration = 0;
+let promptOpening = false;
+let promptNativeScreenId: string | undefined;
+let promptCaptureRunning = false;
+let promptCaptureInvalidated = false;
+let nativePromptStarting: Promise<void> | undefined;
+let promptScreenSession: string | undefined;
+let promptCaptureContext: PromptCaptureContext = { sessionId: 0, capture: null };
+
+let screenPermissionTimer: ReturnType<typeof setInterval> | undefined;
+function endNativePrompt(): void {
+  clearInterval(screenPermissionTimer);
+  screenPermissionTimer = undefined;
+  promptScreenSession = undefined;
+  promptCaptureInvalidated = false;
+  promptGeneration++;
+  promptOpening = false;
+  promptNativeScreenId = undefined;
+  nativePromptStarting = undefined;
+  nativeOverlay?.dispose();
+  nativeOverlay = undefined;
+  promptCaptureContext = { sessionId: promptGeneration, capture: null };
+}
+function hidePrompt(): void {
+  endNativePrompt();
+  promptWindow?.destroy();
+}
+
 let setupWindow: BrowserWindow | undefined;
 let setup: DesktopSetup;
+let compositorShortcuts: HyprlandShortcuts | undefined;
+let shortcutMutation: Promise<void> = Promise.resolve();
 let captureReady = false;
 let promptShortcut: string | undefined;
 let quitting = false;
@@ -106,16 +171,43 @@ const chromeOptions = {
   titleBarOverlay: { color: "#0b0b0b", symbolColor: "#a3a3a3", height: 40 },
   trafficLightPosition: { x: 12, y: 12 },
   autoHideMenuBar: true,
-  icon: Path.join(__dirname, "icon.png"),
+  icon: Path.join(__dirname, process.platform === "win32" ? "icon.ico" : "icon.png"),
 };
 
+let pendingPromptShortcut = process.argv.includes("--avenire-prompt");
+let pendingCaptureShortcut = process.argv.includes("--avenire-capture");
+function requestShortcutCapture(): void {
+  pendingCaptureShortcut = true;
+  if (!setup) return;
+  if (!setup.completed) {
+    showSetup();
+    return;
+  }
+  if (!window || window.isDestroyed()) createWindow(false);
+  if (captureReady) {
+    pendingCaptureShortcut = false;
+    void capture().catch(reportCaptureError);
+  }
+}
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on("second-instance", showMain);
+  app.on("second-instance", (_event, argv) => {
+    if (argv.includes("--avenire-prompt")) {
+      if (setup) togglePrompt();
+      else pendingPromptShortcut = true;
+    } else if (argv.includes("--avenire-capture")) requestShortcutCapture();
+    else showMain();
+  });
   app
     .whenReady()
     .then(async () => {
       initializeCaptureLog(app.getPath("logs"));
+      nativeOverlayConfig = loadNativeOverlayConfig({
+        packaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
+        wayland: process.platform === "linux" && isWayland,
+      });
       const userData = app.getPath("userData");
       deviceId = loadInstallIdentity(userData).deviceId;
       setCaptureDeviceId(deviceId);
@@ -124,6 +216,24 @@ else {
       await Promise.all([registry.load(), pairing.load()]);
       setup = new DesktopSetup(Path.join(app.getPath("userData"), "desktop-setup.json"));
       await setup.load();
+      if (process.platform === "linux" && isWayland) {
+        const executable = app.isPackaged ? linuxAppImage || process.execPath : process.execPath;
+        compositorShortcuts = new HyprlandShortcuts({
+          configDirectory: Path.join(captureConfigHome || Path.join(homedir(), ".config"), "hypr"),
+          stateDirectory: userData,
+          launch:
+            app.isPackaged && !linuxAppImage && executable.includes("/.mount_")
+              ? []
+              : [executable, ...(!app.isPackaged ? [app.getAppPath()] : [])],
+          run: async (args) =>
+            (
+              await promisify(execFile)("hyprctl", [...args], {
+                timeout: 5000,
+                maxBuffer: 1024 * 1024,
+              })
+            ).stdout,
+        });
+      }
       requestedShortcuts = setup.shortcuts ?? requestedShortcuts;
       setupNotifications = setup.notificationsEnabled ?? false;
       Menu.setApplicationMenu(
@@ -135,7 +245,11 @@ else {
           { label: "Desktop", submenu: [{ label: "Desktop setup…", click: showSetup }] },
         ]),
       );
-      showMain();
+      if (pendingPromptShortcut) {
+        pendingPromptShortcut = false;
+        togglePrompt();
+      } else if (pendingCaptureShortcut && setup.completed) createWindow(false);
+      else showMain();
       captureOverlay = new CaptureOverlay(
         Path.join(__dirname, "capture-overlay.html"),
         Path.join(__dirname, "overlay-preload.cjs"),
@@ -155,11 +269,24 @@ else {
         () => (setup.completed && setup.foregroundCapture) || (setupTry && setupForeground),
       );
       if (setup.completed && setup.hotkeysEnabled !== false) {
-        setupHotkeys = true;
-        registerShortcut(requestedShortcuts.capture);
-        if (!registerPromptShortcut(requestedShortcuts.prompt)) {
-          if (registerPromptShortcut(fallbackPromptShortcut))
-            requestedShortcuts.prompt = fallbackPromptShortcut;
+        if (compositorShortcuts) {
+          // Persisted compositor bindings survive app exits. A first install or repair
+          // belongs to the explicit Allow action, including for existing installs.
+          const status = await compositorShortcuts.inspect(requestedShortcuts);
+          if (status.state === "ready") {
+            setupHotkeys = true;
+            captureShortcut = requestedShortcuts.capture;
+            promptShortcut = requestedShortcuts.prompt;
+          } else {
+            captureLog("desktop-shortcut-setup-unavailable", { note: status.note });
+          }
+        } else {
+          setupHotkeys = true;
+          registerShortcut(requestedShortcuts.capture);
+          if (!registerPromptShortcut(requestedShortcuts.prompt)) {
+            if (registerPromptShortcut(fallbackPromptShortcut))
+              requestedShortcuts.prompt = fallbackPromptShortcut;
+          }
         }
       }
       rebuildTray();
@@ -268,7 +395,7 @@ async function loadApp(target: BrowserWindow, url = appUrl): Promise<void> {
   }
 }
 
-function createWindow(): void {
+function createWindow(showOnReady = true): void {
   window = new BrowserWindow({
     ...chromeOptions,
     width: 1200,
@@ -311,7 +438,7 @@ function createWindow(): void {
   );
   target.once("ready-to-show", () => {
     target.webContents.setBackgroundThrottling(true);
-    target.show();
+    if (showOnReady) target.show();
   });
   target.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
     if (isMainFrame && !isInPlace) {
@@ -381,17 +508,100 @@ function applyNavigationPolicy(target: BrowserWindow): void {
 }
 
 function togglePrompt(): void {
-  if (!setup?.completed) {
-    showSetup();
-    return;
+  void showPrompt().catch((error: unknown) => {
+    endNativePrompt();
+    captureLog("native-prompt-error", captureError(error));
+  });
+}
+async function selectNativePromptDisplay(
+  native: NativeOverlay,
+  display: Electron.Rectangle,
+  generation: number,
+): Promise<void> {
+  const inspection = (await native.request("inspect")) as { screens?: NativeScreen[] };
+  const selected = matchNativeScreen(display, inspection.screens);
+  if (generation !== promptGeneration || nativeOverlay !== native)
+    throw new Error("Stale native overlay session");
+  await native.request("select_screen", { screenId: selected.id });
+  if (generation !== promptGeneration || nativeOverlay !== native)
+    throw new Error("Stale native overlay session");
+  promptNativeScreenId = selected.id;
+  // select_screen disarmed the previous observation. Invalidation after this
+  // point belongs to the new selection, including while show is pending.
+  promptCaptureInvalidated = false;
+  await native.request("show", { screenId: selected.id });
+  if (generation !== promptGeneration || nativeOverlay !== native)
+    throw new Error("Stale native overlay session");
+}
+async function initializeNativePrompt(
+  generation: number,
+  display: Electron.Rectangle,
+): Promise<void> {
+  if (nativeOverlayConfig?.enabled) {
+    const native = new NativeOverlay(
+      nativeOverlayConfig,
+      () => {
+        if (generation === promptGeneration && nativeOverlay === native) hidePrompt();
+      },
+      () => {
+        if (generation !== promptGeneration || nativeOverlay !== native) return;
+        promptCaptureContext = { sessionId: generation, capture: null };
+        if (promptCaptureRunning) {
+          // A fresh read supersedes the old observation. Do not cancel the tool
+          // obtaining its replacement, but reject any newly invalidated pixels.
+          promptCaptureInvalidated = true;
+        } else promptWindow?.webContents.send("avenire:screen-invalidated", generation);
+      },
+      () => {
+        if (generation !== promptGeneration || nativeOverlay !== native) return;
+        nativeOverlay = undefined;
+        promptNativeScreenId = undefined;
+        promptCaptureContext = {
+          sessionId: generation,
+          capture: null,
+          error: "Native presentation stopped; request a fresh screen read",
+        };
+        promptWindow?.webContents.send("avenire:screen-invalidated", generation);
+      },
+    );
+    nativeOverlay = native;
+    try {
+      // Initialize only on read_screen, using this read's cursor/display snapshot.
+      await selectNativePromptDisplay(native, display, generation);
+      promptCaptureContext = { sessionId: generation, capture: null };
+    } catch (error) {
+      if (generation !== promptGeneration || nativeOverlay !== native) {
+        native.dispose();
+        throw error;
+      }
+      captureLog("native-screen-context-error", captureError(error));
+      native.dispose();
+      nativeOverlay = undefined;
+      promptCaptureContext = {
+        sessionId: generation,
+        capture: null,
+        error: error instanceof Error ? error.message : "Native overlay unavailable",
+      };
+      throw error;
+    }
   }
-  if (promptWindow?.isFocused()) {
-    promptWindow.hide();
-    return;
-  }
-  if (!window || window.isDestroyed()) createWindow();
+  if (!nativeOverlay) throw new Error("Local screen capture is disabled");
+}
+function ensureNativePrompt(display: Electron.Rectangle): Promise<void> {
+  const generation = promptGeneration;
+  if (nativeOverlay?.available && !nativePromptStarting)
+    return selectNativePromptDisplay(nativeOverlay, display, generation);
+  return (nativePromptStarting ??= initializeNativePrompt(generation, display).finally(() => {
+    if (generation === promptGeneration) nativePromptStarting = undefined;
+  }));
+}
+/** Preload the authenticated prompt without showing it or starting Qt. */
+function ensurePromptWindow(): void {
+  if (!window || window.isDestroyed() || quitting) return;
   if (!promptWindow) {
     promptWindow = new BrowserWindow({
+      icon: chromeOptions.icon,
+      title: "Avenire Ask Ava",
       width: 520,
       height: 420,
       show: false,
@@ -412,36 +622,87 @@ function togglePrompt(): void {
         nodeIntegration: false,
       },
     });
+    promptWindow.on("page-title-updated", (event) => event.preventDefault());
     promptWindow.setAlwaysOnTop(true, "floating");
     if (process.platform === "darwin") {
       promptWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     }
+    let promptLoaded = false;
+    let promptHadFocus = false;
+    let promptShownAt = 0;
     applyNavigationPolicy(promptWindow);
+    promptWindow.on("show", () => {
+      promptShownAt = Date.now();
+    });
+    promptWindow.on("focus", () => {
+      promptHadFocus = true;
+    });
     promptWindow.on("blur", () => {
-      if (!promptBusy) promptWindow?.hide();
+      if (
+        !(process.platform === "linux" && isWayland) &&
+        promptHadFocus &&
+        !promptBusy &&
+        Date.now() - promptShownAt > 750
+      )
+        hidePrompt();
+    });
+    promptWindow.on("hide", () => {
+      promptHadFocus = false;
+      endNativePrompt();
+      promptWindow?.webContents.send("avenire:prompt-hidden");
     });
     promptWindow.on("closed", () => {
+      endNativePrompt();
       promptWindow = undefined;
       promptBusy = false;
     });
     promptWindow.webContents.on("render-process-gone", () => {
       promptBusy = false;
-      promptWindow?.hide();
+      hidePrompt();
+    });
+    promptWindow.webContents.on("did-start-navigation", (_event, _url, inPlace, mainFrame) => {
+      if (promptLoaded && mainFrame && !inPlace) hidePrompt();
     });
     promptWindow.webContents.on("did-finish-load", () => {
+      promptLoaded = true;
+      if (new URL(promptWindow!.webContents.getURL()).pathname !== "/prompt") endNativePrompt();
       promptBusy = false;
       if (promptWindow?.isFocused()) promptWindow.webContents.send("avenire:prompt-shown");
     });
     void loadApp(promptWindow, new URL("/prompt", appUrl).href);
   }
+}
+
+async function showPrompt(): Promise<void> {
+  if (!setup?.completed) {
+    showSetup();
+    return;
+  }
+  if (promptOpening || promptWindow?.isFocused()) {
+    hidePrompt();
+    return;
+  }
+  if (promptWindow?.isVisible()) {
+    promptWindow.focus();
+    promptWindow.webContents.send("avenire:prompt-shown");
+    return;
+  }
+  endNativePrompt();
+  const generation = promptGeneration;
+  promptOpening = true;
+  if (generation !== promptGeneration || quitting) return;
+  promptOpening = false;
+  if (!window || window.isDestroyed()) createWindow(false);
+  ensurePromptWindow();
+  if (!promptWindow) return;
   const { x, y, width, height } = screen.getDisplayNearestPoint(
     screen.getCursorScreenPoint(),
   ).workArea;
-  const promptWidth = Math.min(520, width);
+  const promptWidth = Math.min(400, width);
   const promptHeight = Math.min(420, height);
   promptWindow.setBounds({
-    x: x + width - promptWidth,
-    y: y + height - promptHeight,
+    x: x + width - promptWidth - 12,
+    y: y + height - promptHeight - 12,
     width: promptWidth,
     height: promptHeight,
   });
@@ -454,6 +715,7 @@ function togglePrompt(): void {
 function openAsset(url: string): void {
   if (!window || window.isDestroyed()) return;
   const asset = new BrowserWindow({
+    icon: chromeOptions.icon,
     width: 1000,
     height: 760,
     parent: window,
@@ -495,12 +757,9 @@ let trayShortcutsUpdating = false;
 async function toggleTrayShortcuts(): Promise<void> {
   if (trayShortcutsUpdating) return;
   trayShortcutsUpdating = true;
-  const previous = setupHotkeys;
   try {
-    setHotkeysEnabled(!previous);
-    await setup.saveShortcuts(requestedShortcuts, setupHotkeys);
+    await setHotkeysEnabled(!setupHotkeys);
   } catch (error) {
-    if (setupHotkeys !== previous) setHotkeysEnabled(previous);
     dialog.showErrorBox(
       "Shortcuts could not be changed",
       error instanceof Error ? error.message : "Try again in Desktop setup.",
@@ -591,18 +850,6 @@ function registerPromptShortcut(accelerator: string): boolean {
   promptShortcut = accelerator;
   rebuildTray();
   return true;
-}
-
-function shortcutAvailable(accelerator: string, kind: "capture" | "prompt"): boolean {
-  if (accelerator === (kind === "capture" ? captureShortcut : promptShortcut)) return true;
-  if (accelerator === captureShortcut || accelerator === promptShortcut) return false;
-  try {
-    if (!globalShortcut.register(accelerator, () => {})) return false;
-    globalShortcut.unregister(accelerator);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function captureSetup(): Promise<void> {
@@ -817,6 +1064,9 @@ ipcMain.handle(
       lastOwner = nextOwner;
     }
     if (captureOwner !== nextOwner) {
+      // Hidden preloaded documents must not retain another signed-in user's state.
+      endNativePrompt();
+      promptWindow?.destroy();
       captureOverlay?.clear();
       clearNativeCache();
       resetTabsOwner();
@@ -849,6 +1099,7 @@ ipcMain.handle(
       restoreCaptureOverlay(captureOwner, activeCapture.stream);
       activeCapture.stream.replay((channel, value) => window!.webContents.send(channel, value));
     } else if (captureReady && stagedCapture) void capture().catch(reportCaptureError);
+    if (captureReady && pendingCaptureShortcut) requestShortcutCapture();
   },
 );
 ipcMain.handle("avenire:capture-ack", (event, id: unknown) => {
@@ -1075,8 +1326,17 @@ ipcMain.handle("avenire:window-theme", (event, value: unknown) => {
       height: 40,
     });
 });
-function setupStatus() {
+async function setupStatus() {
+  const shortcutSetup: DesktopShortcutSetupStatus = compositorShortcuts
+    ? await compositorShortcuts.inspect(requestedShortcuts)
+    : {
+        backend: "native",
+        state: setupHotkeys ? "ready" : "not-configured",
+        conflicts: { capture: false, prompt: false },
+        note: "Allow global hotkeys to register your selected shortcuts.",
+      };
   return {
+    shortcutSetup,
     completed: setup.completed,
     foregroundCapture: setup.foregroundCapture,
     platform: process.platform,
@@ -1087,12 +1347,12 @@ function setupStatus() {
     promptShortcut: promptShortcut ?? null,
     requestedShortcuts,
     shortcutConflicts: {
+      // Availability is only established by the explicit registration action.
+      // Probing here can open a Wayland portal dialog on every status refresh.
       capture:
-        requestedShortcuts.capture === requestedShortcuts.prompt ||
-        !shortcutAvailable(requestedShortcuts.capture, "capture"),
+        requestedShortcuts.capture === requestedShortcuts.prompt || shortcutSetup.conflicts.capture,
       prompt:
-        requestedShortcuts.capture === requestedShortcuts.prompt ||
-        !shortcutAvailable(requestedShortcuts.prompt, "prompt"),
+        requestedShortcuts.capture === requestedShortcuts.prompt || shortcutSetup.conflicts.prompt,
     },
     ...(setup.preferences ? { preferences: setup.preferences } : {}),
     hotkeysEnabled: setupHotkeys,
@@ -1110,31 +1370,94 @@ ipcMain.handle("avenire:setup-permission", async (event, permission: unknown) =>
 });
 ipcMain.handle("avenire:setup-complete", async (event, choice: unknown) => {
   if (!trustedSetupSender(event)) throw new Error("Untrusted desktop IPC sender");
-  await setup.complete(Schema.decodeUnknownSync(DesktopSetupChoice)(choice));
+  const selected = Schema.decodeUnknownSync(DesktopSetupChoice)(choice);
+  if (selected.hotkeysEnabled && !setupHotkeys)
+    throw new Error("Allow global hotkeys first, or continue with hotkeys off.");
+  if (selected.hotkeysEnabled === false && setupHotkeys) await setHotkeysEnabled(false);
+  await setup.complete({
+    ...selected,
+    hotkeysEnabled: setupHotkeys,
+    shortcuts: requestedShortcuts,
+  });
   setupTry = false;
   rebuildTray();
   showMain();
   setupWindow?.close();
 });
-ipcMain.handle("avenire:setup-shortcuts", (event, value: unknown) => {
+ipcMain.handle("avenire:setup-shortcuts", async (event, value: unknown) => {
   if (!trustedSetupSender(event)) throw new Error("Untrusted desktop IPC sender");
-  const shortcuts = Schema.decodeUnknownSync(DesktopShortcuts)(value);
-  requestedShortcuts = shortcuts;
-  if (setupHotkeys) {
-    registerShortcut(shortcuts.capture);
-    registerPromptShortcut(shortcuts.prompt);
-  }
-  rebuildTray();
+  await updateShortcutChoices(
+    Schema.decodeUnknownSync(DesktopShortcuts)(value),
+    setupHotkeys,
+    setupHotkeys,
+  );
   return setupStatus();
 });
-ipcMain.handle("avenire:setup-hotkeys", (event, enabled: unknown) => {
+ipcMain.handle("avenire:setup-hotkeys", async (event, enabled: unknown) => {
   if (!trustedSetupSender(event) || typeof enabled !== "boolean")
     throw new Error("Untrusted desktop IPC sender");
-  setHotkeysEnabled(enabled);
+  await setHotkeysEnabled(enabled);
   return setupStatus();
 });
 
-function setHotkeysEnabled(enabled: boolean): void {
+function setHotkeysEnabled(enabled: boolean): Promise<void> {
+  return updateShortcutChoices(requestedShortcuts, enabled);
+}
+function updateShortcutChoices(
+  next: ShortcutChoices,
+  enabled: boolean,
+  apply = true,
+): Promise<void> {
+  const operation = async () => {
+    const previous = { choices: requestedShortcuts, enabled: setupHotkeys };
+    if (enabled && next.capture === next.prompt)
+      throw new Error("Capture and Ask Ava need different shortcuts.");
+    if (apply && compositorShortcuts) await compositorShortcuts.apply(next, enabled);
+    requestedShortcuts = next;
+    if (apply && !compositorShortcuts) {
+      try {
+        setNativeHotkeysEnabled(enabled);
+      } catch (error) {
+        requestedShortcuts = previous.choices;
+        throw error;
+      }
+    }
+    try {
+      if (setup.completed) await setup.saveShortcuts(next, enabled);
+    } catch (error) {
+      requestedShortcuts = previous.choices;
+      if (apply) {
+        try {
+          if (compositorShortcuts)
+            await compositorShortcuts.apply(previous.choices, previous.enabled);
+          else setNativeHotkeysEnabled(previous.enabled);
+        } catch (rollback) {
+          throw new AggregateError(
+            [error, rollback],
+            "Shortcuts could not be saved or fully restored. Reopen Desktop setup.",
+            { cause: rollback },
+          );
+        }
+      }
+      throw error;
+    }
+    setupHotkeys = enabled;
+    if (compositorShortcuts) {
+      captureShortcut = enabled ? next.capture : undefined;
+      promptShortcut = enabled ? next.prompt : undefined;
+    }
+    rebuildTray();
+  };
+  const pending = shortcutMutation.then(operation);
+  // Only the scheduling tail absorbs errors; the caller always receives failure.
+  shortcutMutation = pending.then(
+    () => undefined,
+    () => undefined,
+  );
+  return pending;
+}
+
+function setNativeHotkeysEnabled(enabled: boolean): void {
   if (enabled) {
     const previousCapture = captureShortcut;
     const previousPrompt = promptShortcut;
@@ -1170,7 +1493,7 @@ ipcMain.handle("avenire:setup-notifications", (event) => {
   setupNotifications = true;
   new Notification({
     title: "Avenire",
-    body: "You’ll hear from Ruth when your morning report is ready.",
+    body: "You’ll hear from Ava when your morning report is ready.",
   }).show();
   return true;
 });
@@ -1198,19 +1521,11 @@ ipcMain.handle("avenire:set-shortcut", async (event, accelerator: unknown) => {
   if (typeof accelerator !== "string" || accelerator.length === 0 || accelerator.length > 100)
     return false;
   if (accelerator === requestedShortcuts.prompt) return false;
-  if (setupHotkeys ? !registerShortcut(accelerator) : !shortcutAvailable(accelerator, "capture"))
-    return false;
-  const previous = requestedShortcuts;
-  requestedShortcuts = { ...requestedShortcuts, capture: accelerator };
-  try {
-    await setup.saveShortcuts(requestedShortcuts, setupHotkeys);
-  } catch (error) {
-    requestedShortcuts = previous;
-    if (setupHotkeys) registerShortcut(previous.capture);
-    throw error;
-  } finally {
-    rebuildTray();
-  }
+  await updateShortcutChoices(
+    { ...requestedShortcuts, capture: accelerator },
+    setupHotkeys,
+    setupHotkeys,
+  );
   return true;
 });
 ipcMain.handle("avenire:get-shortcut", (event) => {
@@ -1218,14 +1533,386 @@ ipcMain.handle("avenire:get-shortcut", (event) => {
   return captureShortcut ?? null;
 });
 
+/** Native controls belong only to the current, top-frame prompt document. */
+function trustedPrompt(event: Electron.IpcMainInvokeEvent): boolean {
+  return (
+    !!promptWindow &&
+    trustedSender(event, promptWindow) &&
+    new URL(event.senderFrame!.url).pathname === "/prompt"
+  );
+}
+function currentNative(event: Electron.IpcMainInvokeEvent, id: unknown): NativeOverlay | undefined {
+  if (!trustedPrompt(event)) throw new Error("Untrusted native overlay IPC sender");
+  if (id !== promptGeneration || !promptWindow?.isVisible())
+    throw new Error("Stale native overlay session");
+  return nativeOverlay;
+}
+ipcMain.handle("avenire:prompt-capture-context", async (event) => {
+  if (!trustedPrompt(event)) throw new Error("Untrusted native overlay IPC sender");
+  if (promptCaptureContext.capture) {
+    const generation = promptGeneration;
+    try {
+      const permission = await promptScreenPermission(event, generation);
+      if (!permission.enabled || permission.sessionId !== promptScreenSession) endNativePrompt();
+    } catch (error) {
+      if (generation === promptGeneration) endNativePrompt();
+      throw error;
+    }
+  }
+  return promptCaptureContext;
+});
+// Capability discovery never starts Qt, inspects a display or acquires pixels.
+// Consent is deliberately not a capability: disabled reads return an actionable result.
+ipcMain.handle(
+  "avenire:native-overlay-available",
+  (event) => trustedPrompt(event) && !!promptWindow?.isVisible() && !!nativeOverlayConfig?.enabled,
+);
+async function promptScreenPermission(event: Electron.IpcMainInvokeEvent, id: unknown) {
+  currentNative(event, id);
+  if (!nativeOverlayConfig?.enabled) throw new Error("Screen capture disabled by operator");
+  const owner = captureOwner;
+  const permission = await screenSharingPermission(event.sender.session, appUrl, owner);
+  currentNative(event, id);
+  if (captureOwner !== owner) throw new Error("Your account changed. Reopen the prompt.");
+  return permission;
+}
+// Only the active prompt may request local pixels, and only through the client tool.
+ipcMain.handle("avenire:read-screen", async (event, id: unknown) => {
+  currentNative(event, id); // Validate the active prompt before spawning a child.
+  if (promptCaptureRunning) throw new Error("Local screen capture already running");
+  promptCaptureRunning = true;
+  promptCaptureInvalidated = false;
+  try {
+    promptCaptureContext = { sessionId: promptGeneration, capture: null };
+    const permission = await promptScreenPermission(event, id);
+    if (!permission.enabled) {
+      endNativePrompt();
+      return {
+        status: "disabled" as const,
+        message:
+          "Screen sharing is off. Enable Share screen with Ava in Settings → Capture to let me explain what’s on your screen." as const,
+      };
+    }
+    // Bind each permitted read to the display under the cursor now. Pointer
+    // movement during asynchronous work must not silently switch this snapshot.
+    const pointer = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(pointer);
+    const area = { ...display.bounds };
+    const inside =
+      pointer.x >= area.x &&
+      pointer.x < area.x + area.width &&
+      pointer.y >= area.y &&
+      pointer.y < area.y + area.height;
+    if (!inside) throw new Error("The cursor is not on an available display");
+    const verifyDisplay = () => {
+      if (promptCaptureInvalidated)
+        throw new Error("Screen changed during capture; request a fresh screen read");
+      if (!displayStillPresent(display.id, area, screen.getAllDisplays()))
+        throw new Error("The selected display changed; request a fresh screen read");
+    };
+    promptScreenSession = permission.sessionId;
+    const verify = async () => {
+      const latest = await promptScreenPermission(event, id);
+      if (!latest.enabled || latest.sessionId !== permission.sessionId)
+        throw new Error("Screen-sharing permission revoked or account changed");
+    };
+    clearInterval(screenPermissionTimer);
+    let checkingPermission = false;
+    screenPermissionTimer = setInterval(() => {
+      // A slow permission endpoint must not accumulate concurrent background requests.
+      if (checkingPermission) return;
+      checkingPermission = true;
+      void verify()
+        .catch(() => {
+          if (id === promptGeneration) hidePrompt();
+        })
+        .finally(() => {
+          checkingPermission = false;
+        });
+    }, 5000);
+    if (process.platform === "linux" && isWayland) {
+      const target = promptWindow!;
+      // DISPLAY can identify only XWayland, whose geometry is not proof of the
+      // compositor's capture space. Bind this read to a named compositor output.
+      const output = await readWaylandOutput(area);
+      const verifyOutput = async () => {
+        if (!sameWaylandOutput(output, await readWaylandOutput(area)))
+          throw new Error("Wayland output changed during capture; request a fresh screen read");
+      };
+      currentNative(event, id);
+      await ensureNativePrompt(area);
+      currentNative(event, id);
+      const selectedOverlay = nativeOverlay!;
+      const selectedScreenId = promptNativeScreenId!;
+      verifyDisplay();
+      await verify();
+      const opacity = target.getOpacity();
+      const existingOverlay = nativeOverlay;
+      const existingScreenId = promptNativeScreenId;
+      let overlayRestored = false;
+      try {
+        if (existingOverlay && existingScreenId) await existingOverlay.request("suspend_capture");
+        target.setOpacity(0);
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        currentNative(event, id);
+        await verifyOutput();
+        await verify();
+        if (currentNative(event, id) !== selectedOverlay)
+          throw new Error("Stale native overlay session");
+        verifyDisplay();
+        const { stdout } = await promisify(execFile)("grim", ["-c", "-o", output.name, "-"], {
+          encoding: "buffer",
+          timeout: 5000,
+          maxBuffer: 32 * 1024 * 1024,
+        });
+        currentNative(event, id);
+        if (nativeOverlay !== selectedOverlay || promptNativeScreenId !== selectedScreenId)
+          throw new Error("Stale native display selection");
+        await verify();
+        let image = nativeImage.createFromBuffer(stdout);
+        if (image.isEmpty()) throw new Error("Screen capture unavailable");
+        let size = image.getSize();
+        if (Math.max(size.width, size.height) > 1280)
+          image = image.resize({
+            width: Math.max(1, Math.round((size.width * 1280) / Math.max(size.width, size.height))),
+            height: Math.max(
+              1,
+              Math.round((size.height * 1280) / Math.max(size.width, size.height)),
+            ),
+          });
+        let png = image.toPNG();
+        while (png.length > 786000 && image.getSize().width > 100 && image.getSize().height > 100) {
+          size = image.getSize();
+          image = image.resize({
+            width: Math.max(1, Math.floor(size.width * 0.8)),
+            height: Math.max(1, Math.floor(size.height * 0.8)),
+          });
+          png = image.toPNG();
+        }
+        if (png.length > 786000) throw new Error("Screen image exceeds payload budget");
+        size = image.getSize();
+        const capturedAt = new Date().toISOString();
+        const inBounds =
+          pointer.x >= area.x &&
+          pointer.x < area.x + area.width &&
+          pointer.y >= area.y &&
+          pointer.y < area.y + area.height;
+        const frame = target.getBounds();
+        const left = Math.max(0, Math.min(1, (frame.x - area.x) / area.width));
+        const top = Math.max(0, Math.min(1, (frame.y - area.y) / area.height));
+        const right = Math.max(left, Math.min(1, (frame.x + frame.width - area.x) / area.width));
+        const bottom = Math.max(top, Math.min(1, (frame.y + frame.height - area.y) / area.height));
+        await selectedOverlay.request("resume_capture", {
+          fresh: true,
+          excludedRegion: {
+            x: left,
+            y: top,
+            width: right - left,
+            height: bottom - top,
+          },
+        });
+        overlayRestored = true;
+        const { presentation } = await readNativeObservation(selectedOverlay, selectedScreenId);
+        if (currentNative(event, id) !== selectedOverlay)
+          throw new Error("Stale native overlay session");
+        await verifyOutput();
+        await verify();
+        if (currentNative(event, id) !== selectedOverlay)
+          throw new Error("Stale native overlay session");
+        verifyDisplay();
+        const screenId = selectedScreenId;
+        promptCaptureContext = {
+          sessionId: promptGeneration,
+          capture: {
+            mimeType: "image/png",
+            data: png.toString("base64"),
+            width: size.width,
+            height: size.height,
+            screenId,
+            capturedAt,
+            cursor: {
+              globalX: pointer.x,
+              globalY: pointer.y,
+              screenId,
+              inBounds,
+              ...(inBounds
+                ? { x: (pointer.x - area.x) / area.width, y: (pointer.y - area.y) / area.height }
+                : {}),
+              observedAt: capturedAt,
+            },
+            ...(presentation ? { presentation } : {}),
+          },
+        };
+        return promptCaptureContext;
+      } finally {
+        if (
+          !overlayRestored &&
+          existingOverlay &&
+          existingScreenId &&
+          nativeOverlay === existingOverlay &&
+          !target.isDestroyed()
+        )
+          void existingOverlay
+            .request("resume_capture", { fresh: false })
+            .catch((error) => captureLog("native-presentation-restore-error", captureError(error)));
+        if (id === promptGeneration && !target.isDestroyed()) target.setOpacity(opacity);
+      }
+    }
+    await ensureNativePrompt(area);
+    const native = currentNative(event, id);
+    if (!native || !promptNativeScreenId) throw new Error("Local screen capture unavailable");
+    const target = promptWindow!;
+    const opacity = target.getOpacity();
+    try {
+      // Opacity preserves visibility/session and avoids blur/hide teardown during capture.
+      target.setOpacity(0);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
+      const frame = target.getBounds();
+      const left = Math.max(0, Math.min(1, (frame.x - area.x) / area.width));
+      const top = Math.max(0, Math.min(1, (frame.y - area.y) / area.height));
+      const right = Math.max(left, Math.min(1, (frame.x + frame.width - area.x) / area.width));
+      const bottom = Math.max(top, Math.min(1, (frame.y + frame.height - area.y) / area.height));
+      await verify();
+      verifyDisplay();
+      const capture = await native.capture(promptNativeScreenId, {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+      });
+      const observation = await readNativeObservation(native, capture.screenId);
+      if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
+      await verify();
+      verifyDisplay();
+      promptCaptureContext = {
+        sessionId: promptGeneration,
+        capture: { ...capture, ...observation },
+      };
+      return promptCaptureContext;
+    } finally {
+      if (id === promptGeneration && !target.isDestroyed()) target.setOpacity(opacity);
+    }
+  } catch (error) {
+    if (id === promptGeneration) endNativePrompt();
+    throw error;
+  } finally {
+    promptCaptureRunning = false;
+  }
+});
+async function readWaylandOutput(area: Electron.Rectangle) {
+  let value: unknown;
+  try {
+    const { stdout } = await promisify(execFile)("hyprctl", ["monitors", "-j"], {
+      encoding: "utf8",
+      timeout: 1500,
+      maxBuffer: 256 * 1024,
+    });
+    value = JSON.parse(stdout);
+  } catch {
+    throw new Error("Wayland screen mapping requires an available Hyprland monitor inventory");
+  }
+  return matchHyprlandOutput(area, value);
+}
+
+async function readNativeObservation(native: NativeOverlay, screenId?: string) {
+  const [position, raw] = await Promise.all([
+    native.request("get_cursor", screenId ? { screenId } : {}),
+    native.request("inspect"),
+  ]);
+  const cursor = Schema.decodeUnknownSync(DesktopCursorPosition)(position);
+  const state = raw as Record<string, unknown>;
+  const rotation = state.rotation as { x: number; y: number };
+  return Schema.decodeUnknownSync(DesktopNativeObservation)({
+    cursor,
+    presentation: {
+      mode: state.visualizationMode,
+      visible: state.visualizationVisible,
+      interactive: state.visualizationInteractive,
+      title: state.sceneTitle,
+      ...(state.visualizationMode === "cart-pole" ? { diagram: state.diagram } : {}),
+      rotationX: rotation.x,
+      rotationY: rotation.y,
+      observedAt: cursor.observedAt,
+    },
+  });
+}
+ipcMain.handle("avenire:native-observation", async (event, id: unknown) => {
+  const native = currentNative(event, id);
+  if (!native) throw new Error("Native overlay unavailable");
+  const observation = await readNativeObservation(native, promptCaptureContext.capture?.screenId);
+  if (currentNative(event, id) !== native) throw new Error("Stale native overlay session");
+  return observation;
+});
+
+ipcMain.handle("avenire:native-overlay-state", async (event, id: unknown, value: unknown) => {
+  const native = currentNative(event, id);
+  const state = Schema.decodeUnknownSync(DesktopOverlayState)(value);
+  // Completion clears the thinking indicator while explanations remain until dismissal.
+  await native?.request("set_state", {
+    phase: promptCaptureContext.capture && state.phase === "thinking" ? "thinking" : "idle",
+    reducedMotion: state.reducedMotion,
+  });
+});
+ipcMain.handle("avenire:native-overlay-annotate", async (event, id: unknown, value: unknown) => {
+  const native = currentNative(event, id);
+  if (!native) throw new Error("Native overlay unavailable");
+  if (!Array.isArray(value) || value.length > 128) throw new Error("Invalid overlay annotations");
+  const ids = new Set<string>();
+  const items = value.map((item: unknown) => {
+    if (!item || typeof item !== "object") throw new Error("Invalid annotation");
+    const annotation = Schema.decodeUnknownSync(DesktopOverlayAnnotation)(item);
+    if (!annotation.id || ids.has(annotation.id)) throw new Error("Invalid annotation id");
+    ids.add(annotation.id);
+    if (annotation.x + (annotation.width ?? 0) > 1 || annotation.y + (annotation.height ?? 0) > 1)
+      throw new Error("Annotation exceeds display");
+    if (annotation.text && annotation.text.length > 512) throw new Error("Invalid annotation text");
+    if (annotation.color && !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(annotation.color))
+      throw new Error("Invalid annotation color");
+    return annotation;
+  });
+  await native?.request("annotate", { items });
+});
+ipcMain.handle("avenire:native-overlay-clear", async (event, id: unknown) => {
+  await currentNative(event, id)?.request("clear");
+});
+ipcMain.handle(
+  "avenire:native-overlay-visualize",
+  async (
+    event,
+    id: unknown,
+    visible: unknown,
+    interactive: unknown,
+    scene: unknown,
+    diagram: unknown,
+  ) => {
+    const native = currentNative(event, id);
+    if (
+      typeof visible !== "boolean" ||
+      (interactive !== undefined && typeof interactive !== "boolean")
+    )
+      throw new Error("Invalid visualization state");
+    if (scene !== undefined && diagram !== undefined)
+      throw new Error("Choose one presentation type");
+    await native?.request("visualize", {
+      visible,
+      interactive: interactive ?? false,
+      ...(scene === undefined
+        ? {}
+        : { scene: Schema.decodeUnknownSync(DesktopNativeScene)(scene) }),
+      ...(diagram === undefined
+        ? {}
+        : { diagram: Schema.decodeUnknownSync(DesktopNativeDiagram)(diagram) }),
+    });
+  },
+);
+
 ipcMain.handle("avenire:hide-prompt", (event) => {
-  if (!promptWindow || !trustedSender(event, promptWindow))
-    throw new Error("Untrusted desktop IPC sender");
-  promptWindow?.hide();
+  if (!trustedPrompt(event)) throw new Error("Untrusted desktop IPC sender");
+  hidePrompt();
 });
 ipcMain.handle("avenire:set-prompt-busy", (event, busy: unknown) => {
-  if (!promptWindow || !trustedSender(event, promptWindow))
-    throw new Error("Untrusted desktop IPC sender");
+  if (!trustedPrompt(event)) throw new Error("Untrusted desktop IPC sender");
   if (typeof busy !== "boolean") return;
   promptBusy = busy;
 });
@@ -1246,12 +1933,13 @@ ipcMain.handle("avenire:open-in-main", async (event, path: unknown) => {
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
-  promptWindow?.hide();
+  hidePrompt();
   return true;
 });
 
 app.on("before-quit", () => {
   quitting = true;
+  endNativePrompt();
 });
 app.on("will-quit", () => {
   globalShortcut.unregisterAll();

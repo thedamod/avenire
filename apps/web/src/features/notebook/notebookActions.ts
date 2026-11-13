@@ -41,7 +41,7 @@ export function buildNotebookActions(
     },
     {
       id: "ask",
-      label: "Ask Ruth about this notebook",
+      label: "Ask Ava about this notebook",
       icon: MessageCircle,
       onSelect: handlers.ask,
       group: "create",
