@@ -1295,12 +1295,10 @@ function setupStatus() {
     promptShortcut: promptShortcut ?? null,
     requestedShortcuts,
     shortcutConflicts: {
-      capture:
-        requestedShortcuts.capture === requestedShortcuts.prompt ||
-        !shortcutAvailable(requestedShortcuts.capture, "capture"),
-      prompt:
-        requestedShortcuts.capture === requestedShortcuts.prompt ||
-        !shortcutAvailable(requestedShortcuts.prompt, "prompt"),
+      // Availability is only established by the explicit registration action.
+      // Probing here can open a Wayland portal dialog on every status refresh.
+      capture: requestedShortcuts.capture === requestedShortcuts.prompt,
+      prompt: requestedShortcuts.capture === requestedShortcuts.prompt,
     },
     ...(setup.preferences ? { preferences: setup.preferences } : {}),
     hotkeysEnabled: setupHotkeys,
