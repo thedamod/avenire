@@ -25,6 +25,7 @@ const config = Effect.runSync(
     powerShellOneShot: Config.String("AVENIRE_PS_ONESHOT").pipe(Config.withDefault("")),
     captureAppData: Config.String("APPDATA").pipe(Config.withDefault("")),
     captureConfigHome: Config.String("XDG_CONFIG_HOME").pipe(Config.withDefault("")),
+    appImage: Config.String("APPIMAGE").pipe(Config.withDefault("")),
     extensionIds: Config.String("AVENIRE_EXTENSION_IDS").pipe(Config.withDefault("")),
   }),
 );
@@ -37,6 +38,7 @@ export const isWayland = usesWayland(process.platform, config.sessionType, confi
 export const powerShellOneShot = config.powerShellOneShot.length > 0;
 export const captureAppData = config.captureAppData;
 export const captureConfigHome = config.captureConfigHome;
+export const linuxAppImage = config.appImage;
 export const extensionIds = new Set([
   "gdegpabcfhonkcnecpgaekplbfmopace",
   ...config.extensionIds

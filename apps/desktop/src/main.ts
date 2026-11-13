@@ -1,3 +1,9 @@
+import { homedir } from "node:os";
+import { HyprlandShortcuts } from "./hyprland-shortcuts.ts";
+import type {
+  DesktopShortcutSetupStatus,
+  DesktopShortcuts as ShortcutChoices,
+} from "@avenire/contracts";
 import { screenSharingPermission } from "./screen-privacy.ts";
 import {
   matchNativeScreen,
@@ -64,6 +70,8 @@ import {
   defaultCaptureShortcut,
   defaultPromptShortcut,
   fallbackPromptShortcut,
+  captureConfigHome,
+  linuxAppImage,
   isWayland,
 } from "./config.ts";
 import { instantCapture, setCaptureDeviceId, collectSnapshot } from "./capture/collect.ts";
@@ -128,6 +136,8 @@ function hidePrompt(): void {
 
 let setupWindow: BrowserWindow | undefined;
 let setup: DesktopSetup;
+let compositorShortcuts: HyprlandShortcuts | undefined;
+let shortcutMutation: Promise<void> = Promise.resolve();
 let captureReady = false;
 let promptShortcut: string | undefined;
 let quitting = false;
@@ -165,13 +175,28 @@ const chromeOptions = {
 };
 
 let pendingPromptShortcut = process.argv.includes("--avenire-prompt");
+let pendingCaptureShortcut = process.argv.includes("--avenire-capture");
+function requestShortcutCapture(): void {
+  pendingCaptureShortcut = true;
+  if (!setup) return;
+  if (!setup.completed) {
+    showSetup();
+    return;
+  }
+  if (!window || window.isDestroyed()) createWindow(false);
+  if (captureReady) {
+    pendingCaptureShortcut = false;
+    void capture().catch(reportCaptureError);
+  }
+}
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on("second-instance", (_event, argv) => {
     if (argv.includes("--avenire-prompt")) {
       if (setup) togglePrompt();
       else pendingPromptShortcut = true;
-    } else showMain();
+    } else if (argv.includes("--avenire-capture")) requestShortcutCapture();
+    else showMain();
   });
   app
     .whenReady()
@@ -191,6 +216,24 @@ else {
       await Promise.all([registry.load(), pairing.load()]);
       setup = new DesktopSetup(Path.join(app.getPath("userData"), "desktop-setup.json"));
       await setup.load();
+      if (process.platform === "linux" && isWayland) {
+        const executable = app.isPackaged ? linuxAppImage || process.execPath : process.execPath;
+        compositorShortcuts = new HyprlandShortcuts({
+          configDirectory: Path.join(captureConfigHome || Path.join(homedir(), ".config"), "hypr"),
+          stateDirectory: userData,
+          launch:
+            app.isPackaged && !linuxAppImage && executable.includes("/.mount_")
+              ? []
+              : [executable, ...(!app.isPackaged ? [app.getAppPath()] : [])],
+          run: async (args) =>
+            (
+              await promisify(execFile)("hyprctl", [...args], {
+                timeout: 5000,
+                maxBuffer: 1024 * 1024,
+              })
+            ).stdout,
+        });
+      }
       requestedShortcuts = setup.shortcuts ?? requestedShortcuts;
       setupNotifications = setup.notificationsEnabled ?? false;
       Menu.setApplicationMenu(
@@ -205,7 +248,8 @@ else {
       if (pendingPromptShortcut) {
         pendingPromptShortcut = false;
         togglePrompt();
-      } else showMain();
+      } else if (pendingCaptureShortcut && setup.completed) createWindow(false);
+      else showMain();
       captureOverlay = new CaptureOverlay(
         Path.join(__dirname, "capture-overlay.html"),
         Path.join(__dirname, "overlay-preload.cjs"),
@@ -225,11 +269,24 @@ else {
         () => (setup.completed && setup.foregroundCapture) || (setupTry && setupForeground),
       );
       if (setup.completed && setup.hotkeysEnabled !== false) {
-        setupHotkeys = true;
-        registerShortcut(requestedShortcuts.capture);
-        if (!registerPromptShortcut(requestedShortcuts.prompt)) {
-          if (registerPromptShortcut(fallbackPromptShortcut))
-            requestedShortcuts.prompt = fallbackPromptShortcut;
+        if (compositorShortcuts) {
+          // Persisted compositor bindings survive app exits. A first install or repair
+          // belongs to the explicit Allow action, including for existing installs.
+          const status = await compositorShortcuts.inspect(requestedShortcuts);
+          if (status.state === "ready") {
+            setupHotkeys = true;
+            captureShortcut = requestedShortcuts.capture;
+            promptShortcut = requestedShortcuts.prompt;
+          } else {
+            captureLog("desktop-shortcut-setup-unavailable", { note: status.note });
+          }
+        } else {
+          setupHotkeys = true;
+          registerShortcut(requestedShortcuts.capture);
+          if (!registerPromptShortcut(requestedShortcuts.prompt)) {
+            if (registerPromptShortcut(fallbackPromptShortcut))
+              requestedShortcuts.prompt = fallbackPromptShortcut;
+          }
         }
       }
       rebuildTray();
@@ -700,12 +757,9 @@ let trayShortcutsUpdating = false;
 async function toggleTrayShortcuts(): Promise<void> {
   if (trayShortcutsUpdating) return;
   trayShortcutsUpdating = true;
-  const previous = setupHotkeys;
   try {
-    setHotkeysEnabled(!previous);
-    await setup.saveShortcuts(requestedShortcuts, setupHotkeys);
+    await setHotkeysEnabled(!setupHotkeys);
   } catch (error) {
-    if (setupHotkeys !== previous) setHotkeysEnabled(previous);
     dialog.showErrorBox(
       "Shortcuts could not be changed",
       error instanceof Error ? error.message : "Try again in Desktop setup.",
@@ -796,18 +850,6 @@ function registerPromptShortcut(accelerator: string): boolean {
   promptShortcut = accelerator;
   rebuildTray();
   return true;
-}
-
-function shortcutAvailable(accelerator: string, kind: "capture" | "prompt"): boolean {
-  if (accelerator === (kind === "capture" ? captureShortcut : promptShortcut)) return true;
-  if (accelerator === captureShortcut || accelerator === promptShortcut) return false;
-  try {
-    if (!globalShortcut.register(accelerator, () => {})) return false;
-    globalShortcut.unregister(accelerator);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 async function captureSetup(): Promise<void> {
@@ -1057,6 +1099,7 @@ ipcMain.handle(
       restoreCaptureOverlay(captureOwner, activeCapture.stream);
       activeCapture.stream.replay((channel, value) => window!.webContents.send(channel, value));
     } else if (captureReady && stagedCapture) void capture().catch(reportCaptureError);
+    if (captureReady && pendingCaptureShortcut) requestShortcutCapture();
   },
 );
 ipcMain.handle("avenire:capture-ack", (event, id: unknown) => {
@@ -1283,8 +1326,17 @@ ipcMain.handle("avenire:window-theme", (event, value: unknown) => {
       height: 40,
     });
 });
-function setupStatus() {
+async function setupStatus() {
+  const shortcutSetup: DesktopShortcutSetupStatus = compositorShortcuts
+    ? await compositorShortcuts.inspect(requestedShortcuts)
+    : {
+        backend: "native",
+        state: setupHotkeys ? "ready" : "not-configured",
+        conflicts: { capture: false, prompt: false },
+        note: "Allow global hotkeys to register your selected shortcuts.",
+      };
   return {
+    shortcutSetup,
     completed: setup.completed,
     foregroundCapture: setup.foregroundCapture,
     platform: process.platform,
@@ -1297,8 +1349,10 @@ function setupStatus() {
     shortcutConflicts: {
       // Availability is only established by the explicit registration action.
       // Probing here can open a Wayland portal dialog on every status refresh.
-      capture: requestedShortcuts.capture === requestedShortcuts.prompt,
-      prompt: requestedShortcuts.capture === requestedShortcuts.prompt,
+      capture:
+        requestedShortcuts.capture === requestedShortcuts.prompt || shortcutSetup.conflicts.capture,
+      prompt:
+        requestedShortcuts.capture === requestedShortcuts.prompt || shortcutSetup.conflicts.prompt,
     },
     ...(setup.preferences ? { preferences: setup.preferences } : {}),
     hotkeysEnabled: setupHotkeys,
@@ -1316,31 +1370,94 @@ ipcMain.handle("avenire:setup-permission", async (event, permission: unknown) =>
 });
 ipcMain.handle("avenire:setup-complete", async (event, choice: unknown) => {
   if (!trustedSetupSender(event)) throw new Error("Untrusted desktop IPC sender");
-  await setup.complete(Schema.decodeUnknownSync(DesktopSetupChoice)(choice));
+  const selected = Schema.decodeUnknownSync(DesktopSetupChoice)(choice);
+  if (selected.hotkeysEnabled && !setupHotkeys)
+    throw new Error("Allow global hotkeys first, or continue with hotkeys off.");
+  if (selected.hotkeysEnabled === false && setupHotkeys) await setHotkeysEnabled(false);
+  await setup.complete({
+    ...selected,
+    hotkeysEnabled: setupHotkeys,
+    shortcuts: requestedShortcuts,
+  });
   setupTry = false;
   rebuildTray();
   showMain();
   setupWindow?.close();
 });
-ipcMain.handle("avenire:setup-shortcuts", (event, value: unknown) => {
+ipcMain.handle("avenire:setup-shortcuts", async (event, value: unknown) => {
   if (!trustedSetupSender(event)) throw new Error("Untrusted desktop IPC sender");
-  const shortcuts = Schema.decodeUnknownSync(DesktopShortcuts)(value);
-  requestedShortcuts = shortcuts;
-  if (setupHotkeys) {
-    registerShortcut(shortcuts.capture);
-    registerPromptShortcut(shortcuts.prompt);
-  }
-  rebuildTray();
+  await updateShortcutChoices(
+    Schema.decodeUnknownSync(DesktopShortcuts)(value),
+    setupHotkeys,
+    setupHotkeys,
+  );
   return setupStatus();
 });
-ipcMain.handle("avenire:setup-hotkeys", (event, enabled: unknown) => {
+ipcMain.handle("avenire:setup-hotkeys", async (event, enabled: unknown) => {
   if (!trustedSetupSender(event) || typeof enabled !== "boolean")
     throw new Error("Untrusted desktop IPC sender");
-  setHotkeysEnabled(enabled);
+  await setHotkeysEnabled(enabled);
   return setupStatus();
 });
 
-function setHotkeysEnabled(enabled: boolean): void {
+function setHotkeysEnabled(enabled: boolean): Promise<void> {
+  return updateShortcutChoices(requestedShortcuts, enabled);
+}
+function updateShortcutChoices(
+  next: ShortcutChoices,
+  enabled: boolean,
+  apply = true,
+): Promise<void> {
+  const operation = async () => {
+    const previous = { choices: requestedShortcuts, enabled: setupHotkeys };
+    if (enabled && next.capture === next.prompt)
+      throw new Error("Capture and Ask Ava need different shortcuts.");
+    if (apply && compositorShortcuts) await compositorShortcuts.apply(next, enabled);
+    requestedShortcuts = next;
+    if (apply && !compositorShortcuts) {
+      try {
+        setNativeHotkeysEnabled(enabled);
+      } catch (error) {
+        requestedShortcuts = previous.choices;
+        throw error;
+      }
+    }
+    try {
+      if (setup.completed) await setup.saveShortcuts(next, enabled);
+    } catch (error) {
+      requestedShortcuts = previous.choices;
+      if (apply) {
+        try {
+          if (compositorShortcuts)
+            await compositorShortcuts.apply(previous.choices, previous.enabled);
+          else setNativeHotkeysEnabled(previous.enabled);
+        } catch (rollback) {
+          throw new AggregateError(
+            [error, rollback],
+            "Shortcuts could not be saved or fully restored. Reopen Desktop setup.",
+            { cause: rollback },
+          );
+        }
+      }
+      throw error;
+    }
+    setupHotkeys = enabled;
+    if (compositorShortcuts) {
+      captureShortcut = enabled ? next.capture : undefined;
+      promptShortcut = enabled ? next.prompt : undefined;
+    }
+    rebuildTray();
+  };
+  const pending = shortcutMutation.then(operation);
+  // Only the scheduling tail absorbs errors; the caller always receives failure.
+  shortcutMutation = pending.then(
+    () => undefined,
+    () => undefined,
+  );
+  return pending;
+}
+
+function setNativeHotkeysEnabled(enabled: boolean): void {
   if (enabled) {
     const previousCapture = captureShortcut;
     const previousPrompt = promptShortcut;
@@ -1404,19 +1521,11 @@ ipcMain.handle("avenire:set-shortcut", async (event, accelerator: unknown) => {
   if (typeof accelerator !== "string" || accelerator.length === 0 || accelerator.length > 100)
     return false;
   if (accelerator === requestedShortcuts.prompt) return false;
-  if (setupHotkeys ? !registerShortcut(accelerator) : !shortcutAvailable(accelerator, "capture"))
-    return false;
-  const previous = requestedShortcuts;
-  requestedShortcuts = { ...requestedShortcuts, capture: accelerator };
-  try {
-    await setup.saveShortcuts(requestedShortcuts, setupHotkeys);
-  } catch (error) {
-    requestedShortcuts = previous;
-    if (setupHotkeys) registerShortcut(previous.capture);
-    throw error;
-  } finally {
-    rebuildTray();
-  }
+  await updateShortcutChoices(
+    { ...requestedShortcuts, capture: accelerator },
+    setupHotkeys,
+    setupHotkeys,
+  );
   return true;
 });
 ipcMain.handle("avenire:get-shortcut", (event) => {

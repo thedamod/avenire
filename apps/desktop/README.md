@@ -63,7 +63,20 @@ and shared Button, Input, Chip and Kbd controls using the same UI tokens and bun
 The brand mesh is a still, so setup does not run an ongoing animation loop.
 
 Global hotkeys register only after Allow. Not now keeps them disabled. Conflicting shortcuts
-can be changed; Ask Ava offers Alt+Shift+Space when Alt+Space is occupied. The Try it step
+can be changed; Ask Ava offers Alt+Shift+Space when Alt+Space is occupied.
+
+On Linux Wayland, Allow installs a marked, owned shortcut block in the default Hyprland
+`hyprland.lua` or `hyprland.conf`. Setup checks active bindings before writing, saves a backup,
+reloads Hyprland and verifies the installed bindings. Failed application restores the previous
+config; edits made concurrently are preserved and reported for manual recovery. Changing or
+disabling shortcuts updates or removes only the unmodified Avenire block. Config symlinks are
+preserved. The persistent bindings launch the installed app for Capture or Ask Ava, including
+when it is closed. Status checks and startup only inspect the installation; first installation
+and repairs require Allow. Other Wayland compositors, ambiguous/custom config locations and
+unstable AppImage launch paths report unavailable and let onboarding continue without hotkeys.
+Windows, macOS and genuine X11 sessions retain Electron's native shortcut registration.
+
+The Try it step
 stages policy-filtered sources locally and Undo discards them. On completion, the hosted app
 opens for sign-in; study context, source choices, report time, timezone and notification choice
 sync through settings.update before the authenticated capture consumer becomes ready. The
@@ -173,3 +186,7 @@ runs deployment/process integration checks. CI builds the native deployment befo
 those checks. Native suspension, monitor retention, crash recovery and renderer
 fallback regressions are included; real multi-monitor rendering still needs a Qt
 build and suitable desktop session.
+Shortcut onboarding tests exercise real temporary Lua/legacy config files and the real IPC
+handlers with a mocked compositor boundary. They cover explicit consent, conflicts, persistence,
+ownership-aware removal and rollback; live compositor reload and cold-launch behavior still
+need verification in a desktop session.

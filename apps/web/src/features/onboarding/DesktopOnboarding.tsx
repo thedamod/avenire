@@ -158,8 +158,9 @@ export function DesktopOnboarding({ bridge }: { bridge: AvenireSetupBridge }) {
     setStep(steps[Math.min(steps.indexOf(step) + 1, steps.length - 1)]!);
   };
   const updateShortcuts = async (value: DesktopShortcuts) => {
-    setShortcuts(value);
-    setStatus(await bridge.setShortcuts(value));
+    const current = await bridge.setShortcuts(value);
+    setShortcuts(current.requestedShortcuts ?? value);
+    setStatus(current);
   };
   const recordKey = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!recording) return;
@@ -170,7 +171,8 @@ export function DesktopOnboarding({ bridge }: { bridge: AvenireSetupBridge }) {
     }
     if (["Alt", "Control", "Shift", "Meta"].includes(event.key)) return;
     const modifiers = [
-      event.metaKey ? "CommandOrControl" : event.ctrlKey ? "Control" : "",
+      event.metaKey ? (mac ? "Command" : "Super") : "",
+      event.ctrlKey ? "Control" : "",
       event.altKey ? "Alt" : "",
       event.shiftKey ? "Shift" : "",
     ].filter(Boolean);
@@ -305,6 +307,7 @@ export function DesktopOnboarding({ bridge }: { bridge: AvenireSetupBridge }) {
       {step === "shortcuts" ? (
         <>
           {title("Shortcuts")}
+          <p className="text-sm text-muted-foreground">{status?.shortcutSetup?.note}</p>
           <div className="onboarding-shortcut-table">
             {(["capture", "prompt"] as const).map((kind) => (
               <div key={kind} className="onboarding-shortcut-row">
@@ -350,20 +353,18 @@ export function DesktopOnboarding({ bridge }: { bridge: AvenireSetupBridge }) {
               </p>
             ) : null}
           </div>
-          <div className="onboarding-actions">
-            {primary(
-              "Continue",
-              next,
-              Boolean(status?.shortcutConflicts?.capture || status?.shortcutConflicts?.prompt),
-            )}
-          </div>
+          <div className="onboarding-actions">{primary("Continue", next)}</div>
         </>
       ) : null}
       {step === "hotkeys"
         ? permission(
             Keyboard,
             "Global hotkeys",
-            "So your shortcuts work in any app, not just Avenire.",
+            status?.shortcutSetup?.backend === "unsupported"
+              ? status.shortcutSetup.note
+              : status?.shortcutSetup?.backend === "hyprland"
+                ? "Allow Avenire to install and verify your shortcuts in the Hyprland configuration. Existing desktop bindings will be preserved. You can continue without hotkeys."
+                : "So your shortcuts work in any app, not just Avenire.",
             () =>
               void run(async () => {
                 setStatus(await bridge.allowHotkeys(true));
@@ -378,6 +379,19 @@ export function DesktopOnboarding({ bridge }: { bridge: AvenireSetupBridge }) {
               }),
           )
         : null}
+      {step === "hotkeys" ? (
+        <Button
+          variant="ghost"
+          disabled={busy}
+          onClick={() => {
+            setError("");
+            setStep("shortcuts");
+            void refresh();
+          }}
+        >
+          Change shortcuts
+        </Button>
+      ) : null}
       {step === "windows"
         ? permission(
             AppWindow,

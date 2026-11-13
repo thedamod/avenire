@@ -1,3 +1,4 @@
+import { pathToFileURL } from "node:url";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 
 // Exercise the real IPC handlers; replace only the desktop, transport and native boundaries.
@@ -28,6 +29,15 @@ const mocks = vi.hoisted(() => {
   }));
   return {
     monitors,
+    setupCompleted: true,
+    setupComplete: vi.fn(),
+    shortcutApply: vi.fn(async (_choices: unknown, _enabled: boolean) => {}),
+    shortcutInspect: vi.fn(async () => ({
+      backend: "hyprland",
+      state: "not-configured",
+      note: "Allow global hotkeys to install desktop shortcuts.",
+      conflicts: { capture: false, prompt: false },
+    })),
     startupErrors: [] as string[],
     wayland: false,
     command: vi.fn(async (command: string, _args?: unknown, _options?: unknown) => ({
@@ -52,11 +62,19 @@ const mocks = vi.hoisted(() => {
     },
   };
 });
+vi.mock("./hyprland-shortcuts.ts", () => ({
+  HyprlandShortcuts: class {
+    apply = mocks.shortcutApply;
+    inspect = mocks.shortcutInspect;
+  },
+}));
 vi.mock("./config.ts", () => ({
   appUrl: "https://app.avenire.space",
   defaultCaptureShortcut: "Ctrl+Shift+Space",
   defaultPromptShortcut: "Alt+Space",
   fallbackPromptShortcut: "Alt+Shift+Space",
+  captureConfigHome: "",
+  linuxAppImage: "",
   get isWayland() {
     return mocks.wayland;
   },
@@ -122,7 +140,14 @@ vi.mock("./auth.ts", () => ({
 }));
 vi.mock("./setup.ts", () => ({
   DesktopSetup: class {
-    completed = true;
+    get completed() {
+      return mocks.setupCompleted;
+    }
+    saveShortcuts = async () => {};
+    complete = async (choice: unknown) => {
+      mocks.setupComplete(choice);
+      mocks.setupCompleted = true;
+    };
     foregroundCapture = false;
     load = async () => {};
   },
@@ -173,6 +198,9 @@ vi.mock("electron", () => ({
     isFocused = () => false;
     isVisible = () => true;
     loadURL = async () => {};
+    loadFile = async (path: string) => {
+      this.webContents.mainFrame.url = pathToFileURL(path).href;
+    };
     once = (event: string, callback: (...args: any[]) => unknown) =>
       this.events.set(event, callback);
     on = (event: string, callback: (...args: any[]) => unknown) => this.events.set(event, callback);
@@ -182,6 +210,7 @@ vi.mock("electron", () => ({
     setAlwaysOnTop = vi.fn();
     setVisibleOnAllWorkspaces = vi.fn();
     destroy = vi.fn();
+    close = vi.fn();
   },
   screen: {
     getCursorScreenPoint: () => ({ ...mocks.pointer }),
@@ -363,20 +392,24 @@ it.runIf(process.platform === "linux")(
     mocks.pointer = { x: -100, y: 100 };
     mocks.nativeCapture.mockClear();
     mocks.command.mockClear();
+    mocks.shortcutApply.mockClear();
+    mocks.shortcutInspect.mockClear();
     mocks.session.fetch
       .mockReset()
       .mockImplementation(async () =>
         Response.json({ userId: "wayland-owner", sessionId: "wayland-session", enabled: true }),
       );
     await import("./main.ts");
-    await vi.waitFor(() => expect(mocks.shortcuts.has("Alt+Space")).toBe(true));
+    await vi.waitFor(() => expect(mocks.windows.length).toBeGreaterThan(0));
+    await vi.waitFor(() => expect(mocks.shortcutInspect).toHaveBeenCalled());
+    expect(mocks.shortcutApply).not.toHaveBeenCalled(); // Existing users must also explicitly Allow.
     const main = mocks.windows[0]!;
     mocks.ipc.get("avenire:capture-ready")!(
       { sender: main.webContents, senderFrame: main.webContents.mainFrame },
       true,
       "wayland-owner",
     );
-    mocks.shortcuts.get("Alt+Space")!();
+    mocks.appEvents.get("second-instance")!(undefined, ["avenire", "--avenire-prompt"]);
     const prompt = mocks.windows.at(-1)!;
     prompt.webContents.mainFrame.url = "https://app.avenire.space/prompt";
     prompt.getOpacity = () => 1;
@@ -435,5 +468,58 @@ it.runIf(process.platform === "linux")(
     expect(mocks.command.mock.calls.filter(([command]) => command === "grim")).toHaveLength(
       screenshots,
     );
+  },
+);
+
+it.runIf(process.platform === "linux")(
+  "onboarding installs compositor shortcuts only on explicit Allow, and reports failure without enabling",
+  async () => {
+    vi.resetModules();
+    mocks.windows.length = 0;
+    mocks.ipc.clear();
+    mocks.shortcuts.clear();
+    mocks.startupErrors.length = 0;
+    mocks.wayland = true;
+    mocks.setupCompleted = false;
+    mocks.shortcutApply.mockClear();
+    await import("./main.ts");
+    await vi.waitFor(() => expect(mocks.ipc.has("avenire:setup-hotkeys")).toBe(true));
+    await vi.waitFor(() => expect(mocks.windows.length).toBeGreaterThan(0));
+    const setup = mocks.windows[0]!;
+    const event = { sender: setup.webContents, senderFrame: setup.webContents.mainFrame };
+    const status = mocks.ipc.get("avenire:setup-status")!;
+    const allow = mocks.ipc.get("avenire:setup-hotkeys")!;
+    const choices = { capture: "Control+Shift+C", prompt: "Alt+Space" };
+    await status(event);
+    await status(event);
+    expect(mocks.shortcutApply).not.toHaveBeenCalled();
+    await mocks.ipc.get("avenire:setup-shortcuts")!(event, choices);
+    expect(mocks.shortcutApply).not.toHaveBeenCalled();
+    await expect(
+      allow({ ...event, senderFrame: { url: event.senderFrame.url } }, true),
+    ).rejects.toThrow("Untrusted");
+    expect(mocks.shortcutApply).not.toHaveBeenCalled();
+    const duplicate = { capture: "Alt+Space", prompt: "Alt+Space" };
+    await mocks.ipc.get("avenire:setup-shortcuts")!(event, duplicate);
+    expect((await allow(event, false)).hotkeysEnabled).toBe(false);
+    expect(mocks.shortcutApply).toHaveBeenLastCalledWith(duplicate, false);
+    await mocks.ipc.get("avenire:setup-shortcuts")!(event, choices);
+    mocks.shortcutApply.mockRejectedValueOnce(new Error("Desktop shortcut is already in use"));
+    await expect(allow(event, true)).rejects.toThrow("already in use");
+    expect((await status(event)).hotkeysEnabled).toBe(false);
+    expect((await allow(event, true)).hotkeysEnabled).toBe(true);
+    expect(mocks.shortcutApply).toHaveBeenLastCalledWith(choices, true);
+    expect(mocks.shortcuts.size).toBe(0); // No simultaneous XWayland grab for compositor-owned keys.
+    await allow(event, false);
+    const complete = mocks.ipc.get("avenire:setup-complete")!;
+    await expect(
+      complete(event, { foregroundCapture: false, hotkeysEnabled: true }),
+    ).rejects.toThrow("Allow global hotkeys first");
+    await complete(event, { foregroundCapture: false, shortcuts: duplicate });
+    expect(mocks.setupComplete).toHaveBeenLastCalledWith({
+      foregroundCapture: false,
+      hotkeysEnabled: false,
+      shortcuts: choices,
+    });
   },
 );
