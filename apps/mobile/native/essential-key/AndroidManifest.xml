@@ -6,14 +6,14 @@
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
     </queries>
     <application android:label="Ava Preview" android:theme="@style/AvenireKeySheet" android:allowBackup="false">
-        <service android:name="com.thedamod.avenire.essentialkey.EssentialKeyService" android:label="Avenire Ava" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true">
+        <service android:name="com.thedamod.avenire.essentialkey.EssentialKeyService" android:label="Avenire Ava test probe" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/essential_key_service" />
         </service>
         <activity android:name="com.thedamod.avenire.essentialkey.AvaEntryActivity" android:label="Ava" android:theme="@android:style/Theme.NoDisplay" android:exported="true" android:excludeFromRecents="true" android:taskAffinity="" android:noHistory="true">
             <intent-filter><action android:name="android.intent.action.ASSIST" /><action android:name="com.thedamod.avenire.OPEN_AVA" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
         </activity>
-        <receiver android:name="com.thedamod.avenire.essentialkey.AvaWidget" android:label="Ask Ava" android:exported="false">
+        <receiver android:name="com.thedamod.avenire.essentialkey.AvaWidget" android:label="Ava test probe" android:exported="false">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/ava_widget_info" />
         </receiver>

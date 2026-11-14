@@ -41,7 +41,10 @@ public final class EssentialKeyService extends AccessibilityService {
     }
     static boolean isNothing() { return "nothing".equalsIgnoreCase(android.os.Build.MANUFACTURER); }
     static boolean keyEnabled(android.content.Context context) {
-        return isNothing() && context.getSharedPreferences("ava-triggers", 0).getBoolean("essentialKey", true);
+        // Never let a diagnostic APK steal the physical key from the signed app.
+        boolean shadowProbe = context.getPackageName().endsWith(".keyprobe")
+            && context.getPackageManager().getLaunchIntentForPackage("com.thedamod.avenire") != null;
+        return !shadowProbe && isNothing() && context.getSharedPreferences("ava-triggers", 0).getBoolean("essentialKey", true);
     }
     void trigger(String mode, boolean withScreen) {
         if (getSystemService(android.app.KeyguardManager.class).isKeyguardLocked()) return;

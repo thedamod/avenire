@@ -21,7 +21,7 @@ all owned native components, bridge, fonts and resources; iOS is unaffected. And
    Double-press power is not a portable third-party API. OEM app remapping can target
    the exported `AvaEntryActivity` (`ACTION_ASSIST` or `com.thedamod.avenire.OPEN_AVA`).
 3. Add **Ask Ava** through Settings or the launcher's widget picker. Widgets open a
-   text-only dock: the previously used app is no longer foreground and cannot be captured.
+   text-only dock, or Ask Ava in the app when the overlay service is unavailable: the previously used app is no longer foreground and cannot be captured.
 4. On Nothing, the Essential Key listener can be turned off independently in Avenire
    Settings. It only filters scan code 250 when the manufacturer is Nothing and the
    listener is enabled. Freeing the key from Nothing's stock handlers remains a manual
@@ -215,3 +215,13 @@ References:
 - [Android shared payloads](https://developer.android.com/training/sharing/receive)
 - [Android screenshot API and secure-window errors](https://developer.android.com/reference/android/accessibilityservice/AccessibilityService#takeScreenshot(int,%20java.util.concurrent.Executor,%20android.accessibilityservice.AccessibilityService.TakeScreenshotCallback))
 - [General Nothing key-filtering approach](https://github.com/KoukeNeko/EssentialKeyTools)
+
+## Device QA cleanup
+
+Android UiAutomation can suspend every accessibility service while leaving its enabled
+setting intact. Always close the agent-device session before testing a physical key or
+widget, and verify that the signed Avenire service is bound. Do not leave a diagnostic
+probe installed on a user device after a test. The probe declines the Essential Key when
+the integrated app is installed, and its service/widget labels explicitly identify it
+as a test probe. Widgets fall back to Ask Ava in the app when the service is unavailable;
+only a screen-context shortcut with a disabled service opens accessibility setup.
