@@ -68,6 +68,7 @@ test("incremental prebuild removes native sources/resources when disabled", asyn
   await fs.access(path.join(main, "res/font/avenire_geist_mono.ttf"));
   assert.match(xml, /canRetrieveWindowContent="false"/);
   assert.match(xml, /canTakeScreenshot="true"/);
+  assert.match(xml, /accessibilityEventTypes="typeWindowStateChanged"/);
   await plugin({ name: "A", slug: "a" }, { enabled: false }).mods.android.dangerous(request);
   await assert.rejects(fs.access(path.join(main, "java/com/thedamod/avenire/essentialkey")), {
     code: "ENOENT",

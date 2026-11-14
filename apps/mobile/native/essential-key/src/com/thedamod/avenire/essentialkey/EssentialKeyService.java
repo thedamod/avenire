@@ -27,6 +27,7 @@ public final class EssentialKeyService extends AccessibilityService {
     private boolean capturePending;
     private String pendingMode;
     private AvaOverlay overlay;
+    private final OverlayContext screen = new OverlayContext();
     static volatile EssentialKeyService live;
     private final Runnable hold = () -> { if (gesture.hold()) openAva("dock"); };
 
@@ -54,6 +55,7 @@ public final class EssentialKeyService extends AccessibilityService {
         final String eventId = Long.toString(SystemClock.elapsedRealtimeNanos());
         if (overlay != null) { overlay.updateMode(mode); return; }
         ScreenSession.clear(this);
+        screen.open();
         opening = true;
         // Screenshot is acquired before adding our overlay window over the original app.
         try {
@@ -99,7 +101,7 @@ public final class EssentialKeyService extends AccessibilityService {
         opening = false;
         Log.i("AvenireEssentialKey", "Ava opened mode=" + pendingMode + " preview=" + preview + " eventId=" + eventId);
         ScreenSession.begin(this, eventId, preview);
-        overlay = new AvaOverlay(this, eventId, pendingMode, preview, (keep) -> { overlay = null; if (!keep) ScreenSession.clear(this); });
+        overlay = new AvaOverlay(this, eventId, pendingMode, preview, (keep) -> { overlay = null; screen.close(); if (!keep) ScreenSession.clear(this); });
         overlay.show();
         if (capturePending) overlay.requestCapture();
         capturePending = false;
@@ -123,15 +125,34 @@ public final class EssentialKeyService extends AccessibilityService {
         java.util.List<ScreenAnnotation> items = ScreenAnnotation.parse(result.getJSONArray("items"));
         if (overlay == null && items.isEmpty()) return;
         if (overlay == null) {
-            overlay = new AvaOverlay(this, session, "dock", true, (keep) -> { overlay = null; if (!keep) ScreenSession.clear(this); });
+            screen.open();
+            overlay = new AvaOverlay(this, session, "dock", true, (keep) -> { overlay = null; screen.close(); if (!keep) ScreenSession.clear(this); });
             overlay.show();
         }
         overlay.setAnnotations(items);
     }
-    void clearSession() { ScreenSession.clear(this); dismissOverlay(); }
+    void clearSession() { screen.close(); ScreenSession.clear(this); dismissOverlay(); }
     private void dismissOverlay() { if (overlay != null) overlay.dispose(); }
     private void reset() { handler.removeCallbacks(hold); gesture.reset(); }
-    @Override public void onAccessibilityEvent(AccessibilityEvent event) {}
+    // Window metadata only: no accessibility node/content retrieval is enabled.
+    @Override public void onAccessibilityEvent(AccessibilityEvent event) {
+        if (overlay == null && !opening) return;
+        if (event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || event.getPackageName() == null) return;
+        String name = event.getPackageName().toString();
+        boolean keyboard = false;
+        android.view.inputmethod.InputMethodManager ime = getSystemService(android.view.inputmethod.InputMethodManager.class);
+        for (android.view.inputmethod.InputMethodInfo input : ime.getEnabledInputMethodList()) {
+            if (name.equals(input.getPackageName())) { keyboard = true; break; }
+        }
+        boolean ownOverlay = name.equals(getPackageName())
+            && !"com.thedamod.avenire.MainActivity".contentEquals(event.getClassName() == null ? "" : event.getClassName());
+        if (screen.windowChanged(name, ownOverlay, keyboard)) leaveScreen();
+    }
+    void leaveScreen() {
+        // Invalidate capture callbacks and running headless work before removing the window.
+        request++; opening = false; capturePending = false; reset(); screen.close();
+        clearSession();
+    }
     @Override public void onInterrupt() { dismissOverlay(); reset(); request++; opening = false; capturePending = false; }
     @Override public boolean onUnbind(Intent intent) { live = null; clearSession(); reset(); request++; opening = false; capturePending = false; return super.onUnbind(intent); }
     @Override public void onDestroy() { live = null; clearSession(); reset(); request++; images.shutdown(); super.onDestroy(); }

@@ -25,6 +25,7 @@ import android.widget.TextView;
 /** Service-owned accessibility window: no Activity, task switch, or platform launch transition. */
 final class AvaOverlay extends ContextThemeWrapper {
     private final WindowManager windows;
+    private final EssentialKeyService service;
     private final java.util.function.Consumer<Boolean> onDismiss;
     private boolean handoff;
     private android.widget.ScrollView transcript;
@@ -51,8 +52,9 @@ final class AvaOverlay extends ContextThemeWrapper {
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private int resource(String name, String type) { return getResources().getIdentifier(name, type, getPackageName()); }
     private int color(String name) { return getColor(resource("ava_" + name, "color")); }
-    AvaOverlay(Context service, String eventId, String mode, boolean preview, java.util.function.Consumer<Boolean> onDismiss) {
+    AvaOverlay(EssentialKeyService service, String eventId, String mode, boolean preview, java.util.function.Consumer<Boolean> onDismiss) {
         super(service, service.getResources().getIdentifier("AvenireKeySheet", "style", service.getPackageName()));
+        this.service = service;
         this.windows = service.getSystemService(WindowManager.class);
         backCallback = android.os.Build.VERSION.SDK_INT >= 33 ? this::dismiss : null;
         this.onDismiss = onDismiss;
@@ -132,6 +134,7 @@ final class AvaOverlay extends ContextThemeWrapper {
             @Override public void onWindowFocusChanged(boolean focused) {
                 super.onWindowFocusChanged(focused);
                 if (focused) confirmOpen();
+                else if (attached && !closing) service.leaveScreen();
             }
             @Override public boolean dispatchKeyEvent(android.view.KeyEvent event) {
                 if (event.getKeyCode() == android.view.KeyEvent.KEYCODE_BACK) {
