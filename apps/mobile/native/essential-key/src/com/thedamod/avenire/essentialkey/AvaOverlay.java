@@ -190,7 +190,7 @@ final class AvaOverlay extends ContextThemeWrapper {
         transcript.setFillViewport(false); transcript.setVisibility(View.GONE);
         turns = new LinearLayout(this); turns.setOrientation(LinearLayout.VERTICAL);
         turns.setPadding(dp(12), dp(8), dp(12), dp(8)); transcript.addView(turns);
-        root.addView(transcript, new LinearLayout.LayoutParams(-1, dp(148)));
+        root.addView(transcript, new LinearLayout.LayoutParams(-1, dp(96)));
         root.addView(bar, new LinearLayout.LayoutParams(-1, -2));
         error = new TextView(this); error.setTypeface(geist); error.setTextColor(color("error")); error.setTextSize(12);
         error.setPadding(dp(16), dp(8), dp(16), 0); error.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); error.setVisibility(View.GONE);
@@ -270,7 +270,7 @@ final class AvaOverlay extends ContextThemeWrapper {
             busy = true; input.setText(""); sendControl.setEnabled(false); sendControl.setAlpha(0.4f);
             getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(root.getWindowToken(), 0);
             transcript.setVisibility(View.VISIBLE);
-            addTurn("You", question); response = addTurn("Ava", "Thinking…");
+            turns.removeAllViews(); response = addTurn("Ava", "Thinking…");
             transcript.post(() -> transcript.fullScroll(View.FOCUS_DOWN));
     }
     private TextView addTurn(String role, String text) {

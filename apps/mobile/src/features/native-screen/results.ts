@@ -26,3 +26,15 @@ export function annotationText(result: NativeAnnotationResult): string {
     .filter(Boolean)
     .join("\n\n");
 }
+
+/** The dock is a glanceable answer; server-owned history remains complete. */
+export function lastParagraph(text: string): string {
+  return (
+    text
+      .trim()
+      .split(/\r?\n[ \t]*\r?\n+/)
+      .filter((paragraph) => paragraph.trim())
+      .at(-1)
+      ?.trim() ?? ""
+  );
+}

@@ -13,12 +13,16 @@ import { fetch as expoFetch } from "expo/fetch";
 import { apiUrl, authClient, getCookieHeader } from "../../state/auth";
 import { colors } from "../../theme/tokens";
 import { nativeScreenBridge } from "./native";
-import { annotationResults, annotationText } from "./results";
+import { annotationResults, annotationText, lastParagraph } from "./results";
 
 /** Headless JS uses the same auth, RPC and AI SDK transport as mobile chat, with no navigation. */
 export async function runAvaTask(input: { session: string; question: string; threadId?: string }) {
-  const bridge = nativeScreenBridge();
-  if (!bridge) return;
+  const native = nativeScreenBridge();
+  if (!native) return;
+  const bridge = native;
+  const show = (session: string, text: string, done: boolean, thread: string) =>
+    native.updateResponse(session, lastParagraph(text), done, thread);
+
   const runtime = makeClientRuntime({
     baseUrl: apiUrl,
     getAuthHeaders: getCookieHeader,
@@ -49,7 +53,7 @@ export async function runAvaTask(input: { session: string; question: string; thr
           await bridge.getScreenContext(input.session),
         );
       } catch {
-        await bridge.updateResponse(
+        await show(
           input.session,
           "Screen context is unavailable. Answering your text prompt…",
           false,
@@ -64,7 +68,7 @@ export async function runAvaTask(input: { session: string; question: string; thr
         )
       ).id;
     if (abort.signal.aborted || !(await bridge.isSessionActive(input.session))) return;
-    await bridge.updateResponse(input.session, "Thinking…", false, threadId);
+    await show(input.session, "Thinking…", false, threadId);
     const message: RuthUIMessage = {
       id: `ava-${input.session}-${Date.now()}`,
       role: "user",
@@ -127,17 +131,17 @@ export async function runAvaTask(input: { session: string; question: string; thr
           }
         }
       }
-      response = [text, labels].filter(Boolean).join("\n\n") || "Thinking…";
-      await bridge.updateResponse(input.session, response, false, threadId);
+      response = text || labels || "Thinking…";
+      await show(input.session, response, false, threadId);
     }
-    await bridge.updateResponse(
+    await show(
       input.session,
       response && response !== "Thinking…" ? response : "No reply was returned. Please try again.",
       true,
       threadId,
     );
   } catch (error) {
-    await bridge.updateResponse(
+    await show(
       input.session,
       `${response ? response + "\n\n" : ""}${abort.signal.aborted ? "Reply stopped." : error instanceof Error ? error.message : "Could not reach Ava. Please try again."}`,
       true,

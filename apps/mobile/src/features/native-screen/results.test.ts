@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { annotationResults, annotationText } from "./results";
+import { annotationResults, annotationText, lastParagraph } from "./results";
 const result = {
   requested: true,
   capturedAt: "2026-11-14T10:00:00.000Z",
@@ -66,4 +66,11 @@ describe("mobile native annotation tool results", () => {
       ])[0]?.result.items,
     ).toEqual([]);
   });
+});
+
+it("shows only the latest paragraph while retaining a streaming partial paragraph", () => {
+  expect(lastParagraph("Earlier explanation.\n\nThe direct answer.")).toBe("The direct answer.");
+  expect(lastParagraph("Earlier.\r\n \r\nStill stream")).toBe("Still stream");
+  expect(lastParagraph("Answer.\n\n")).toBe("Answer.");
+  expect(lastParagraph("   ")).toBe("");
 });

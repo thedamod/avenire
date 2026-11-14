@@ -52,9 +52,8 @@ preview instead of photographing Ava itself.
 
 Send stays inside the overlay. An opt-in `AvaTaskService` runs authenticated Headless JS,
 using the same mobile RPC and AI SDK streaming transport without starting an Activity. A
-compact 148 dp scrolling transcript above the composer streams the answer; follow-ups reuse
-the same server-owned thread. The native view retains up to 40 visible turns and follows the
-bottom only while the user has not scrolled back. Closing Ava aborts the active stream.
+compact 96 dp answer above the composer streams only the latest paragraph; follow-ups reuse
+the same server-owned thread. The native view replaces the previous answer on Send; complete conversation history remains on the server. Closing Ava aborts the active stream.
 Sign-in/network errors appear in place. The standalone probe cannot send chat requests.
 
 The registered `AvenireScreen` module retrieves the matching image only after checking

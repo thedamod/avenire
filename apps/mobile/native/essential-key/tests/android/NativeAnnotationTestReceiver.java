@@ -72,7 +72,7 @@ public final class NativeAnnotationTestReceiver extends BroadcastReceiver {
             fixtureOverlay.beginResponse("Explain region A.");
             service.updateResponse("annotation-test", "Region A is highlighted. Follow-up questions stay in this scrolling thread.", true, "test-thread");
             java.lang.reflect.Field turnsField = AvaOverlay.class.getDeclaredField("turns"); turnsField.setAccessible(true);
-            check(((android.widget.LinearLayout)turnsField.get(fixtureOverlay)).getChildCount() == 2, "Inline transcript did not render both roles");
+            check(((android.widget.LinearLayout)turnsField.get(fixtureOverlay)).getChildCount() == 1, "Dock should retain only the current reply");
             if (intent.getBooleanExtra("back", false)) {
                 PendingResult pending = goAsync();
                 android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
