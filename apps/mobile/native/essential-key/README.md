@@ -10,7 +10,7 @@ Normal builds exclude the service, screen bridge, UI, font and generated native 
 Expo prebuild / native build time:
 
 ```sh
-AVENIRE_ESSENTIAL_KEY=1 pnpm --filter @avenire/mobile exec expo prebuild --platform android
+AVENIRE_ESSENTIAL_KEY=1 EXPO_PUBLIC_API_URL=http://100.75.95.125:3001 pnpm --filter @avenire/mobile exec expo prebuild --platform android
 AVENIRE_ESSENTIAL_KEY=1 pnpm --filter @avenire/mobile android
 # Opt-in EAS profile (extends internal):
 pnpm --filter @avenire/mobile exec eas build --platform android --profile internal-essential-key
