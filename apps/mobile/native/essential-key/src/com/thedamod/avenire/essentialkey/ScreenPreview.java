@@ -10,10 +10,18 @@ import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.view.View;
+import android.text.Layout;
+import android.text.StaticLayout;
+import android.text.TextPaint;
 import java.io.File;
 
 /** Frozen foreground image, fitted above the composer; the gradient frames the image itself. */
 final class ScreenPreview extends View {
+    private static final String UNAVAILABLE = "Screen capture can’t access private windows or protected screens.";
+    private final TextPaint emptyText = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    private StaticLayout emptyLayout;
+    private int emptyWidth;
+    private float emptyTextSize;
     private Bitmap bitmap;
     private java.util.List<ScreenAnnotation> annotations = java.util.Collections.emptyList();
     int annotationCount() { return annotations.size(); }
@@ -33,7 +41,7 @@ final class ScreenPreview extends View {
         this.colors = colors;
         font = getResources().getFont(getResources().getIdentifier("avenire_geist", "font", getContext().getPackageName()));
         if (available) bitmap = BitmapFactory.decodeFile(new File(context.getCacheDir(), "ava-preview.png").getPath());
-        setContentDescription(bitmap != null ? "Screen preview. Only submitted Ava questions can share this image when screen sharing is enabled." : "Screen preview unavailable. You can still type a prompt.");
+        setContentDescription(bitmap != null ? "Screen preview. Only submitted Ava questions can share this image when screen sharing is enabled." : UNAVAILABLE + " You can still ask Ava.");
     }
     private float[] fullScreenTransform() {
         if (bitmap == null || getWidth() == 0 || getHeight() == 0) return null;
@@ -75,9 +83,34 @@ final class ScreenPreview extends View {
         float width = getWidth()-2*inset, height = getHeight()-2*inset;
         if (width <= 0 || height <= 0) return;
         if (bitmap == null) {
-            paint.setShader(null); paint.setStyle(Paint.Style.FILL); paint.setColor(colors[0]); paint.setTextSize(13*getResources().getDisplayMetrics().scaledDensity);
-            paint.setTextAlign(Paint.Align.CENTER);
-            canvas.drawText("Screen preview unavailable", getWidth()/2f, getHeight()/2f, paint);
+            float scaledDensity = getResources().getDisplayMetrics().scaledDensity;
+            int textWidth = Math.max(1, Math.round(Math.min(width - 40*density, 290*density)));
+            float textSize = 15*scaledDensity;
+            if (emptyLayout == null || emptyWidth != textWidth || emptyTextSize != textSize) {
+                emptyText.setTypeface(font); emptyText.setTextSize(textSize); emptyText.setColor(0xFFB8B8B8);
+                emptyLayout = StaticLayout.Builder.obtain(UNAVAILABLE, 0, UNAVAILABLE.length(), emptyText, textWidth)
+                    .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setLineSpacing(3*density, 1f).build();
+                emptyWidth = textWidth; emptyTextSize = textSize;
+            }
+            float iconSize = 32*density;
+            float gap = 18*density;
+            float helperHeight = 18*scaledDensity;
+            float total = iconSize + gap + emptyLayout.getHeight() + 12*density + helperHeight;
+            float top = Math.max(12*density, (getHeight()-total)/2f);
+            float center = getWidth()/2f;
+            // A shield with a keyhole makes the restriction understandable without relying on color.
+            canvas.save(); canvas.translate(center-iconSize/2f, top); canvas.scale(iconSize/32f, iconSize/32f);
+            paint.setShader(null); paint.setStyle(Paint.Style.STROKE); paint.setColor(0xFF9A9A9A);
+            paint.setStrokeWidth(1.6f); paint.setStrokeCap(Paint.Cap.ROUND); paint.setStrokeJoin(Paint.Join.ROUND);
+            clip.reset(); clip.moveTo(16, 3); clip.lineTo(27, 7); clip.lineTo(27, 15);
+            clip.cubicTo(27, 22, 22, 27, 16, 30); clip.cubicTo(10, 27, 5, 22, 5, 15);
+            clip.lineTo(5, 7); clip.close(); canvas.drawPath(clip, paint);
+            canvas.drawCircle(16, 14, 2.5f, paint); canvas.drawLine(16, 16.5f, 16, 21, paint);
+            canvas.restore();
+            canvas.save(); canvas.translate(center-textWidth/2f, top+iconSize+gap); emptyLayout.draw(canvas); canvas.restore();
+            paint.setStyle(Paint.Style.FILL); paint.setTypeface(font); paint.setTextSize(13*scaledDensity);
+            paint.setColor(0xFF777777); paint.setTextAlign(Paint.Align.CENTER);
+            canvas.drawText("You can still ask Ava", center, top+total-paint.descent(), paint);
             return;
         }
         float scale = Math.min(width/bitmap.getWidth(), height/bitmap.getHeight());
