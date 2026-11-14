@@ -420,12 +420,12 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
               </Group>
               <Group
                 title="Capture"
-                foot="Capture happens in Avenire for Mac and Windows. Everything you capture syncs here."
+                foot="Capture on your computer syncs here. On supported Nothing phones, the Essential Key also opens Ava with a local screen preview."
               >
                 <Row
                   first
                   title="Share screen with Ava"
-                  subtitle="Off by default. For questions needing screen context, Ava may request your entire selected computer display, including personal or sensitive windows, for AI processing. You control what is visible. Opening the prompt never captures. Turning off blocks future captures and clears local screen context; chat answers remain."
+                  subtitle="Off by default. Enable to share your screen with Ava for explanations and annotations. This can include personal or sensitive content. The Essential Key preview stays local until you submit a prompt. Turning off stops AI screen sharing and clears the active screen context; chat answers remain."
                   trailing={toggle(
                     "Share screen with Ava",
                     preferences.shareScreenWithAi === true,

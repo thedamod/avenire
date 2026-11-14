@@ -15,15 +15,25 @@ import java.io.File;
 /** Frozen foreground image, fitted above the composer; the gradient frames the image itself. */
 final class ScreenPreview extends View {
     private Bitmap bitmap;
+    private java.util.List<ScreenAnnotation> annotations = java.util.Collections.emptyList();
+    int annotationCount() { return annotations.size(); }
+    void setAnnotations(java.util.List<ScreenAnnotation> items) {
+        annotations = items;
+        StringBuilder description = new StringBuilder("Screen preview");
+        for (ScreenAnnotation item : items) if (!item.text.isEmpty()) description.append(". ").append(item.text);
+        setContentDescription(description.toString()); invalidate();
+    }
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final RectF bounds = new RectF();
     private final Path clip = new Path();
     private final int[] colors;
+    private final android.graphics.Typeface font;
     ScreenPreview(Context context, boolean available, int[] colors) {
         super(context);
         this.colors = colors;
+        font = getResources().getFont(getResources().getIdentifier("avenire_geist", "font", getContext().getPackageName()));
         if (available) bitmap = BitmapFactory.decodeFile(new File(context.getCacheDir(), "ava-preview.png").getPath());
-        setContentDescription(bitmap != null ? "Screen preview. Image is not sent to Ava yet." : "Screen preview unavailable. You can still type a prompt.");
+        setContentDescription(bitmap != null ? "Screen preview. Only submitted Ava questions can share this image when screen sharing is enabled." : "Screen preview unavailable. You can still type a prompt.");
     }
     private float[] fullScreenTransform() {
         if (bitmap == null || getWidth() == 0 || getHeight() == 0) return null;
@@ -76,7 +86,9 @@ final class ScreenPreview extends View {
         clip.reset(); clip.addRoundRect(bounds, 24*density, 24*density, Path.Direction.CW);
         canvas.save(); canvas.clipPath(clip);
         paint.setShader(null); paint.setStyle(Paint.Style.FILL);
-        canvas.drawBitmap(bitmap, null, bounds, paint); canvas.restore();
+        canvas.drawBitmap(bitmap, null, bounds, paint);
+        AnnotationPainter.draw(canvas, bounds, annotations, density, getResources().getDisplayMetrics().scaledDensity, font, colors[0]);
+        canvas.restore();
         paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(3f*density);
         paint.setShader(new LinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom, colors, null, Shader.TileMode.CLAMP));
         canvas.drawRoundRect(bounds, 24*density, 24*density, paint);

@@ -16,13 +16,15 @@ async function manifest(enabled, app = { $: {} }) {
 test("off by default; opt-in registers the service and no Activity launch", async () => {
   assert.equal((await manifest(undefined)).service.length, 0);
   const app = await manifest(true);
-  assert.equal(app.service.length, 1);
+  assert.equal(app.service.length, 2);
   assert.equal(
-    app.service[0].$["android:permission"],
+    app.service.find((s) => s.$["android:name"].endsWith("EssentialKeyService")).$[
+      "android:permission"
+    ],
     "android.permission.BIND_ACCESSIBILITY_SERVICE",
   );
   assert.equal(app.activity.length, 0);
-  assert.equal((await manifest(true, app)).service.length, 1);
+  assert.equal((await manifest(true, app)).service.length, 2);
 });
 test("turning flag off removes owned manifest entries and retains unrelated components", async () => {
   const app = await manifest(true);
@@ -76,4 +78,23 @@ test("incremental prebuild removes native sources/resources when disabled", asyn
     code: "ENOENT",
   });
   assert.equal(await fs.readFile(path.join(main, "res/values/strings.xml"), "utf8"), "unrelated");
+});
+
+test("MainApplication bridge registration is opt-in, repeatable and removed when disabled", async () => {
+  for (const contents of [
+    "PackageList(this).packages.apply {\n  add(OtherPackage())\n}",
+    "List<ReactPackage> packages = new PackageList(this).getPackages();\npackages.add(new OtherPackage());",
+  ]) {
+    const apply = async (enabled, code) => {
+      const config = plugin({ name: "A", slug: "a" }, { enabled });
+      return (await config.mods.android.mainApplication({ modResults: { contents: code } }))
+        .modResults.contents;
+    };
+    const enabled = await apply(true, contents);
+    assert.equal((enabled.match(/AvenireScreenPackage/g) ?? []).length, 1);
+    assert.equal((await apply(true, enabled)).match(/AvenireScreenPackage/g)?.length, 1);
+    const off = await apply(false, enabled);
+    assert.doesNotMatch(off, /AvenireScreenPackage/);
+    assert.match(off, /OtherPackage/);
+  }
 });

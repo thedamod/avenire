@@ -27,9 +27,10 @@ public final class EssentialKeyService extends AccessibilityService {
     private boolean capturePending;
     private String pendingMode;
     private AvaOverlay overlay;
+    static volatile EssentialKeyService live;
     private final Runnable hold = () -> { if (gesture.hold()) openAva("dock"); };
 
-    @Override protected void onServiceConnected() { Log.i("AvenireEssentialKey", "Key listener connected"); }
+    @Override protected void onServiceConnected() { live = this; Log.i("AvenireEssentialKey", "Key listener connected"); }
     @Override protected boolean onKeyEvent(KeyEvent event) {
         if (event.getScanCode() != 250) return false;
         if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
@@ -52,6 +53,7 @@ public final class EssentialKeyService extends AccessibilityService {
         final long id = ++request;
         final String eventId = Long.toString(SystemClock.elapsedRealtimeNanos());
         if (overlay != null) { overlay.updateMode(mode); return; }
+        ScreenSession.clear(this);
         opening = true;
         // Screenshot is acquired before adding our overlay window over the original app.
         try {
@@ -96,15 +98,41 @@ public final class EssentialKeyService extends AccessibilityService {
     private void launch(String eventId, boolean preview) {
         opening = false;
         Log.i("AvenireEssentialKey", "Ava opened mode=" + pendingMode + " preview=" + preview + " eventId=" + eventId);
-        overlay = new AvaOverlay(this, eventId, pendingMode, preview, () -> overlay = null);
+        ScreenSession.begin(this, eventId, preview);
+        overlay = new AvaOverlay(this, eventId, pendingMode, preview, (keep) -> { overlay = null; if (!keep) ScreenSession.clear(this); });
         overlay.show();
         if (capturePending) overlay.requestCapture();
         capturePending = false;
     }
+    void submit(String session, String question) throws Exception {
+        Class<?> task;
+        try { task = Class.forName("com.thedamod.avenire.essentialkey.AvaTaskService"); }
+        catch (ClassNotFoundException missing) { throw new IllegalStateException("Install the integrated Avenire build to send. Your prompt stays here."); }
+        startService(new Intent(this, task).putExtra("session", session).putExtra("question", question)
+            .putExtra("threadId", getSharedPreferences("ava-screen-session", 0).getString("threadId", "")));
+    }
+    void updateResponse(String session, String text, boolean done, String threadId) {
+        if (!session.equals(ScreenSession.id(this)) || overlay == null || overlay.isClosing()) return;
+        if (!threadId.isEmpty()) getSharedPreferences("ava-screen-session", 0).edit().putString("threadId", threadId).apply();
+        overlay.updateResponse(text, done);
+    }
+    int annotationCount() { return overlay == null ? 0 : overlay.annotationCount(); }
+    void annotate(String session, org.json.JSONObject result) throws Exception {
+        if (!ScreenSession.matches(this, session, result.getString("capturedAt"))) throw new IllegalStateException("Screen context changed or expired.");
+        if (overlay != null && overlay.isClosing()) throw new IllegalStateException("Screen explanation is closing.");
+        java.util.List<ScreenAnnotation> items = ScreenAnnotation.parse(result.getJSONArray("items"));
+        if (overlay == null && items.isEmpty()) return;
+        if (overlay == null) {
+            overlay = new AvaOverlay(this, session, "dock", true, (keep) -> { overlay = null; if (!keep) ScreenSession.clear(this); });
+            overlay.show();
+        }
+        overlay.setAnnotations(items);
+    }
+    void clearSession() { ScreenSession.clear(this); dismissOverlay(); }
     private void dismissOverlay() { if (overlay != null) overlay.dispose(); }
     private void reset() { handler.removeCallbacks(hold); gesture.reset(); }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {}
     @Override public void onInterrupt() { dismissOverlay(); reset(); request++; opening = false; capturePending = false; }
-    @Override public boolean onUnbind(Intent intent) { dismissOverlay(); reset(); request++; opening = false; capturePending = false; return super.onUnbind(intent); }
-    @Override public void onDestroy() { dismissOverlay(); reset(); request++; images.shutdown(); super.onDestroy(); }
+    @Override public boolean onUnbind(Intent intent) { live = null; clearSession(); reset(); request++; opening = false; capturePending = false; return super.onUnbind(intent); }
+    @Override public void onDestroy() { live = null; clearSession(); reset(); request++; images.shutdown(); super.onDestroy(); }
 }

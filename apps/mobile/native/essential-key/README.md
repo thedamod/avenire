@@ -6,7 +6,7 @@ locked-screen behavior have not been verified.
 
 ## Build-time opt-in
 
-Normal builds exclude the service, UI, font and generated native resources. Enable only at
+Normal builds exclude the service, screen bridge, UI, font and generated native resources. Enable only at
 Expo prebuild / native build time:
 
 ```sh
@@ -38,7 +38,7 @@ preview or draft. There is no diagnostic screen, top control strip, audio UI, or
 
 The UI uses Geist and native resources generated from `src/theme/tokens.ts` (colors and
 composer radius), 44 dp controls, 15 sp input, and the mobile close/send icon paths. The
-static gradient uses existing accent/green/amber tokens. Native resources are explicitly kept
+static gradient uses the home NightSky blue/indigo/purple tokens. Native resources are explicitly kept
 from release resource shrinking because the shared preview source resolves them by name.
 
 Screenshots are obtained by the opt-in accessibility service **before** opening Ava. Only
@@ -48,18 +48,45 @@ one app-private cache file is retained. Secure windows and screenshot failures o
 with an explicit unavailable-preview state. Holding again while Ava is visible reuses the
 preview instead of photographing Ava itself.
 
-**Screen context is not wired into Ruth yet.** Send opens the existing `avenire://ask?q=…`
-route with typed text only. The preview is local visual context for this initial UI. Attaching
-the image to a Ruth request requires the later capture/attachment contract and client wiring;
-this PR does not claim the model can see it. No image is uploaded implicitly.
+## Ruth annotations
+
+Send stays inside the overlay. An opt-in `AvaTaskService` runs authenticated Headless JS,
+using the same mobile RPC and AI SDK streaming transport without starting an Activity. A
+compact 148 dp scrolling transcript above the composer streams the answer; follow-ups reuse
+the same server-owned thread. The native view retains up to 40 visible turns and follows the
+bottom only while the user has not scrolled back. Closing Ava aborts the active stream.
+Sign-in/network errors appear in place. The standalone probe cannot send chat requests.
+
+The registered `AvenireScreen` module retrieves the matching image only after checking
+**Share screen with Ava** in Settings → Capture. The server independently checks the setting
+before forwarding pixels. Opening/dismissing the preview never uploads it. Screenshots are
+request-only model context, excluded from saved message/history parts; large images are
+scaled for the shared wire limit while the local preview retains its original resolution.
+
+Ruth can return the same `native_annotate` result used by desktop Qt: cursor/label bubbles,
+rectangles and arrows, at normalized screenshot coordinates. A native Canvas renderer applies
+validated completed results to the frozen image inside Ava's gradient frame. Empty item sets
+clear the annotations. Partial tool streams never draw. The client preserves full explanatory
+text as a fallback when native presentation fails. This also works for a screenshot of a PDF;
+it does not edit or save annotations into the original PDF.
+
+Each capture expires after five minutes and is invalidated by closing the overlay, a new
+capture, account changes, service shutdown, or disabling sharing. Sending retains the preview and transcript in place for matching tool results. Both JS and Java validate
+outputs; stale capture IDs/timestamps and out-of-bounds coordinates are rejected. The app
+rechecks sharing before presentation and serializes replacement sets. It does not enable
+Qt's desktop-only 3D/diagram/cursor-observation capabilities on mobile.
+
+This uses the desktop screen contracts/server support from PR #14; PR #16 is stacked on it.
+A complete opt-in native build is required for the RN bridge. The standalone APK exercises
+the identical native renderer and key UI but has no React Native chat client.
 
 Dismiss/back preserves one local event-associated text draft; a new key event starts a new
-prompt. Configuration changes keep the same overlay and draft. A missing Avenire route shows an error and keeps the
-text. The standalone validation APK includes the same service and overlay source as Avenire.
+prompt. Configuration changes keep the same overlay and draft. An unavailable integrated chat runtime shows an error and keeps the text. The standalone validation APK includes the same service and overlay source as Avenire.
 It has no launcher Activity; enable its accessibility service and use the physical key.
 The production plugin also adds no Activity and removes legacy probe/entry Activities on
-incremental prebuilds. Closing the overlay hides its keyboard and removes the window;
-interrupting, unbinding or destroying the service also dismisses it.
+incremental prebuilds. Back and Close return the screenshot to the original display bounds over 200 ms while the
+composer fades down, then remove the window. Reduced motion removes it immediately.
+Interrupting, unbinding or destroying the service removes it immediately as well.
 
 ## Phone setup and restore
 
@@ -99,6 +126,14 @@ javac -d /tmp/avenire-key-tests \
 java -cp /tmp/avenire-key-tests com.thedamod.avenire.essentialkey.KeyGestureTest
 ./apps/mobile/native/essential-key/build-probe.sh
 # Output: /tmp/avenire-essential-key/avenire-key-input.apk
+pnpm exec vp test run apps/mobile/src/features/native-screen/results.test.ts packages/ai/src/tools/native-overlay-policy.test.ts
+
+# Optional real-device fixture tests (never included in the Expo plugin or normal probe):
+AVENIRE_PROBE_TESTS=1 ./apps/mobile/native/essential-key/build-probe.sh
+# Install using the device panel, enable the probe accessibility listener, then:
+adb shell am broadcast -n com.thedamod.avenire.keyprobe/com.thedamod.avenire.essentialkey.NativeAnnotationTestReceiver --ez back true
+# Remove the synthetic fixture, then reinstall the ordinary probe to remove the test receiver:
+adb shell am broadcast -n com.thedamod.avenire.keyprobe/com.thedamod.avenire.essentialkey.NativeAnnotationTestReceiver --ez clear true
 ```
 
 Android UiAutomation may suppress enabled accessibility services. Release the current

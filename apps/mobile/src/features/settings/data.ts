@@ -4,6 +4,7 @@ import { call } from "@avenire/client-runtime/rpc";
 import type { UserSettingsPatch } from "@avenire/contracts";
 import { useQuery } from "../../lib/useRpc";
 import { loadNotifications, type Notifications } from "../../lib/notifications";
+import { nativeScreenBridge } from "../native-screen/native";
 import { useApi } from "../../state/api";
 import { authClient } from "../../state/auth";
 import { errorMessage } from "../../ui";
@@ -34,6 +35,7 @@ export function useSettingsData() {
   const save = (patch: UserSettingsPatch) =>
     mutate(async () => {
       const settings = await call(api, (client) => client["settings.update"](patch));
+      if (patch.shareScreenWithAi === false) await nativeScreenBridge()?.clearSession();
       query.setData((previous) => (previous ? { ...previous, settings } : previous));
     });
   const saveProfile = (name: string) =>
@@ -57,7 +59,8 @@ export function useSettingsData() {
 }
 
 export function useNotificationPermission() {
-  const [permission, setPermission] = useState<Awaited<ReturnType<Notifications["getPermissionsAsync"]>>>();
+  const [permission, setPermission] =
+    useState<Awaited<ReturnType<Notifications["getPermissionsAsync"]>>>();
   const [error, setError] = useState<string>();
   const Notifications = loadNotifications();
   const supported = (Platform.OS === "ios" || Platform.OS === "android") && Notifications !== null;

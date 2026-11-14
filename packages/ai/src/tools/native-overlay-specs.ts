@@ -1,6 +1,7 @@
 /** Declarative local presentation. The server never connects directly to a user's desktop. */
 import {
   ReadScreenResult,
+  NativeAnnotationResult,
   DesktopOverlayAnnotation,
   DesktopNativeScene,
   DesktopNativeDiagram,
@@ -31,13 +32,7 @@ export const nativeAnnotateSpec = {
   inputSchema: standardObjectSchema(
     Schema.Struct({ items: Schema.Array(DesktopOverlayAnnotation).check(Schema.isMaxLength(32)) }),
   ),
-  outputSchema: standardSchema(
-    Schema.Struct({
-      requested: Schema.Literal(true),
-      capturedAt: Schema.String,
-      items: Schema.Array(DesktopOverlayAnnotation),
-    }),
-  ),
+  outputSchema: standardSchema(NativeAnnotationResult),
 };
 export const nativeVisualizeSpec = {
   description:

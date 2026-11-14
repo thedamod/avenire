@@ -1,4 +1,8 @@
-const { withAndroidManifest, withDangerousMod } = require("expo/config-plugins");
+const {
+  withAndroidManifest,
+  withDangerousMod,
+  withMainApplication,
+} = require("expo/config-plugins");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
@@ -9,12 +13,27 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
   config = withAndroidManifest(config, (config) => {
     const app = config.modResults.manifest.application[0];
     app.service = (app.service ?? []).filter(
-      (s) => s.$["android:name"] !== `${namespace}.EssentialKeyService`,
+      (s) =>
+        ![`${namespace}.EssentialKeyService`, `${namespace}.AvaTaskService`].includes(
+          s.$["android:name"],
+        ),
     );
     app.activity = (app.activity ?? []).filter(
       (a) => !ownedActivities.some((name) => a.$["android:name"] === `${namespace}.${name}`),
     );
     if (!enabled) return config;
+    config.modResults.manifest["uses-permission"] ??= [];
+    if (
+      !config.modResults.manifest["uses-permission"].some(
+        (p) => p.$["android:name"] === "android.permission.WAKE_LOCK",
+      )
+    )
+      config.modResults.manifest["uses-permission"].push({
+        $: { "android:name": "android.permission.WAKE_LOCK" },
+      });
+    app.service.push({
+      $: { "android:name": `${namespace}.AvaTaskService`, "android:exported": "false" },
+    });
     app.service.push({
       $: {
         "android:name": `${namespace}.EssentialKeyService`,
@@ -36,6 +55,36 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
         },
       ],
     });
+    return config;
+  });
+  config = withMainApplication(config, (config) => {
+    const start = "// avenire-essential-key:start";
+    const end = "// avenire-essential-key:end";
+    let code = config.modResults.contents.replace(
+      /\s*\/\/ avenire-essential-key:start[\s\S]*?\/\/ avenire-essential-key:end/g,
+      "",
+    );
+    if (enabled) {
+      const kotlin = /PackageList\(this\)\.packages\.apply\s*\{/;
+      const java = /List<ReactPackage> packages = new PackageList\(this\)\.getPackages\(\);/;
+      if (kotlin.test(code))
+        code = code.replace(
+          kotlin,
+          (match) =>
+            `${match}\n          ${start}\n          add(${namespace}.AvenireScreenPackage())\n          ${end}`,
+        );
+      else if (java.test(code))
+        code = code.replace(
+          java,
+          (match) =>
+            `${match}\n        ${start}\n        packages.add(new ${namespace}.AvenireScreenPackage());\n        ${end}`,
+        );
+      else
+        throw new Error(
+          "Cannot register Avenire screen bridge in MainApplication. Use the standard Expo package list.",
+        );
+    }
+    config.modResults.contents = code;
     return config;
   });
   return withDangerousMod(config, [

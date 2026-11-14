@@ -25,13 +25,18 @@ import android.widget.TextView;
 /** Service-owned accessibility window: no Activity, task switch, or platform launch transition. */
 final class AvaOverlay extends ContextThemeWrapper {
     private final WindowManager windows;
-    private final Runnable onDismiss;
+    private final java.util.function.Consumer<Boolean> onDismiss;
+    private boolean handoff;
+    private android.widget.ScrollView transcript;
+    private LinearLayout turns;
+    private TextView response;
+    private boolean busy;
     private LinearLayout root;
     private boolean attached;
     private boolean closing;
     private ScreenPreview preview;
     private android.window.OnBackInvokedDispatcher backDispatcher;
-    private final android.window.OnBackInvokedCallback backCallback = this::dismiss;
+    private final android.window.OnBackInvokedCallback backCallback;
     private String mode;
     private View composer;
     private View sendControl;
@@ -45,9 +50,10 @@ final class AvaOverlay extends ContextThemeWrapper {
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private int resource(String name, String type) { return getResources().getIdentifier(name, type, getPackageName()); }
     private int color(String name) { return getColor(resource("ava_" + name, "color")); }
-    AvaOverlay(Context service, String eventId, String mode, boolean preview, Runnable onDismiss) {
+    AvaOverlay(Context service, String eventId, String mode, boolean preview, java.util.function.Consumer<Boolean> onDismiss) {
         super(service, service.getResources().getIdentifier("AvenireKeySheet", "style", service.getPackageName()));
         this.windows = service.getSystemService(WindowManager.class);
+        backCallback = android.os.Build.VERSION.SDK_INT >= 33 ? this::dismiss : null;
         this.onDismiss = onDismiss;
         geist = getResources().getFont(resource("avenire_geist", "font"));
         showPrompt(new Intent().putExtra("eventId", eventId).putExtra("mode", mode)
@@ -81,7 +87,7 @@ final class AvaOverlay extends ContextThemeWrapper {
         }
         this.mode = mode;
         input.setHint("dock".equals(mode) ? "Ask Ava…" : "Add a note…");
-        sendControl.setEnabled("popover".equals(mode) || !input.getText().toString().trim().isEmpty());
+        sendControl.setEnabled(!busy && ("popover".equals(mode) || !input.getText().toString().trim().isEmpty()));
         sendControl.setAlpha(sendControl.isEnabled() ? 1f : 0.4f);
         sendControl.setContentDescription("popover".equals(mode) ? "Request capture" : "Send to Ava");
         if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
@@ -105,8 +111,11 @@ final class AvaOverlay extends ContextThemeWrapper {
         if (android.os.Build.VERSION.SDK_INT >= 33 && backDispatcher != null) backDispatcher.unregisterOnBackInvokedCallback(backCallback);
         getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(root.getWindowToken(), 0);
         windows.removeViewImmediate(root);
-        onDismiss.run();
+        onDismiss.accept(handoff);
     }
+    boolean isClosing() { return closing; }
+    int annotationCount() { return preview.annotationCount(); }
+    void setAnnotations(java.util.List<ScreenAnnotation> items) { preview.setAnnotations(items); }
     private SharedPreferences getPreferences(int mode) { return getSharedPreferences("avenire-ava-draft", mode); }
     private void saveDraft() {
         if (input != null) getPreferences(MODE_PRIVATE).edit().putString("eventId", eventId).putString("draft", input.getText().toString()).apply();
@@ -138,7 +147,7 @@ final class AvaOverlay extends ContextThemeWrapper {
             view.setPadding(dp(24) + bars.left, bars.top + dp(12), dp(24) + bars.right, dp(12) + bars.bottom);
             return insets;
         });
-        int[] gradient = {color("accent"), color("green"), color("amber"), color("accent")};
+        int[] gradient = {color("sky_blue"), color("sky_indigo"), color("sky_purple"), color("sky_blue")};
         boolean hasPreview = intent.getBooleanExtra("preview", false);
         ScreenPreview preview = new ScreenPreview(this, hasPreview, gradient);
         this.preview = preview;
@@ -171,12 +180,17 @@ final class AvaOverlay extends ContextThemeWrapper {
         input.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                send.setEnabled("popover".equals(mode) || s.toString().trim().length() > 0); send.setAlpha(send.isEnabled() ? 1f : 0.4f);
+                send.setEnabled(!busy && ("popover".equals(mode) || s.toString().trim().length() > 0)); send.setAlpha(send.isEnabled() ? 1f : 0.4f);
                 if (error != null) error.setVisibility(View.GONE);
             }
             @Override public void afterTextChanged(Editable value) { saveDraft(); }
         });
         input.setText(draft); send.setEnabled("popover".equals(mode) || !draft.trim().isEmpty()); send.setAlpha(send.isEnabled() ? 1f : 0.4f);
+        transcript = new android.widget.ScrollView(this);
+        transcript.setFillViewport(false); transcript.setVisibility(View.GONE);
+        turns = new LinearLayout(this); turns.setOrientation(LinearLayout.VERTICAL);
+        turns.setPadding(dp(12), dp(8), dp(12), dp(8)); transcript.addView(turns);
+        root.addView(transcript, new LinearLayout.LayoutParams(-1, dp(148)));
         root.addView(bar, new LinearLayout.LayoutParams(-1, -2));
         error = new TextView(this); error.setTypeface(geist); error.setTextColor(color("error")); error.setTextSize(12);
         error.setPadding(dp(16), dp(8), dp(16), 0); error.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); error.setVisibility(View.GONE);
@@ -245,10 +259,32 @@ final class AvaOverlay extends ContextThemeWrapper {
     }
     private void send() {
         if ("popover".equals(mode)) { requestCapture(); return; }
-        String question = input.getText().toString().trim(); if (question.isEmpty()) return;
+        String question = input.getText().toString().trim(); if (question.isEmpty() || busy) return;
         saveDraft();
-        Uri url = new Uri.Builder().scheme("avenire").authority("ask").appendQueryParameter("q", question).build();
-        try { startActivity(new Intent(Intent.ACTION_VIEW, url).setPackage("com.thedamod.avenire").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); dismiss(); }
-        catch (ActivityNotFoundException unavailable) { showError("Open or update Avenire to continue. Your prompt is kept here."); }
+        try {
+            ((EssentialKeyService)getBaseContext()).submit(eventId, question);
+            beginResponse(question);
+        } catch (Exception unavailable) { showError(unavailable.getMessage()); }
+    }
+    void beginResponse(String question) {
+            busy = true; input.setText(""); sendControl.setEnabled(false); sendControl.setAlpha(0.4f);
+            getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(root.getWindowToken(), 0);
+            transcript.setVisibility(View.VISIBLE);
+            addTurn("You", question); response = addTurn("Ava", "Thinking…");
+            transcript.post(() -> transcript.fullScroll(View.FOCUS_DOWN));
+    }
+    private TextView addTurn(String role, String text) {
+        TextView line = new TextView(this); line.setTypeface(geist); line.setTextSize(14);
+        line.setTextColor(color("fg")); line.setPadding(0, dp(6), 0, dp(8));
+        line.setText(role + "\n" + text); line.setTextIsSelectable(true); turns.addView(line);
+        while (turns.getChildCount() > 40) turns.removeViewAt(0);
+        return line;
+    }
+    void updateResponse(String text, boolean done) {
+        if (response == null) return;
+        boolean bottom = !transcript.canScrollVertically(1);
+        response.setText("Ava\n" + text);
+        if (bottom) transcript.post(() -> transcript.fullScroll(View.FOCUS_DOWN));
+        if (done) { busy = false; sendControl.setEnabled(!input.getText().toString().trim().isEmpty()); sendControl.setAlpha(sendControl.isEnabled() ? 1f : 0.4f); }
     }
 }

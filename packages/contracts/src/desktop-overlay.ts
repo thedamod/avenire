@@ -16,6 +16,14 @@ export const DesktopOverlayAnnotation = Schema.Struct({
 });
 export type DesktopOverlayAnnotation = typeof DesktopOverlayAnnotation.Type;
 
+/** Shared desktop/mobile presentation result. No drawing code, scripts, URLs or file mutations. */
+export const NativeAnnotationResult = Schema.Struct({
+  requested: Schema.Literal(true),
+  capturedAt: Schema.String.check(Schema.isMaxLength(100)),
+  items: Schema.Array(DesktopOverlayAnnotation).check(Schema.isMaxLength(32)),
+});
+export type NativeAnnotationResult = typeof NativeAnnotationResult.Type;
+
 /** Read-only pointer observation. x/y are normalized to the selected capture bounds. */
 export const DesktopCursorPosition = Schema.Struct({
   globalX: Schema.Int,
