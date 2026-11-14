@@ -1,7 +1,6 @@
 package com.thedamod.avenire.essentialkey;
 
 import android.accessibilityservice.AccessibilityService;
-import android.app.ActivityOptions;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.hardware.HardwareBuffer;
@@ -27,6 +26,7 @@ public final class EssentialKeyService extends AccessibilityService {
     private boolean opening;
     private boolean capturePending;
     private String pendingMode;
+    private AvaOverlay overlay;
     private final Runnable hold = () -> { if (gesture.hold()) openAva("dock"); };
 
     @Override protected void onServiceConnected() { Log.i("AvenireEssentialKey", "Key listener connected"); }
@@ -37,25 +37,23 @@ public final class EssentialKeyService extends AccessibilityService {
         } else if (event.getAction() == KeyEvent.ACTION_UP) {
             handler.removeCallbacks(hold);
             String action = gesture.up(event.getEventTime(), event.isCanceled());
-            if ("popover".equals(action) && (AvaActivity.visible || opening)) requestCapture();
+            if ("popover".equals(action) && (overlay != null || opening)) requestCapture();
             else if (action != null) openAva(action);
         }
         return true;
     }
     private void requestCapture() {
         if (opening) { capturePending = true; return; }
-        startActivity(new Intent(this, AvaActivity.class).putExtra("mode", "capture")
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            ActivityOptions.makeCustomAnimation(this, 0, 0).toBundle());
+        if (overlay != null) overlay.requestCapture();
     }
     private void openAva(String mode) {
         if (opening) { pendingMode = mode; return; }
         pendingMode = mode;
         final long id = ++request;
         final String eventId = Long.toString(SystemClock.elapsedRealtimeNanos());
-        if (AvaActivity.visible) { launch(AvaActivity.activeEventId, AvaActivity.hasPreview); return; }
+        if (overlay != null) { overlay.updateMode(mode); return; }
         opening = true;
-        // Screenshot is acquired before our Activity can cover the original app.
+        // Screenshot is acquired before adding our overlay window over the original app.
         try {
             takeScreenshot(Display.DEFAULT_DISPLAY, getMainExecutor(), new TakeScreenshotCallback() {
                 @Override public void onSuccess(ScreenshotResult result) {
@@ -98,16 +96,15 @@ public final class EssentialKeyService extends AccessibilityService {
     private void launch(String eventId, boolean preview) {
         opening = false;
         Log.i("AvenireEssentialKey", "Ava opened mode=" + pendingMode + " preview=" + preview + " eventId=" + eventId);
-        startActivity(new Intent(this, AvaActivity.class).putExtra("eventId", eventId)
-            .putExtra("preview", preview).putExtra("fromKey", true)
-            .putExtra("mode", pendingMode).putExtra("captureRequested", capturePending)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP),
-            ActivityOptions.makeCustomAnimation(this, 0, 0).toBundle());
+        overlay = new AvaOverlay(this, eventId, pendingMode, preview, () -> overlay = null);
+        overlay.show();
+        if (capturePending) overlay.requestCapture();
         capturePending = false;
     }
+    private void dismissOverlay() { if (overlay != null) overlay.dismiss(); }
     private void reset() { handler.removeCallbacks(hold); gesture.reset(); }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {}
-    @Override public void onInterrupt() { reset(); request++; opening = false; capturePending = false; }
-    @Override public boolean onUnbind(Intent intent) { reset(); request++; opening = false; capturePending = false; return super.onUnbind(intent); }
-    @Override public void onDestroy() { reset(); request++; images.shutdown(); super.onDestroy(); }
+    @Override public void onInterrupt() { dismissOverlay(); reset(); request++; opening = false; capturePending = false; }
+    @Override public boolean onUnbind(Intent intent) { dismissOverlay(); reset(); request++; opening = false; capturePending = false; return super.onUnbind(intent); }
+    @Override public void onDestroy() { dismissOverlay(); reset(); request++; images.shutdown(); super.onDestroy(); }
 }

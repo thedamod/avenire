@@ -1,6 +1,9 @@
 package com.thedamod.avenire.essentialkey;
 
-import android.app.Activity;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.view.ContextThemeWrapper;
+import android.graphics.PixelFormat;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Canvas;
@@ -8,7 +11,6 @@ import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
-import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
@@ -20,11 +22,12 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/** Framed popover and Ava text dock, sharing one frozen preview and native composer. */
-public final class AvaActivity extends Activity {
-    static volatile boolean visible;
-    static volatile boolean hasPreview;
-    static volatile String activeEventId;
+/** Service-owned accessibility window: no Activity, task switch, or platform launch transition. */
+final class AvaOverlay extends ContextThemeWrapper {
+    private final WindowManager windows;
+    private final Runnable onDismiss;
+    private LinearLayout root;
+    private boolean attached;
     private String mode;
     private View composer;
     private View sendControl;
@@ -38,61 +41,74 @@ public final class AvaActivity extends Activity {
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private int resource(String name, String type) { return getResources().getIdentifier(name, type, getPackageName()); }
     private int color(String name) { return getColor(resource("ava_" + name, "color")); }
-    @Override public void onCreate(Bundle state) {
-        super.onCreate(state);
+    AvaOverlay(Context service, String eventId, String mode, boolean preview, Runnable onDismiss) {
+        super(service, service.getResources().getIdentifier("AvenireKeySheet", "style", service.getPackageName()));
+        this.windows = service.getSystemService(WindowManager.class);
+        this.onDismiss = onDismiss;
         geist = getResources().getFont(resource("avenire_geist", "font"));
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
-        WindowManager.LayoutParams params = getWindow().getAttributes();
-        params.dimAmount = 0.15f;
-        getWindow().setAttributes(params);
-        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
-        if (android.os.Build.VERSION.SDK_INT >= 34) overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0);
-        else overridePendingTransition(0, 0);
-        showPrompt(getIntent(), state == null);
-        if (getIntent().getBooleanExtra("captureRequested", false)) requestCapture();
-        if (state != null) hapticPending = false;
-        if (state != null && eventId.equals(state.getString("eventId"))) {
-            input.setText(state.getString("draft", ""));
+        showPrompt(new Intent().putExtra("eventId", eventId).putExtra("mode", mode)
+            .putExtra("preview", preview).putExtra("fromKey", true), true);
+    }
+    void show() {
+        WindowManager.LayoutParams params = new WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | WindowManager.LayoutParams.FLAG_DIM_BEHIND,
+            PixelFormat.TRANSLUCENT);
+        params.gravity = Gravity.TOP | Gravity.START;
+        params.windowAnimations = 0;
+        params.dimAmount = 1f;
+        params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN;
+        params.setFitInsetsTypes(0);
+        params.setTitle("Avenire Ava");
+        windows.addView(root, params);
+        attached = true;
+        root.requestFocus(); root.requestApplyInsets(); root.post(this::confirmOpen);
+    }
+    void updateMode(String mode) {
+        this.mode = mode;
+        input.setHint("dock".equals(mode) ? "Ask Ava…" : "Add a note…");
+        sendControl.setEnabled("popover".equals(mode) || !input.getText().toString().trim().isEmpty());
+        sendControl.setAlpha(sendControl.isEnabled() ? 1f : 0.4f);
+        sendControl.setContentDescription("popover".equals(mode) ? "Request capture" : "Send to Ava");
+        if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            composer.setAlpha(0.7f); composer.animate().alpha(1f).setDuration(150).start();
         }
+        hapticPending = true; confirmOpen();
     }
-    @Override protected void onNewIntent(Intent intent) {
-        super.onNewIntent(intent);
-        if ("capture".equals(intent.getStringExtra("mode"))) { requestCapture(); return; }
-        if (eventId.equals(intent.getStringExtra("eventId"))) {
-            mode = intent.getStringExtra("mode");
-            getIntent().putExtra("mode", mode);
-            input.setHint("dock".equals(mode) ? "Ask Ava…" : "Add a note…");
-            sendControl.setEnabled("popover".equals(mode) || !input.getText().toString().trim().isEmpty());
-            sendControl.setAlpha(sendControl.isEnabled() ? 1f : 0.4f);
-            sendControl.setContentDescription("popover".equals(mode) ? "Request capture" : "Send to Ava");
-            if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
-                composer.setAlpha(0.7f); composer.animate().alpha(1f).setDuration(150).start();
-            }
-            hapticPending = intent.getBooleanExtra("fromKey", false); confirmOpen();
-            if (intent.getBooleanExtra("captureRequested", false)) requestCapture();
-            return;
-        }
-        saveDraft(); setIntent(intent); showPrompt(intent, true);
-        if (intent.getBooleanExtra("captureRequested", false)) requestCapture();
+    void dismiss() {
+        if (!attached) return;
+        saveDraft();
+        getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(root.getWindowToken(), 0);
+        attached = false;
+        windows.removeViewImmediate(root);
+        onDismiss.run();
     }
-    @Override protected void onResume() { super.onResume(); visible = true; }
-    @Override protected void onPause() { visible = false; saveDraft(); super.onPause(); }
-    @Override protected void onSaveInstanceState(Bundle state) {
-        state.putString("eventId", eventId); state.putString("draft", input.getText().toString());
-        super.onSaveInstanceState(state);
-    }
+    private SharedPreferences getPreferences(int mode) { return getSharedPreferences("avenire-ava-draft", mode); }
     private void saveDraft() {
         if (input != null) getPreferences(MODE_PRIVATE).edit().putString("eventId", eventId).putString("draft", input.getText().toString()).apply();
     }
     private void showPrompt(Intent intent, boolean animate) {
         eventId = intent.getStringExtra("eventId");
         if (eventId == null) eventId = "manual";
-        activeEventId = eventId;
         mode = "popover".equals(intent.getStringExtra("mode")) ? "popover" : "dock";
         String draft = eventId.equals(getPreferences(MODE_PRIVATE).getString("eventId", "")) ? getPreferences(MODE_PRIVATE).getString("draft", "") : "";
-        LinearLayout root = new LinearLayout(this);
+        LinearLayout root = new LinearLayout(this) {
+            @Override public void onWindowFocusChanged(boolean focused) {
+                super.onWindowFocusChanged(focused);
+                if (focused) confirmOpen();
+            }
+            @Override public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+                if (event.getKeyCode() == android.view.KeyEvent.KEYCODE_BACK) {
+                    if (event.getAction() == android.view.KeyEvent.ACTION_UP) dismiss();
+                    return true;
+                }
+                return super.dispatchKeyEvent(event);
+            }
+        };
+        this.root = root;
         root.setOrientation(LinearLayout.VERTICAL); root.setGravity(Gravity.BOTTOM);
-        root.setBackgroundColor(color("bg"));
+        root.setBackgroundColor(android.graphics.Color.BLACK);
         root.setClipChildren(false); root.setClipToPadding(false);
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             android.graphics.Insets bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.ime());
@@ -100,7 +116,7 @@ public final class AvaActivity extends Activity {
             return insets;
         });
         int[] gradient = {color("accent"), color("green"), color("amber"), color("accent")};
-        hasPreview = intent.getBooleanExtra("preview", false);
+        boolean hasPreview = intent.getBooleanExtra("preview", false);
         ScreenPreview preview = new ScreenPreview(this, hasPreview, gradient);
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(-1, 0, 1);
         previewParams.bottomMargin = dp(12);
@@ -112,7 +128,7 @@ public final class AvaActivity extends Activity {
         background.setColor(color("surface")); background.setCornerRadius(radius);
         bar.setBackground(background);
         composer = bar;
-        bar.addView(control("close", "Dismiss Ava", false, () -> finish()));
+        bar.addView(control("close", "Dismiss Ava", false, this::dismiss));
         input = new EditText(this);
         input.setTypeface(geist); input.setTextSize(15); input.setTextColor(color("fg")); input.setHintTextColor(color("muted"));
         input.setHint("dock".equals(mode) ? "Ask Ava…" : "Add a note…"); input.setContentDescription("Ask Ava");
@@ -134,18 +150,14 @@ public final class AvaActivity extends Activity {
                 send.setEnabled("popover".equals(mode) || s.toString().trim().length() > 0); send.setAlpha(send.isEnabled() ? 1f : 0.4f);
                 if (error != null) error.setVisibility(View.GONE);
             }
-            @Override public void afterTextChanged(Editable value) {}
+            @Override public void afterTextChanged(Editable value) { saveDraft(); }
         });
         input.setText(draft); send.setEnabled("popover".equals(mode) || !draft.trim().isEmpty()); send.setAlpha(send.isEnabled() ? 1f : 0.4f);
         root.addView(bar, new LinearLayout.LayoutParams(-1, -2));
         error = new TextView(this); error.setTypeface(geist); error.setTextColor(color("error")); error.setTextSize(12);
         error.setPadding(dp(16), dp(8), dp(16), 0); error.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); error.setVisibility(View.GONE);
         root.addView(error);
-        root.setFocusableInTouchMode(true); setContentView(root); root.requestFocus(); root.requestApplyInsets();
-        root.post(() -> {
-            android.view.WindowInsetsController controller = root.getWindowInsetsController();
-            if (controller != null) controller.hide(android.view.WindowInsets.Type.statusBars());
-        });
+        root.setFocusableInTouchMode(true);
         hapticPending = intent.getBooleanExtra("fromKey", false);
         reveal = root;
         root.post(this::confirmOpen);
@@ -163,14 +175,10 @@ public final class AvaActivity extends Activity {
             });
         }
     }
-    @Override public void onWindowFocusChanged(boolean focused) {
-        super.onWindowFocusChanged(focused);
-        if (focused) confirmOpen();
-    }
     private void confirmOpen() {
         if (hapticPending && reveal != null && reveal.hasWindowFocus()) {
             hapticPending = false;
-            reveal.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM);
+            reveal.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
         }
     }
     private View control(String icon, String label, boolean accent, Runnable onPress) {
@@ -204,19 +212,19 @@ public final class AvaActivity extends Activity {
         return target;
     }
     private void showError(String message) { error.setText(message); error.setVisibility(View.VISIBLE); }
-    private void requestCapture() {
+    void requestCapture() {
         saveDraft();
         android.util.Log.i("AvenireEssentialKey", "capture.requested eventId=" + eventId);
         // Integration hook only: never claim a file was saved or uploaded.
         android.widget.Toast.makeText(this, "Capture is not configured yet.", android.widget.Toast.LENGTH_SHORT).show();
-        if (reveal != null) reveal.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM);
+        if (reveal != null) reveal.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
     }
     private void send() {
         if ("popover".equals(mode)) { requestCapture(); return; }
         String question = input.getText().toString().trim(); if (question.isEmpty()) return;
         saveDraft();
         Uri url = new Uri.Builder().scheme("avenire").authority("ask").appendQueryParameter("q", question).build();
-        try { startActivity(new Intent(Intent.ACTION_VIEW, url).setPackage("com.thedamod.avenire")); finish(); }
+        try { startActivity(new Intent(Intent.ACTION_VIEW, url).setPackage("com.thedamod.avenire").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); dismiss(); }
         catch (ActivityNotFoundException unavailable) { showError("Open or update Avenire to continue. Your prompt is kept here."); }
     }
 }

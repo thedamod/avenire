@@ -30,7 +30,10 @@ final class ScreenPreview extends View {
         float inset = 2*getResources().getDisplayMetrics().density;
         float scale = Math.min((getWidth()-2*inset)/bitmap.getWidth(), (getHeight()-2*inset)/bitmap.getHeight());
         float frameWidth = bitmap.getWidth()*scale, frameHeight = bitmap.getHeight()*scale;
-        android.graphics.Rect screen = ((android.app.Activity)getContext()).getWindowManager().getCurrentWindowMetrics().getBounds();
+        android.graphics.Point size = new android.graphics.Point();
+        getContext().getSystemService(android.hardware.display.DisplayManager.class)
+            .getDisplay(android.view.Display.DEFAULT_DISPLAY).getRealSize(size);
+        android.graphics.Rect screen = new android.graphics.Rect(0, 0, size.x, size.y);
         int[] position = new int[2]; getLocationOnScreen(position);
         // The first frame is exactly the original display rectangle, not a dock-like slide.
         setPivotX(getWidth()/2f); setPivotY(getHeight()/2f);
@@ -59,7 +62,7 @@ final class ScreenPreview extends View {
         canvas.save(); canvas.clipPath(clip);
         paint.setShader(null); paint.setStyle(Paint.Style.FILL);
         canvas.drawBitmap(bitmap, null, bounds, paint); canvas.restore();
-        paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(1.5f*density);
+        paint.setStyle(Paint.Style.STROKE); paint.setStrokeWidth(3f*density);
         paint.setShader(new LinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom, colors, null, Shader.TileMode.CLAMP));
         canvas.drawRoundRect(bounds, 24*density, 24*density, paint);
     }

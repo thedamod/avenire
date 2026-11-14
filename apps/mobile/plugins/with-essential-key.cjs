@@ -3,8 +3,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const namespace = "com.thedamod.avenire.essentialkey";
-const activities = ["AvaActivity"];
-const ownedActivities = ["KeyInputActivity", ...activities];
+const ownedActivities = ["KeyInputActivity", "AvaActivity"];
 const generateDesign = require("../native/essential-key/generate-design.cjs");
 module.exports = function withEssentialKey(config, { enabled = false } = {}) {
   config = withAndroidManifest(config, (config) => {
@@ -37,25 +36,6 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
         },
       ],
     });
-    for (const name of activities)
-      app.activity.push({
-        $: {
-          "android:name": `${namespace}.${name}`,
-          "android:exported": "false",
-          "android:launchMode": name === "AvaActivity" ? "singleTask" : "singleTop",
-          ...(name === "AvaActivity"
-            ? {
-                "android:taskAffinity": `${config.android?.package ?? "com.thedamod.avenire"}.essentialkey`,
-                "android:excludeFromRecents": "true",
-              }
-            : {}),
-          "android:windowSoftInputMode": "adjustResize",
-          "android:theme":
-            name === "AvaActivity"
-              ? "@style/AvenireKeySheet"
-              : "@android:style/Theme.Material.NoActionBar",
-        },
-      });
     return config;
   });
   return withDangerousMod(config, [

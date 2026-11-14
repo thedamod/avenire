@@ -29,9 +29,10 @@ never emits a click. A frozen screenshot is fitted into the space
 above the bottom composer, with a gradient around the **whole image**, not the composer.
 The image resizes with the keyboard. The screenshot starts at the original display bounds and pulls inward into its frame over
 250 ms; only the composer rises/fades over 200 ms. Android's disabled-animation setting skips
-movement. The launch options, Activity transition override and theme disable Android's
-separate window animation so it cannot slide the entire preview upward. One native
-confirmation haptic fires when the key-opened entry gains focus, respecting system haptics.
+movement. Ava is a service-owned `TYPE_ACCESSIBILITY_OVERLAY` window with window animations
+set to zero. It does not launch an Activity, switch tasks, or rely on suppressing a system
+Activity transition. The backdrop is fully black and the gradient frame is 3 dp thick. One stronger native
+long-press haptic fires when the key-opened entry gains focus, respecting system haptics.
 The popover composer is “Add a note”; hold switches it to “Ask Ava” without losing the
 preview or draft. There is no diagnostic screen, top control strip, audio UI, or speech-to-text.
 
@@ -53,9 +54,12 @@ the image to a Ruth request requires the later capture/attachment contract and c
 this PR does not claim the model can see it. No image is uploaded implicitly.
 
 Dismiss/back preserves one local event-associated text draft; a new key event starts a new
-prompt. Process recreation restores it. A missing Avenire route shows an error and keeps the
-text. The standalone validation APK exports Ava as a launcher so the same native source can
-be tested without a full React Native build. Production entry activities remain private.
+prompt. Configuration changes keep the same overlay and draft. A missing Avenire route shows an error and keeps the
+text. The standalone validation APK includes the same service and overlay source as Avenire.
+It has no launcher Activity; enable its accessibility service and use the physical key.
+The production plugin also adds no Activity and removes legacy probe/entry Activities on
+incremental prebuilds. Closing the overlay hides its keyboard and removes the window;
+interrupting, unbinding or destroying the service also dismisses it.
 
 ## Phone setup and restore
 

@@ -13,7 +13,7 @@ async function manifest(enabled, app = { $: {} }) {
   });
   return result.modResults.manifest.application[0];
 }
-test("off by default; opt-in registers the service and private entry screen", async () => {
+test("off by default; opt-in registers the service and no Activity launch", async () => {
   assert.equal((await manifest(undefined)).service.length, 0);
   const app = await manifest(true);
   assert.equal(app.service.length, 1);
@@ -21,14 +21,14 @@ test("off by default; opt-in registers the service and private entry screen", as
     app.service[0].$["android:permission"],
     "android.permission.BIND_ACCESSIBILITY_SERVICE",
   );
-  assert.equal(app.activity.length, 1);
-  assert.ok(app.activity.every((a) => a.$["android:exported"] === "false"));
+  assert.equal(app.activity.length, 0);
   assert.equal((await manifest(true, app)).service.length, 1);
 });
 test("turning flag off removes owned manifest entries and retains unrelated components", async () => {
   const app = await manifest(true);
   app.service.push({ $: { "android:name": "OtherService" } });
   app.activity.push({ $: { "android:name": ".MainActivity" } });
+  app.activity.push({ $: { "android:name": "com.thedamod.avenire.essentialkey.AvaActivity" } });
   const off = await manifest(false, app);
   assert.deepEqual(
     off.service.map((s) => s.$["android:name"]),
@@ -49,10 +49,10 @@ test("incremental prebuild removes native sources/resources when disabled", asyn
   await plugin({ name: "A", slug: "a" }, { enabled: true }).mods.android.dangerous(request);
   assert.match(
     await fs.readFile(
-      path.join(main, "java/com/thedamod/avenire/essentialkey/AvaActivity.java"),
+      path.join(main, "java/com/thedamod/avenire/essentialkey/AvaOverlay.java"),
       "utf8",
     ),
-    /class AvaActivity/,
+    /class AvaOverlay/,
   );
   const xml = await fs.readFile(path.join(main, "res/xml/essential_key_service.xml"), "utf8");
   assert.match(

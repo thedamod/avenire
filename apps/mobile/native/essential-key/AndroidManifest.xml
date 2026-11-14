@@ -1,9 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.thedamod.avenire.keyprobe">
     <uses-sdk android:minSdkVersion="31" android:targetSdkVersion="36" />
     <application android:label="Ava Preview" android:theme="@style/AvenireKeySheet" android:allowBackup="false">
-        <activity android:name="com.thedamod.avenire.essentialkey.AvaActivity" android:exported="true" android:launchMode="singleTask" android:taskAffinity="com.thedamod.avenire.keyprobe.essentialkey" android:excludeFromRecents="true" android:windowSoftInputMode="adjustResize">
-            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
-        </activity>
         <service android:name="com.thedamod.avenire.essentialkey.EssentialKeyService" android:label="Avenire Essential Key" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/essential_key_service" />
