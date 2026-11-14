@@ -20,6 +20,7 @@ const config: ExpoConfig = {
   backgroundColor: "#0B0B0B",
   plugins: [
     "./plugins/with-http-api.cjs",
+    ["./plugins/with-essential-key.cjs", { enabled: process.env.AVENIRE_ESSENTIAL_KEY === "1" }],
     "expo-font",
     [
       "expo-splash-screen",

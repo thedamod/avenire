@@ -15,6 +15,12 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "internal-essential-key": {
+      "extends": "internal",
+      "env": {
+        "AVENIRE_ESSENTIAL_KEY": "1"
+      }
     }
   }
 }
