@@ -25,6 +25,21 @@ final class ScreenPreview extends View {
         if (available) bitmap = BitmapFactory.decodeFile(new File(context.getCacheDir(), "ava-preview.png").getPath());
         setContentDescription(bitmap != null ? "Screen preview. Image is not sent to Ava yet." : "Screen preview unavailable. You can still type a prompt.");
     }
+    void revealFromScreen() {
+        if (bitmap == null || getWidth() == 0 || getHeight() == 0) return;
+        float inset = 2*getResources().getDisplayMetrics().density;
+        float scale = Math.min((getWidth()-2*inset)/bitmap.getWidth(), (getHeight()-2*inset)/bitmap.getHeight());
+        float frameWidth = bitmap.getWidth()*scale, frameHeight = bitmap.getHeight()*scale;
+        android.graphics.Rect screen = ((android.app.Activity)getContext()).getWindowManager().getCurrentWindowMetrics().getBounds();
+        int[] position = new int[2]; getLocationOnScreen(position);
+        // The first frame is exactly the original display rectangle, not a dock-like slide.
+        setPivotX(getWidth()/2f); setPivotY(getHeight()/2f);
+        setScaleX(screen.width()/frameWidth); setScaleY(screen.height()/frameHeight);
+        setTranslationX(screen.exactCenterX() - position[0] - getWidth()/2f);
+        setTranslationY(screen.exactCenterY() - position[1] - getHeight()/2f);
+        animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).setDuration(250)
+            .setInterpolator(new android.view.animation.PathInterpolator(0.23f, 1f, 0.32f, 1f)).start();
+    }
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         float density = getResources().getDisplayMetrics().density;

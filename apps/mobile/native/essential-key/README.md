@@ -27,8 +27,9 @@ the capture integration hook (currently an explicit “not configured yet” mes
 saved). Hold the Essential Key for 500 ms to open the Ava text dock instead. Releasing a hold
 never emits a click. A frozen screenshot is fitted into the space
 above the bottom composer, with a gradient around the **whole image**, not the composer.
-The image resizes with the keyboard. A 200 ms transform/opacity reveal comes from the right
-edge near the physical key; Android's disabled-animation setting skips movement. One native
+The image resizes with the keyboard. The screenshot starts at the original display bounds and pulls inward into its frame over
+250 ms; only the composer rises/fades over 200 ms. Android's disabled-animation setting skips
+movement. One native
 confirmation haptic fires when the key-opened entry gains focus, respecting system haptics.
 The popover composer is “Add a note”; hold switches it to “Ask Ava” without losing the
 preview or draft. There is no diagnostic screen, top control strip, audio UI, or speech-to-text.

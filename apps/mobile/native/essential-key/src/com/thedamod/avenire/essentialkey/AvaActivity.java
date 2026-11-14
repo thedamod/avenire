@@ -47,9 +47,9 @@ public final class AvaActivity extends Activity {
         getWindow().setAttributes(params);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         overridePendingTransition(0, 0);
-        showPrompt(getIntent());
+        showPrompt(getIntent(), state == null);
         if (getIntent().getBooleanExtra("captureRequested", false)) requestCapture();
-        if (state != null) { hapticPending = false; reveal.animate().cancel(); reveal.setAlpha(1f); reveal.setScaleX(1f); reveal.setScaleY(1f); reveal.setTranslationX(0f); }
+        if (state != null) hapticPending = false;
         if (state != null && eventId.equals(state.getString("eventId"))) {
             input.setText(state.getString("draft", ""));
         }
@@ -71,7 +71,7 @@ public final class AvaActivity extends Activity {
             if (intent.getBooleanExtra("captureRequested", false)) requestCapture();
             return;
         }
-        saveDraft(); setIntent(intent); showPrompt(intent);
+        saveDraft(); setIntent(intent); showPrompt(intent, true);
         if (intent.getBooleanExtra("captureRequested", false)) requestCapture();
     }
     @Override protected void onResume() { super.onResume(); visible = true; }
@@ -83,7 +83,7 @@ public final class AvaActivity extends Activity {
     private void saveDraft() {
         if (input != null) getPreferences(MODE_PRIVATE).edit().putString("eventId", eventId).putString("draft", input.getText().toString()).apply();
     }
-    private void showPrompt(Intent intent) {
+    private void showPrompt(Intent intent, boolean animate) {
         eventId = intent.getStringExtra("eventId");
         if (eventId == null) eventId = "manual";
         activeEventId = eventId;
@@ -92,6 +92,7 @@ public final class AvaActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL); root.setGravity(Gravity.BOTTOM);
         root.setBackgroundColor(color("bg"));
+        root.setClipChildren(false); root.setClipToPadding(false);
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             android.graphics.Insets bars = insets.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.ime());
             view.setPadding(dp(24) + bars.left, bars.top + dp(12), dp(24) + bars.right, dp(12) + bars.bottom);
@@ -147,14 +148,17 @@ public final class AvaActivity extends Activity {
         hapticPending = intent.getBooleanExtra("fromKey", false);
         reveal = root;
         root.post(this::confirmOpen);
-        if (android.animation.ValueAnimator.areAnimatorsEnabled()) {
-            preview.setScaleX(1.15f); preview.setScaleY(1.15f);
-            preview.animate().scaleX(1f).scaleY(1f).setDuration(200).setInterpolator(new android.view.animation.PathInterpolator(0.23f, 1f, 0.32f, 1f)).start();
-            root.setAlpha(0f); root.setScaleX(0.97f); root.setScaleY(0.97f); root.setTranslationX(dp(24));
-            root.post(() -> {
-                root.setPivotX(root.getWidth()); root.setPivotY(root.getHeight()*0.38f);
-                root.animate().alpha(1f).scaleX(1f).scaleY(1f).translationX(0f).setDuration(200)
-                    .setInterpolator(new android.view.animation.PathInterpolator(0.23f, 1f, 0.32f, 1f)).start();
+        if (animate && android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            // Only the composer rises. The image pulls inward from the actual display bounds.
+            bar.setAlpha(0f); bar.setTranslationY(dp(16));
+            root.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+                @Override public boolean onPreDraw() {
+                    root.getViewTreeObserver().removeOnPreDrawListener(this);
+                    preview.revealFromScreen();
+                    bar.animate().alpha(1f).translationY(0f).setDuration(200)
+                        .setInterpolator(new android.view.animation.PathInterpolator(0.23f, 1f, 0.32f, 1f)).start();
+                    return true;
+                }
             });
         }
     }
