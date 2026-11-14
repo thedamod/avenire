@@ -1,6 +1,7 @@
 package com.thedamod.avenire.essentialkey;
 
 import android.accessibilityservice.AccessibilityService;
+import android.app.ActivityOptions;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.hardware.HardwareBuffer;
@@ -44,7 +45,8 @@ public final class EssentialKeyService extends AccessibilityService {
     private void requestCapture() {
         if (opening) { capturePending = true; return; }
         startActivity(new Intent(this, AvaActivity.class).putExtra("mode", "capture")
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            ActivityOptions.makeCustomAnimation(this, 0, 0).toBundle());
     }
     private void openAva(String mode) {
         if (opening) { pendingMode = mode; return; }
@@ -99,7 +101,8 @@ public final class EssentialKeyService extends AccessibilityService {
         startActivity(new Intent(this, AvaActivity.class).putExtra("eventId", eventId)
             .putExtra("preview", preview).putExtra("fromKey", true)
             .putExtra("mode", pendingMode).putExtra("captureRequested", capturePending)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            ActivityOptions.makeCustomAnimation(this, 0, 0).toBundle());
         capturePending = false;
     }
     private void reset() { handler.removeCallbacks(hold); gesture.reset(); }

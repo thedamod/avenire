@@ -29,7 +29,8 @@ never emits a click. A frozen screenshot is fitted into the space
 above the bottom composer, with a gradient around the **whole image**, not the composer.
 The image resizes with the keyboard. The screenshot starts at the original display bounds and pulls inward into its frame over
 250 ms; only the composer rises/fades over 200 ms. Android's disabled-animation setting skips
-movement. One native
+movement. The launch options, Activity transition override and theme disable Android's
+separate window animation so it cannot slide the entire preview upward. One native
 confirmation haptic fires when the key-opened entry gains focus, respecting system haptics.
 The popover composer is “Add a note”; hold switches it to “Ask Ava” without losing the
 preview or draft. There is no diagnostic screen, top control strip, audio UI, or speech-to-text.

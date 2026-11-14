@@ -46,7 +46,8 @@ public final class AvaActivity extends Activity {
         params.dimAmount = 0.15f;
         getWindow().setAttributes(params);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
-        overridePendingTransition(0, 0);
+        if (android.os.Build.VERSION.SDK_INT >= 34) overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0);
+        else overridePendingTransition(0, 0);
         showPrompt(getIntent(), state == null);
         if (getIntent().getBooleanExtra("captureRequested", false)) requestCapture();
         if (state != null) hapticPending = false;
