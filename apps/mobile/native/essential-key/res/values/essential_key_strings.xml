@@ -1,3 +1,3 @@
 <resources>
-    <string name="essential_key_description">Hold the Nothing Essential Key to open Ava with a frozen screen preview. Opening Ava keeps the preview on this device. With Share screen with Ava enabled in Settings, pressing Send shares this screenshot with Ruth for explanations and annotations. No continuous recording.</string>
+    <string name="essential_key_description">Open Ava using your accessibility shortcut, assistant gesture, home widget, or an optional Nothing Essential Key. Avenire checks app and window metadata against capture exclusions before taking a frozen preview; it does not read accessibility text or form fields. Browser screens, excluded apps, locked screens, and ambiguous windows are not captured. Opening Ava keeps the preview on this device. With Share screen with Ava enabled, Send shares the permitted preview with Ava for explanations and annotations. No continuous recording.</string>
 </resources>

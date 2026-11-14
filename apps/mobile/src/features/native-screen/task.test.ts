@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from "vite-plus/test";
 const h = vi.hoisted(() => ({
   bridge: {
     bindOwner: vi.fn(),
+    canShareScreen: vi.fn(),
     isSessionActive: vi.fn(),
     getScreenContext: vi.fn(),
     updateResponse: vi.fn(),
@@ -59,6 +60,7 @@ beforeEach(() => {
   h.bodies.length = 0;
   h.auth.mockResolvedValue({ data: { user: { id: "owner" } } });
   h.bridge.isSessionActive.mockResolvedValue(true);
+  h.bridge.canShareScreen.mockResolvedValue(true);
   h.rpc
     .mockResolvedValueOnce({ settings: { shareScreenWithAi: false } })
     .mockResolvedValueOnce({ id: "thread-test" });
@@ -110,4 +112,20 @@ it("shows sign-in errors in place without sending or navigating", async () => {
     true,
     "",
   );
+});
+
+it("drops acquired pixels if the source becomes excluded before transport sends", async () => {
+  h.rpc.mockReset().mockResolvedValue({ settings: { shareScreenWithAi: true } });
+  h.bridge.getScreenContext.mockResolvedValue({
+    mimeType: "image/png",
+    data: "aGVsbG8=",
+    width: 10,
+    height: 20,
+    screenId: "mobile:capture",
+    capturedAt: "now",
+  });
+  h.bridge.canShareScreen.mockResolvedValue(false);
+  await runAvaTask({ session: "capture", question: "Explain", threadId: "existing" });
+  expect(h.bodies[0]).not.toHaveProperty("screenContext");
+  expect(h.bodies[0]).not.toHaveProperty("nativeAnnotationAvailable");
 });

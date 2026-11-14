@@ -18,12 +18,16 @@ public final class NativeAnnotationTestReceiver extends BroadcastReceiver {
     private static void check(boolean value, String reason) { if (!value) throw new AssertionError(reason); }
     @Override public void onReceive(Context context, Intent intent) {
         try {
-            check(EssentialKeyService.live != null, "Enable Avenire Essential Key before running this test.");
+            check(EssentialKeyService.live != null, "Enable Avenire Ava and open a permitted study app before running this test.");
             if (intent.getBooleanExtra("clear", false)) {
                 EssentialKeyService.live.clearSession(); setResultData("Native annotation fixture cleared"); return;
             }
             EssentialKeyService service = EssentialKeyService.live;
             service.clearSession();
+            ScreenSource source = ScreenSource.current(service);
+            check(source != null, "Open a permitted study app; native fixtures do not bypass screen policy.");
+            java.lang.reflect.Field sourceField = EssentialKeyService.class.getDeclaredField("capturedSource");
+            sourceField.setAccessible(true); sourceField.set(service, source);
             Bitmap noisy = Bitmap.createBitmap(600, 1200, Bitmap.Config.ARGB_8888);
             int[] randomPixels = new int[600*1200]; java.util.Random random = new java.util.Random(42);
             for (int i = 0; i < randomPixels.length; i++) randomPixels[i] = 0xFF000000 | (random.nextInt() & 0xFFFFFF);

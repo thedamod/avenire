@@ -1,0 +1,75 @@
+{
+  "packages": {
+    "email": [
+      "com.google.android.gm",
+      "com.microsoft.office.outlook",
+      "com.yahoo.mobile.client.android.mail",
+      "ch.protonmail.android",
+      "com.fsck.k9",
+      "net.thunderbird.android",
+      "com.samsung.android.email.provider"
+    ],
+    "messaging": [
+      "com.whatsapp",
+      "org.telegram.messenger",
+      "org.thoughtcrime.securesms",
+      "com.facebook.orca",
+      "com.google.android.apps.messaging",
+      "com.samsung.android.messaging",
+      "com.Slack",
+      "com.discord",
+      "com.microsoft.teams",
+      "com.tencent.mm",
+      "jp.naver.line.android"
+    ],
+    "password-manager": [
+      "com.onepassword.android",
+      "com.agilebits.onepassword",
+      "com.x8bit.bitwarden",
+      "com.lastpass.lpandroid",
+      "com.dashlane",
+      "keepass2android.keepass2android",
+      "com.enpass.passwordmanager"
+    ],
+    "banking": [
+      "com.chase.sig.android",
+      "com.infonow.bofa",
+      "com.wf.wellsfargomobile",
+      "com.citi.citimobile",
+      "com.konylabs.capitalone",
+      "com.revolut.revolut",
+      "com.transferwise.android",
+      "com.paypal.android.p2pmobile",
+      "com.coinbase.android",
+      "com.robinhood.android",
+      "com.google.android.apps.nbu.paisa.user",
+      "net.one97.paytm",
+      "com.phonepe.app",
+      "com.samsung.android.spay",
+      "com.fampay.in",
+      "com.sbi.lotusintouch",
+      "com.snapwork.hdfc",
+      "com.csam.icici.bank.imobile",
+      "com.axis.mobile",
+      "com.kotak.mobilebanking"
+    ],
+    "social-feed": [
+      "com.instagram.android",
+      "com.facebook.katana",
+      "com.twitter.android",
+      "com.zhiliaoapp.musically",
+      "com.reddit.frontpage"
+    ],
+    "drm-stream": [
+      "com.netflix.mediaclient",
+      "com.amazon.avod.thirdpartyclient",
+      "com.disney.disneyplus",
+      "com.hulu.plus",
+      "com.wbd.stream",
+      "com.spotify.music",
+      "com.crunchyroll.crunchyroid"
+    ]
+  },
+  "blockedLabelPattern": "\\b(?:incognito|private browsing|inprivate|password|bank|banking|wallet|checkout|gmail|outlook|mail|messaging|messages|whatsapp|telegram|signal|slack|discord|teams|netflix|spotify|disney|hulu|1password|bitwarden|lastpass|paypal|paytm|phonepe)\\b",
+  "unverifiablePackages": ["org.chromium.webapk"]
+}

@@ -13,7 +13,7 @@ async function manifest(enabled, app = { $: {} }) {
   });
   return result.modResults.manifest.application[0];
 }
-test("off by default; opt-in registers the service and no Activity launch", async () => {
+test("native opt-out removes services; enabled registers assistant entry and widget", async () => {
   assert.equal((await manifest(undefined)).service.length, 0);
   const app = await manifest(true);
   assert.equal(app.service.length, 2);
@@ -23,7 +23,12 @@ test("off by default; opt-in registers the service and no Activity launch", asyn
     ],
     "android.permission.BIND_ACCESSIBILITY_SERVICE",
   );
-  assert.equal(app.activity.length, 0);
+  assert.equal(app.activity.length, 1);
+  assert.equal(app.activity[0].$["android:theme"], "@android:style/Theme.NoDisplay");
+  assert.equal(app.activity[0].$["android:taskAffinity"], "");
+  assert.equal(app.receiver.length, 1);
+  assert.equal(app.receiver[0].$["android:exported"], "false");
+  assert.equal((await manifest(true, app)).receiver.length, 1);
   assert.equal((await manifest(true, app)).service.length, 2);
 });
 test("turning flag off removes owned manifest entries and retains unrelated components", async () => {
@@ -66,8 +71,14 @@ test("incremental prebuild removes native sources/resources when disabled", asyn
     await fs.readFile(path.join(projectRoot, "assets/fonts/Geist-Variable.ttf")),
   );
   await fs.access(path.join(main, "res/font/avenire_geist_mono.ttf"));
-  assert.match(xml, /canRetrieveWindowContent="false"/);
+  assert.match(xml, /canRetrieveWindowContent="true"/);
   assert.match(xml, /canTakeScreenshot="true"/);
+  assert.match(xml, /flagRequestAccessibilityButton/);
+  await fs.access(path.join(main, "res/layout/ava_widget.xml"));
+  await fs.access(path.join(main, "res/xml/ava_widget_info.xml"));
+  await fs.access(
+    path.join(main, "java/com/thedamod/avenire/essentialkey/AndroidScreenPolicy.java"),
+  );
   assert.match(xml, /accessibilityEventTypes="typeWindowStateChanged"/);
   await plugin({ name: "A", slug: "a" }, { enabled: false }).mods.android.dangerous(request);
   await assert.rejects(fs.access(path.join(main, "java/com/thedamod/avenire/essentialkey")), {
@@ -80,6 +91,10 @@ test("incremental prebuild removes native sources/resources when disabled", asyn
     code: "ENOENT",
   });
   await assert.rejects(fs.access(path.join(main, "res/font/avenire_geist_mono.ttf")), {
+    code: "ENOENT",
+  });
+  await assert.rejects(fs.access(path.join(main, "res/layout/ava_widget.xml")), { code: "ENOENT" });
+  await assert.rejects(fs.access(path.join(main, "res/xml/ava_widget_info.xml")), {
     code: "ENOENT",
   });
   assert.equal(await fs.readFile(path.join(main, "res/values/strings.xml"), "utf8"), "unrelated");

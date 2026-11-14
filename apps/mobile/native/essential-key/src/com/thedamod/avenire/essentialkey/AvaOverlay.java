@@ -257,6 +257,9 @@ final class AvaOverlay extends ContextThemeWrapper {
     }
     private void showError(String message) { error.setText(message); error.setVisibility(View.VISIBLE); }
     void requestCapture() {
+        if (!((EssentialKeyService)getBaseContext()).screenAllowed(eventId)) {
+            showError("Screen capture is unavailable or excluded by capture policy."); return;
+        }
         saveDraft();
         android.util.Log.i("AvenireEssentialKey", "capture.requested eventId=" + eventId);
         // Integration hook only: never claim a file was saved or uploaded.

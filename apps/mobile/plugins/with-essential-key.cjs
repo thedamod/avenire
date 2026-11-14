@@ -8,7 +8,8 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const namespace = "com.thedamod.avenire.essentialkey";
-const ownedActivities = ["KeyInputActivity", "AvaActivity"];
+const ownedActivities = ["KeyInputActivity", "AvaActivity", "AvaEntryActivity"];
+const generatePolicy = require("../native/essential-key/generate-policy.cjs");
 const generateDesign = require("../native/essential-key/generate-design.cjs");
 module.exports = function withEssentialKey(config, { enabled = false } = {}) {
   config = withAndroidManifest(config, (config) => {
@@ -22,7 +23,83 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
     app.activity = (app.activity ?? []).filter(
       (a) => !ownedActivities.some((name) => a.$["android:name"] === `${namespace}.${name}`),
     );
+    app.receiver = (app.receiver ?? []).filter(
+      (r) => r.$["android:name"] !== `${namespace}.AvaWidget`,
+    );
+    const queries = (config.modResults.manifest.queries ??= []);
+    // Visibility is limited to web handlers and launchable apps; never QUERY_ALL_PACKAGES.
+    // Query entries are added idempotently by their exact shapes below.
+    for (const query of [
+      {
+        intent: [
+          {
+            action: [{ $: { "android:name": "android.intent.action.VIEW" } }],
+            category: [{ $: { "android:name": "android.intent.category.BROWSABLE" } }],
+            data: [{ $: { "android:scheme": "https" } }],
+          },
+        ],
+      },
+      {
+        intent: [
+          {
+            action: [{ $: { "android:name": "android.intent.action.MAIN" } }],
+            category: [{ $: { "android:name": "android.intent.category.HOME" } }],
+          },
+        ],
+      },
+      {
+        intent: [
+          {
+            action: [{ $: { "android:name": "android.intent.action.MAIN" } }],
+            category: [{ $: { "android:name": "android.intent.category.LAUNCHER" } }],
+          },
+        ],
+      },
+    ]) {
+      const index = queries.findIndex((q) => JSON.stringify(q) === JSON.stringify(query));
+      if (enabled && index < 0) queries.push(query);
+    }
     if (!enabled) return config;
+    app.activity.push({
+      $: {
+        "android:name": `${namespace}.AvaEntryActivity`,
+        "android:enabled": "@bool/ava_supported",
+        "android:label": "Ava",
+        "android:theme": "@android:style/Theme.NoDisplay",
+        "android:exported": "true",
+        "android:excludeFromRecents": "true",
+        "android:taskAffinity": "",
+        "android:noHistory": "true",
+      },
+      "intent-filter": [
+        {
+          action: [
+            { $: { "android:name": "android.intent.action.ASSIST" } },
+            { $: { "android:name": "com.thedamod.avenire.OPEN_AVA" } },
+          ],
+          category: [{ $: { "android:name": "android.intent.category.DEFAULT" } }],
+        },
+      ],
+    });
+    app.receiver.push({
+      $: {
+        "android:name": `${namespace}.AvaWidget`,
+        "android:enabled": "@bool/ava_supported",
+        "android:label": "Ask Ava",
+        "android:exported": "false",
+      },
+      "intent-filter": [
+        { action: [{ $: { "android:name": "android.appwidget.action.APPWIDGET_UPDATE" } }] },
+      ],
+      "meta-data": [
+        {
+          $: {
+            "android:name": "android.appwidget.provider",
+            "android:resource": "@xml/ava_widget_info",
+          },
+        },
+      ],
+    });
     config.modResults.manifest["uses-permission"] ??= [];
     if (
       !config.modResults.manifest["uses-permission"].some(
@@ -33,12 +110,17 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
         $: { "android:name": "android.permission.WAKE_LOCK" },
       });
     app.service.push({
-      $: { "android:name": `${namespace}.AvaTaskService`, "android:exported": "false" },
+      $: {
+        "android:name": `${namespace}.AvaTaskService`,
+        "android:exported": "false",
+        "android:enabled": "@bool/ava_supported",
+      },
     });
     app.service.push({
       $: {
         "android:name": `${namespace}.EssentialKeyService`,
-        "android:label": "Avenire Essential Key",
+        "android:enabled": "@bool/ava_supported",
+        "android:label": "Avenire Ava",
         "android:permission": "android.permission.BIND_ACCESSIBILITY_SERVICE",
         "android:exported": "true",
       },
@@ -114,6 +196,10 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
         "values/essential_key_tokens.xml",
         "font/avenire_geist.ttf",
         "font/avenire_geist_mono.ttf",
+        "xml/ava_widget_info.xml",
+        "layout/ava_widget.xml",
+        "values/ava_supported.xml",
+        "values-v31/ava_supported.xml",
       ];
       await fs.rm(java, { recursive: true, force: true });
       await Promise.all(
@@ -122,11 +208,17 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
       if (enabled) {
         await fs.cp(path.join(source, "src"), path.join(main, "java"), { recursive: true });
         await Promise.all(
-          resources.slice(0, 4).map(async (resource) => {
-            await fs.mkdir(path.dirname(path.join(main, "res", resource)), { recursive: true });
-            await fs.copyFile(path.join(source, "res", resource), path.join(main, "res", resource));
-          }),
+          resources
+            .filter((resource) => !resource.includes("font/") && !resource.includes("tokens"))
+            .map(async (resource) => {
+              await fs.mkdir(path.dirname(path.join(main, "res", resource)), { recursive: true });
+              await fs.copyFile(
+                path.join(source, "res", resource),
+                path.join(main, "res", resource),
+              );
+            }),
         );
+        await generatePolicy(java);
         await generateDesign(config.modRequest.projectRoot, path.join(main, "res"));
       }
       return config;

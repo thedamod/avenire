@@ -74,6 +74,8 @@ export async function runAvaTask(input: { session: string; question: string; thr
       role: "user",
       parts: [{ type: "text", text: input.question }],
     };
+    // Thread creation and auth can take time. Recheck the native policy at the send boundary.
+    if (capture && !(await bridge.canShareScreen(input.session))) capture = undefined;
     const transport = new DefaultChatTransport<RuthUIMessage>({
       api: `${apiUrl}${RUTH_CHAT_PATH}`,
       fetch: expoFetch as unknown as typeof globalThis.fetch,

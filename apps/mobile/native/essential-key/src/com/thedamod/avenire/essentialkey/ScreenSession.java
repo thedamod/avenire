@@ -28,6 +28,8 @@ final class ScreenSession {
     }
     static JSONObject observation(Context c, String expected) throws Exception {
         if (!matches(c, expected, capturedAt(c))) throw new IllegalStateException("Screen context expired. Open Ava again.");
+        EssentialKeyService service = EssentialKeyService.live;
+        if (service == null || !service.screenAllowed(expected)) throw new IllegalStateException("Screen is excluded by capture policy.");
         File file = new File(c.getCacheDir(), "ava-preview.png");
         // Shared contract caps base64 at 1 MiB. Never return an unbounded image to JS.
         if (!file.isFile() || file.length() > 12_000_000) throw new IllegalStateException("Screen preview is unavailable.");
@@ -52,7 +54,7 @@ final class ScreenSession {
                 }
             } finally { image.recycle(); }
         }
-        if (!matches(c, expected, capturedAt(c))) throw new IllegalStateException("Screen context changed.");
+        if (!matches(c, expected, capturedAt(c)) || !service.screenAllowed(expected)) throw new IllegalStateException("Screen context changed or is excluded by capture policy.");
         return new JSONObject().put("mimeType", "image/png").put("data", Base64.encodeToString(data, Base64.NO_WRAP))
             .put("width", width).put("height", height).put("screenId", "mobile:" + expected)
             .put("capturedAt", capturedAt(c));

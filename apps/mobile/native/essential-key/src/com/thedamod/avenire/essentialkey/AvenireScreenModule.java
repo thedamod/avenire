@@ -18,6 +18,48 @@ public final class AvenireScreenModule extends ReactContextBaseJavaModule {
     private final Handler main = new Handler(Looper.getMainLooper());
     AvenireScreenModule(ReactApplicationContext context) { super(context); }
     @Override public String getName() { return "AvenireScreen"; }
+    @ReactMethod public void getTriggerStatus(Promise promise) {
+        main.post(() -> {
+            android.app.role.RoleManager roles = getReactApplicationContext().getSystemService(android.app.role.RoleManager.class);
+            WritableMap status = Arguments.createMap();
+            status.putBoolean("enabled", EssentialKeyService.live != null);
+            status.putBoolean("nothing", EssentialKeyService.isNothing());
+            status.putBoolean("essentialKey", EssentialKeyService.keyEnabled(getReactApplicationContext()));
+            status.putBoolean("assistantAvailable", roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT));
+            status.putBoolean("assistant", roles.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT));
+            status.putBoolean("widget", android.appwidget.AppWidgetManager.getInstance(getReactApplicationContext()).isRequestPinAppWidgetSupported());
+            promise.resolve(status);
+        });
+    }
+    @ReactMethod public void setEssentialKey(boolean enabled, Promise promise) {
+        getReactApplicationContext().getSharedPreferences("ava-triggers", 0).edit().putBoolean("essentialKey", enabled).apply();
+        promise.resolve(null);
+    }
+    @ReactMethod public void configureTrigger(String trigger, Promise promise) {
+        main.post(() -> {
+            try {
+                android.app.Activity activity = getReactApplicationContext().getCurrentActivity();
+                if (activity == null) throw new IllegalStateException("Open Avenire to configure shortcuts.");
+                if ("widget".equals(trigger)) {
+                    android.appwidget.AppWidgetManager widgets = android.appwidget.AppWidgetManager.getInstance(activity);
+                    if (!widgets.isRequestPinAppWidgetSupported()) throw new IllegalStateException("Add the Ava widget from your launcher's widget picker.");
+                    if (!widgets.requestPinAppWidget(new android.content.ComponentName(activity, AvaWidget.class), null, null)) throw new IllegalStateException("Your launcher could not add the Ava widget.");
+                } else if ("assistant".equals(trigger)) {
+                    android.app.role.RoleManager roles = activity.getSystemService(android.app.role.RoleManager.class);
+                    if (!roles.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT)) throw new IllegalStateException("This phone does not offer a default assistant setting.");
+                    activity.startActivityForResult(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT), 7411);
+                } else if ("accessibility".equals(trigger)) {
+                    activity.startActivity(new android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                } else if ("gestures".equals(trigger)) {
+                    activity.startActivity(new android.content.Intent(android.provider.Settings.ACTION_SETTINGS));
+                } else throw new IllegalArgumentException("Unknown shortcut setting.");
+                promise.resolve(null);
+            } catch (Exception error) { promise.reject("SHORTCUT_UNAVAILABLE", error.getMessage(), error); }
+        });
+    }
+    @ReactMethod public void canShareScreen(String session, Promise promise) {
+        main.post(() -> promise.resolve(EssentialKeyService.live != null && EssentialKeyService.live.screenAllowed(session)));
+    }
     @ReactMethod public void bindOwner(String owner, Promise promise) {
         main.post(() -> {
             String before = getReactApplicationContext().getSharedPreferences("ava-screen-session", 0).getString("owner", null);
@@ -35,7 +77,7 @@ public final class AvenireScreenModule extends ReactContextBaseJavaModule {
     @ReactMethod public void getScreenContext(String session, Promise promise) {
         io.execute(() -> {
             try {
-                if (EssentialKeyService.live == null) throw new IllegalStateException("Enable Avenire Essential Key in Accessibility.");
+                if (EssentialKeyService.live == null) throw new IllegalStateException("Enable Avenire Ava in Accessibility.");
                 JSONObject value = ScreenSession.observation(getReactApplicationContext(), session);
                 WritableMap map = Arguments.createMap();
                 for (String key : new String[]{"mimeType", "data", "screenId", "capturedAt"}) map.putString(key, value.getString(key));

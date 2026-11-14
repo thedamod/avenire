@@ -25,8 +25,10 @@ open(p, 'w').write(s)
 PYTEST
 fi
 "$build_tools/aapt2" link -o "$output/unsigned.apk" -I "$android_jar" --manifest "$output/AndroidManifest.xml" "$output/resources.zip"
+node "$source_dir/generate-policy.cjs" "$output/generated"
 mapfile -t sources < <(find "$source_dir/src" -name '*.java' ! -name 'AvenireScreenModule.java' ! -name 'AvenireScreenPackage.java' ! -name 'AvaTaskService.java')
 if [[ "${AVENIRE_PROBE_TESTS:-0}" == "1" ]]; then sources+=("$source_dir/tests/android/NativeAnnotationTestReceiver.java" "$source_dir/tests/android/MarkdownTestReceiver.java"); fi
+sources+=("$output/generated/AndroidScreenPolicy.java")
 javac --release 8 -classpath "$android_jar:$markdown_classpath" -d "$output/classes" "${sources[@]}"
 mapfile -t classes < <(find "$output/classes" -name '*.class')
 "$build_tools/d8" --lib "$android_jar" --min-api 31 --output "$output/dex" "${classes[@]}" "${markdown_jars[@]}"

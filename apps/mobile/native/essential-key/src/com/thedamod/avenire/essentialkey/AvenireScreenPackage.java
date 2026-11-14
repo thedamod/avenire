@@ -8,6 +8,6 @@ import java.util.Collections;
 import java.util.List;
 
 public final class AvenireScreenPackage implements ReactPackage {
-    @Override public List<NativeModule> createNativeModules(ReactApplicationContext context) { return Collections.singletonList(new AvenireScreenModule(context)); }
+    @Override public List<NativeModule> createNativeModules(ReactApplicationContext context) { return android.os.Build.VERSION.SDK_INT >= 31 ? Collections.singletonList(new AvenireScreenModule(context)) : Collections.emptyList(); }
     @Override public List<ViewManager> createViewManagers(ReactApplicationContext context) { return Collections.emptyList(); }
 }

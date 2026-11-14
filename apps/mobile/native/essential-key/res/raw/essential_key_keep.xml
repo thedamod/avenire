@@ -1,2 +1,2 @@
 <resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@color/ava_*,@dimen/ava_*,@font/avenire_geist,@font/avenire_geist_mono" />
+    tools:keep="@layout/ava_widget,@xml/ava_widget_info,@id/ava_widget_button,@color/ava_*,@dimen/ava_*,@font/avenire_geist,@font/avenire_geist_mono" />

@@ -27,13 +27,33 @@ public final class EssentialKeyService extends AccessibilityService {
     private boolean capturePending;
     private String pendingMode;
     private AvaOverlay overlay;
+    private volatile ScreenSource capturedSource;
     private final OverlayContext screen = new OverlayContext();
     static volatile EssentialKeyService live;
     private final Runnable hold = () -> { if (gesture.hold()) openAva("dock"); };
 
-    @Override protected void onServiceConnected() { live = this; Log.i("AvenireEssentialKey", "Key listener connected"); }
+    @Override protected void onServiceConnected() {
+        live = this;
+        getAccessibilityButtonController().registerAccessibilityButtonCallback(
+            new android.accessibilityservice.AccessibilityButtonController.AccessibilityButtonCallback() {
+                @Override public void onClicked(android.accessibilityservice.AccessibilityButtonController controller) { trigger("toggle", true); }
+            }, handler);
+    }
+    static boolean isNothing() { return "nothing".equalsIgnoreCase(android.os.Build.MANUFACTURER); }
+    static boolean keyEnabled(android.content.Context context) {
+        return isNothing() && context.getSharedPreferences("ava-triggers", 0).getBoolean("essentialKey", true);
+    }
+    void trigger(String mode, boolean withScreen) {
+        if (getSystemService(android.app.KeyguardManager.class).isKeyguardLocked()) return;
+        if ("toggle".equals(mode) && (overlay != null || opening)) requestCapture();
+        else openAva("toggle".equals(mode) ? "popover" : mode, withScreen);
+    }
+    boolean screenAllowed(String session) {
+        ScreenSource source = capturedSource;
+        return ScreenSession.matches(this, session, ScreenSession.capturedAt(this)) && source != null && source.matches(ScreenSource.current(this));
+    }
     @Override protected boolean onKeyEvent(KeyEvent event) {
-        if (event.getScanCode() != 250) return false;
+        if (!keyEnabled(this) || event.getScanCode() != 250) return false;
         if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
             if (gesture.down(event.getDownTime())) handler.postAtTime(hold, event.getDownTime() + KeyGesture.HOLD_MS);
         } else if (event.getAction() == KeyEvent.ACTION_UP) {
@@ -45,10 +65,15 @@ public final class EssentialKeyService extends AccessibilityService {
         return true;
     }
     private void requestCapture() {
+        if (!screenAllowed(ScreenSession.id(this)) && !opening) {
+            android.widget.Toast.makeText(this, "Screen capture is unavailable or excluded by capture policy.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (opening) { capturePending = true; return; }
         if (overlay != null) overlay.requestCapture();
     }
-    private void openAva(String mode) {
+    private void openAva(String mode) { openAva(mode, true); }
+    private void openAva(String mode, boolean withScreen) {
         if (opening) { pendingMode = mode; return; }
         pendingMode = mode;
         final long id = ++request;
@@ -57,9 +82,12 @@ public final class EssentialKeyService extends AccessibilityService {
         ScreenSession.clear(this);
         screen.open();
         opening = true;
+        capturedSource = withScreen ? ScreenSource.current(this) : null;
+        if (capturedSource == null) { launch(eventId, false); return; }
+        final ScreenSource source = capturedSource;
         // Screenshot is acquired before adding our overlay window over the original app.
         try {
-            takeScreenshot(Display.DEFAULT_DISPLAY, getMainExecutor(), new TakeScreenshotCallback() {
+            TakeScreenshotCallback callback = new TakeScreenshotCallback() {
                 @Override public void onSuccess(ScreenshotResult result) {
                     HardwareBuffer buffer = result.getHardwareBuffer();
                     if (id != request) { buffer.close(); return; }
@@ -75,7 +103,7 @@ public final class EssentialKeyService extends AccessibilityService {
                             if (copy == null) throw new IOException("No preview copy");
                             float factor = Math.min(1f, 1600f / Math.max(copy.getWidth(), copy.getHeight()));
                             scaled = Bitmap.createScaledBitmap(copy, Math.max(1, Math.round(copy.getWidth()*factor)), Math.max(1, Math.round(copy.getHeight()*factor)), true);
-                            try (FileOutputStream output = new FileOutputStream(new File(getCacheDir(), "ava-preview.png"))) {
+                            try (FileOutputStream output = new FileOutputStream(new File(getCacheDir(), "ava-preview-" + eventId + ".png"))) {
                                 ready = scaled.compress(Bitmap.CompressFormat.PNG, 100, output);
                             }
                         } catch (IOException | RuntimeException error) {
@@ -87,14 +115,24 @@ public final class EssentialKeyService extends AccessibilityService {
                             buffer.close();
                         }
                         final boolean available = ready;
-                        handler.post(() -> { if (id == request) launch(eventId, available); });
+                        handler.post(() -> {
+                            File temporary = new File(getCacheDir(), "ava-preview-" + eventId + ".png");
+                            if (id == request) {
+                                boolean permitted = source.matches(ScreenSource.current(EssentialKeyService.this));
+                                boolean saved = available && permitted && temporary.renameTo(new File(getCacheDir(), "ava-preview.png"));
+                                if (!saved) temporary.delete();
+                                launch(eventId, saved);
+                            } else temporary.delete();
+                        });
                     });
                 }
                 @Override public void onFailure(int code) {
                     Log.i("AvenireEssentialKey", "Preview unavailable code=" + code);
                     if (id == request) launch(eventId, false);
                 }
-            });
+            };
+            if (android.os.Build.VERSION.SDK_INT >= 34) takeScreenshotOfWindow(source.windowId, getMainExecutor(), callback);
+            else takeScreenshot(Display.DEFAULT_DISPLAY, getMainExecutor(), callback);
         } catch (SecurityException unavailable) { launch(eventId, false); }
     }
     private void launch(String eventId, boolean preview) {
@@ -120,7 +158,7 @@ public final class EssentialKeyService extends AccessibilityService {
     }
     int annotationCount() { return overlay == null ? 0 : overlay.annotationCount(); }
     void annotate(String session, org.json.JSONObject result) throws Exception {
-        if (!ScreenSession.matches(this, session, result.getString("capturedAt"))) throw new IllegalStateException("Screen context changed or expired.");
+        if (!screenAllowed(session) || !ScreenSession.matches(this, session, result.getString("capturedAt"))) throw new IllegalStateException("Screen context changed or expired.");
         if (overlay != null && overlay.isClosing()) throw new IllegalStateException("Screen explanation is closing.");
         java.util.List<ScreenAnnotation> items = ScreenAnnotation.parse(result.getJSONArray("items"));
         if (overlay == null && items.isEmpty()) return;
@@ -131,10 +169,10 @@ public final class EssentialKeyService extends AccessibilityService {
         }
         overlay.setAnnotations(items);
     }
-    void clearSession() { screen.close(); ScreenSession.clear(this); dismissOverlay(); }
+    void clearSession() { capturedSource = null; screen.close(); ScreenSession.clear(this); dismissOverlay(); }
     private void dismissOverlay() { if (overlay != null) overlay.dispose(); }
     private void reset() { handler.removeCallbacks(hold); gesture.reset(); }
-    // Window metadata only: no accessibility node/content retrieval is enabled.
+    // Window metadata only: no accessibility text or descendant nodes are read.
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
         if (overlay == null && !opening) return;
         if (event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || event.getPackageName() == null) return;
@@ -153,7 +191,7 @@ public final class EssentialKeyService extends AccessibilityService {
         request++; opening = false; capturePending = false; reset(); screen.close();
         clearSession();
     }
-    @Override public void onInterrupt() { dismissOverlay(); reset(); request++; opening = false; capturePending = false; }
+    @Override public void onInterrupt() { leaveScreen(); }
     @Override public boolean onUnbind(Intent intent) { live = null; clearSession(); reset(); request++; opening = false; capturePending = false; return super.onUnbind(intent); }
     @Override public void onDestroy() { live = null; clearSession(); reset(); request++; images.shutdown(); super.onDestroy(); }
 }

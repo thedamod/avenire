@@ -1,28 +1,77 @@
-# Ava on mobile — Nothing Essential Key
+# Ava on Android
 
-Experimental native Ava prompt for **Nothing phones with an Essential Key**. First hardware
-verification used a Nothing A069 on Android 17 (scan code 250). Other phones, reboot and
-locked-screen behavior have not been verified.
+Ava can open over the current app on Android 12+ through the system accessibility
+shortcut, a default-assistant gesture, an OEM app shortcut, or a home-screen widget.
+Nothing phones additionally support the Essential Key. The existing native namespace
+and service component stay stable so an upgrade retains the accessibility grant;
+Android may still ask the user to re-enable the service after its capabilities change.
 
-## Build-time opt-in
+## Build and setup
 
-Normal builds exclude the service, screen bridge, UI, font and generated native resources. Enable only at
-Expo prebuild / native build time:
+Android builds include Ava by default. `AVENIRE_ANDROID_AVA=0` at Expo prebuild removes
+all owned native components, bridge, fonts and resources; iOS is unaffected. Android versions below 12 keep the ordinary app but disable Ava native components. A new native build is required; OTA JavaScript never uses an older bridge that lacks the policy gate. The
+`internal-android-ava` EAS profile enables it explicitly. The legacy
+`internal-essential-key` profile remains compatible, but no longer limits Ava to Nothing.
 
-```sh
-AVENIRE_ESSENTIAL_KEY=1 EXPO_PUBLIC_API_URL=http://100.75.95.125:3001 pnpm --filter @avenire/mobile exec expo prebuild --platform android
-AVENIRE_ESSENTIAL_KEY=1 pnpm --filter @avenire/mobile android
-# Opt-in EAS profile (extends internal):
-pnpm --filter @avenire/mobile exec eas build --platform android --profile internal-essential-key
-```
+1. Settings → Capture → Android shortcuts → Enable Ava shortcut. Enable **Avenire Ava**
+   in Accessibility and choose the system-provided accessibility button/gesture.
+2. Optionally select Ava as the default digital assistant. Assign power/Home/assistant
+   gestures in the phone's own Settings. Android and the manufacturer determine the
+   available gestures; Avenire does not intercept power, Home or emergency gestures.
+   Double-press power is not a portable third-party API. OEM app remapping can target
+   the exported `AvaEntryActivity` (`ACTION_ASSIST` or `com.thedamod.avenire.OPEN_AVA`).
+3. Add **Ask Ava** through Settings or the launcher's widget picker. Widgets open a
+   text-only dock: the previously used app is no longer foreground and cannot be captured.
+4. On Nothing, the Essential Key listener can be turned off independently in Avenire
+   Settings. It only filters scan code 250 when the manufacturer is Nothing and the
+   listener is enabled. Freeing the key from Nothing's stock handlers remains a manual
+   device setup step (see below).
 
-The ordinary `internal` profile stays off. Unset the flag and rerun prebuild to remove owned
-manifest entries, sources and resources, including during incremental prebuilds. OTA updates
-cannot enable native code; iOS is unaffected.
+## Screen policy
+
+The same native gate guards preview acquisition, the second-press capture hook,
+request-only screen delivery and annotation presentation. It is independent of the
+Share screen with Ava setting: consent never overrides a policy exclusion.
+
+`packages/capture/src/android-policy.json` owns Android package/category exclusions.
+Prebuild and the native probe generate `AndroidScreenPolicy.java` from it. Known mail,
+messaging, password, financial, social and DRM apps are excluded, with label checks for
+other obvious sensitive apps. This is a best-effort blocklist, not a classification of
+all installed apps. New sensitive packages belong in this policy file.
+
+The service now requests interactive-window metadata to establish the source package,
+window identity and single-app context. It reads only the root package and window
+metadata, never accessibility text, URLs, form fields or descendants. Browser handlers
+are excluded because metadata cannot prove the current URL, private mode or checkout
+state. Locked screens, launchers, system dialogs, unknown source metadata and multiple
+application windows are excluded too. Other accessibility overlays are excluded. On Android 14+ the screenshot targets the validated application window; Android 12–13 use a display screenshot after the single-app check. Secure-window screenshot errors are respected.
+Excluded screens open text-only Ava and never acquire pixels.
+
+A screenshot is checked again before publishing the preview and before returning bytes
+to JS. JS rechecks policy after thread/auth work at the transport boundary. Navigation
+invalidates the session and pending acquisition callbacks. Acquisition uses a per-request
+temporary image; stale work cannot overwrite a newer preview.
+
+## Capture follow-up
+
+Second invocation through the accessibility/assistant shortcut, or a second Essential
+Key press, reaches the guarded capture hook. Saving/ingestion is deliberately still
+unconfigured in this phase. It must not claim a source was saved.
+
+There is no Android API that asks an arbitrary foreground app to share its open file
+silently. Original acquisition will use an explicit `ACTION_SEND`/`ACTION_SEND_MULTIPLE`
+payload or an app-specific integration; neither a screenshot nor a local path gives
+Avenire access to another app's private file. Do not automate the other app's Share UI.
+When a real payload is available, stage its bytes with the granted `content://` access,
+retain an owner-bound idempotent queue entry, then use the existing upload/ingestion
+pipeline. A raw URI must never become a server filesystem read. Browser URL payloads
+must run the existing URL/redirect policy before fetching; shared originals need the
+Android source policy as well. A screenshot-only save must be labeled as visible-screen
+coverage, not the original document.
 
 ## Interaction
 
-One click opens the popover immediately. Another click while it is opening or visible calls
+The accessibility/assistant shortcut opens the popover; a second invocation requests capture. On Nothing, one key click opens the popover immediately. Another click while it is opening or visible calls
 the capture integration hook (currently an explicit “not configured yet” message; no file is
 saved). Hold the Essential Key for 500 ms to open the Ava text dock instead. Releasing a hold
 never emits a click. A frozen screenshot is fitted into the space
@@ -42,7 +91,7 @@ static gradient uses the home NightSky blue/indigo/purple tokens. Native resourc
 from release resource shrinking because the shared preview source resolves them by name.
 
 Screenshots are obtained by the opt-in accessibility service **before** opening Ava. Only
-an explicit opening click/hold acquires an image; no background polling, window text access, or recording.
+an explicit opening click/hold acquires an image; no background screenshot polling, window text access, or recording. Window/package metadata is checked only for policy and navigation invalidation.
 The hardware buffer is closed, a bounded-size preview is encoded off the main thread, and
 one app-private cache file is retained. Secure windows and screenshot failures open a prompt
 with an explicit unavailable-preview state. Holding again while Ava is visible reuses the
@@ -92,14 +141,13 @@ the identical native renderer and key UI but has no React Native chat client.
 Dismiss/back preserves one local event-associated text draft; a new key event starts a new
 prompt. Configuration changes keep the same overlay and draft. An unavailable integrated chat runtime shows an error and keeps the text. The standalone validation APK includes the same service and overlay source as Avenire.
 It has no launcher Activity; enable its accessibility service and use the physical key.
-The production plugin also adds no Activity and removes legacy probe/entry Activities on
-incremental prebuilds. Back and Close return the screenshot to the original display bounds over 200 ms while the
+The production plugin adds only a windowless assistant/shortcut entry Activity and removes legacy probe Activities on incremental prebuilds. Back and Close return the screenshot to the original display bounds over 200 ms while the
 composer fades down, then remove the window. Reduced motion removes it immediately.
 Interrupting, unbinding or destroying the service removes it immediately as well.
 
 ## Phone setup and restore
 
-Enable **Avenire Essential Key** under Settings → Accessibility → Downloaded apps. Use one
+Enable **Avenire Ava** under Settings → Accessibility → Downloaded apps. Use one
 listener at a time (standalone preview or integrated Avenire). The service filters only scan
 code 250, not all Android `KEYCODE_UNKNOWN` keys. Its accessibility description explicitly
 discloses the new screenshot capability; re-enable the service after updating if Android
@@ -139,7 +187,7 @@ pnpm exec vp test run apps/mobile/src/features/native-screen/results.test.ts pac
 
 # Optional real-device fixture tests (never included in the Expo plugin or normal probe):
 AVENIRE_PROBE_TESTS=1 ./apps/mobile/native/essential-key/build-probe.sh
-# Install using the device panel, enable the probe accessibility listener, then:
+# Install using the device panel, enable the probe accessibility listener, open a permitted study app, then:
 adb shell am broadcast -n com.thedamod.avenire.keyprobe/com.thedamod.avenire.essentialkey.NativeAnnotationTestReceiver --ez back true
 # Remove the synthetic fixture, then reinstall the ordinary probe to remove the test receiver:
 adb shell am broadcast -n com.thedamod.avenire.keyprobe/com.thedamod.avenire.essentialkey.NativeAnnotationTestReceiver --ez clear true
@@ -149,6 +197,21 @@ Android UiAutomation may suppress enabled accessibility services. Release the cu
 snapshot helper before a physical-key test and inspect logs (`AvenireEssentialKey`) and
 screenshots without reconnecting snapshot instrumentation.
 
+Additional validation:
+
+```sh
+node apps/mobile/native/essential-key/generate-policy.cjs /tmp/ava-policy
+javac -d /tmp/ava-policy /tmp/ava-policy/AndroidScreenPolicy.java apps/mobile/native/essential-key/tests/AndroidScreenPolicyTest.java
+java -cp /tmp/ava-policy com.thedamod.avenire.essentialkey.AndroidScreenPolicyTest
+```
+
+Hardware validation is still required for assistant role eligibility, OEM power/Home
+assignment, widget pinning, screen metadata and accessibility shortcuts on each phone.
+Nothing's hardware listener does not establish support for other manufacturers' keys.
+
 References:
+- [Android application sandbox](https://source.android.com/docs/security/app-sandbox)
+- [Android assistant role](https://developer.android.com/reference/android/app/role/RoleManager#ROLE_ASSISTANT)
+- [Android shared payloads](https://developer.android.com/training/sharing/receive)
 - [Android screenshot API and secure-window errors](https://developer.android.com/reference/android/accessibilityservice/AccessibilityService#takeScreenshot(int,%20java.util.concurrent.Executor,%20android.accessibilityservice.AccessibilityService.TakeScreenshotCallback))
 - [General Nothing key-filtering approach](https://github.com/KoukeNeko/EssentialKeyTools)

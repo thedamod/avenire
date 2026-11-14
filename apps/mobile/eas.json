@@ -22,6 +22,12 @@
         "AVENIRE_ESSENTIAL_KEY": "1",
         "EXPO_PUBLIC_API_URL": "http://100.75.95.125:3001"
       }
+    },
+    "internal-android-ava": {
+      "extends": "internal",
+      "env": {
+        "AVENIRE_ANDROID_AVA": "1"
+      }
     }
   }
 }
