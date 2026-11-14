@@ -29,12 +29,25 @@ export function annotationText(result: NativeAnnotationResult): string {
 
 /** The dock is a glanceable answer; server-owned history remains complete. */
 export function lastParagraph(text: string): string {
-  return (
-    text
-      .trim()
-      .split(/\r?\n[ \t]*\r?\n+/)
-      .filter((paragraph) => paragraph.trim())
-      .at(-1)
-      ?.trim() ?? ""
-  );
+  const chunks: string[] = [];
+  let current: string[] = [];
+  let fence: { marker: string; length: number } | undefined;
+  for (const line of text.trim().split(/\r?\n/)) {
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (match) {
+      if (!fence) fence = { marker: match[1]![0]!, length: match[1]!.length };
+      else if (
+        match[1]![0] === fence.marker &&
+        match[1]!.length >= fence.length &&
+        !match[2]!.trim()
+      )
+        fence = undefined;
+    }
+    if (!line.trim() && !fence) {
+      if (current.length) chunks.push(current.join("\n").trim());
+      current = [];
+    } else current.push(line);
+  }
+  if (current.length) chunks.push(current.join("\n").trim());
+  return chunks.at(-1) ?? "";
 }

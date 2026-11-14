@@ -54,7 +54,12 @@ Send stays inside the overlay. An opt-in `AvaTaskService` runs authenticated Hea
 using the same mobile RPC and AI SDK streaming transport without starting an Activity. A
 compact 96 dp answer above the composer streams only the latest paragraph; follow-ups reuse
 the same server-owned thread. The native view replaces the previous answer on Send; complete conversation history remains on the server. Closing Ava aborts the active stream.
-Sign-in/network errors appear in place. The standalone probe cannot send chat requests.
+Sign-in/network errors appear in place. The latest answer renders native CommonMark spans:
+bold, italics, headings, lists, quotes, inline/fenced code, and web links. Code uses Geist Mono;
+ordinary text retains Geist. Fenced code stays together when selecting the latest chunk.
+Web links open only after a tap and dismiss Ava; other URI schemes are ignored. The Markdown
+dependency and fonts are covered by the same native build flag. The standalone probe cannot
+send chat requests.
 
 The registered `AvenireScreen` module retrieves the matching image only after checking
 **Share screen with Ava** in Settings → Capture. The server independently checks the setting

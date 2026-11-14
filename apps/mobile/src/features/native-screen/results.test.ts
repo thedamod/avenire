@@ -96,3 +96,11 @@ it("preserves an independently positioned callout and rejects invalid positions"
     ]),
   ).toEqual([]);
 });
+
+it("keeps a fenced code block intact when selecting the latest Markdown chunk", () => {
+  expect(lastParagraph("Earlier.\n\n```ts\nconst x = 1;\n\nreturn x;\n```")).toBe(
+    "```ts\nconst x = 1;\n\nreturn x;\n```",
+  );
+  expect(lastParagraph("Earlier.\n\n~~~js\nlet x = 1;\n\nx")).toBe("~~~js\nlet x = 1;\n\nx");
+  expect(lastParagraph("```\ncode\n```\n\nFinal **answer**.")).toBe("Final **answer**.");
+});

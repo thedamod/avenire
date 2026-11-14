@@ -65,6 +65,7 @@ test("incremental prebuild removes native sources/resources when disabled", asyn
     await fs.readFile(path.join(main, "res/font/avenire_geist.ttf")),
     await fs.readFile(path.join(projectRoot, "assets/fonts/Geist-Variable.ttf")),
   );
+  await fs.access(path.join(main, "res/font/avenire_geist_mono.ttf"));
   assert.match(xml, /canRetrieveWindowContent="false"/);
   assert.match(xml, /canTakeScreenshot="true"/);
   await plugin({ name: "A", slug: "a" }, { enabled: false }).mods.android.dangerous(request);
@@ -75,6 +76,9 @@ test("incremental prebuild removes native sources/resources when disabled", asyn
     code: "ENOENT",
   });
   await assert.rejects(fs.access(path.join(main, "res/font/avenire_geist.ttf")), {
+    code: "ENOENT",
+  });
+  await assert.rejects(fs.access(path.join(main, "res/font/avenire_geist_mono.ttf")), {
     code: "ENOENT",
   });
   assert.equal(await fs.readFile(path.join(main, "res/values/strings.xml"), "utf8"), "unrelated");
@@ -97,4 +101,20 @@ test("MainApplication bridge registration is opt-in, repeatable and removed when
     assert.doesNotMatch(off, /AvenireScreenPackage/);
     assert.match(off, /OtherPackage/);
   }
+});
+
+test("Markdown dependency is opt-in, idempotent and removed without changing other dependencies", async () => {
+  const apply = async (enabled, contents) => {
+    const config = plugin({ name: "A", slug: "a" }, { enabled });
+    return (
+      await config.mods.android.appBuildGradle({ modResults: { contents, language: "groovy" } })
+    ).modResults.contents;
+  };
+  const original = 'dependencies { implementation("example:other:1") }\n';
+  const enabled = await apply(true, original);
+  assert.equal((enabled.match(/io.noties.markwon:core/g) ?? []).length, 1);
+  assert.equal((await apply(true, enabled)).match(/io.noties.markwon:core/g)?.length, 1);
+  const disabled = await apply(false, enabled);
+  assert.doesNotMatch(disabled, /markwon/);
+  assert.match(disabled, /example:other:1/);
 });

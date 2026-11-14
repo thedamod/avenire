@@ -2,6 +2,7 @@ const {
   withAndroidManifest,
   withDangerousMod,
   withMainApplication,
+  withAppBuildGradle,
 } = require("expo/config-plugins");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -87,6 +88,17 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
     config.modResults.contents = code;
     return config;
   });
+  config = withAppBuildGradle(config, (config) => {
+    let code = config.modResults.contents.replace(
+      /\n?\/\/ avenire-markdown:start[\s\S]*?\/\/ avenire-markdown:end\n?/g,
+      "",
+    );
+    if (enabled)
+      code +=
+        '\n// avenire-markdown:start\ndependencies {\n    implementation("io.noties.markwon:core:4.6.2")\n}\n// avenire-markdown:end\n';
+    config.modResults.contents = code;
+    return config;
+  });
   return withDangerousMod(config, [
     "android",
     async (config) => {
@@ -101,6 +113,7 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
         "raw/essential_key_keep.xml",
         "values/essential_key_tokens.xml",
         "font/avenire_geist.ttf",
+        "font/avenire_geist_mono.ttf",
       ];
       await fs.rm(java, { recursive: true, force: true });
       await Promise.all(

@@ -46,6 +46,7 @@ final class AvaOverlay extends ContextThemeWrapper {
     private boolean hapticPending;
     private View reveal;
     private Typeface geist;
+    private OverlayMarkdown markdown;
 
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private int resource(String name, String type) { return getResources().getIdentifier(name, type, getPackageName()); }
@@ -56,6 +57,8 @@ final class AvaOverlay extends ContextThemeWrapper {
         backCallback = android.os.Build.VERSION.SDK_INT >= 33 ? this::dismiss : null;
         this.onDismiss = onDismiss;
         geist = getResources().getFont(resource("avenire_geist", "font"));
+        markdown = new OverlayMarkdown(this, color("accent"), color("fg"), color("surface"));
+        markdown.onOpenLink(this::dismiss);
         showPrompt(new Intent().putExtra("eventId", eventId).putExtra("mode", mode)
             .putExtra("preview", preview).putExtra("fromKey", true), true);
     }
@@ -283,7 +286,7 @@ final class AvaOverlay extends ContextThemeWrapper {
     void updateResponse(String text, boolean done) {
         if (response == null) return;
         boolean bottom = !transcript.canScrollVertically(1);
-        response.setText("Ava\n" + text);
+        markdown.set(response, text);
         if (bottom) transcript.post(() -> transcript.fullScroll(View.FOCUS_DOWN));
         if (done) { busy = false; sendControl.setEnabled(!input.getText().toString().trim().isEmpty()); sendControl.setAlpha(sendControl.isEnabled() ? 1f : 0.4f); }
     }

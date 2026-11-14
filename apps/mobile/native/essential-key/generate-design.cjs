@@ -33,6 +33,13 @@ module.exports = async function generateDesign(projectRoot, res) {
     path.join(projectRoot, "assets/fonts/Geist-Variable.ttf"),
     path.join(res, "font/avenire_geist.ttf"),
   );
+  await fs.copyFile(
+    path.join(
+      projectRoot,
+      "node_modules/@expo-google-fonts/geist-mono/400Regular/GeistMono_400Regular.ttf",
+    ),
+    path.join(res, "font/avenire_geist_mono.ttf"),
+  );
 };
 if (require.main === module)
   module.exports(path.resolve(__dirname, "../.."), process.argv[2]).catch((error) => {

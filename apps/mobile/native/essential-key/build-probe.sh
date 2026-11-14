@@ -8,6 +8,8 @@ android_jar="$sdk/platforms/android-36/android.jar"
 output="${1:-/tmp/avenire-essential-key}"
 mkdir -p "$output"
 output="$(cd "$output" && pwd)"
+markdown_classpath="$("$source_dir/markdown-dependencies.sh" "$output/markdown")"
+IFS=":" read -r -a markdown_jars <<< "$markdown_classpath"
 rm -rf "$output/classes" "$output/dex" "$output/resources"
 mkdir -p "$output/classes" "$output/dex"
 cp -R "$source_dir/res" "$output/resources"
@@ -18,16 +20,16 @@ if [[ "${AVENIRE_PROBE_TESTS:-0}" == "1" ]]; then
   python - "$output/AndroidManifest.xml" <<'PYTEST'
 import sys
 p = sys.argv[1]
-s = open(p).read().replace('</application>', '<receiver android:name="com.thedamod.avenire.essentialkey.NativeAnnotationTestReceiver" android:exported="true" android:permission="android.permission.DUMP" /></application>')
+s = open(p).read().replace('</application>', '<receiver android:name="com.thedamod.avenire.essentialkey.NativeAnnotationTestReceiver" android:exported="true" android:permission="android.permission.DUMP" /><receiver android:name="com.thedamod.avenire.essentialkey.MarkdownTestReceiver" android:exported="true" android:permission="android.permission.DUMP" /></application>')
 open(p, 'w').write(s)
 PYTEST
 fi
 "$build_tools/aapt2" link -o "$output/unsigned.apk" -I "$android_jar" --manifest "$output/AndroidManifest.xml" "$output/resources.zip"
 mapfile -t sources < <(find "$source_dir/src" -name '*.java' ! -name 'AvenireScreenModule.java' ! -name 'AvenireScreenPackage.java' ! -name 'AvaTaskService.java')
-if [[ "${AVENIRE_PROBE_TESTS:-0}" == "1" ]]; then sources+=("$source_dir/tests/android/NativeAnnotationTestReceiver.java"); fi
-javac --release 8 -classpath "$android_jar" -d "$output/classes" "${sources[@]}"
+if [[ "${AVENIRE_PROBE_TESTS:-0}" == "1" ]]; then sources+=("$source_dir/tests/android/NativeAnnotationTestReceiver.java" "$source_dir/tests/android/MarkdownTestReceiver.java"); fi
+javac --release 8 -classpath "$android_jar:$markdown_classpath" -d "$output/classes" "${sources[@]}"
 mapfile -t classes < <(find "$output/classes" -name '*.class')
-"$build_tools/d8" --lib "$android_jar" --min-api 31 --output "$output/dex" "${classes[@]}"
+"$build_tools/d8" --lib "$android_jar" --min-api 31 --output "$output/dex" "${classes[@]}" "${markdown_jars[@]}"
 (cd "$output/dex" && zip -q "$output/unsigned.apk" classes.dex)
 "$build_tools/zipalign" -f 4 "$output/unsigned.apk" "$output/aligned.apk"
 if [[ ! -f "$output/debug.keystore" ]]; then
