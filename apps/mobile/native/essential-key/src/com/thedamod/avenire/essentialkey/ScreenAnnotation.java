@@ -11,11 +11,16 @@ import java.util.List;
 final class ScreenAnnotation {
     final String id, kind, text, color;
     final float x, y, width, height;
+    final Float labelX, labelY;
     private ScreenAnnotation(JSONObject item) throws JSONException {
         id = string(item, "id", 100, false); kind = string(item, "kind", 20, false);
         if (!kind.equals("rect") && !kind.equals("arrow") && !kind.equals("label") && !kind.equals("cursor")) throw new JSONException("Unknown annotation kind");
         x = number(item, "x", false); y = number(item, "y", false);
         width = number(item, "width", true); height = number(item, "height", true);
+        if (item.has("labelPosition")) {
+            JSONObject position = item.getJSONObject("labelPosition");
+            labelX = number(position, "x", false); labelY = number(position, "y", false);
+        } else { labelX = null; labelY = null; }
         text = string(item, "text", 512, true); color = string(item, "color", 9, true);
         if (!color.isEmpty() && !color.matches("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?")) throw new JSONException("Invalid annotation color");
     }

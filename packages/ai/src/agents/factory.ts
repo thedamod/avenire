@@ -5,7 +5,7 @@ import type { RuthModels, RuthModelName } from "../models/index.ts";
 import { RUTH_DEFAULT_MODEL } from "../models/index.ts";
 import { createImageTransport } from "../tools/images.ts";
 import { coordinateContract } from "../tools/computer.ts";
-import { RUTH_PROMPT } from "../prompts/ruth.ts";
+import { RUTH_PROMPT, type RuthPromptOptions } from "../prompts/ruth.ts";
 import { RUTH_CLOUD_PROMPT } from "../prompts/cloud.ts";
 import { previewRepairPolicy } from "./preview-repair.ts";
 
@@ -14,6 +14,8 @@ export const createAgent = (options: {
   models: RuthModels["Service"];
   name?: RuthModelName;
   fullAccess?: boolean;
+  page?: RuthPromptOptions["page"];
+  screen?: RuthPromptOptions["screen"];
   bindTools: (
     images: ReturnType<typeof createImageTransport>,
     profile: import("@avenire/cloud/screen").ScreenProfile,
@@ -24,7 +26,7 @@ export const createAgent = (options: {
   const profile = capabilities.screenProfile ?? SCREEN_PROFILES[0];
   const images = createImageTransport(capabilities, options.models.maxImages);
   const bound = options.bindTools(images, profile);
-  const system = `${options.kind === "ruth" ? RUTH_PROMPT({ fullAccess: options.fullAccess }) : RUTH_CLOUD_PROMPT()}\n\n${coordinateContract(profile)}`;
+  const system = `${options.kind === "ruth" ? RUTH_PROMPT({ page: options.page, screen: options.screen, fullAccess: options.fullAccess }) : RUTH_CLOUD_PROMPT()}\n\n${coordinateContract(profile)}`;
   const repair = previewRepairPolicy({
     tools: bound.tools,
     system,

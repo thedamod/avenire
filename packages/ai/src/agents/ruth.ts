@@ -177,6 +177,8 @@ export const createRuthAgent = (options: {
     models: options.models,
     name: options.fast === true ? RUTH_FAST_MODEL : RUTH_DEFAULT_MODEL,
     fullAccess: options.fullAccess,
+    page: options.turn.page,
+    screen: options.turn.nativeScreenSize,
     bindTools: (images, profile) =>
       createRuthTools(
         options.services,
@@ -344,6 +346,9 @@ const makeRuth = Effect.gen(function* () {
         nativeScreenAvailable: input.nativeScreenAvailable,
         nativeAnnotationAvailable: input.nativeAnnotationAvailable,
         nativeScreenCapturedAt: input.screenContext?.capturedAt,
+        nativeScreenSize: input.screenContext
+          ? { width: input.screenContext.width, height: input.screenContext.height }
+          : undefined,
         nativeCursor: input.screenContext?.cursor,
         nativePresentation: input.screenContext?.presentation,
         fullAccess: thread.fullAccess,

@@ -11,6 +11,13 @@ export const DesktopOverlayAnnotation = Schema.Struct({
   y: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
   width: Schema.optional(Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),
   height: Schema.optional(Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),
+  /** Optional callout top-left, independent of the target anchor. */
+  labelPosition: Schema.optional(
+    Schema.Struct({
+      x: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+      y: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+    }),
+  ),
   text: Schema.optional(Schema.String.check(Schema.isMaxLength(512))),
   color: Schema.optional(Schema.String.check(Schema.isPattern(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i))),
 });

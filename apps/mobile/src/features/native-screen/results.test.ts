@@ -74,3 +74,25 @@ it("shows only the latest paragraph while retaining a streaming partial paragrap
   expect(lastParagraph("Answer.\n\n")).toBe("Answer.");
   expect(lastParagraph("   ")).toBe("");
 });
+
+it("preserves an independently positioned callout and rejects invalid positions", () => {
+  const output = { ...result, items: [{ ...result.items[0], labelPosition: { x: 0.05, y: 0.8 } }] };
+  expect(
+    annotationResults([{ parts: [{ ...part, output }] }])[0]?.result.items[0]?.labelPosition,
+  ).toEqual({ x: 0.05, y: 0.8 });
+  expect(
+    annotationResults([
+      {
+        parts: [
+          {
+            ...part,
+            output: {
+              ...output,
+              items: [{ ...output.items[0], labelPosition: { x: -0.1, y: 0.8 } }],
+            },
+          },
+        ],
+      },
+    ]),
+  ).toEqual([]);
+});

@@ -38,6 +38,9 @@ export interface RuthTurn {
   readonly nativeScreenAvailable?: boolean | undefined;
   readonly nativeAnnotationAvailable?: boolean | undefined;
   readonly nativeScreenCapturedAt?: string | undefined;
+  readonly nativeScreenSize?:
+    | Pick<import("@avenire/contracts").DesktopScreenObservation, "width" | "height">
+    | undefined;
   readonly nativeCursor?: import("@avenire/contracts").DesktopCursorPosition | undefined;
   readonly nativePresentation?:
     | import("@avenire/contracts").DesktopPresentationObservation

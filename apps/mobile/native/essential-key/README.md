@@ -63,7 +63,12 @@ request-only model context, excluded from saved message/history parts; large ima
 scaled for the shared wire limit while the local preview retains its original resolution.
 
 Ruth can return the same `native_annotate` result used by desktop Qt: cursor/label bubbles,
-rectangles and arrows, at normalized screenshot coordinates. A native Canvas renderer applies
+rectangles and arrows, at normalized screenshot coordinates. The current platform, viewport
+width and capture size are passed into Ruth’s prompt. Shared layout guidance allows labels
+away from targets with leader arrows. The mobile renderer sizes callouts to their content,
+keeps an 8 dp gap between boxes, reserves target points, and honors independent
+`labelPosition` hints. If no free position remains it omits that text box rather than
+covering another label; target markers remain. A native Canvas renderer applies
 validated completed results to the frozen image inside Ava's gradient frame. Empty item sets
 clear the annotations. Partial tool streams never draw. The client preserves full explanatory
 text as a fallback when native presentation fails. This also works for a screenshot of a PDF;
