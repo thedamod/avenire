@@ -25,23 +25,38 @@ final class ScreenPreview extends View {
         if (available) bitmap = BitmapFactory.decodeFile(new File(context.getCacheDir(), "ava-preview.png").getPath());
         setContentDescription(bitmap != null ? "Screen preview. Image is not sent to Ava yet." : "Screen preview unavailable. You can still type a prompt.");
     }
-    void revealFromScreen() {
-        if (bitmap == null || getWidth() == 0 || getHeight() == 0) return;
+    private float[] fullScreenTransform() {
+        if (bitmap == null || getWidth() == 0 || getHeight() == 0) return null;
         float inset = 2*getResources().getDisplayMetrics().density;
         float scale = Math.min((getWidth()-2*inset)/bitmap.getWidth(), (getHeight()-2*inset)/bitmap.getHeight());
-        float frameWidth = bitmap.getWidth()*scale, frameHeight = bitmap.getHeight()*scale;
         android.graphics.Point size = new android.graphics.Point();
         getContext().getSystemService(android.hardware.display.DisplayManager.class)
             .getDisplay(android.view.Display.DEFAULT_DISPLAY).getRealSize(size);
-        android.graphics.Rect screen = new android.graphics.Rect(0, 0, size.x, size.y);
-        int[] position = new int[2]; getLocationOnScreen(position);
-        // The first frame is exactly the original display rectangle, not a dock-like slide.
+        int[] position = new int[2];
+        ((View)getParent()).getLocationOnScreen(position);
+        // Use layout coordinates so interrupting an in-flight transform does not move the target.
+        float centerX = position[0] + getLeft() + getWidth()/2f;
+        float centerY = position[1] + getTop() + getHeight()/2f;
+        return new float[]{size.x/(bitmap.getWidth()*scale), size.y/(bitmap.getHeight()*scale), size.x/2f-centerX, size.y/2f-centerY};
+    }
+    void revealFromScreen() {
+        float[] target = fullScreenTransform();
+        if (target == null) return;
         setPivotX(getWidth()/2f); setPivotY(getHeight()/2f);
-        setScaleX(screen.width()/frameWidth); setScaleY(screen.height()/frameHeight);
-        setTranslationX(screen.exactCenterX() - position[0] - getWidth()/2f);
-        setTranslationY(screen.exactCenterY() - position[1] - getHeight()/2f);
+        setScaleX(target[0]); setScaleY(target[1]); setTranslationX(target[2]); setTranslationY(target[3]);
+        settleIntoFrame();
+    }
+    void settleIntoFrame() {
+        animate().cancel();
         animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f).setDuration(250)
             .setInterpolator(new android.view.animation.PathInterpolator(0.23f, 1f, 0.32f, 1f)).start();
+    }
+    void expandToScreen(Runnable finished) {
+        float[] target = fullScreenTransform();
+        if (target == null) { finished.run(); return; }
+        animate().cancel();
+        animate().scaleX(target[0]).scaleY(target[1]).translationX(target[2]).translationY(target[3]).setDuration(200)
+            .setInterpolator(new android.view.animation.PathInterpolator(0.4f, 0f, 1f, 1f)).withEndAction(finished).start();
     }
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);

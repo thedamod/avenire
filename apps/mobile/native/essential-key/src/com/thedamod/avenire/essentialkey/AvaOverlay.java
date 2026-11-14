@@ -28,6 +28,10 @@ final class AvaOverlay extends ContextThemeWrapper {
     private final Runnable onDismiss;
     private LinearLayout root;
     private boolean attached;
+    private boolean closing;
+    private ScreenPreview preview;
+    private android.window.OnBackInvokedDispatcher backDispatcher;
+    private final android.window.OnBackInvokedCallback backCallback = this::dismiss;
     private String mode;
     private View composer;
     private View sendControl;
@@ -64,8 +68,17 @@ final class AvaOverlay extends ContextThemeWrapper {
         windows.addView(root, params);
         attached = true;
         root.requestFocus(); root.requestApplyInsets(); root.post(this::confirmOpen);
+        if (android.os.Build.VERSION.SDK_INT >= 33) root.post(() -> {
+            backDispatcher = root.findOnBackInvokedDispatcher();
+            if (backDispatcher != null) backDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
+        });
     }
     void updateMode(String mode) {
+        if (closing) {
+            closing = false; composer.animate().cancel();
+            composer.animate().alpha(1f).translationY(0f).setDuration(150).start();
+            preview.settleIntoFrame();
+        }
         this.mode = mode;
         input.setHint("dock".equals(mode) ? "Ask Ava…" : "Add a note…");
         sendControl.setEnabled("popover".equals(mode) || !input.getText().toString().trim().isEmpty());
@@ -77,10 +90,20 @@ final class AvaOverlay extends ContextThemeWrapper {
         hapticPending = true; confirmOpen();
     }
     void dismiss() {
-        if (!attached) return;
-        saveDraft();
+        if (!attached || closing) return;
+        saveDraft(); closing = true;
         getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(root.getWindowToken(), 0);
-        attached = false;
+        if (!android.animation.ValueAnimator.areAnimatorsEnabled()) { dispose(); return; }
+        composer.animate().cancel();
+        composer.animate().alpha(0f).translationY(dp(16)).setDuration(150).start();
+        preview.expandToScreen(() -> { if (closing) dispose(); });
+    }
+    void dispose() {
+        if (!attached) return;
+        saveDraft(); attached = false; closing = false;
+        composer.animate().cancel(); preview.animate().cancel();
+        if (android.os.Build.VERSION.SDK_INT >= 33 && backDispatcher != null) backDispatcher.unregisterOnBackInvokedCallback(backCallback);
+        getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(root.getWindowToken(), 0);
         windows.removeViewImmediate(root);
         onDismiss.run();
     }
@@ -118,6 +141,7 @@ final class AvaOverlay extends ContextThemeWrapper {
         int[] gradient = {color("accent"), color("green"), color("amber"), color("accent")};
         boolean hasPreview = intent.getBooleanExtra("preview", false);
         ScreenPreview preview = new ScreenPreview(this, hasPreview, gradient);
+        this.preview = preview;
         LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(-1, 0, 1);
         previewParams.bottomMargin = dp(12);
         root.addView(preview, previewParams);

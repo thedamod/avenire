@@ -101,7 +101,7 @@ public final class EssentialKeyService extends AccessibilityService {
         if (capturePending) overlay.requestCapture();
         capturePending = false;
     }
-    private void dismissOverlay() { if (overlay != null) overlay.dismiss(); }
+    private void dismissOverlay() { if (overlay != null) overlay.dispose(); }
     private void reset() { handler.removeCallbacks(hold); gesture.reset(); }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {}
     @Override public void onInterrupt() { dismissOverlay(); reset(); request++; opening = false; capturePending = false; }
