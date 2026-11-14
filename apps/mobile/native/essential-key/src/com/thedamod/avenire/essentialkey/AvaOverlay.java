@@ -262,8 +262,7 @@ final class AvaOverlay extends ContextThemeWrapper {
         }
         saveDraft();
         android.util.Log.i("AvenireEssentialKey", "capture.requested eventId=" + eventId);
-        // Integration hook only: never claim a file was saved or uploaded.
-        android.widget.Toast.makeText(this, "Capture is not configured yet.", android.widget.Toast.LENGTH_SHORT).show();
+        ((EssentialKeyService)getBaseContext()).commitCapture(eventId,input.getText().toString());
         if (reveal != null) reveal.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
     }
     private void send() {

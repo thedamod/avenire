@@ -16,9 +16,11 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
     const app = config.modResults.manifest.application[0];
     app.service = (app.service ?? []).filter(
       (s) =>
-        ![`${namespace}.EssentialKeyService`, `${namespace}.AvaTaskService`].includes(
-          s.$["android:name"],
-        ),
+        ![
+          `${namespace}.EssentialKeyService`,
+          `${namespace}.AvaTaskService`,
+          `${namespace}.CaptureJobService`,
+        ].includes(s.$["android:name"]),
     );
     app.activity = (app.activity ?? []).filter(
       (a) => !ownedActivities.some((name) => a.$["android:name"] === `${namespace}.${name}`),
@@ -109,6 +111,25 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
       config.modResults.manifest["uses-permission"].push({
         $: { "android:name": "android.permission.WAKE_LOCK" },
       });
+    app.service.push({
+      $: {
+        "android:name": `${namespace}.CaptureJobService`,
+        "android:permission": "android.permission.BIND_JOB_SERVICE",
+        "android:exported": "true",
+        "android:enabled": "@bool/ava_supported",
+      },
+    });
+    for (const permission of [
+      "android.permission.RECEIVE_BOOT_COMPLETED",
+      "android.permission.ACCESS_NETWORK_STATE",
+    ]) {
+      if (
+        !config.modResults.manifest["uses-permission"].some(
+          (p) => p.$["android:name"] === permission,
+        )
+      )
+        config.modResults.manifest["uses-permission"].push({ $: { "android:name": permission } });
+    }
     app.service.push({
       $: {
         "android:name": `${namespace}.AvaTaskService`,

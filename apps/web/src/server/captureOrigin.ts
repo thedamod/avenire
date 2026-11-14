@@ -15,18 +15,20 @@ export const captureCitationUrl = (origin: CaptureOrigin): string | null => {
 };
 
 export const normalizeCaptureOrigin = (origin: CaptureOrigin): CaptureOrigin =>
-  origin._tag === "LocalFile"
-    ? origin.originUrl === undefined
-      ? origin
-      : { ...origin, originUrl: normalizeUrl(origin.originUrl) }
-    : {
-        ...origin,
-        url: normalizeUrl(origin.url),
-        ...(origin.finalUrl === undefined ? {} : { finalUrl: normalizeUrl(origin.finalUrl) }),
-        ...(origin.canonicalUrl === undefined
-          ? {}
-          : { canonicalUrl: normalizeUrl(origin.canonicalUrl) }),
-      };
+  origin._tag === "Screen"
+    ? { ...origin, ...(origin.url ? { url: normalizeUrl(origin.url) } : {}) }
+    : origin._tag === "LocalFile"
+      ? origin.originUrl === undefined
+        ? origin
+        : { ...origin, originUrl: normalizeUrl(origin.originUrl) }
+      : {
+          ...origin,
+          url: normalizeUrl(origin.url),
+          ...(origin.finalUrl === undefined ? {} : { finalUrl: normalizeUrl(origin.finalUrl) }),
+          ...(origin.canonicalUrl === undefined
+            ? {}
+            : { canonicalUrl: normalizeUrl(origin.canonicalUrl) }),
+        };
 
 /**
  * A recapture that un-archives files puts their chunks back in the active corpus. Only then do

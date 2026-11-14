@@ -264,6 +264,9 @@ importers:
       '@avenire/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@avenire/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       '@better-auth/expo':
         specifier: 1.7.10
         version: 1.7.10(0e76d83aaaf3b8e625afcae2698d822b)

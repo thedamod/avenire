@@ -422,12 +422,12 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
               </Group>
               <Group
                 title="Capture"
-                foot="Capture on your computer syncs here. Android shortcuts open Ava over the current app. Browser screens, excluded apps and ambiguous windows stay out of previews and AI screen sharing."
+                foot="Capture on your computer syncs here. Android shortcuts open Ava over the current app. Private browser tabs, excluded apps and ambiguous windows stay out of previews and AI screen sharing."
               >
                 <Row
                   first
                   title="Share screen with Ava"
-                  subtitle="Off by default. Enable to share your screen with Ava for explanations and annotations. This can include personal or sensitive content. Permitted previews stay local until you submit a prompt. Turning off stops AI screen sharing and clears the active screen context; chat answers remain."
+                  subtitle="Off by default. Enable to share your screen with Ava for explanations and annotations. This can include personal or sensitive content. Previews stay local until you send a prompt or explicitly save a capture. This switch controls screen context in chat; saved captures are processed as library sources. Turning off stops AI screen sharing and clears the active screen context; chat answers remain."
                   trailing={toggle(
                     "Share screen with Ava",
                     preferences.shareScreenWithAi === true,

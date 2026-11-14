@@ -9,6 +9,21 @@ export interface AndroidTriggerStatus {
   widget: boolean;
 }
 export interface NativeScreenBridge {
+  captureWork(owner: string): Promise<string | null>;
+  captureRead(id: string, owner: string): Promise<string>;
+  captureUpdate(id: string, owner: string, json: string): Promise<void>;
+  captureSend(
+    id: string,
+    owner: string,
+    url: string,
+    method: string,
+    headers: string,
+    fields: string,
+    origin: string,
+  ): Promise<string>;
+  captureCancelTransfer(id: string): Promise<void>;
+  captureFinished(): Promise<void>;
+  captureDefer(): Promise<void>;
   getTriggerStatus(): Promise<AndroidTriggerStatus>;
   configureTrigger(trigger: "accessibility" | "assistant" | "widget" | "gestures"): Promise<void>;
   setEssentialKey(enabled: boolean): Promise<void>;

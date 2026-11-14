@@ -27,6 +27,11 @@ public final class EssentialKeyService extends AccessibilityService {
     private boolean capturePending;
     private String pendingMode;
     private AvaOverlay overlay;
+    private CaptureReceipt receipt;
+    private long receiptCreated;
+    private String receiptId="";
+    private boolean committing;
+
     private volatile ScreenSource capturedSource;
     private final OverlayContext screen = new OverlayContext();
     static volatile EssentialKeyService live;
@@ -34,6 +39,8 @@ public final class EssentialKeyService extends AccessibilityService {
 
     @Override protected void onServiceConnected() {
         live = this;
+        CaptureJobs.schedule(this);
+        images.execute(() -> { try { org.json.JSONObject row=CaptureStore.latest(this); if(row!=null && !java.util.Arrays.asList("ready","partial","undone").contains(row.optString("phase"))) showCaptureReceipt(row); } catch(Exception error) { android.util.Log.w("AvenireCapture","Could not restore capture status",error); } });
         getAccessibilityButtonController().registerAccessibilityButtonCallback(
             new android.accessibilityservice.AccessibilityButtonController.AccessibilityButtonCallback() {
                 @Override public void onClicked(android.accessibilityservice.AccessibilityButtonController controller) { trigger("toggle", true); }
@@ -83,6 +90,7 @@ public final class EssentialKeyService extends AccessibilityService {
         final String eventId = Long.toString(SystemClock.elapsedRealtimeNanos());
         if (overlay != null) { overlay.updateMode(mode); return; }
         ScreenSession.clear(this);
+        if(receipt!=null) receipt.hide();
         screen.open();
         opening = true;
         capturedSource = withScreen ? ScreenSource.current(this) : null;
@@ -104,6 +112,9 @@ public final class EssentialKeyService extends AccessibilityService {
                             if (hardware == null) throw new IOException("No preview bitmap");
                             copy = hardware.copy(Bitmap.Config.ARGB_8888, false);
                             if (copy == null) throw new IOException("No preview copy");
+                            try (FileOutputStream original = new FileOutputStream(new File(getCacheDir(), "ava-original-" + eventId + ".png"))) {
+                                if (!copy.compress(Bitmap.CompressFormat.PNG, 100, original)) throw new IOException("Could not preserve screenshot.");
+                            }
                             float factor = Math.min(1f, 1600f / Math.max(copy.getWidth(), copy.getHeight()));
                             scaled = Bitmap.createScaledBitmap(copy, Math.max(1, Math.round(copy.getWidth()*factor)), Math.max(1, Math.round(copy.getHeight()*factor)), true);
                             try (FileOutputStream output = new FileOutputStream(new File(getCacheDir(), "ava-preview-" + eventId + ".png"))) {
@@ -119,13 +130,14 @@ public final class EssentialKeyService extends AccessibilityService {
                         }
                         final boolean available = ready;
                         handler.post(() -> {
+                            File original = new File(getCacheDir(), "ava-original-" + eventId + ".png");
                             File temporary = new File(getCacheDir(), "ava-preview-" + eventId + ".png");
                             if (id == request) {
                                 boolean permitted = source.matches(ScreenSource.current(EssentialKeyService.this));
-                                boolean saved = available && permitted && temporary.renameTo(new File(getCacheDir(), "ava-preview.png"));
-                                if (!saved) temporary.delete();
+                                boolean saved = available && permitted && original.renameTo(new File(getCacheDir(), "ava-original.png")) && temporary.renameTo(new File(getCacheDir(), "ava-preview.png"));
+                                if (!saved) { temporary.delete(); original.delete(); new File(getCacheDir(), "ava-original.png").delete(); }
                                 launch(eventId, saved);
-                            } else temporary.delete();
+                            } else { temporary.delete(); original.delete(); }
                         });
                     });
                 }
@@ -147,6 +159,32 @@ public final class EssentialKeyService extends AccessibilityService {
         if (capturePending) overlay.requestCapture();
         capturePending = false;
     }
+    void commitCapture(String session,String note) {
+        if(committing) return;
+        if(!screenAllowed(session)) { android.widget.Toast.makeText(this,"Private or protected screens cannot be captured.",android.widget.Toast.LENGTH_SHORT).show(); return; }
+        String owner=CaptureStore.owner(this); if(owner.isEmpty()) { android.widget.Toast.makeText(this,"Sign in to Avenire before capturing.",android.widget.Toast.LENGTH_LONG).show(); return; }
+        ScreenSource source=capturedSource; String capturedAt=ScreenSession.capturedAt(this);
+        committing=true;
+        images.execute(() -> {
+            try {
+                org.json.JSONObject origin=new org.json.JSONObject().put("_tag","Screen").put("appPackage",source.packageName).put("appName",source.label).put("capturedAt",capturedAt);
+                if(source.url!=null) origin.put("url",source.url);
+                if(note!=null && !note.trim().isEmpty()) origin.put("note",note.trim().substring(0,Math.min(note.trim().length(),5000)));
+                org.json.JSONObject row=CaptureStore.stage(this,owner,session,new java.io.FileInputStream(new File(getCacheDir(),"ava-original.png")),"Screen from "+source.label,"image/png","image",origin);
+                handler.post(() -> { committing=false; if(overlay!=null) overlay.dispose(); showCaptureReceipt(row); CaptureJobs.kick(this); });
+            } catch(Exception error) { handler.post(() -> { committing=false; android.widget.Toast.makeText(this,error.getMessage(),android.widget.Toast.LENGTH_LONG).show(); }); }
+        });
+    }
+    void showCaptureReceipt(org.json.JSONObject row) {
+        handler.post(() -> {
+            if(live!=this || !row.optString("owner").equals(CaptureStore.owner(this))) return;
+            if(row.optLong("created")<receiptCreated && !row.optString("id").equals(receiptId)) return;
+            receiptCreated=row.optLong("created"); receiptId=row.optString("id");
+            if(receipt==null) receipt=new CaptureReceipt(this); receipt.show(row);
+        });
+    }
+    void clearCaptureReceipt() { if(receipt!=null) receipt.hide(); receiptCreated=0; receiptId=""; }
+    void captureProgress(String id,int loaded,int total) { handler.post(() -> { if(receipt!=null) receipt.status(id,loaded,total); }); }
     void submit(String session, String question) throws Exception {
         Class<?> task;
         try { task = Class.forName("com.thedamod.avenire.essentialkey.AvaTaskService"); }
@@ -195,6 +233,6 @@ public final class EssentialKeyService extends AccessibilityService {
         clearSession();
     }
     @Override public void onInterrupt() { leaveScreen(); }
-    @Override public boolean onUnbind(Intent intent) { live = null; clearSession(); reset(); request++; opening = false; capturePending = false; return super.onUnbind(intent); }
-    @Override public void onDestroy() { live = null; clearSession(); reset(); request++; images.shutdown(); super.onDestroy(); }
+    @Override public boolean onUnbind(Intent intent) { if(receipt!=null) receipt.hide(); live = null; clearSession(); reset(); request++; opening = false; capturePending = false; return super.onUnbind(intent); }
+    @Override public void onDestroy() { if(receipt!=null) receipt.hide(); live = null; clearSession(); reset(); request++; images.shutdown(); super.onDestroy(); }
 }

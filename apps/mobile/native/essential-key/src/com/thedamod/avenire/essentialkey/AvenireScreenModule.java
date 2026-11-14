@@ -15,9 +15,25 @@ import org.json.JSONObject;
 /** App-private bridge. The server never connects to the device or receives a native command URL. */
 public final class AvenireScreenModule extends ReactContextBaseJavaModule {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final ExecutorService transfers = Executors.newFixedThreadPool(2);
     private final Handler main = new Handler(Looper.getMainLooper());
     AvenireScreenModule(ReactApplicationContext context) { super(context); }
     @Override public String getName() { return "AvenireScreen"; }
+    @ReactMethod public void captureWork(String owner,Promise promise) {
+        io.execute(() -> { try { org.json.JSONObject row=CaptureStore.claim(getReactApplicationContext(),owner); promise.resolve(row==null?null:row.toString()); } catch(Exception e) { promise.reject("CAPTURE_QUEUE",e.getMessage(),e); } });
+    }
+    @ReactMethod public void captureRead(String id,String owner,Promise promise) {
+        io.execute(() -> { try { promise.resolve(CaptureStore.get(getReactApplicationContext(),id,owner).toString()); } catch(Exception e) { promise.reject("CAPTURE_QUEUE",e.getMessage(),e); } });
+    }
+    @ReactMethod public void captureUpdate(String id,String owner,String json,Promise promise) {
+        io.execute(() -> { try { org.json.JSONObject row=CaptureStore.update(getReactApplicationContext(),id,owner,new org.json.JSONObject(json)); EssentialKeyService service=EssentialKeyService.live; if(service!=null) service.showCaptureReceipt(row); promise.resolve(null); } catch(Exception e) { promise.reject("CAPTURE_QUEUE",e.getMessage(),e); } });
+    }
+    @ReactMethod public void captureSend(String id,String owner,String url,String method,String headers,String fields,String origin,Promise promise) {
+        transfers.execute(() -> { try { promise.resolve(CaptureTransfer.send(getReactApplicationContext(),id,owner,url,method,new org.json.JSONObject(headers),new org.json.JSONObject(fields),origin).toString()); } catch(Exception e) { promise.reject("CAPTURE_TRANSFER",e.getMessage(),e); } });
+    }
+    @ReactMethod public void captureCancelTransfer(String id,Promise promise) { CaptureTransfer.cancel(id); promise.resolve(null); }
+    @ReactMethod public void captureDefer(Promise promise) { io.execute(() -> { try { CaptureStore.defer(getReactApplicationContext()); promise.resolve(null); } catch(Exception error) { promise.reject("CAPTURE_QUEUE",error.getMessage(),error); } }); }
+    @ReactMethod public void captureFinished(Promise promise) { main.post(() -> { if(!CaptureJobService.complete()) CaptureJobs.schedule(getReactApplicationContext()); promise.resolve(null); }); }
     @ReactMethod public void getTriggerStatus(Promise promise) {
         main.post(() -> {
             android.app.role.RoleManager roles = getReactApplicationContext().getSystemService(android.app.role.RoleManager.class);
@@ -63,8 +79,8 @@ public final class AvenireScreenModule extends ReactContextBaseJavaModule {
     @ReactMethod public void bindOwner(String owner, Promise promise) {
         main.post(() -> {
             String before = getReactApplicationContext().getSharedPreferences("ava-screen-session", 0).getString("owner", null);
-            if (before != null && !before.equals(owner) && EssentialKeyService.live != null) EssentialKeyService.live.clearSession();
-            ScreenSession.owner(getReactApplicationContext(), owner); promise.resolve(null);
+            if (before != null && !before.equals(owner) && EssentialKeyService.live != null) { EssentialKeyService.live.clearSession(); EssentialKeyService.live.clearCaptureReceipt(); }
+            ScreenSession.owner(getReactApplicationContext(), owner); CaptureJobs.schedule(getReactApplicationContext()); promise.resolve(null);
         });
     }
     @ReactMethod public void clearSession(Promise promise) {
@@ -109,5 +125,5 @@ public final class AvenireScreenModule extends ReactContextBaseJavaModule {
             promise.resolve(null);
         });
     }
-    @Override public void invalidate() { io.shutdownNow(); super.invalidate(); }
+    @Override public void invalidate() { io.shutdownNow(); transfers.shutdownNow(); super.invalidate(); }
 }

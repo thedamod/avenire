@@ -67,5 +67,6 @@ final class ScreenSession {
     static void clear(Context c) {
         prefs(c).edit().remove("id").remove("capturedAt").remove("created").putBoolean("available", false).apply();
         new File(c.getCacheDir(), "ava-preview.png").delete();
+        new File(c.getCacheDir(), "ava-original.png").delete();
     }
 }

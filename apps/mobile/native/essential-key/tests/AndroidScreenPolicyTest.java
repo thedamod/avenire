@@ -13,9 +13,13 @@ public final class AndroidScreenPolicyTest {
         deny("com.instagram.android", "Instagram", false, false, 1);
         deny("com.netflix.mediaclient", "Netflix", false, false, 1);
         deny("org.example.other", "Example Bank", false, false, 1);
-        deny("org.example.browser", "Unknown Browser", true, false, 1);
+        if (!AndroidScreenPolicy.allows("com.android.chrome", "Chrome", true, false, 1)) throw new AssertionError("Ordinary browser excluded");
+        if (!AndroidScreenPolicy.privateMarker("Incognito tab")) throw new AssertionError("Incognito marker missed");
+        if (AndroidScreenPolicy.permitsUrl("https://mail.google.com/mail")) throw new AssertionError("Email URL allowed");
+        if (AndroidScreenPolicy.permitsUrl("https://example.org/redirect?next=https%3A%2F%2Fmail.google.com%2Fmail")) throw new AssertionError("Blocked redirect allowed");
+        if (!AndroidScreenPolicy.permitsUrl("https://en.wikipedia.org/wiki/Entropy")) throw new AssertionError("Study URL excluded");
         deny("com.android.launcher", "Launcher", false, true, 1);
-        deny("org.chromium.webapk.generated", "Article", false, false, 1);
+
         deny(null, "Unknown", false, false, 1);
         deny("org.example.reader", "Reader", false, false, 0);
         deny("org.example.reader", "Reader", false, false, 2);

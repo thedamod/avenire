@@ -16,7 +16,7 @@ async function manifest(enabled, app = { $: {} }) {
 test("native opt-out removes services; enabled registers assistant entry and widget", async () => {
   assert.equal((await manifest(undefined)).service.length, 0);
   const app = await manifest(true);
-  assert.equal(app.service.length, 2);
+  assert.equal(app.service.length, 3);
   assert.equal(
     app.service.find((s) => s.$["android:name"].endsWith("EssentialKeyService")).$[
       "android:permission"
@@ -29,7 +29,7 @@ test("native opt-out removes services; enabled registers assistant entry and wid
   assert.equal(app.receiver.length, 1);
   assert.equal(app.receiver[0].$["android:exported"], "false");
   assert.equal((await manifest(true, app)).receiver.length, 1);
-  assert.equal((await manifest(true, app)).service.length, 2);
+  assert.equal((await manifest(true, app)).service.length, 3);
 });
 test("turning flag off removes owned manifest entries and retains unrelated components", async () => {
   const app = await manifest(true);

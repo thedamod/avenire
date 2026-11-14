@@ -13,6 +13,7 @@
     "@avenire/capture": "workspace:*",
     "@avenire/client-runtime": "workspace:*",
     "@avenire/contracts": "workspace:*",
+    "@avenire/storage": "workspace:*",
     "@better-auth/expo": "1.7.10",
     "@expo-google-fonts/geist-mono": "^0.4.3",
     "@expo/metro-runtime": "~57.0.17",

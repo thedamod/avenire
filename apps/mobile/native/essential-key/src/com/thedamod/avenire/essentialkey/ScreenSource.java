@@ -10,11 +10,13 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 import java.util.List;
 
-/** Reads package/window metadata only. Never walks text, URLs, form fields or view trees. */
+/** Reads package/window metadata only. Only browser toolbar metadata is inspected; page bodies and form fields stay unread. */
 final class ScreenSource {
     final String packageName;
     final int windowId;
-    private ScreenSource(String name, int id) { packageName = name; windowId = id; }
+    final String label;
+    final String url;
+    private ScreenSource(String name, int id, String label, String url) { packageName = name; windowId = id; this.label=label; this.url=url; }
     static ScreenSource current(AccessibilityService service) {
         if (service.getSystemService(KeyguardManager.class).isKeyguardLocked()) return null;
         List<AccessibilityWindowInfo> windows = service.getWindows();
@@ -39,20 +41,21 @@ final class ScreenSource {
         AccessibilityNodeInfo root = target.getRoot();
         if (root == null) return null;
         String name = root.getPackageName() == null ? "" : root.getPackageName().toString();
-        root.recycle();
         try {
             PackageManager pm = service.getPackageManager();
             ApplicationInfo app = pm.getApplicationInfo(name, 0);
             String label = pm.getApplicationLabel(app).toString();
-            boolean browser = pm.resolveActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com")).setPackage(name), 0) != null;
+            boolean browser = name.startsWith("org.chromium.webapk") || pm.resolveActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com")).setPackage(name), 0) != null;
             boolean home = pm.resolveActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(name), 0) != null;
             boolean sensitiveCategory = app.category == ApplicationInfo.CATEGORY_SOCIAL;
-            // Browsers fail closed: package metadata cannot establish URL, incognito or checkout policy.
+            BrowserSource page=browser?BrowserSource.inspect(root,target.getTitle()):null;
+            if(page!=null && (page.privateMode || page.url==null || !AndroidScreenPolicy.permitsUrl(page.url))) return null;
             boolean system = home || sensitiveCategory || name.equals(service.getPackageName())
                 || name.equals("com.android.systemui") || name.equals("com.android.settings")
                 || name.equals("com.google.android.permissioncontroller") || name.equals("com.android.permissioncontroller");
-            return AndroidScreenPolicy.allows(name, label, browser, system, count) ? new ScreenSource(name, target.getId()) : null;
+            return AndroidScreenPolicy.allows(name, label, browser, system, count) ? new ScreenSource(name, target.getId(),label,page==null?null:page.url) : null;
         } catch (PackageManager.NameNotFoundException | RuntimeException unavailable) { return null; }
+        finally { root.recycle(); }
     }
-    boolean matches(ScreenSource other) { return other != null && windowId == other.windowId && packageName.equals(other.packageName); }
+    boolean matches(ScreenSource other) { return other != null && windowId == other.windowId && packageName.equals(other.packageName) && java.util.Objects.equals(url,other.url); }
 }

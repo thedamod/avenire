@@ -36,7 +36,20 @@ export const extractImage = Effect.fn("extractImage")(function* (
       Effect.tapError((error) => Effect.logWarning("Image description failed", error)),
       Effect.option,
     );
+  const captureNote = source.origin?._tag === "Screen" ? source.origin.note?.trim() : undefined;
   if (Option.isNone(described)) {
+    if (captureNote)
+      return {
+        title: source.title,
+        sections: [{ text: `Capture note:\n${captureNote}`, kind: "other", location: {} }],
+        coverage: {
+          status: "partial",
+          parts: [
+            { part: "description", status: "none", detail: "Vision description failed" },
+            { part: "note", status: "full" },
+          ],
+        },
+      };
     return {
       title: source.title,
       sections: [],
@@ -44,16 +57,38 @@ export const extractImage = Effect.fn("extractImage")(function* (
     };
   }
   const { text, description } = described.value;
-  const content = [text.trim(), description.trim()].filter(Boolean).join("\n\n");
-  return content
-    ? {
-        title: source.title,
-        sections: [{ text: content, kind: "figure", location: {} }],
-        coverage: fullCoverage("description"),
-      }
-    : {
-        title: source.title,
-        sections: [],
-        coverage: noDescription("Nothing searchable in the image"),
-      };
+  const note = source.origin?._tag === "Screen" ? source.origin.note?.trim() : undefined;
+  const sections: ExtractedDocument["sections"] = [
+    ...(text.trim() ? [{ text: text.trim(), kind: "slide" as const, location: {} }] : []),
+    ...(description.trim()
+      ? [
+          {
+            text: `Visual description (generated):\n${description.trim()}`,
+            kind: "figure" as const,
+            location: {},
+          },
+        ]
+      : []),
+    ...(note ? [{ text: `Capture note:\n${note}`, kind: "other" as const, location: {} }] : []),
+  ];
+  return {
+    title: source.title,
+    sections,
+    coverage: sections.length
+      ? {
+          ...fullCoverage("description"),
+          ...(source.origin?._tag === "Screen"
+            ? {
+                parts: [
+                  {
+                    part: "visible-screen",
+                    status: "full" as const,
+                    detail: "Only the captured screen; not the entire underlying document.",
+                  },
+                ],
+              }
+            : {}),
+        }
+      : noDescription("Nothing searchable in the image"),
+  };
 });

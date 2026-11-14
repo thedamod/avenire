@@ -9,7 +9,7 @@ import com.facebook.react.jstasks.HeadlessJsTaskConfig;
 public final class AvaTaskService extends HeadlessJsTaskService {
     @Override protected HeadlessJsTaskConfig getTaskConfig(Intent intent) {
         if (intent == null || intent.getExtras() == null) return null;
-        return new HeadlessJsTaskConfig("AvenireAva", Arguments.fromBundle(intent.getExtras()), 240000, true);
+        return new HeadlessJsTaskConfig(intent.getBooleanExtra("capture", false) ? "AvenireCapture" : "AvenireAva", Arguments.fromBundle(intent.getExtras()), 240000, true);
     }
     // Do not redeliver an uncertain send after Android kills this service.
     @Override public int onStartCommand(Intent intent, int flags, int startId) {

@@ -39,41 +39,71 @@ messaging, password, financial, social and DRM apps are excluded, with label che
 other obvious sensitive apps. This is a best-effort blocklist, not a classification of
 all installed apps. New sensitive packages belong in this policy file.
 
-The service now requests interactive-window metadata to establish the source package,
-window identity and single-app context. It reads only the root package and window
-metadata, never accessibility text, URLs, form fields or descendants. Browser handlers
-are excluded because metadata cannot prove the current URL, private mode or checkout
-state. Locked screens, launchers, system dialogs, unknown source metadata and multiple
-application windows are excluded too. Other accessibility overlays are excluded. On Android 14+ the screenshot targets the validated application window; Android 12–13 use a display screenshot after the single-app check. Secure-window screenshot errors are respected.
-Excluded screens open text-only Ava and never acquire pixels.
+The service requests interactive-window metadata to establish the source package,
+window identity and single-app context. In browsers it additionally inspects only known
+address-bar controls and private-mode indicators, skipping the page's accessibility
+tree, form values and password fields. Normal browser pages are allowed when a visible
+address bar identifies a permitted public URL. Incognito/private/secret tabs and
+always-private browsers are excluded. A hidden or unrecognized browser toolbar cannot
+establish a safe source. Browser URLs use the same host, path and nested-URL exclusions
+as desktop capture; opening Ava never fetches that URL.
+
+Locked screens, launchers, system dialogs, unknown source metadata, multiple application
+windows and other accessibility overlays are excluded too. On Android 14+ the screenshot
+targets the validated application window; Android 12–13 use a display screenshot after
+the single-app check. Secure-window screenshot errors are respected. Excluded screens
+open text-only Ava with a shield and “Screen Capture can't access private windows and
+screens” and never acquire pixels.
 
 A screenshot is checked again before publishing the preview and before returning bytes
 to JS. JS rechecks policy after thread/auth work at the transport boundary. Navigation
 invalidates the session and pending acquisition callbacks. Acquisition uses a per-request
 temporary image; stale work cannot overwrite a newer preview.
 
-## Capture follow-up
+## Capture, extraction and Undo
 
-Second invocation through the accessibility/assistant shortcut, or a second Essential
-Key press, reaches the guarded capture hook. Saving/ingestion is deliberately still
-unconfigured in this phase. It must not claim a source was saved.
+Open a permitted study app or normal browser page. Invoke the accessibility/assistant
+shortcut once (or press the Essential Key on Nothing) to see a frozen preview. Add an
+optional note, then invoke the shortcut/key again. Ava closes and a small top receipt
+shows queued, uploading and extraction states with an animated background and **Undo**.
+The rest of the app remains usable. The arrow in **Add a note** also saves the capture.
+Hold the Essential Key to switch to **Ask Ava**; its Send action asks about the screen.
 
-There is no Android API that asks an arbitrary foreground app to share its open file
-silently. Original acquisition will use an explicit `ACTION_SEND`/`ACTION_SEND_MULTIPLE`
-payload or an app-specific integration; neither a screenshot nor a local path gives
-Avenire access to another app's private file. Do not automate the other app's Share UI.
-When a real payload is available, stage its bytes with the granted `content://` access,
-retain an owner-bound idempotent queue entry, then use the existing upload/ingestion
-pipeline. A raw URI must never become a server filesystem read. Browser URL payloads
-must run the existing URL/redirect policy before fetching; shared originals need the
-Android source policy as well. A screenshot-only save must be labeled as visible-screen
-coverage, not the original document.
+The full-resolution PNG is first copied into an app-private, account-bound durable
+outbox with a SHA-256 digest and stable capture ID. It survives app/process restarts,
+queues offline, and resumes through a persisted network-constrained Android job. The
+outbox allows 32 pending originals, 32 MiB each, and 256 MiB total. Failed originals
+remain available for Retry or Undo. Bytes are deleted locally only after publication
+is confirmed or cancellation is settled. Another account cannot upload that queue.
+
+Authenticated source-upload tickets own upload idempotency and publication. The existing
+files-sdk upload protocol transfers bytes; native transport streams from the original,
+without passing base64 through JavaScript or sending local file paths to the server.
+The original image, source-app attribution, optional sanitized public URL and note become
+one library item. Ingestion extracts visible text and separately labeled generated visual
+descriptions, includes the note, then chunks, embeds, builds graph context and organizes
+the item through the existing worker. Coverage explicitly means **visible screen**,
+not the full page/document. Nothing automatically fetches a browser's original file.
+
+The receipt follows the ingestion job until ready, partial, paused or failed. Retry and
+Undo remain available on failures. Undo cancels an in-flight ticket or archives the new
+capture and fences extraction publication. Duplicate screenshots with the same note
+reuse an active screenshot; undoing a duplicate preserves the existing item. Completed
+receipts dismiss after 12 seconds, or can be dismissed immediately. Dismissal does not
+cancel capture. The accessibility service restores the latest unfinished receipt after
+reconnection. Request-only screen sharing with Ava remains separate from saving.
+
+Android cannot silently ask an arbitrary foreground app for its original file. A future
+original-file adapter must receive granted `ACTION_SEND`/`ACTION_SEND_MULTIPLE` bytes or
+use a documented app integration, stage those bytes in the same outbox, and apply the
+source policy. A raw path or screenshot does not grant another app's private file. No
+adapter automates another app's Share menu. Home-screen widgets remain text-only entry
+points because the previous app is no longer foreground when the widget opens Ava.
 
 ## Interaction
 
-The accessibility/assistant shortcut opens the popover; a second invocation requests capture. On Nothing, one key click opens the popover immediately. Another click while it is opening or visible calls
-the capture integration hook (currently an explicit “not configured yet” message; no file is
-saved). Hold the Essential Key for 500 ms to open the Ava text dock instead. Releasing a hold
+The accessibility/assistant shortcut opens the popover; a second invocation requests capture. On Nothing, one key click opens the popover immediately. Another click while it is opening or visible saves
+the validated preview through the durable capture pipeline. Hold the Essential Key for 500 ms to open the Ava text dock instead. Releasing a hold
 never emits a click. A frozen screenshot is fitted into the space
 above the bottom composer, with a gradient around the **whole image**, not the composer.
 The image resizes with the keyboard. The screenshot starts at the original display bounds and pulls inward into its frame over
@@ -91,9 +121,9 @@ static gradient uses the home NightSky blue/indigo/purple tokens. Native resourc
 from release resource shrinking because the shared preview source resolves them by name.
 
 Screenshots are obtained by the opt-in accessibility service **before** opening Ava. Only
-an explicit opening click/hold acquires an image; no background screenshot polling, window text access, or recording. Window/package metadata is checked only for policy and navigation invalidation.
+an explicit opening click/hold acquires an image; no background screenshot polling or recording. Window/package metadata and the bounded browser-toolbar inspection are used only for policy and navigation invalidation.
 The hardware buffer is closed, a bounded-size preview is encoded off the main thread, and
-one app-private cache file is retained. Secure windows and screenshot failures open a prompt
+an app-private preview and original are retained for the active session. Secure windows and screenshot failures open a prompt
 with an explicit unavailable-preview state. Holding again while Ava is visible reuses the
 preview instead of photographing Ava itself.
 
@@ -210,10 +240,11 @@ assignment, widget pinning, screen metadata and accessibility shortcuts on each 
 Nothing's hardware listener does not establish support for other manufacturers' keys.
 
 References:
+
 - [Android application sandbox](https://source.android.com/docs/security/app-sandbox)
 - [Android assistant role](https://developer.android.com/reference/android/app/role/RoleManager#ROLE_ASSISTANT)
 - [Android shared payloads](https://developer.android.com/training/sharing/receive)
-- [Android screenshot API and secure-window errors](https://developer.android.com/reference/android/accessibilityservice/AccessibilityService#takeScreenshot(int,%20java.util.concurrent.Executor,%20android.accessibilityservice.AccessibilityService.TakeScreenshotCallback))
+- [Android screenshot API and secure-window errors](<https://developer.android.com/reference/android/accessibilityservice/AccessibilityService#takeScreenshot(int,%20java.util.concurrent.Executor,%20android.accessibilityservice.AccessibilityService.TakeScreenshotCallback)>)
 - [General Nothing key-filtering approach](https://github.com/KoukeNeko/EssentialKeyTools)
 
 ## Device QA cleanup

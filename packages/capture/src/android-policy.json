@@ -68,8 +68,9 @@
       "com.wbd.stream",
       "com.spotify.music",
       "com.crunchyroll.crunchyroid"
-    ]
+    ],
+    "private-window": ["org.mozilla.focus", "org.mozilla.klar"]
   },
   "blockedLabelPattern": "\\b(?:incognito|private browsing|inprivate|password|bank|banking|wallet|checkout|gmail|outlook|mail|messaging|messages|whatsapp|telegram|signal|slack|discord|teams|netflix|spotify|disney|hulu|1password|bitwarden|lastpass|paypal|paytm|phonepe)\\b",
-  "unverifiablePackages": ["org.chromium.webapk"]
+  "unverifiablePackages": []
 }
