@@ -264,6 +264,7 @@ final class AvaOverlay extends ContextThemeWrapper {
         return target;
     }
     private void showError(String message) { error.setText(message); error.setVisibility(View.VISIBLE); }
+    void showCaptureError(String message) { showError(message); }
     void requestCapture() {
         if (!service.captureAllowed(eventId)) {
             showError("Screen capture is unavailable or excluded by capture policy."); return;

@@ -91,6 +91,14 @@ or sign-in page is never saved as the original document. Providers that do not g
 an export require **Send a copy → Avenire**. This does not connect or sync an entire
 Google Drive account.
 
+Drive's internal `InternalProjectorActivity` can instead provide only a `projector-id:`
+intent, with no content grant or public URL. Reproduced on the Nothing phone: both
+shortcut invocations reach the assistant, but this response cannot supply original
+bytes. Ava keeps a visible error in the preview directing the user to **Send a copy →
+Avenire**. External PDF-viewer grants working does not establish two-press support for
+Drive's internal viewer. Opaque viewer IDs are never treated as file paths or downloaded
+as documents.
+
 The Share receiver accepts explicitly granted `content://` streams and applies known
 provider-app exclusions. It accepts individual or multiple files (up to 32); shared
 public URLs use the same original acquisition path. A raw filesystem path never grants

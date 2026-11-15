@@ -30,6 +30,13 @@ final class AvaAssistSession extends VoiceInteractionSession {
         EssentialKeyService service=EssentialKeyService.live;
         if(service==null || !service.captureAllowed(session)) { fail(session,"The source changed or is excluded by capture policy."); return; }
         AssistContent content=state.getAssistContent();
+        Uri intentData=content!=null && content.getIntent()!=null?content.getIntent().getData():null;
+        String scheme=intentData==null?"none":intentData.getScheme();
+        String safeScheme=java.util.Arrays.asList("content","http","https","file").contains(scheme)?scheme:"other";
+        android.util.Log.i("AvenireCapture","Assistant original response content="+(content!=null)
+            +" intentData="+(content!=null && content.getIntent()!=null && content.getIntent().getData()!=null)
+            +" clips="+(content!=null && content.getClipData()!=null?content.getClipData().getItemCount():0)
+            +" web="+(content!=null && content.getWebUri()!=null)+" intentScheme="+safeScheme);
         Uri original=null;
         if(content!=null) {
             Intent intent=content.getIntent();
@@ -38,8 +45,13 @@ final class AvaAssistSession extends VoiceInteractionSession {
                 for(int i=0;i<Math.min(32,content.getClipData().getItemCount());i++) { Uri uri=content.getClipData().getItemAt(i).getUri(); if(uri!=null && "content".equals(uri.getScheme())) { original=uri; break; } }
             }
             if(original==null) original=content.getWebUri();
+            if(original==null && intentData!=null && ("https".equals(scheme) || "http".equals(scheme))) original=intentData;
         }
-        if(original==null) { fail(session,"This app did not provide its original file or URL. Use Share → Avenire."); return; }
+        if(original==null) {
+            fail(session,"projector-id".equals(scheme)
+                ? "This Drive viewer doesn't share the original with Ava. In Drive, use Send a copy → Avenire."
+                : "This app did not provide its original file or URL. Use Share → Avenire."); return;
+        }
         String owner=CaptureStore.owner(context),request=session;
         if(owner.isEmpty()) { fail(request,"Sign in to Avenire before capturing."); return; }
         Uri source=original;
@@ -54,7 +66,7 @@ final class AvaAssistSession extends VoiceInteractionSession {
                 else if("https".equals(source.getScheme()) || "http".equals(source.getScheme())) row=CaptureStore.stageUrl(context,owner,request,source.toString(),requireMedia);
                 else throw new java.io.IOException("The app provided a playback identifier, not a readable original.");
                 main.post(() -> { service.assistCaptureFinished(request,row,null); hide(); });
-            } catch(Exception error) { main.post(() -> fail(request,"Original unavailable: "+error.getMessage()+" Use Share → Avenire.")); }
+            } catch(Exception error) { android.util.Log.w("AvenireCapture","Assistant original copy failed: "+error.getClass().getSimpleName()); main.post(() -> fail(request,"Original unavailable: "+error.getMessage()+" Use Share → Avenire.")); }
         },"avenire-assist-original");
         copy.start();
     }

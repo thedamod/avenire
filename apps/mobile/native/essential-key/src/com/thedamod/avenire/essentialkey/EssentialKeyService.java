@@ -207,7 +207,10 @@ public final class EssentialKeyService extends AccessibilityService {
         if(!session.equals(assistSession)) return;
         committing=false; assistSession=""; assistNote="";
         if(row!=null) { if(overlay!=null) overlay.dispose(); showCaptureReceipt(row); CaptureJobs.kick(this); }
-        else if(error!=null) android.widget.Toast.makeText(this,error,android.widget.Toast.LENGTH_LONG).show();
+        else if(error!=null) {
+            if(overlay!=null) overlay.showCaptureError(error);
+            else android.widget.Toast.makeText(this,error,android.widget.Toast.LENGTH_LONG).show();
+        }
     }
     void showCaptureReceipt(org.json.JSONObject row) {
         handler.post(() -> {
