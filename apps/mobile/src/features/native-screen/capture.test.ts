@@ -4,6 +4,7 @@ const h = vi.hoisted(() => ({
   bridge: {
     bindOwner: vi.fn(),
     captureWork: vi.fn(),
+    captureAcquire: vi.fn(),
     captureRead: vi.fn(),
     captureUpdate: vi.fn(),
     captureFinished: vi.fn(),
@@ -179,6 +180,50 @@ it("keeps failed uploads queued with backoff and never reports ready", async () 
   expect(h.row.phase).toBe("waiting");
   expect(h.row.nextAt).toBeGreaterThan(Date.now());
   expect(h.row.fileId).toBeUndefined();
+});
+it("acquires a browser's full original before creating an upload ticket", async () => {
+  h.row.origin = { ...origin, url: "https://study.test/chapter" };
+  h.bridge.captureAcquire.mockImplementation(async () => {
+    Object.assign(h.row, {
+      kind: "web-page",
+      mimeType: "text/html",
+      sizeBytes: 12000,
+      sha256: "b".repeat(64),
+      uri: "file:///private/original.html",
+      origin: {
+        _tag: "Web",
+        url: "https://study.test/chapter",
+        title: "Chapter",
+        browser: "other",
+        capturedAt: origin.capturedAt,
+        platform: "android",
+        captureId: id,
+        note: origin.note,
+      },
+    });
+    return JSON.stringify(h.row);
+  });
+  await runCaptureTask();
+  expect(h.bridge.captureAcquire).toHaveBeenCalledWith(id, "owner", "https://study.test/chapter");
+  const sent = JSON.parse(h.fetch.mock.calls.find(([, init]) => init?.method === "POST")![1].body);
+  expect(sent).toMatchObject({
+    kind: "web-page",
+    mimeType: "text/html",
+    sizeBytes: 12000,
+    sha256: "b".repeat(64),
+    origin: { _tag: "Web" },
+  });
+  expect(h.upload.mock.calls[0]![1].uri).toBe("file:///private/original.html");
+});
+it("never falls back to uploading screenshot bytes when original acquisition fails", async () => {
+  h.row.origin = { ...origin, url: "https://study.test/private-document" };
+  h.bridge.captureAcquire.mockRejectedValue(
+    new Error("Original unavailable. Share it from its app."),
+  );
+  await runCaptureTask();
+  expect(h.row.phase).toBe("waiting");
+  expect(h.fetch).not.toHaveBeenCalled();
+  expect(h.upload).not.toHaveBeenCalled();
 });
 it("never sends an outbox record belonging to another account", async () => {
   h.row.owner = "other";

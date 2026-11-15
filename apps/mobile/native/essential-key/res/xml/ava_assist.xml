@@ -1,0 +1,5 @@
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="com.thedamod.avenire.essentialkey.AvaAssistSessionService"
+    android:recognitionService="com.thedamod.avenire.essentialkey.AvaAssistRecognitionService"
+    android:supportsAssist="true"
+    android:supportsLaunchVoiceAssistFromKeyguard="false" />

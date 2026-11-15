@@ -16,20 +16,34 @@ async function manifest(enabled, app = { $: {} }) {
 test("native opt-out removes services; enabled registers assistant entry and widget", async () => {
   assert.equal((await manifest(undefined)).service.length, 0);
   const app = await manifest(true);
-  assert.equal(app.service.length, 3);
+  assert.equal(app.service.length, 6);
   assert.equal(
     app.service.find((s) => s.$["android:name"].endsWith("EssentialKeyService")).$[
       "android:permission"
     ],
     "android.permission.BIND_ACCESSIBILITY_SERVICE",
   );
-  assert.equal(app.activity.length, 1);
-  assert.equal(app.activity[0].$["android:theme"], "@android:style/Theme.NoDisplay");
-  assert.equal(app.activity[0].$["android:taskAffinity"], "");
+  assert.equal(app.activity.length, 2);
+  const entry = app.activity.find((a) => a.$["android:name"].endsWith("AvaEntryActivity"));
+  assert.equal(
+    app.service.find((s) => s.$["android:name"].endsWith("AvaAssistRecognitionService"))[
+      "meta-data"
+    ][0].$["android:resource"],
+    "@xml/ava_assist_recognizer",
+  );
+  assert.equal(entry.$["android:theme"], "@android:style/Theme.NoDisplay");
+  assert.equal(entry.$["android:taskAffinity"], "");
+  const share = app.activity.find((a) => a.$["android:name"].endsWith("CaptureShareActivity"));
+  assert.equal(share.$["android:exported"], "true");
+  assert.ok(
+    share["intent-filter"][0].action.some(
+      (a) => a.$["android:name"] === "android.intent.action.SEND",
+    ),
+  );
   assert.equal(app.receiver.length, 1);
   assert.equal(app.receiver[0].$["android:exported"], "false");
   assert.equal((await manifest(true, app)).receiver.length, 1);
-  assert.equal((await manifest(true, app)).service.length, 3);
+  assert.equal((await manifest(true, app)).service.length, 6);
 });
 test("turning flag off removes owned manifest entries and retains unrelated components", async () => {
   const app = await manifest(true);
@@ -76,6 +90,10 @@ test("incremental prebuild removes native sources/resources when disabled", asyn
   assert.match(xml, /flagRequestAccessibilityButton/);
   await fs.access(path.join(main, "res/layout/ava_widget.xml"));
   await fs.access(path.join(main, "res/xml/ava_widget_info.xml"));
+  assert.match(
+    await fs.readFile(path.join(main, "res/xml/ava_assist.xml"), "utf8"),
+    /AvaAssistSessionService/,
+  );
   await fs.access(
     path.join(main, "java/com/thedamod/avenire/essentialkey/AndroidScreenPolicy.java"),
   );

@@ -762,6 +762,46 @@ it.effect(
           );
           expect(finalUndo?.placement).toBe("archived");
           expect(new Uint8Array(yield* memory.get(originalAgainFile.storageKey!))).toEqual(pixels);
+          const html = new TextEncoder().encode(
+            "<!doctype html><html><head><title>Full original</title></head><body>Beyond the first screen: complete chapter.</body></html>",
+          );
+          const originalId = randomUUID();
+          const originalInput: CreateSourceUpload = {
+            idempotencyKey: originalId,
+            title: "Full chapter",
+            kind: "web-page",
+            mimeType: "text/html",
+            sizeBytes: html.length,
+            sha256: hash(html),
+            origin: {
+              _tag: "Web",
+              url: `https://study.test/${originalId}`,
+              title: "Full chapter",
+              browser: "other",
+              capturedAt: "2026-11-15T00:00:00Z",
+              platform: "android",
+              captureId: originalId,
+            },
+          };
+          const originalTicket = yield* uploads.create(owner, originalInput);
+          const fullPage = yield* uploads.put(
+            owner,
+            originalTicket.uploadId,
+            new Request("https://app.test", {
+              method: "PUT",
+              headers: { "content-type": "text/html" },
+              body: html,
+            }),
+          );
+          expect(fullPage.kind).toBe("web-page");
+          expect(new Uint8Array(yield* memory.get(fullPage.storageKey!))).toEqual(html);
+          yield* uploads.cancel(owner, originalTicket.uploadId);
+          expect(
+            (yield* database.use((db) =>
+              db.query.file.findFirst({ where: eq(file.id, fullPage.id) }),
+            ))?.placement,
+          ).toBe("archived");
+          expect(new Uint8Array(yield* memory.get(fullPage.storageKey!))).toEqual(html);
           const pendingScreen = yield* uploads.create(owner, screenMetadata());
           const screenStarted = new Promise<void>((resolve) => {
             beginPut = resolve;

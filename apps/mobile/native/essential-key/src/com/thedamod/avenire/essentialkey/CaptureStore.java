@@ -53,13 +53,48 @@ final class CaptureStore {
         StringBuilder hash=new StringBuilder(); for(byte b:digest.digest()) hash.append(String.format(java.util.Locale.ROOT,"%02x",b & 255));
         origin.put("deviceId",device(c)).put("deviceName",android.os.Build.MODEL).put("platform","android").put("sha256",hash.toString()).put("sizeBytes",size);
         if(origin.optString("_tag").equals("Screen")) origin.put("captureId",id).put("scope","visible-screen");
-        else origin.put("fileName",id+"."+(mime.equals("application/pdf")?"pdf":mime.equals("image/png")?"png":"bin"));
+        else if(origin.optString("_tag").equals("Web")) origin.put("captureId",id);
+        else if(!origin.has("fileName")) origin.put("fileName",id+"."+(mime.equals("application/pdf")?"pdf":mime.equals("image/png")?"png":"bin"));
         JSONObject row=new JSONObject().put("id",id).put("owner",owner).put("session",session).put("title",title).put("mimeType",mime).put("kind",kind).put("sizeBytes",size).put("sha256",hash.toString()).put("origin",origin).put("phase","queued").put("created",System.currentTimeMillis()).put("nextAt",0).put("leaseUntil",0).put("undo",false).put("attempted",false);
         rows.put(row);
         try { write(c,rows); } catch(Exception error) { body.delete(); throw error; }
         return row;
     }
-    static File bytes(Context c,String id) { if(!id.matches("[a-fA-F0-9-]{36}")) throw new IllegalArgumentException("Invalid capture ID."); return new File(directory(c),id+".source"); }
+    static File bytes(Context c,String id) {
+        if(!id.matches("[a-fA-F0-9-]{36}")) throw new IllegalArgumentException("Invalid capture ID.");
+        try { JSONArray rows=read(c); for(int i=0;i<rows.length();i++) { JSONObject row=rows.getJSONObject(i); if(id.equals(row.optString("id")) && row.optBoolean("original")) return new File(directory(c),id+".original"); } }
+        catch(Exception error) { throw new IllegalStateException("Could not read capture original.",error); }
+        return new File(directory(c),id+".source");
+    }
+    static synchronized JSONObject original(Context c,String id,String owner,File temporary,String url,String mime,String hash,long size) throws Exception {
+        JSONArray rows=read(c);
+        for(int i=0;i<rows.length();i++) { JSONObject row=rows.getJSONObject(i); if(id.equals(row.optString("id")) && owner.equals(row.optString("owner"))) {
+            if(!owner.equals(owner(c)) || row.optBoolean("undo") || row.optBoolean("attempted")) throw new IOException("Capture changed during acquisition.");
+            long retained=size;
+            for(int n=0;n<rows.length();n++) { JSONObject other=rows.getJSONObject(n); if(!id.equals(other.getString("id"))) retained+=bytes(c,other.getString("id")).length(); }
+            if(retained>256L*1024*1024) throw new IOException("Capture queue is full. Finish or undo pending originals first.");
+            JSONObject previous=row.getJSONObject("origin");
+            JSONObject origin=new JSONObject().put("_tag","Web").put("url",url).put("title",row.getString("title")).put("browser","other").put("capturedAt",previous.getString("capturedAt"))
+                .put("platform","android").put("captureId",id).put("deviceId",previous.getString("deviceId")).put("deviceName",previous.getString("deviceName"));
+            if(previous.has("note")) origin.put("note",previous.getString("note"));
+            File original=new File(directory(c),id+".original");
+            if(!temporary.renameTo(original)) throw new IOException("Could not retain original source.");
+            row.remove("acquisitionUrl");
+            row.put("origin",origin).put("original",true).put("sha256",hash).put("sizeBytes",size).put("mimeType",mime).put("kind",CaptureSources.kind(mime));
+            try { write(c,rows); } catch(Exception error) { original.delete(); throw error; }
+            new File(directory(c),id+".source").delete(); return row;
+        }}
+        throw new IOException("Capture is no longer available.");
+    }
+    static synchronized JSONObject stageUrl(Context c,String owner,String session,String url) throws Exception {
+        return stageUrl(c,owner,session,url,false);
+    }
+    static synchronized JSONObject stageUrl(Context c,String owner,String session,String url,boolean requireMedia) throws Exception {
+        JSONObject origin=new JSONObject().put("_tag","Web").put("url",url).put("title",url.substring(0,Math.min(url.length(),200))).put("browser","other").put("capturedAt",Instant.now().toString());
+        JSONObject staged=stage(c,owner,session,new ByteArrayInputStream(url.getBytes(java.nio.charset.StandardCharsets.UTF_8)),url.substring(0,Math.min(url.length(),200)),"text/uri-list","web-page",origin);
+        JSONArray rows=read(c); for(int i=0;i<rows.length();i++) { JSONObject row=rows.getJSONObject(i); if(row.getString("id").equals(staged.getString("id"))) { row.put("acquisitionUrl",url).put("requireMedia",requireMedia); write(c,rows); return row; } }
+        throw new IOException("Could not queue original URL.");
+    }
     static boolean terminal(String phase) { return phase.equals("paused") || phase.equals("ready") || phase.equals("partial") || phase.equals("undone") || phase.equals("failed"); }
     static synchronized JSONObject get(Context c,String id,String owner) throws Exception {
         JSONArray rows=read(c); for(int i=0;i<rows.length();i++) { JSONObject row=rows.getJSONObject(i); if(row.getString("id").equals(id) && row.getString("owner").equals(owner)) return row; }

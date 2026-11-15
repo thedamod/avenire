@@ -64,7 +64,8 @@ import { fileToContract } from "./library.ts";
 export const UPLOAD_TTL_MS = 60 * 60 * 1000;
 export const UPLOAD_LEASE_MS = 15 * 60 * 1000;
 export const mobileOrigin = (origin: CreateSourceUpload["origin"]): boolean =>
-  origin?._tag === "Screen" || (origin?._tag === "LocalFile" && origin.platform === "android");
+  origin?._tag === "Screen" ||
+  ((origin?._tag === "LocalFile" || origin?._tag === "Web") && origin.platform === "android");
 const reject = (status: number, message: string) => new SourceUploadError({ status, message });
 const failure = (cause: unknown) =>
   cause instanceof SourceUploadError
@@ -143,6 +144,12 @@ export const normalizeUploadMetadata = (input: CreateSourceUpload): CreateSource
     const origin = input.origin;
     if (!Number.isFinite(Date.parse(origin.capturedAt)))
       throw reject(400, "Capture provenance requires a valid timestamp.");
+    if (
+      origin._tag === "Web" &&
+      origin.platform === "android" &&
+      origin.captureId !== input.idempotencyKey
+    )
+      throw reject(400, "Original provenance must match its mobile capture ticket.");
     const urls =
       origin._tag === "Web"
         ? [origin.url, origin.finalUrl, origin.canonicalUrl]

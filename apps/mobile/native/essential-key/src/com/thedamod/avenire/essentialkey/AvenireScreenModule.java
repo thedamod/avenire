@@ -19,6 +19,9 @@ public final class AvenireScreenModule extends ReactContextBaseJavaModule {
     private final Handler main = new Handler(Looper.getMainLooper());
     AvenireScreenModule(ReactApplicationContext context) { super(context); }
     @Override public String getName() { return "AvenireScreen"; }
+    @ReactMethod public void captureAcquire(String id,String owner,String url,Promise promise) {
+        transfers.execute(() -> { try { JSONObject row=CaptureOriginal.acquire(getReactApplicationContext(),id,owner,url); row.put("uri",CaptureStore.bytes(getReactApplicationContext(),id).toURI().toString()); promise.resolve(row.toString()); } catch(Exception e) { promise.reject("CAPTURE_ORIGINAL",e.getMessage(),e); } });
+    }
     @ReactMethod public void captureWork(String owner,Promise promise) {
         io.execute(() -> { try { org.json.JSONObject row=CaptureStore.claim(getReactApplicationContext(),owner); promise.resolve(row==null?null:row.toString()); } catch(Exception e) { promise.reject("CAPTURE_QUEUE",e.getMessage(),e); } });
     }

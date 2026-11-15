@@ -8,7 +8,12 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const namespace = "com.thedamod.avenire.essentialkey";
-const ownedActivities = ["KeyInputActivity", "AvaActivity", "AvaEntryActivity"];
+const ownedActivities = [
+  "KeyInputActivity",
+  "AvaActivity",
+  "AvaEntryActivity",
+  "CaptureShareActivity",
+];
 const generatePolicy = require("../native/essential-key/generate-policy.cjs");
 const generateDesign = require("../native/essential-key/generate-design.cjs");
 module.exports = function withEssentialKey(config, { enabled = false } = {}) {
@@ -20,6 +25,9 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
           `${namespace}.EssentialKeyService`,
           `${namespace}.AvaTaskService`,
           `${namespace}.CaptureJobService`,
+          `${namespace}.AvaAssistService`,
+          `${namespace}.AvaAssistSessionService`,
+          `${namespace}.AvaAssistRecognitionService`,
         ].includes(s.$["android:name"]),
     );
     app.activity = (app.activity ?? []).filter(
@@ -62,6 +70,85 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
       if (enabled && index < 0) queries.push(query);
     }
     if (!enabled) return config;
+    app.service.push(
+      {
+        $: {
+          "android:name": `${namespace}.AvaAssistService`,
+          "android:enabled": "@bool/ava_supported",
+          "android:label": "Ava",
+          "android:permission": "android.permission.BIND_VOICE_INTERACTION",
+          "android:exported": "true",
+        },
+        "intent-filter": [
+          { action: [{ $: { "android:name": "android.service.voice.VoiceInteractionService" } }] },
+        ],
+        "meta-data": [
+          {
+            $: {
+              "android:name": "android.voice_interaction",
+              "android:resource": "@xml/ava_assist",
+            },
+          },
+        ],
+      },
+      {
+        $: {
+          "android:name": `${namespace}.AvaAssistSessionService`,
+          "android:enabled": "@bool/ava_supported",
+          "android:permission": "android.permission.BIND_VOICE_INTERACTION",
+          "android:exported": "true",
+        },
+      },
+      {
+        $: {
+          "android:name": `${namespace}.AvaAssistRecognitionService`,
+          "android:enabled": "@bool/ava_supported",
+          "android:permission": "android.permission.BIND_SPEECH_RECOGNITION_SERVICE",
+          "android:exported": "true",
+        },
+        "intent-filter": [
+          { action: [{ $: { "android:name": "android.speech.RecognitionService" } }] },
+        ],
+        "meta-data": [
+          {
+            $: {
+              "android:name": "android.speech",
+              "android:resource": "@xml/ava_assist_recognizer",
+            },
+          },
+        ],
+      },
+    );
+    app.activity.push({
+      $: {
+        "android:name": `${namespace}.CaptureShareActivity`,
+        "android:enabled": "@bool/ava_supported",
+        "android:label": "Avenire",
+        "android:theme": "@android:style/Theme.Translucent.NoTitleBar",
+        "android:exported": "true",
+        "android:excludeFromRecents": "true",
+        "android:taskAffinity": "",
+      },
+      "intent-filter": [
+        {
+          action: ["android.intent.action.SEND", "android.intent.action.SEND_MULTIPLE"].map(
+            (name) => ({ $: { "android:name": name } }),
+          ),
+          category: [{ $: { "android:name": "android.intent.category.DEFAULT" } }],
+          data: [
+            "application/pdf",
+            "image/*",
+            "audio/*",
+            "video/*",
+            "text/*",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          ].map((type) => ({ $: { "android:mimeType": type } })),
+        },
+      ],
+    });
     app.activity.push({
       $: {
         "android:name": `${namespace}.AvaEntryActivity`,
@@ -211,6 +298,8 @@ module.exports = function withEssentialKey(config, { enabled = false } = {}) {
       const java = path.join(main, "java/com/thedamod/avenire/essentialkey");
       const resources = [
         "xml/essential_key_service.xml",
+        "xml/ava_assist.xml",
+        "xml/ava_assist_recognizer.xml",
         "values/essential_key_strings.xml",
         "values/essential_key_styles.xml",
         "raw/essential_key_keep.xml",

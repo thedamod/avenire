@@ -19,7 +19,13 @@ public final class AvaEntryActivity extends Activity {
         AvaEntryRoute.Target target = AvaEntryRoute.choose(widget, service != null, serviceEnabled());
         if (target == AvaEntryRoute.Target.OVERLAY) {
             // A home widget opens text-only Ava; the launcher is not study context.
-            service.trigger(widget ? "dock" : "toggle", !widget);
+            // Finish the windowless entry first. Its transition back to the source app
+            // must settle before navigation invalidation starts observing that source.
+            finish();
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                if(EssentialKeyService.live==service) service.trigger(widget ? "dock" : "toggle", !widget);
+            },150);
+            return;
         } else if (target == AvaEntryRoute.Target.APP) {
             // Widgets need no screen permission. Enabled services may also be reconnecting.
             Intent ask = new Intent(Intent.ACTION_VIEW, Uri.parse("avenire://ask"))

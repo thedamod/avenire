@@ -9,6 +9,7 @@ export interface AndroidTriggerStatus {
   widget: boolean;
 }
 export interface NativeScreenBridge {
+  captureAcquire(id: string, owner: string, url: string): Promise<string>;
   captureWork(owner: string): Promise<string | null>;
   captureRead(id: string, owner: string): Promise<string>;
   captureUpdate(id: string, owner: string, json: string): Promise<void>;

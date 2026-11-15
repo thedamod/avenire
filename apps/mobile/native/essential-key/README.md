@@ -60,55 +60,77 @@ to JS. JS rechecks policy after thread/auth work at the transport boundary. Navi
 invalidates the session and pending acquisition callbacks. Acquisition uses a per-request
 temporary image; stale work cannot overwrite a newer preview.
 
-## Capture, extraction and Undo
+## Original capture, extraction and Undo
 
-Open a permitted study app or normal browser page. Invoke the accessibility/assistant
-shortcut once (or press the Essential Key on Nothing) to see a frozen preview. Add an
-optional note, then invoke the shortcut/key again. Ava closes and a small top receipt
-shows queued, uploading and extraction states with an animated background and **Undo**.
-The rest of the app remains usable. The arrow in **Add a note** also saves the capture.
-Hold the Essential Key to switch to **Ask Ava**; its Send action asks about the screen.
+Open a normal browser page and invoke the screen-context shortcut once (or press the
+Essential Key on Nothing) for a frozen preview. Add an optional note, then invoke it
+again or tap the capture arrow. Ava closes and a small top receipt shows **Getting
+original**, upload and extraction progress, with an animated background and **Undo**.
+The preview remains request-only screen context; it is not the saved browser source.
 
-The full-resolution PNG is first copied into an app-private, account-bound durable
-outbox with a SHA-256 digest and stable capture ID. It survives app/process restarts,
-queues offline, and resumes through a persisted network-constrained Android job. The
-outbox allows 32 pending originals, 32 MiB each, and 256 MiB total. Failed originals
-remain available for Retry or Undo. Bytes are deleted locally only after publication
-is confirmed or cancellation is settled. Another account cannot upload that queue.
+Browser capture acquires the complete anonymously accessible HTML or PDF from the
+validated URL. Every redirect is checked against the shared URL exclusions; credentials,
+browser cookies and private-network destinations are not used. Acquisition is bounded
+by time and bytes. Failure offers Retry/Undo and explains when to share the original;
+it never silently uploads screenshot bytes as a replacement document. Authenticated,
+paywalled or JavaScript-only pages may require an original supplied by their app.
 
-Authenticated source-upload tickets own upload idempotency and publication. The existing
-files-sdk upload protocol transfers bytes; native transport streams from the original,
-without passing base64 through JavaScript or sending local file paths to the server.
-The original image, source-app attribution, optional sanitized public URL and note become
-one library item. Ingestion extracts visible text and separately labeled generated visual
-descriptions, includes the note, then chunks, embeds, builds graph context and organizes
-the item through the existing worker. Coverage explicitly means **visible screen**,
-not the full page/document. Nothing automatically fetches a browser's original file.
+For native documents, audio and video, select **Ava** as Android's default digital
+assistant, then invoke the shortcut twice over the open file. Ava asks Android for the
+focused app's `AssistContent`: an explicitly granted original `content://` URI or public
+URL. It copies granted bytes before closing the assistant session. It does not inspect
+AssistStructure, scrape document text, automate Share menus, or take over dictation.
+The app must supply a readable original; a playback identifier or webpage link is not
+an audio/video file. Unsupported players offer **Share → Avenire** instead. Protected
+and excluded apps remain excluded even when an assistant handoff is available.
 
-The receipt follows the ingestion job until ready, partial, paused or failed. Retry and
-Undo remain available on failures. Undo cancels an in-flight ticket or archives the new
-capture and fences extraction publication. Duplicate screenshots with the same note
-reuse an active screenshot; undoing a duplicate preserves the existing item. Completed
-receipts dismiss after 12 seconds, or can be dismissed immediately. Dismissal does not
-cancel capture. The accessibility service restores the latest unfinished receipt after
-reconnection. Request-only screen sharing with Ava remains separate from saving.
+Google Drive uses the same handoff. PDFs and ordinary uploaded files are copied as
+originals when Drive grants access. For virtual Google Docs/Sheets/Slides documents,
+Ava requests a provider-advertised Office export, then PDF as a fallback. A Drive webpage
+or sign-in page is never saved as the original document. Providers that do not grant
+an export require **Send a copy → Avenire**. This does not connect or sync an entire
+Google Drive account.
 
-Android cannot silently ask an arbitrary foreground app for its original file. A future
-original-file adapter must receive granted `ACTION_SEND`/`ACTION_SEND_MULTIPLE` bytes or
-use a documented app integration, stage those bytes in the same outbox, and apply the
-source policy. A raw path or screenshot does not grant another app's private file. No
-adapter automates another app's Share menu. Home-screen widgets remain text-only entry
-points because the previous app is no longer foreground when the widget opens Ava.
+The Share receiver accepts explicitly granted `content://` streams and applies known
+provider-app exclusions. It accepts individual or multiple files (up to 32); shared
+public URLs use the same original acquisition path. A raw filesystem path never grants
+access. Audio/video originals use the existing media extraction pipeline.
+An account-bound native outbox persists capture identity, source metadata and original
+bytes. Downloaded originals replace the staged acquisition input atomically before any upload ticket
+is created. Persisted network-constrained jobs resume offline/interrupted work. The
+outbox allows 32 pending originals, 32 MiB per original and 256 MiB retained bytes.
+Failed originals remain for Retry/Undo; confirmed publication or settled cancellation
+removes local bytes. Another account cannot upload the queue.
+
+The existing files-sdk protocol streams originals through authenticated idempotent upload
+tickets. HTML uses the full document parser; PDFs and shared office files use their
+existing extractors. Chunking, embeddings, graph indexing and folder placement follow.
+Mobile web provenance retains its source URL, capture identity and optional note. The
+source remains a webpage/PDF/document in the library rather than an image. The model's
+invalid-JSON graph response gets one constrained retry; persistent failures stay visible.
+
+The receipt follows queued/acquiring/uploading/extracting/ready/partial/paused/failed
+states. Retry and Undo remain actionable on failure. Undo settles upload/publication
+races or archives a newly created item and fences extraction publication. A duplicate
+preserves the existing original; undoing every receipt of a newly created item archives
+it in either order. Archived originals remain recoverable. Completed receipts dismiss
+after 12 seconds; dismissal does not cancel work or reappear on every progress update.
+The service restores the latest unfinished receipt after reconnecting.
+
+Home widgets remain text-only entry points: the previous app is no longer foreground.
+Hold the Essential Key to switch to **Ask Ava**; Send in that mode asks about the preview
+under the separate Share screen with Ava consent.
 
 ## Interaction
 
 The accessibility/assistant shortcut opens the popover; a second invocation requests capture. On Nothing, one key click opens the popover immediately. Another click while it is opening or visible saves
-the validated preview through the durable capture pipeline. Hold the Essential Key for 500 ms to open the Ava text dock instead. Releasing a hold
+the validated original through the durable capture pipeline. Hold the Essential Key for 500 ms to open the Ava text dock instead. Releasing a hold
 never emits a click. A frozen screenshot is fitted into the space
 above the bottom composer, with a gradient around the **whole image**, not the composer.
 The image resizes with the keyboard. The screenshot starts at the original display bounds and pulls inward into its frame over
 250 ms; only the composer rises/fades over 200 ms. Android's disabled-animation setting skips
-movement. Ava is a service-owned `TYPE_ACCESSIBILITY_OVERLAY` window with window animations
+movement. Ava is a service-owned `TYPE_ACCESSIBILITY_OVERLAY` window, using a fresh display-bound
+accessibility window context after reconnects, with window animations
 set to zero. It does not launch an Activity, switch tasks, or rely on suppressing a system
 Activity transition. The backdrop is fully black and the gradient frame is 3 dp thick. One stronger native
 long-press haptic fires when the key-opened entry gains focus, respecting system haptics.
@@ -171,7 +193,7 @@ the identical native renderer and key UI but has no React Native chat client.
 Dismiss/back preserves one local event-associated text draft; a new key event starts a new
 prompt. Configuration changes keep the same overlay and draft. An unavailable integrated chat runtime shows an error and keeps the text. The standalone validation APK includes the same service and overlay source as Avenire.
 It has no launcher Activity; enable its accessibility service and use the physical key.
-The production plugin adds only a windowless assistant/shortcut entry Activity and removes legacy probe Activities on incremental prebuilds. Back and Close return the screenshot to the original display bounds over 200 ms while the
+The production plugin adds windowless assistant/shortcut and Share entry Activities and removes legacy probe Activities on incremental prebuilds. Back and Close return the screenshot to the original display bounds over 200 ms while the
 composer fades down, then remove the window. Reduced motion removes it immediately.
 Interrupting, unbinding or destroying the service removes it immediately as well.
 
@@ -243,6 +265,7 @@ References:
 
 - [Android application sandbox](https://source.android.com/docs/security/app-sandbox)
 - [Android assistant role](https://developer.android.com/reference/android/app/role/RoleManager#ROLE_ASSISTANT)
+- [Android original-content handoff](https://developer.android.com/reference/android/app/assist/AssistContent)
 - [Android shared payloads](https://developer.android.com/training/sharing/receive)
 - [Android screenshot API and secure-window errors](<https://developer.android.com/reference/android/accessibilityservice/AccessibilityService#takeScreenshot(int,%20java.util.concurrent.Executor,%20android.accessibilityservice.AccessibilityService.TakeScreenshotCallback)>)
 - [General Nothing key-filtering approach](https://github.com/KoukeNeko/EssentialKeyTools)

@@ -62,7 +62,7 @@ async function drain() {
     for (let count = 0; count < 32 && !abort.signal.aborted; count++) {
       const raw = await bridge.captureWork(owner);
       if (!raw) break;
-      const work = Schema.decodeUnknownSync(MobileCaptureWork)(JSON.parse(raw));
+      let work = Schema.decodeUnknownSync(MobileCaptureWork)(JSON.parse(raw));
       if (work.owner !== owner) throw new Error("Capture account mismatch.");
       const update = (changes: Record<string, unknown>) =>
         bridge.captureUpdate(work.id, owner, JSON.stringify(changes));
@@ -113,6 +113,14 @@ async function drain() {
           });
       }, 750);
       try {
+        const acquireUrl =
+          work.acquisitionUrl ?? (work.origin._tag === "Screen" ? work.origin.url : undefined);
+        if (acquireUrl && !work.undo && !work.attempted) {
+          await update({ phase: "acquiring" });
+          work = Schema.decodeUnknownSync(MobileCaptureWork)(
+            JSON.parse(await bridge.captureAcquire(work.id, owner, normalizeUrl(acquireUrl))),
+          );
+        }
         const origin =
           work.origin._tag === "Screen" && work.origin.url
             ? { ...work.origin, url: normalizeUrl(work.origin.url) }
@@ -125,6 +133,7 @@ async function drain() {
           sizeBytes: work.sizeBytes,
           sha256: work.sha256,
           origin,
+          ...(origin._tag === "Web" ? { sourceUrl: origin.finalUrl ?? origin.url } : {}),
         });
         await update({ attempted: true });
         let row = await current();
@@ -170,7 +179,7 @@ async function drain() {
             endpoint,
             {
               uri: work.uri ?? "",
-              name: `${work.id}.png`,
+              name: work.origin._tag === "LocalFile" ? work.origin.fileName : work.id,
               type: work.mimeType,
               size: work.sizeBytes,
             },

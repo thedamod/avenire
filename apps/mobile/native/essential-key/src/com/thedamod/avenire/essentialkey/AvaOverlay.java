@@ -48,14 +48,20 @@ final class AvaOverlay extends ContextThemeWrapper {
     private View reveal;
     private Typeface geist;
     private OverlayMarkdown markdown;
+    private boolean focusedOnce;
+    private final Runnable lostFocus;
 
     private int dp(float value) { return Math.round(value * getResources().getDisplayMetrics().density); }
     private int resource(String name, String type) { return getResources().getIdentifier(name, type, getPackageName()); }
     private int color(String name) { return getColor(resource("ava_" + name, "color")); }
     AvaOverlay(EssentialKeyService service, String eventId, String mode, boolean preview, java.util.function.Consumer<Boolean> onDismiss) {
-        super(service, service.getResources().getIdentifier("AvenireKeySheet", "style", service.getPackageName()));
+        this(service,eventId,mode,preview,onDismiss,OverlayWindows.create(service));
+    }
+    private AvaOverlay(EssentialKeyService service,String eventId,String mode,boolean preview,java.util.function.Consumer<Boolean> onDismiss,Context windowContext) {
+        super(windowContext, service.getResources().getIdentifier("AvenireKeySheet", "style", service.getPackageName()));
         this.service = service;
-        this.windows = service.getSystemService(WindowManager.class);
+        lostFocus=() -> { if(attached && !closing && !root.hasWindowFocus()) service.leaveScreen(); };
+        this.windows = windowContext.getSystemService(WindowManager.class);
         backCallback = android.os.Build.VERSION.SDK_INT >= 33 ? this::dismiss : null;
         this.onDismiss = onDismiss;
         geist = getResources().getFont(resource("avenire_geist", "font"));
@@ -113,6 +119,7 @@ final class AvaOverlay extends ContextThemeWrapper {
         if (!attached) return;
         saveDraft(); attached = false; closing = false;
         composer.animate().cancel(); preview.animate().cancel();
+        root.removeCallbacks(lostFocus);
         if (android.os.Build.VERSION.SDK_INT >= 33 && backDispatcher != null) backDispatcher.unregisterOnBackInvokedCallback(backCallback);
         getSystemService(android.view.inputmethod.InputMethodManager.class).hideSoftInputFromWindow(root.getWindowToken(), 0);
         windows.removeViewImmediate(root);
@@ -133,8 +140,9 @@ final class AvaOverlay extends ContextThemeWrapper {
         LinearLayout root = new LinearLayout(this) {
             @Override public void onWindowFocusChanged(boolean focused) {
                 super.onWindowFocusChanged(focused);
-                if (focused) confirmOpen();
-                else if (attached && !closing) service.leaveScreen();
+                removeCallbacks(lostFocus);
+                if (focused) { focusedOnce=true; confirmOpen(); }
+                else if (focusedOnce && attached && !closing) postDelayed(lostFocus,350);
             }
             @Override public boolean dispatchKeyEvent(android.view.KeyEvent event) {
                 if (event.getKeyCode() == android.view.KeyEvent.KEYCODE_BACK) {
@@ -257,12 +265,12 @@ final class AvaOverlay extends ContextThemeWrapper {
     }
     private void showError(String message) { error.setText(message); error.setVisibility(View.VISIBLE); }
     void requestCapture() {
-        if (!((EssentialKeyService)getBaseContext()).screenAllowed(eventId)) {
+        if (!service.captureAllowed(eventId)) {
             showError("Screen capture is unavailable or excluded by capture policy."); return;
         }
         saveDraft();
         android.util.Log.i("AvenireEssentialKey", "capture.requested eventId=" + eventId);
-        ((EssentialKeyService)getBaseContext()).commitCapture(eventId,input.getText().toString());
+        service.commitCapture(eventId,input.getText().toString());
         if (reveal != null) reveal.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
     }
     private void send() {
@@ -270,7 +278,7 @@ final class AvaOverlay extends ContextThemeWrapper {
         String question = input.getText().toString().trim(); if (question.isEmpty() || busy) return;
         saveDraft();
         try {
-            ((EssentialKeyService)getBaseContext()).submit(eventId, question);
+            service.submit(eventId, question);
             beginResponse(question);
         } catch (Exception unavailable) { showError(unavailable.getMessage()); }
     }

@@ -90,6 +90,19 @@ export const extract = (
     Effect.map((document) =>
       storableDocument({
         ...document,
+        ...((source.origin?._tag === "Web" || source.origin?._tag === "LocalFile") &&
+        source.origin.note?.trim()
+          ? {
+              sections: [
+                ...document.sections,
+                {
+                  text: `Capture note:\n${source.origin.note.trim()}`,
+                  kind: "other" as const,
+                  location: {},
+                },
+              ],
+            }
+          : {}),
         access:
           document.access ??
           (source.acquisitionMode === "stored" ? (source.access ?? "open") : "open"),

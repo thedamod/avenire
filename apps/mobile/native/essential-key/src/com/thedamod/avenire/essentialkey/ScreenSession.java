@@ -22,9 +22,12 @@ final class ScreenSession {
     static String id(Context c) { return prefs(c).getString("id", ""); }
     static String capturedAt(Context c) { return prefs(c).getString("capturedAt", ""); }
     static boolean matches(Context c, String id, String capturedAt) {
+        return active(c,id,capturedAt) && prefs(c).getBoolean("available",false);
+    }
+    static boolean active(Context c, String id, String capturedAt) {
         long age = SystemClock.elapsedRealtime() - prefs(c).getLong("created", -1);
         return id != null && id.equals(id(c)) && capturedAt != null && capturedAt.equals(capturedAt(c))
-            && prefs(c).getBoolean("available", false) && age >= 0 && age <= 300_000;
+            && age >= 0 && age <= 300_000;
     }
     static JSONObject observation(Context c, String expected) throws Exception {
         if (!matches(c, expected, capturedAt(c))) throw new IllegalStateException("Screen context expired. Open Ava again.");

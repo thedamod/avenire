@@ -36,6 +36,7 @@ final class BrowserSource {
         }
         while(!pending.isEmpty()) pending.remove().recycle();
         // A hidden toolbar is unverified rather than evidence that a private tab is ordinary.
+        android.util.Log.i("AvenireCapture", "Browser gate private="+privateMode+" address="+(url!=null)+" visited="+seen);
         return new BrowserSource(url,privateMode || seen>=512);
     }
 }

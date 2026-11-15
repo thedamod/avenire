@@ -27,7 +27,7 @@ final class CaptureReceipt extends LinearLayout {
     private final Path shape=new Path();
     private boolean attached;
     CaptureReceipt(EssentialKeyService service) {
-        super(service); this.service=service; windows=service.getSystemService(WindowManager.class);
+        super(OverlayWindows.create(service)); this.service=service; windows=getContext().getSystemService(WindowManager.class);
         setOrientation(HORIZONTAL); setGravity(Gravity.CENTER_VERTICAL); setPadding(dp(16),dp(6),dp(8),dp(6));
         android.graphics.drawable.GradientDrawable background=new android.graphics.drawable.GradientDrawable(); background.setColor(0xF21B1B1B); background.setCornerRadius(dp(24)); setBackground(background); setElevation(dp(8));
         progress=new ProgressBar(service,null,android.R.attr.progressBarStyleHorizontal); progress.setMax(1000); progress.setProgressTintList(android.content.res.ColorStateList.valueOf(0xFFABC4FF)); progress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF292929));
@@ -54,7 +54,7 @@ final class CaptureReceipt extends LinearLayout {
         if(dismissedId.equals(row.optString("id"))) return;
         if(!id.equals(row.optString("id"))) progress.setProgress(0);
         id=row.optString("id"); phase=row.optString("phase");
-        String text=phase.equals("queued")?"Capture queued":phase.equals("uploading")?"Saving capture…":phase.equals("extracting")?"Saved · extracting…":phase.equals("ready")?"Capture ready":phase.equals("partial")?"Saved · partial extraction":phase.equals("undoing")?"Undoing capture…":phase.equals("undone")?"Capture undone":phase.equals("paused")?"Saved · processing paused":phase.equals("failed")?row.optString("error","Capture needs attention"):"Waiting to retry capture";
+        String text=phase.equals("queued")?"Capture queued":phase.equals("acquiring")?"Getting original…":phase.equals("uploading")?"Saving capture…":phase.equals("extracting")?"Saved · extracting…":phase.equals("ready")?"Capture ready":phase.equals("partial")?"Saved · partial extraction":phase.equals("undoing")?"Undoing capture…":phase.equals("undone")?"Capture undone":phase.equals("paused")?"Saved · processing paused":phase.equals("failed")?row.optString("error","Capture needs attention"):"Waiting to retry capture";
         indicator.invalidate(); label.setText(text); label.setContentDescription(text);
         boolean working=!CaptureStore.terminal(phase);
         if(loader!=null) { loader.cancel(); loader=null; }
