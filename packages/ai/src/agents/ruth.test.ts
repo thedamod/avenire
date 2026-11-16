@@ -102,7 +102,11 @@ for (const fullAccess of [false, true]) {
     }
     for (const name of ["run_python", "propose_file_action"])
       expect(agent.tools).not.toHaveProperty(name);
-    expect(Object.keys(agent.tools).sort()).toEqual(Object.keys(ruthToolSpecs).sort());
+    expect(Object.keys(agent.tools).sort()).toEqual(
+      Object.keys(ruthToolSpecs)
+        .filter((name) => name !== "read_screen" && !name.startsWith("native_"))
+        .sort(),
+    );
   });
 }
 
@@ -127,4 +131,35 @@ it.effect("validates report metadata ownership before saving a chat turn", () =>
       appendIncoming([], incoming, { freshId: "new", createdAt: "server" })[0]?.metadata,
     ).toEqual({ createdAt: "server", runId: "run" });
   }).pipe(Effect.provideService(Database, f.database));
+});
+
+it("offers read_screen in a supported desktop prompt without assuming account consent", () => {
+  const agent = createRuthAgent({
+    models: RuthModels.of({
+      languageModel: () => new MockLanguageModelV4(),
+      capabilities: () => ({ vision: true, toolResultImages: true }),
+      maxImages: 3,
+    }),
+    services: Context.empty() as Context.Context<RuthToolServices>,
+    fullAccess: false,
+    turn: {
+      userId: UserId.make("user"),
+      threadId: ThreadId.make("thread"),
+      fullAccess: false,
+      timeZone: "UTC",
+      nativeScreenAvailable: true,
+      existingVisuals: [],
+      page: {
+        surface: "ephemeral",
+        platform: "desktop",
+        contentWidthPx: 480,
+        colorScheme: "light",
+        themeTokens: {},
+        fonts: { body: "sans-serif", mono: "monospace" },
+      },
+    },
+  });
+  expect(agent.tools.read_screen).toBeDefined();
+  expect(agent.tools.read_screen?.description).toContain("status is disabled");
+  expect(agent.tools.native_annotate).toBeUndefined();
 });

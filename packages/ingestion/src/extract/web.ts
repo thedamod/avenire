@@ -6,11 +6,11 @@ import { type ExtractedDocument, ExtractionError, fullCoverage } from "./types.t
 import { htmlAccess } from "./access.ts";
 import { sectionsFromMarkdown } from "./markdown.ts";
 
-const parseHtml = (html: string) =>
+const parseHtml = (html: string, url: string) =>
   Effect.try({
     try: (): ExtractedDocument => {
       const { document } = parseHTML(html);
-      const parsed = new DefuddleClass(document).parse();
+      const parsed = new DefuddleClass(document, { url }).parse();
       return {
         ...(parsed.title ? { title: parsed.title } : {}),
         sections: sectionsFromMarkdown(parsed.contentMarkdown ?? parsed.content),
@@ -23,6 +23,7 @@ const parseHtml = (html: string) =>
 
 /** Parse an already acquired snapshot. A citation URL never authorizes another fetch. */
 export const extractWeb = (
-  _url: string,
+  url: string,
   source: Uint8Array,
-): Effect.Effect<ExtractedDocument, ExtractionError> => parseHtml(new TextDecoder().decode(source));
+): Effect.Effect<ExtractedDocument, ExtractionError> =>
+  parseHtml(new TextDecoder().decode(source), url);

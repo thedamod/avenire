@@ -47,7 +47,7 @@ export function SaveToNotebook({
     try {
       const file = await call(api, (client) =>
         client["library.createNote"]({
-          title: title.replace(/\s+/g, " ").trim().slice(0, 200) || "Ruth's answer",
+          title: title.replace(/\s+/g, " ").trim().slice(0, 200) || "Ava's answer",
           markdown: markdown(),
           folderIds: [folder.id],
           source: "chat",
@@ -124,7 +124,7 @@ export function SaveToNotebook({
           </form>
         ) : (
           <NotebookPicker
-            title={guess ? "Save to notebook · Ruth's guess first" : "Save to notebook"}
+            title={guess ? "Save to notebook · Ava's guess first" : "Save to notebook"}
             folders={folders}
             onPick={(folder) => void save(folder)}
             onNew={() => setNaming(true)}

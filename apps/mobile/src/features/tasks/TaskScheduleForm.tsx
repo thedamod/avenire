@@ -189,7 +189,7 @@ export function TaskScheduleForm({
             style={styles.multiline}
           />
           <View style={{ gap: 8 }}>
-            <Text variant="label">Ruth can read</Text>
+            <Text variant="label">Ava can read</Text>
             {folders.loading && !folders.data ? (
               <SkeletonRow />
             ) : folders.error && !folders.data ? (
@@ -262,7 +262,7 @@ export function TaskScheduleForm({
             </View>
           </View>
           <View style={{ gap: 8 }}>
-            <Text variant="label">Ruth can change</Text>
+            <Text variant="label">Ava can change</Text>
             <View style={styles.options}>
               <OptionButton label="Nothing" selected={false} disabled onPress={() => {}} />
               <OptionButton label="Propose, I accept" selected disabled onPress={() => {}} />
@@ -310,7 +310,7 @@ export function TaskScheduleForm({
             }}
           >
             <View style={{ flex: 1 }}>
-              <Text color="fg">Keep Ruth's workspace</Text>
+              <Text color="fg">Keep Ava's workspace</Text>
               <Text variant="meta">
                 Off deletes the sandbox after each run. Your report and files stay.
               </Text>
@@ -319,7 +319,7 @@ export function TaskScheduleForm({
               <Switch
                 value={keepWorkspace}
                 onValueChange={setKeepWorkspace}
-                accessibilityLabel="Keep Ruth's workspace"
+                accessibilityLabel="Keep Ava's workspace"
               />
             </View>
           </View>

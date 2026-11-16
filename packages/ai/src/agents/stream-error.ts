@@ -5,6 +5,6 @@ import { RuthToolError } from "../tools/core.ts";
 export const ruthStreamError = (error: unknown): string => {
   if (error instanceof RuthToolError && error.message.trim()) return error.message;
   if (InvalidToolInputError.isInstance(error))
-    return "The tool arguments were invalid. Ruth can correct them and try again.";
-  return "Ruth ran into a problem. Please try again.";
+    return "The tool arguments were invalid. Ava can correct them and try again.";
+  return "Ava ran into a problem. Please try again.";
 };

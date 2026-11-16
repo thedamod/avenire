@@ -7,7 +7,7 @@ export function writtenByRuth(note: Pick<LibraryFile, "source">): boolean {
 
 /** "Written by Ruth", "Saved from a chat", "Your note" (07 / M09 tiles). */
 export function noteProvenance(note: Pick<LibraryFile, "source">): string {
-  if (writtenByRuth(note)) return "Written by Ruth";
+  if (writtenByRuth(note)) return "Written by Ava";
   if (note.source === "chat") return "Saved from a chat";
   return "Your note";
 }

@@ -69,7 +69,7 @@ export function useTaskActions(onChanged: () => void) {
         );
       setNotice(
         action === "run"
-          ? "Ruth started it."
+          ? "Ava started it."
           : action === "delete"
             ? "Task deleted."
             : task.enabled

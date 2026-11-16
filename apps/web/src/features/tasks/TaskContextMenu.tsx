@@ -46,7 +46,7 @@ export function TaskContextMenu({
       setConfirm(false);
       toast(
         action === "run"
-          ? "Ruth started it"
+          ? "Ava started it"
           : action === "delete"
             ? "Task deleted"
             : task.enabled
@@ -89,7 +89,7 @@ export function TaskContextMenu({
         open={confirm}
         onOpenChange={setConfirm}
         title="Delete this task?"
-        description="Ruth stops running it. Past morning reports and anything you accepted stay."
+        description="Ava stops running it. Past morning reports and anything you accepted stay."
         busy={busy}
         onConfirm={() => void mutate("delete")}
       />

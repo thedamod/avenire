@@ -40,7 +40,7 @@ export function timelineRailItems(rows: readonly ChatRow[], report: boolean): Ti
       items.push({
         id: row.id,
         rowIndex,
-        title: "Ruth’s activity",
+        title: "Ava’s activity",
         preview: row.entries.map((entry) => entry.label).join(" · "),
       });
     } else if (!inFollowUp && row.kind === "media") {

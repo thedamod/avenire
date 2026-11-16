@@ -24,7 +24,7 @@ export function HomeToast({
   const failed = run.status === "failed";
   const title = failed
     ? "Last night's run didn't finish."
-    : `Ruth finished ${run.assets.length} ${run.assets.length === 1 ? "thing" : "things"} overnight.`;
+    : `Ava finished ${run.assets.length} ${run.assets.length === 1 ? "thing" : "things"} overnight.`;
   const names = run.assets.map((asset) => asset.title);
   const summary =
     run.summary ??

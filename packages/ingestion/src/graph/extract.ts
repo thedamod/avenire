@@ -267,6 +267,15 @@ export const GraphExtractorLive = Layer.effect(
           chunks: result.chunks.filter((entry) => entry.index >= 0 && entry.index < chunks.length),
         })),
         Effect.catchTag("GraphError", (error): Effect.Effect<ExtractedGraph, GraphError> => {
+          // Some providers reject their own generated JSON with a non-retryable 400.
+          // Give that generation one smaller, constrained attempt, then preserve failure.
+          const invalidJson =
+            /failed to generate json|json_validate_failed/i.test(
+              apiFailure(error.cause)?.message ?? "",
+            ) ||
+            (NoObjectGeneratedError.isInstance(error.cause) && error.cause.finishReason === "stop");
+          if (invalidJson && !constrained)
+            return extractBatch(title, chunks, maxOutputTokens, true);
           if (!truncated(error.cause) && !oversized(error.cause)) return Effect.fail(error);
           if (chunks.length === 1)
             return oversized(error.cause)

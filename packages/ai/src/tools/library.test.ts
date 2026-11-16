@@ -55,7 +55,7 @@ for (const name of ["read_file", "write_file", "move_file", "rename_file", "arch
       expect(yield* program.pipe(Effect.result)).toMatchObject({ failure: { _tag: "NotFound" } });
     }).pipe(Effect.provide(services));
   });
-it.effect("writes a Ruth note, folder membership, uploaded event and ingestion job", () => {
+it.effect("writes a Ava note, folder membership, uploaded event and ingestion job", () => {
   const writes: Array<{ table: string; values: Record<string, unknown> }> = [];
   const statements: Array<{ sql: string; params: unknown[] }> = [];
   let invalidated = 0;

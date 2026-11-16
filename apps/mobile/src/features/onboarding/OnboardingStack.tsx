@@ -329,7 +329,7 @@ function MorningScreen({ navigation }: StepProps<"Morning">) {
     >
       <Heading
         title="Your morning"
-        description="Ruth will have your notes and questions ready by this time."
+        description="Ava will have your notes and questions ready by this time."
       />
       <TimeWheel value={answers.minutes} onChange={answers.setMinutes} />
     </Step>
@@ -371,7 +371,7 @@ function NotificationsScreen({ navigation }: StepProps<"Notifications">) {
       }
     >
       <Heading
-        title="Hear from Ruth"
+        title="Hear from Ava"
         description="A note when the overnight run is done, and when she needs you. Nothing else."
       />
       <View style={styles.notificationExamples}>
@@ -469,7 +469,7 @@ function ReadyScreen() {
         You're set.
       </Text>
       <Text style={styles.readyCopy}>
-        Ruth starts tonight. Your first morning report will be here at{" "}
+        Ava starts tonight. Your first morning report will be here at{" "}
         {formatReportTime(answers.minutes)}.
       </Text>
     </BrandedStep>
@@ -516,7 +516,7 @@ function OnboardingNavigator({
         <Stack.Screen
           name="Notifications"
           component={NotificationsScreen}
-          options={{ title: "Hear from Ruth" }}
+          options={{ title: "Hear from Ava" }}
         />
         <Stack.Screen
           name="Capture"

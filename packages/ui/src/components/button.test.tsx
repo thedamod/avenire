@@ -16,7 +16,7 @@ describe("core primitives", () => {
       <>
         <Button>Default</Button>
         <Button variant="ruth" size="sm">
-          Ruth
+          Ava
         </Button>
         <Button variant="ghost" size="icon-sm" aria-label="more" />
         <Button variant="destructive" size="xl">
@@ -26,8 +26,8 @@ describe("core primitives", () => {
     );
     expect(screen.getByText("Default").className).toContain("h-8");
     expect(screen.getByText("Default").className).toContain("bg-primary");
-    expect(screen.getByText("Ruth").className).toContain("bg-ruth");
-    expect(screen.getByText("Ruth").className).toContain("h-7");
+    expect(screen.getByText("Ava").className).toContain("bg-ruth");
+    expect(screen.getByText("Ava").className).toContain("h-7");
     expect(screen.getByLabelText("more").className).toContain("size-7");
     expect(screen.getByText("Delete").className).toContain("h-11");
   });

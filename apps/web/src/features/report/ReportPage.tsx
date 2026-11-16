@@ -374,7 +374,7 @@ function ReportWorkspace({
         return next;
       });
       const conflict = resolved.find((approval) => approval.status === "conflict");
-      if (conflict) toast.error(conflict.conflict ?? "This file changed since Ruth read it.");
+      if (conflict) toast.error(conflict.conflict ?? "This file changed since Ava read it.");
       void refetchApprovals();
       invalidateLibrary(api, ["files", "notes"]);
     },
@@ -469,7 +469,7 @@ function ReportWorkspace({
             },
           }),
         )
-        .catch((cause: unknown) => toast.error(`Couldn't reach Ruth: ${errorMessage(cause)}`));
+        .catch((cause: unknown) => toast.error(`Couldn't reach Ava: ${errorMessage(cause)}`));
     },
     [cloudThreadId, entry, fast, folderId, runId],
   );
@@ -622,7 +622,7 @@ function ReportWorkspace({
                       placeholder={
                         question?.allowCustom
                           ? "Or type your own answer"
-                          : "Ask Ruth, @ a source or note, or / for commands"
+                          : "Ask Ava, @ a source or note, or / for commands"
                       }
                       busy={busy && !question}
                       onStop={() => void entry.chat.stop()}
@@ -689,7 +689,7 @@ function ReportWorkspace({
                   >
                     <SheetTitle className="sr-only">Made overnight</SheetTitle>
                     <SheetDescription className="sr-only">
-                      What Ruth made overnight
+                      What Ava made overnight
                     </SheetDescription>
                     <OutputPane
                       variant="sheet"
@@ -814,7 +814,7 @@ function RunIntro({
         <div className="mb-4 flex items-start gap-2.5 text-[13.5px] leading-5">
           <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
           <p className="min-w-0 flex-1 text-foreground-soft">
-            Ruth Cloud didn't finish this run.
+            Ava Cloud didn't finish this run.
             {run.error ? <span className="text-muted-foreground"> {run.error}</span> : null}{" "}
             <Link
               href={`/tasks/${run.taskId}`}
@@ -830,7 +830,7 @@ function RunIntro({
         <ChatMarkdown text={run.summary} />
       ) : phase === "done" ? (
         <p className="text-[14px] text-muted-foreground">
-          Ruth didn't leave a summary for this run.
+          Ava didn't leave a summary for this run.
         </p>
       ) : null}
 

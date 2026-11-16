@@ -301,7 +301,7 @@ export function TasksScreen({ navigation }: ScreenProps<"Tasks">) {
   const deleteTask = (task: CloudTask) =>
     Alert.alert(
       "Delete this task?",
-      "Ruth stops running it. Past morning reports and anything you accepted stay.",
+      "Ava stops running it. Past morning reports and anything you accepted stay.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -497,7 +497,7 @@ export function TasksScreen({ navigation }: ScreenProps<"Tasks">) {
               title={
                 filter === "scheduled" ? "No scheduled tasks" : "No chats or overnight runs yet"
               }
-              description="Leave Ruth something to do overnight."
+              description="Leave Ava something to do overnight."
               icon="moon"
               action={
                 <Button

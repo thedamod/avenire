@@ -23,11 +23,11 @@ export function FirstRunSteps() {
             <span key={color} className="h-4 w-3 rounded-[2px]" style={{ background: color }} />
           ))}
         </span>
-        Or leave things unfiled. Ruth can sort them tonight.
+        Or leave things unfiled. Ava can sort them tonight.
       </Step>
       <Step index="03" title="Ask about any of it">
         <span className="inline-flex h-6 w-fit items-center rounded-full bg-ruth-tint px-2.5 text-xs font-semibold text-ruth-text">
-          Ask Ruth
+          Ask Ava
         </span>
         Answers cite the exact page or minute.
       </Step>

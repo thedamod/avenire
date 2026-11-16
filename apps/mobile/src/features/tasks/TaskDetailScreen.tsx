@@ -91,7 +91,7 @@ export function TaskDetailScreen({ navigation, route }: ScreenProps<"TaskDetail"
     setMenu(false);
     Alert.alert(
       "Delete this task?",
-      "Ruth stops running it. Past morning reports and anything you accepted stay.",
+      "Ava stops running it. Past morning reports and anything you accepted stay.",
       [
         { text: "Cancel", style: "cancel" },
         {

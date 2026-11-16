@@ -7,7 +7,7 @@ description: Create flashcards for spaced repetition learning using concise mark
 
 Generate effective flashcards optimized for spaced repetition learning.
 
-Avenire is not a flashcard app: cards are a by-product of studying, written by Ruth Cloud
+Avenire is not a flashcard app: cards are a by-product of studying, written by Ava Cloud
 as an artifact file. Write them as a JSON array of
 `{ "front": string, "back": string, "notes"?: string, "sourceFileIds": string[] }`, with
 markdown allowed in `front`, `back` and `notes`. Every card cites the files it came from.

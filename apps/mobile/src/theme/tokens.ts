@@ -16,6 +16,10 @@ export const colors = {
   "accent-tint": "#151B2B",
   "accent-line": "#2E3B5E",
   "on-accent": "#0B1020",
+  // Home NightSky cloud palette, shared by the native Ava frame.
+  "sky-blue": "#4EA4FF",
+  "sky-indigo": "#696FEA",
+  "sky-purple": "#A85BEA",
   red: "#FF6B6B",
   green: "#6BE0A0",
   amber: "#F2C46D",

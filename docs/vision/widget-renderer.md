@@ -1,12 +1,12 @@
 # Widget Renderer 2.0 — vision
 
-How Ruth explains things _visually_. In v1 a "widget" meant one thing: model-written
+How Ava explains things _visually_. In v1 a "widget" meant one thing: model-written
 HTML/JS in an iframe (plus a small primitive spec). In 2.0 a visual is an **artifact in one
-of several modalities**, and choosing the right modality is a first-class part of Ruth's
+of several modalities**, and choosing the right modality is a first-class part of Ava's
 reasoning.
 
 Inputs to this document: the v1 renderer (`context/avenire/apps/web/src/components/Widget*`,
-`packages/ai/skills/sections/visual-guidelines`), the Ruth research prototype
+`packages/ai/skills/sections/visual-guidelines`), the Ava research prototype
 (`context/research/ruth`), `context/math` (pmndrs/math), and `context/animus` (Manim agent).
 Research notes: `context/_notes/{v1-widgets,math,animus}.md`.
 
@@ -14,25 +14,25 @@ Research notes: `context/_notes/{v1-widgets,math,animus}.md`.
 
 ## 1. Principles
 
-1. **The modality is a teaching decision, not a rendering detail.** Ruth picks how to show
+1. **The modality is a teaching decision, not a rendering detail.** Ava picks how to show
    something from what the learner needs to _do_ with it: compare, follow, compute, or
    manipulate.
 2. **Prose always wraps the visual.** Every artifact has a one-line learning objective,
    a caption, and an accessible text fallback. A visual never replaces the explanation.
 3. **Grounded in the user's material.** Artifacts carry `sourceChunkIds`, and numbers come
    from the material or from computation, never from the model's imagination.
-4. **Compute once on the server, interact on the client.** Ruth's `run_python` tool runs
+4. **Compute once on the server, interact on the client.** Ava's `run_python` tool runs
    real data work in a cloud sandbox _once_ and throws the sandbox away. Everything the learner manipulates afterwards (sliders,
    drags, filters) runs on the client. A parameter change never starts a sandbox.
 5. **Nothing heavy on the main thread.** All client-side artifact code (simulation steps,
    chart layout and drawing, markdown/math/code highlighting) runs in Web Workers. The main
    thread only composes DOM and forwards input, so the chat stays smooth while visuals run.
 6. **Expensive things are jobs, run by subagents.** Videos render asynchronously under a
-   dedicated subagent, with progress, caching and repair. The chat Ruth never blocks on them.
+   dedicated subagent, with progress, caching and repair. The chat Ava never blocks on them.
 
 ## 2. The modality policy
 
-This is the rule set Ruth is trained and validated against. It encodes the owner's three
+This is the rule set Ava is trained and validated against. It encodes the owner's three
 rules plus the cheap defaults around them.
 
 | The concept is…                                                                                                                                                                                 | Use                                                                                                                                                             | Why                                                                                                             | Not                                                        |
@@ -107,7 +107,7 @@ interface Artifact {
 
 ### 3.2 Inline in the message, with a page-context tool
 
-Visuals are written **inline**: Ruth puts the widget straight into its markdown, and the
+Visuals are written **inline**: Ava puts the widget straight into its markdown, and the
 renderer mounts it from there. There's no upload round-trip and no extra fetch.
 
 ```html
@@ -115,9 +115,9 @@ renderer mounts it from there. There's no upload round-trip and no extra fetch.
 <avenire-sim kit="kinematics" title="Reaching a target"> … </avenire-sim>
 ```
 
-**Ruth has to know the page it's drawing on.** Inline HTML written blind breaks easily: the
+**Ava has to know the page it's drawing on.** Inline HTML written blind breaks easily: the
 wrong width, colours that clash with the theme, a kit that doesn't exist, a 3D scene on a
-phone. So before writing a visual Ruth calls **`get_page_context`**, which returns:
+phone. So before writing a visual Ava calls **`get_page_context`**, which returns:
 
 | Field                           | Example                                                | Source                             |
 | ------------------------------- | ------------------------------------------------------ | ---------------------------------- |
@@ -130,7 +130,7 @@ phone. So before writing a visual Ruth calls **`get_page_context`**, which retur
 | `existingVisuals`               | `{ id, title }` of visuals already in this thread      | server, from messages              |
 
 The client sends its half with every chat request (`body.page`), so the tool needs no
-round-trip to the client. The result is cached for the turn. `existingVisuals` lets Ruth
+round-trip to the client. The result is cached for the turn. `existingVisuals` lets Ava
 revise ("make the arm longer") by writing a new widget with `revises="vis_…"` instead of
 starting over. Later, the same tool takes an optional visual plan and validates it against
 the policy (§5), so planning and page facts are one call.
@@ -142,7 +142,7 @@ the policy (§5), so planning and page facts are one call.
   source.
 - **Validation:** the renderer validates a widget when its closing tag arrives (schema,
   size, CSP, lint) and shows a diagnostic instead of mounting a broken one. The same
-  validators run server-side on the finished message, for evals and for "ask Ruth to fix".
+  validators run server-side on the finished message, for evals and for "ask Ava to fix".
 - **Promotion to storage:** saving a visual to a note, saving it to a notebook or sharing
   it copies its source into the bucket as an `Artifact` (`artifacts/art_…/v1/index.html`).
   Notes and notebooks then reference it as `<avenire-vis src="…" />`, and a share link
@@ -185,7 +185,7 @@ but too small: few chart types and weak support for large data. So:
 
 ### 4.3 The `run_python` tool (compute, not a modality)
 
-`run_python` is a tool Ruth calls when it needs real computation: brute force, statistics,
+`run_python` is a tool Ava calls when it needs real computation: brute force, statistics,
 symbolic math, data processing over the user's material. It runs once in an ephemeral
 Daytona sandbox (`@avenire/cloud/sandbox`) from a prebaked
 `avenire-python` snapshot (numpy, scipy, pandas, sympy, networkx, scikit-learn,
@@ -207,12 +207,12 @@ matplotlib, polars).
   should explore goes out as `avenire.data` and becomes a chart or simulation.
 - **One run per question, not per parameter.** Each call runs once (seeded, cached by
   `hash(code, inputs, seed, runtimeVersion)`), and the sandbox is discarded afterwards.
-  "Recompute" happens only when Ruth or the learner explicitly changes the computation,
+  "Recompute" happens only when Ava or the learner explicitly changes the computation,
   never from a slider.
 - Figures render as figure cards inside the tool's row; data outputs are referenced by
   chart specs and simulations through `dataRef`.
 
-**Handing parameters to the client.** When a computation has knobs worth exposing, Ruth picks
+**Handing parameters to the client.** When a computation has knobs worth exposing, Ava picks
 the cheapest tier that keeps interaction instant:
 
 | Tier                                               | When                                                                                                                                        | How                                                                                                                                              |
@@ -220,7 +220,7 @@ the cheapest tier that keeps interaction instant:
 | **1. JS model in the simulation worker** (default) | The per-parameter computation is cheap enough to run in the browser: Monte Carlo with ≤ ~10⁶ samples, ODE integration, small linear algebra | Python produces the data and validates the model; the simulation re-implements the cheap part on `context/math` kits and runs it in the worker   |
 | **2. Precomputed grid**                            | The computation is expensive but has only 1–3 parameters                                                                                    | Python sweeps the parameter grid once (`avenire.grid`); the simulation interpolates between grid points                                          |
 | **3. Pyodide in the worker**                       | The model must stay in Python (numpy/scipy) and is light per run                                                                            | The simulation loads Pyodide in its worker (lazy, cached) and re-runs the Python function on parameter change. Opt-in, and budgeted by load time |
-| **4. Explicit recompute**                          | Truly heavy work (large datasets, training)                                                                                                 | A "Recompute with these settings" button asks Ruth to call `run_python` again, with a visible cost and progress. Never automatic                 |
+| **4. Explicit recompute**                          | Truly heavy work (large datasets, training)                                                                                                 | A "Recompute with these settings" button asks Ava to call `run_python` again, with a visible cost and progress. Never automatic                 |
 
 ### 4.4 Simulation (client-side, in a worker)
 
@@ -288,28 +288,28 @@ canvas-size caps, a 200 KB source limit, a kill switch after repeated budget vio
 and a poster frame captured headlessly at creation time for embeds and offscreen rows.
 
 **Errors are visible.** Exceptions in the worker or iframe are posted as diagnostics. The
-host shows an error state with "ask Ruth to fix" instead of a blank frame.
+host shows an error state with "ask Ava to fix" instead of a blank frame.
 
-**Reference simulation: inverse kinematics.** Ruth writes an `<avenire-sim
+**Reference simulation: inverse kinematics.** Ava writes an `<avenire-sim
 kit="kinematics">` with parameters `{ segments: 2–6, segmentLength, jointLimitDeg, solver:
 "fabrik" | "ccd" }`. The worker code builds a `fabrik2` chain, binds `ctx.handles` to the
-target, solves each frame, and emits `reachable` / `iterations` readouts. Ruth's prose
+target, solves each frame, and emits `reachable` / `iterations` readouts. Ava's prose
 explains why the chain straightens and stalls when the target leaves the reachable disc,
 and what joint limits do to the solution space.
 
 ### 4.5 Video (Manim, owned by a subagent)
 
-**Who does the work.** The chat Ruth never generates video itself. It calls
+**Who does the work.** The chat Ava never generates video itself. It calls
 `make_video({ objective, audience, sourceChunkIds, constraints })`, which starts a
 **video subagent** (its own model context, skills and tools) and returns immediately with
-a handle. The chat Ruth keeps talking. The subagent shows in the conversation as a
+a handle. The chat Ava keeps talking. The subagent shows in the conversation as a
 subagent card (see `docs/design/chat-view.md` §7) with live stage progress.
 
 **Questions to the user come from the subagent.** If the subagent needs input (approve the
 scene plan, pick depth or pacing, "focus on the intuition or the proof?"), it raises a
 question request. That request is surfaced in the chat's composer banner, labelled as
-coming from the video agent, and its answer is routed back to the subagent. The chat Ruth
-doesn't relay or paraphrase it. Ruth Cloud runs skip questions and use defaults.
+coming from the video agent, and its answer is routed back to the subagent. The chat Ava
+doesn't relay or paraphrase it. Ava Cloud runs skip questions and use defaults.
 
 The subagent's pipeline, following animus with the job model, validation and caching it
 lacks:
@@ -331,7 +331,7 @@ LOCKED`, like ingestion). It runs in a **prebaked Daytona snapshot**
    against each scene's objective. Failures become structured diagnostics.
 5. **Repair:** the subagent gets the diagnostics (`stage`, `code`, `message`,
    `sourceLocation`, `logTail`, `frameRefs`) and patches the source. After up to 3 attempts
-   the job fails with the last diagnostics, and the chat Ruth is told so and can offer a
+   the job fails with the last diagnostics, and the chat Ava is told so and can offer a
    chart or text explanation instead.
 6. **Final render** (`-qm`/`-qh`) per scene in parallel, concatenated with ffmpeg. The
    outputs are an MP4, a poster frame, per-scene chapters, and **captions (VTT) generated
@@ -349,11 +349,11 @@ scene boundaries.
 scene; and TTS by narration. **Limits:** a 90 s default for chat videos (5 min for Cloud),
 a 10-minute job timeout, and no secrets in the render sandbox.
 
-## 5. Teaching Ruth which modality to use
+## 5. Teaching Ava which modality to use
 
 Prompting alone doesn't make modality choice reliable. Five reinforcing mechanisms:
 
-1. **A planning step the tools enforce.** Before any visual, Ruth must call
+1. **A planning step the tools enforce.** Before any visual, Ava must call
    `get_page_context({ plan: { learningObjective, modality, justification, dataSource,
 parameters? } })`. The tool validates the plan against the policy:
    - a chart needs a data source;

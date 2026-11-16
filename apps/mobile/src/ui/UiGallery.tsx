@@ -304,9 +304,9 @@ export function UiGallery({ navigation }: ScreenProps<"UiGallery">) {
               <GlassButton icon="panel" accessibilityLabel="Panel example" onPress={noOp} />
               <GlassButton
                 icon="moon"
-                label="Ask Ruth"
+                label="Ask Ava"
                 accent
-                accessibilityLabel="Ask Ruth example"
+                accessibilityLabel="Ask Ava example"
                 onPress={noOp}
               />
               <GlassButton
@@ -510,7 +510,7 @@ export function UiGallery({ navigation }: ScreenProps<"UiGallery">) {
               onMic={noOp}
               tray={
                 <ComposerTray
-                  title="Allow Ruth to change files?"
+                  title="Allow Ava to change files?"
                   meta="Move 2 duplicates to Trash"
                   expanded
                   onToggle={noOp}
@@ -553,7 +553,7 @@ export function UiGallery({ navigation }: ScreenProps<"UiGallery">) {
               tray={
                 <ComposerTray
                   title="Which exam should the plan build up to?"
-                  meta="Ruth needs one answer to continue"
+                  meta="Ava needs one answer to continue"
                   step="1/2"
                   expanded
                   onToggle={noOp}
@@ -598,7 +598,7 @@ export function UiGallery({ navigation }: ScreenProps<"UiGallery">) {
               onSend={gallerySend}
               onAdd={noOp}
               controls={[
-                { key: "ruth", label: "Ruth", icon: "moon", onPress: noOp },
+                { key: "ruth", label: "Ava", icon: "moon", onPress: noOp },
                 {
                   key: "notebook",
                   label: "This notebook",
@@ -631,7 +631,7 @@ export function UiGallery({ navigation }: ScreenProps<"UiGallery">) {
                 { icon: "move", accessibilityLabel: "Move selected", active: true, onPress: noOp },
                 {
                   icon: "moon",
-                  accessibilityLabel: "Ask Ruth about selected",
+                  accessibilityLabel: "Ask Ava about selected",
                   color: colors.accent,
                   onPress: noOp,
                 },

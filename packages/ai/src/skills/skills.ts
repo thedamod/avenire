@@ -204,7 +204,7 @@ description: Create flashcards for spaced repetition learning using concise mark
 
 Generate effective flashcards optimized for spaced repetition learning.
 
-Avenire is not a flashcard app: cards are a by-product of studying, written by Ruth Cloud
+Avenire is not a flashcard app: cards are a by-product of studying, written by Ava Cloud
 as an artifact file. Write them as a JSON array of
 \`{ "front": string, "back": string, "notes"?: string, "sourceFileIds": string[] }\`, with
 markdown allowed in \`front\`, \`back\` and \`notes\`. Every card cites the files it came from.
@@ -1067,7 +1067,7 @@ Use the Daytona thread sandbox for computation and shareable files. Python 3 sci
 
 The working directory is \`/home/daytona/work\`. Prefer relative paths such as \`afterburner.html\`; absolute writes must stay under \`/home/daytona\` or \`/tmp\`. \`/mnt\`, \`/mnt/data\` and local host paths are unavailable. Keep the same sandbox path through write, build, preview and render. \`/opt/avenire/figures\` is a read-only source reference; copy sources into the working directory before editing or building.
 
-In Ruth Cloud, use the run output directory and \`box_write\` / \`box_exec\` / \`box_read\` instead of the chat sandbox tools. \`preview_widget\` reads Cloud paths, and \`publish_output\` / \`publish_asset\` publish HTML as a wrapped widget. The executor closes the persistent workspace; do not call \`sandbox_close\` or \`render_widget\` in Cloud.
+In Ava Cloud, use the run output directory and \`box_write\` / \`box_exec\` / \`box_read\` instead of the chat sandbox tools. \`preview_widget\` reads Cloud paths, and \`publish_output\` / \`publish_asset\` publish HTML as a wrapped widget. The executor closes the persistent workspace; do not call \`sandbox_close\` or \`render_widget\` in Cloud.
 
 1. \`sandbox_write({ path: "work.py", content: "..." })\` writes code/data.
 2. \`sandbox_exec({ command: "python work.py" })\` computes; inspect exit status and concise stdout/stderr. Use the tool's supported timeout for long renders and stay within output caps. Break long jobs into inspect and final render stages.
@@ -1892,12 +1892,12 @@ Run \`preview_widget\`, inspect its actual screenshots and interaction report, a
   "style": {
     id: "style",
     title: "Figure style",
-    description: "Shared figure tokens and figure framing for all Ruth widgets, charts and simulations; app UI palette stays separate.",
+    description: "Shared figure tokens and figure framing for all Ava widgets, charts and simulations; app UI palette stays separate.",
     section: "visual-guidelines",
     path: "sections/visual-guidelines/style.md",
     content: `---
 name: style
-description: Shared figure tokens and figure framing for all Ruth widgets, charts and simulations; app UI palette stays separate.
+description: Shared figure tokens and figure framing for all Ava widgets, charts and simulations; app UI palette stays separate.
 ---
 
 # Figure style
@@ -1995,7 +1995,7 @@ Cloud follows this same visual contract using its persistent run output director
   },
   "kit-api": {
     id: "kit-api",
-    title: "Ruth widget kits",
+    title: "Ava widget kits",
     description: "Use the exact math, isometric SVG and WebGL kit exports in standalone widgets.",
     section: "tool-guidelines",
     path: "../../../widget-kit/API.md",
@@ -2004,9 +2004,9 @@ name: kit-api
 description: Use the exact math, isometric SVG and WebGL kit exports in standalone widgets.
 ---
 
-Use this source for API signatures. Its literal demo colours show kit mechanics; use Avenire tokens from \`style\` in Ruth widgets.
+Use this source for API signatures. Its literal demo colours show kit mechanics; use Avenire tokens from \`style\` in Ava widgets.
 
-# Ruth widget kits
+# Ava widget kits
 
 Use inside a sandboxed widget's inline \`<script type="module">\`. Import only absolute paths on the widget origin: \`/kits/math.js\`, \`/kits/iso.js\`, and optionally \`/kits/iso-gl.js\`. The scripts make no network requests. \`math.js\` includes the pmndrs/math source plus the numerics below. The isometric source is MIT licensed by Ryan; pmndrs/math is MIT licensed by Isaac Mason. See \`src/math/LICENSE\`, \`src/iso/LICENSE\` and the built \`LICENSES.txt\`.
 

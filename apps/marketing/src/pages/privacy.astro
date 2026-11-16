@@ -1,0 +1,26 @@
+---
+import Base from "../layouts/Base.astro";
+import { Logo } from "../components/Logo.tsx";
+import PrivacyPolicy, { frontmatter } from "../content/legal/privacy.md";
+
+const updated = new Date(frontmatter.updated).toISOString().slice(0, 10);
+---
+<Base title="Privacy policy · Avenire" description={frontmatter.description}>
+  <main class="mx-auto max-w-3xl px-6 py-10 md:py-16">
+    <a href="/" aria-label="Avenire home"><Logo /></a>
+    <h1 class="text-foreground mt-14 text-3xl font-medium">{frontmatter.title}</h1>
+    <p class="text-muted-foreground mt-3 text-sm">Updated <time datetime={updated}>{updated}</time></p>
+    <article class="policy text-foreground-soft mt-10 text-sm leading-7">
+      <PrivacyPolicy />
+    </article>
+    <a href="/" class="text-foreground-soft mt-12 inline-block text-sm underline">Back to Avenire</a>
+  </main>
+</Base>
+<style>
+  .policy :global(h2) { margin-top: 2.5rem; margin-bottom: 1rem; color: var(--foreground); font-size: 1.35rem; font-weight: 500; }
+  .policy :global(h3) { margin-top: 1.75rem; margin-bottom: 0.75rem; color: var(--foreground); font-size: 1.05rem; font-weight: 500; }
+  .policy :global(p), .policy :global(ul) { margin-block: 1rem; }
+  .policy :global(ul) { list-style: disc; padding-left: 1.5rem; }
+  .policy :global(li) { margin-block: 0.5rem; }
+  .policy :global(a) { text-decoration: underline; text-underline-offset: 3px; }
+</style>

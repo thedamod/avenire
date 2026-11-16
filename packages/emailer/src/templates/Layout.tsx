@@ -65,7 +65,7 @@ export const Layout = ({
         </Section>
         <Hr style={{ margin: "28px 0 16px", borderColor: colors.line }} />
         <Text style={{ margin: 0, fontSize: 12, lineHeight: "18px", color: colors.muted }}>
-          Avenire captures what you study and has Ruth work on it overnight.{" "}
+          Avenire captures what you study and has Ava work on it overnight.{" "}
           <Link href={SITE_URL} style={{ color: colors.muted, textDecoration: "underline" }}>
             avenire.space
           </Link>

@@ -22,16 +22,16 @@ it("preserves actionable tool failures without exposing provider or argument det
         cause: new Error("private schema input"),
       }),
     ),
-  ).toBe("The tool arguments were invalid. Ruth can correct them and try again.");
+  ).toBe("The tool arguments were invalid. Ava can correct them and try again.");
   expect(ruthStreamError(new Error("Authorization: Bearer secret"))).toBe(
-    "Ruth ran into a problem. Please try again.",
+    "Ava ran into a problem. Please try again.",
   );
   expect(
     ruthStreamError(
       new RuthToolError({ tool: "sandbox_write", code: "failed", message: "", recoverable: true }),
     ),
-  ).toBe("Ruth ran into a problem. Please try again.");
+  ).toBe("Ava ran into a problem. Please try again.");
   expect(ruthStreamError({ _tag: "RuthToolError", message: "Untrusted error" })).toBe(
-    "Ruth ran into a problem. Please try again.",
+    "Ava ran into a problem. Please try again.",
   );
 });

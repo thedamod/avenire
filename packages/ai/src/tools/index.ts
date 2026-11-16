@@ -5,6 +5,7 @@
  */
 import { PageContext } from "@avenire/contracts";
 import { ruthKitSpecs, ruthSandboxSpecs } from "./specs.ts";
+import { nativeOverlayToolSpecs } from "./native-overlay-specs.ts";
 import { tool } from "ai";
 import * as Schema from "effect/Schema";
 
@@ -69,6 +70,7 @@ export const loadSkillSpec = {
 export { computerToolSpecs } from "./computer-specs.ts";
 import { computerToolSpecs } from "./computer-specs.ts";
 export const ruthToolSpecs = {
+  ...nativeOverlayToolSpecs,
   ...computerToolSpecs,
   ...ruthKitSpecs,
   ...ruthSandboxSpecs,

@@ -71,7 +71,7 @@ export function ClusterReview({ clusters }: { clusters: readonly Folder[] }) {
               Sort {plural(total, "unfiled source")}
             </h1>
             <p className="text-[13.5px] leading-5 text-foreground-soft">
-              Ruth grouped them overnight. Remove anything that doesn't belong. Nothing moves until
+              Ava grouped them overnight. Remove anything that doesn't belong. Nothing moves until
               you accept.
             </p>
           </div>

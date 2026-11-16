@@ -22,6 +22,9 @@ import { acquireAndUploadSource, type AvenireUploadFetch } from "./source-acquis
 
 export const formats: Record<string, readonly [FileKind, string]> = {
   pdf: ["pdf", "application/pdf"],
+  odt: ["document", "application/vnd.oasis.opendocument.text"],
+  ods: ["document", "application/vnd.oasis.opendocument.spreadsheet"],
+  odp: ["document", "application/vnd.oasis.opendocument.presentation"],
   docx: ["document", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
   pptx: ["document", "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
   xlsx: ["document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],

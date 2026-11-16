@@ -7,7 +7,7 @@ type Props = TemplateProps<"cloud-run-failed">;
 export const CloudRunFailed = ({ name, taskTitle, reason, retryUrl }: Props) => (
   <Layout preview={`${taskTitle} stopped early`}>
     <Text style={titleStyle}>{taskTitle} stopped early</Text>
-    <Text style={copyStyle}>Hi {name}, Ruth couldn't finish this run overnight.</Text>
+    <Text style={copyStyle}>Hi {name}, Ava couldn't finish this run overnight.</Text>
     <Text
       style={{
         ...copyStyle,
@@ -19,12 +19,12 @@ export const CloudRunFailed = ({ name, taskTitle, reason, retryUrl }: Props) => 
       {reason}
     </Text>
     <Button href={retryUrl} style={buttonStyle}>
-      Open Ruth Cloud
+      Open Ava Cloud
     </Button>
   </Layout>
 );
 CloudRunFailed.PreviewProps = {
-  name: "Ruth",
+  name: "Ava",
   taskTitle: "Nightly study digest",
   reason: "The study workspace was temporarily unavailable.",
   retryUrl: "https://avenire.space/cloud",

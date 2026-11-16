@@ -227,7 +227,7 @@ export function sourceState(
   if (job.status === "paused")
     return {
       kind: "paused",
-      reason: "Paused. Ruth won't read it until you resume.",
+      reason: "Paused. Ava won't read it until you resume.",
     };
   const detail = [
     job.error ?? "",

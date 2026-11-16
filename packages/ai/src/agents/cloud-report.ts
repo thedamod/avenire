@@ -35,7 +35,7 @@ export const buildReport = (input: ReportInput): string => {
     `Status: ${input.run.status} · attempt ${input.run.attempt}`,
     `Scheduled: ${input.run.scheduledFor.toISOString()} · time zone: ${input.task.timeZone}`,
     `Started: ${input.run.startedAt?.toISOString() ?? "Not started"}\nFinished: ${input.run.finishedAt?.toISOString() ?? "Not finished"}`,
-    "## Ruth's summary",
+    "## Ava's summary",
     input.summary,
     `## Files read (${reads.length})`,
     ...(reads.length

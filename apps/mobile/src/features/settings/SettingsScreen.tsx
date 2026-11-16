@@ -24,6 +24,7 @@ import {
   FeatureSheetHeader as SheetHeader,
 } from "../tasks/FeatureOverlay";
 import { READY_TIMES, formatClock } from "../tasks/schedule";
+import { useAndroidTriggers } from "../native-screen/triggers";
 import { useDesktopSettings, useNotificationPermission, useSettingsData } from "./data";
 
 function Group({ title, foot, children }: PropsWithChildren<{ title?: string; foot?: ReactNode }>) {
@@ -168,6 +169,7 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
   const settings = useSettingsData();
   const notifications = useNotificationPermission();
   const desktop = useDesktopSettings();
+  const android = useAndroidTriggers();
   const [scrolled, setScrolled] = useState(false);
   const [choice, setChoice] = useState<"time" | "changes" | "paywall">();
   const [panel, setPanel] = useState<"profile" | "devices" | "plan" | "privacy">();
@@ -191,7 +193,7 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
       if (value && !notifications.granted && !(await notifications.request())) {
         Alert.alert(
           "Notifications are off",
-          "Allow Avenire notifications in your phone's Settings to hear from Ruth.",
+          "Allow Avenire notifications in your phone's Settings to hear from Ava.",
           [
             { text: "Cancel", style: "cancel" },
             {
@@ -365,7 +367,7 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
                   onPress={() => setChoice("time")}
                 />
                 <Row
-                  title="Ruth can change files"
+                  title="Ava can change files"
                   value={
                     preferences.fileChanges === "propose"
                       ? "Propose, I accept"
@@ -406,10 +408,10 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
                   )}
                 />
                 <Row
-                  title="When Ruth needs you"
+                  title="When Ava needs you"
                   subtitle="Approvals, questions, failed runs"
                   trailing={toggle(
-                    "When Ruth needs you notifications",
+                    "When Ava needs you notifications",
                     notifications.granted &&
                       preferences.notifications.needsYou &&
                       preferences.notifications.runFailed,
@@ -420,10 +422,19 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
               </Group>
               <Group
                 title="Capture"
-                foot="Capture happens in Avenire for Mac and Windows. Everything you capture syncs here."
+                foot="Capture on your computer syncs here. Android shortcuts open Ava over the current app. Private browser tabs, excluded apps and ambiguous windows stay out of previews and AI screen sharing."
               >
                 <Row
                   first
+                  title="Share screen with Ava"
+                  subtitle="Off by default. Enable to share your screen with Ava for explanations and annotations. This can include personal or sensitive content. Previews stay local until you send a prompt or explicitly save a capture. This switch controls screen context in chat; saved captures are processed as library sources. Turning off stops AI screen sharing and clears the active screen context; chat answers remain."
+                  trailing={toggle(
+                    "Share screen with Ava",
+                    preferences.shareScreenWithAi === true,
+                    (shareScreenWithAi) => void settings.save({ shareScreenWithAi }),
+                  )}
+                />
+                <Row
                   title="Capture pages you're logged into"
                   subtitle="Applies to capture on your computer"
                   trailing={toggle(
@@ -446,6 +457,64 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
                   value={desktop.data.shortcut ?? "On computer"}
                 />
               </Group>
+              {android.available ? (
+                <Group
+                  title="Android shortcuts"
+                  foot="Android controls power and Home gestures. Choose Ava as your digital assistant, then assign a supported gesture in your phone's Settings. Double-press power remapping depends on the manufacturer. A home-screen widget opens text-only Ava."
+                >
+                  <Row
+                    first
+                    title="Enable Ava shortcut"
+                    value={android.status?.enabled ? "Enabled" : "Set up"}
+                    subtitle="Enable Avenire Ava, then assign the accessibility button or gesture. App and window metadata is used only to enforce screen exclusions."
+                    disabled={android.busy}
+                    onPress={() => void android.configure("accessibility")}
+                  />
+                  <Row
+                    title="Digital assistant"
+                    value={android.status?.assistant ? "Ava" : "Choose Ava"}
+                    subtitle="Use your phone's supported assistant gesture, such as holding power or Home."
+                    disabled={android.busy || android.status?.assistantAvailable === false}
+                    onPress={() => void android.configure("assistant")}
+                  />
+                  <Row
+                    title="Power and Home gestures"
+                    subtitle="Assign available gestures in Android Settings. Options depend on your phone."
+                    disabled={android.busy}
+                    onPress={() => void android.configure("gestures")}
+                  />
+                  <Row
+                    title="Home-screen widget"
+                    subtitle="Add Ask Ava to your home screen"
+                    disabled={android.busy}
+                    onPress={() => {
+                      if (android.status?.widget === false)
+                        Alert.alert(
+                          "Add the Ava widget",
+                          "Touch and hold your home screen, open Widgets, then choose Avenire → Ask Ava.",
+                        );
+                      else void android.configure("widget");
+                    }}
+                  />
+                  {android.status?.nothing ? (
+                    <Row
+                      title="Essential Key"
+                      subtitle="One click opens Ava, hold opens Ask Ava. Nothing's stock key handlers must be disabled separately."
+                      trailing={toggle(
+                        "Essential Key listener",
+                        android.status.essentialKey,
+                        (enabled) => void android.essentialKey(enabled),
+                        android.busy,
+                      )}
+                    />
+                  ) : null}
+                  {android.error ? (
+                    <View style={{ padding: 16 }}>
+                      <ErrorState message={android.error} />
+                    </View>
+                  ) : null}
+                </Group>
+              ) : null}
               <Group
                 title="On your computer"
                 foot="Folders and the drive are set up on the computer."
@@ -513,7 +582,7 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
         onClose={() => setChoice(undefined)}
       />
       <ChoiceSheet
-        title="Ruth can change files"
+        title="Ava can change files"
         visible={choice === "changes"}
         value={preferences?.fileChanges ?? "propose"}
         options={[
@@ -623,7 +692,7 @@ export function SettingsScreen({ navigation }: ScreenProps<"Settings">) {
             {panel === "privacy" ? (
               <>
                 <Text color="fg">Your files are private to you.</Text>
-                <Text>Ruth works on copies in Cloud and proposes changes for you to accept.</Text>
+                <Text>Ava works on copies in Cloud and proposes changes for you to accept.</Text>
                 <Button accessibilityLabel="Export data, coming soon" disabled variant="secondary">
                   Export data · coming soon
                 </Button>

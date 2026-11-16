@@ -20,7 +20,12 @@ describe("extractImage", () => {
     Effect.gen(function* () {
       const document = yield* extractImage(bytes, source);
       expect(document.sections).toEqual([
-        { text: "test visible text\n\ntest image description", kind: "figure", location: {} },
+        { text: "test visible text", kind: "slide", location: {} },
+        {
+          text: "Visual description (generated):\ntest image description",
+          kind: "figure",
+          location: {},
+        },
       ]);
       expect(document.coverage.status).toBe("full");
     }).pipe(Effect.provide(ImageDescriberTest)),
@@ -45,3 +50,34 @@ describe("extractImage", () => {
     ),
   );
 });
+
+it.effect("retains a capture note and labels coverage as the visible screen", () =>
+  Effect.gen(function* () {
+    const document = yield* extractImage(bytes, {
+      ...source,
+      origin: {
+        _tag: "Screen",
+        captureId: "capture",
+        deviceId: "phone",
+        deviceName: "Phone",
+        platform: "android",
+        appPackage: "reader",
+        appName: "Reader",
+        capturedAt: "2026-11-15T00:00:00Z",
+        sha256: "a".repeat(64),
+        sizeBytes: bytes.length,
+        scope: "visible-screen",
+        note: "Review this equation",
+      },
+    });
+    expect(
+      document.sections.some((section) => section.text === "Capture note:\nReview this equation"),
+    ).toBe(true);
+    expect(document.coverage.parts).toMatchObject([
+      { part: "visible-screen", detail: expect.stringContaining("not the entire") },
+    ]);
+    expect(document.sections.find((section) => section.kind === "slide")?.text).not.toContain(
+      "description",
+    );
+  }).pipe(Effect.provide(ImageDescriberTest)),
+);

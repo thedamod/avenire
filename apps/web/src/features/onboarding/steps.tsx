@@ -276,7 +276,7 @@ export function MorningStep({
     <>
       <OnboardingTitle ref={headingRef}>Your morning</OnboardingTitle>
       <p className="onboarding-description">
-        Ruth will have your notes and questions ready by this time.
+        Ava will have your notes and questions ready by this time.
       </p>
       <div className="onboarding-time-picker" role="group" aria-label="Morning report time">
         <div className="onboarding-time-selection" />
@@ -369,7 +369,7 @@ export function DoneStep({
     <>
       <OnboardingTitle ref={headingRef}>You’re set.</OnboardingTitle>
       <p className="onboarding-done-copy">
-        Ruth will have something ready by {formatClock(minutes)} {minutes < 720 ? "AM" : "PM"}{" "}
+        Ava will have something ready by {formatClock(minutes)} {minutes < 720 ? "AM" : "PM"}{" "}
         tomorrow.
       </p>
       <OnboardingPrimary busy={busy} disabled={disabled ?? false} onClick={onContinue}>

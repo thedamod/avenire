@@ -37,6 +37,47 @@ const response = (indexes: number[], length = false) => ({
 });
 
 describe("graph provider recovery", () => {
+  it.effect("retries invalid generated JSON once with a constrained extraction", () => {
+    let calls = 0;
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        calls++;
+        if (calls === 1) throw apiError(400, "Failed to generate JSON. Please adjust your prompt.");
+        return response([0]);
+      },
+    });
+    return Effect.gen(function* () {
+      const extractor = yield* GraphExtractor;
+      expect(
+        (yield* extractor.extract({ title: "Original page", chunks: ["Thermodynamics"] })).chunks,
+      ).toHaveLength(1);
+      expect(calls).toBe(2);
+    }).pipe(
+      Effect.provide(GraphExtractorLive),
+      Effect.provideService(IngestionModels, { languageModel: () => model }),
+    );
+  });
+  it.effect("keeps persistent invalid JSON failures bounded", () => {
+    let calls = 0;
+    const model = new MockLanguageModelV4({
+      doGenerate: async () => {
+        calls++;
+        throw apiError(400, "Failed to generate JSON.");
+      },
+    });
+    return Effect.gen(function* () {
+      const extractor = yield* GraphExtractor;
+      expect(
+        (yield* Effect.result(
+          extractor.extract({ title: "Original page", chunks: ["Thermodynamics"] }),
+        ))._tag,
+      ).toBe("Failure");
+      expect(calls).toBe(2);
+    }).pipe(
+      Effect.provide(GraphExtractorLive),
+      Effect.provideService(IngestionModels, { languageModel: () => model }),
+    );
+  });
   it.effect("aborts a graph request that never returns and releases its lane", () => {
     let aborted = false;
     let calls = 0;

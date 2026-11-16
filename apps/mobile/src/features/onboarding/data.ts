@@ -91,13 +91,13 @@ export interface NotificationExample {
 const notificationExamples: readonly NotificationExample[] = [
   {
     id: "morning",
-    title: "Ruth finished 3 things overnight.",
+    title: "Ava finished 3 things overnight.",
     body: "Summary, quiz and revision notes for Thermodynamics.",
     time: "7:00 AM",
   },
   {
     id: "needs-you",
-    title: "Ruth needs you",
+    title: "Ava needs you",
     body: "Lecture 9 is password-protected. Enter it, or skip it?",
     time: "2:14 AM",
   },

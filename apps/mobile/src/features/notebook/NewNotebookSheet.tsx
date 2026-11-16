@@ -66,7 +66,7 @@ export function NewNotebookForm({ onCreated }: { onCreated: (folder: Folder) => 
           ) : null}
           <View style={{ flex: 1, minHeight: 32 }} />
           <Text variant="meta" style={{ textAlign: "center", paddingBottom: 12 }}>
-            Ruth can file new captures here automatically.
+            Ava can file new captures here automatically.
           </Text>
           <Button
             accessibilityLabel="Create notebook"

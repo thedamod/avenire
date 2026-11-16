@@ -1,4 +1,4 @@
-import { SettingsLive } from "./settings.ts";
+import { SettingsLive, ScreenSharingLive } from "./settings.ts";
 /** Separate lazy scopes keep library reads and Cloud enqueue independent of chat providers. */
 import { CloudRunEventsLive } from "@avenire/ai/cloud/events";
 import { CloudReviewLive } from "@avenire/ai/cloud/review";
@@ -68,6 +68,9 @@ export const domainRuntime = <R, E>(layer: Layer.Layer<R, E>) => {
 export const SettingsServicesLive = SettingsLive.pipe(Layer.provideMerge(CloudServicesLive));
 const settings = domainRuntime(SettingsServicesLive);
 export const provideSettings = settings.provide;
+const screenSharing = domainRuntime(ScreenSharingLive.pipe(Layer.provideMerge(AuthDataLive)));
+export const runScreenSharingRoute = screenSharing.runRoute;
+export const provideScreenSharing = screenSharing.provide;
 const library = domainRuntime(LibraryServicesLive);
 const threads = domainRuntime(ThreadServicesLive);
 const search = domainRuntime(SearchServicesLive);

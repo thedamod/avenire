@@ -7,7 +7,7 @@ import { isRetryableResendError, makeResendMailer, type ResendSend } from "./mai
 const request = {
   to: "ruth@example.test",
   template: "verify-email",
-  props: { name: "Ruth", url: "https://avenire.space/verify" },
+  props: { name: "Ava", url: "https://avenire.space/verify" },
 } as const;
 
 type Reply = Awaited<ReturnType<ResendSend>>;

@@ -65,7 +65,7 @@ export const FileChangesTray = memo(function FileChangesTray({
             <span className="md:hidden">
               {total} file {total === 1 ? "change" : "changes"}
             </span>
-            <span className="max-md:hidden">Ruth wants to change {files}</span>
+            <span className="max-md:hidden">Ava wants to change {files}</span>
           </span>
           {meta ? (
             <span className="truncate text-[12.5px] text-muted-foreground md:text-xs">

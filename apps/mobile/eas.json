@@ -10,10 +10,23 @@
       "node": "24.18.0",
       "pnpm": "11.17.0",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://100.67.102.73:3000"
+        "EXPO_PUBLIC_API_URL": "http://100.75.95.125:3000"
       },
       "android": {
         "buildType": "apk"
+      }
+    },
+    "internal-essential-key": {
+      "extends": "internal",
+      "env": {
+        "AVENIRE_ESSENTIAL_KEY": "1",
+        "EXPO_PUBLIC_API_URL": "http://100.75.95.125:3001"
+      }
+    },
+    "internal-android-ava": {
+      "extends": "internal",
+      "env": {
+        "AVENIRE_ANDROID_AVA": "1"
       }
     }
   }

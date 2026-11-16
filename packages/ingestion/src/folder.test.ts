@@ -546,7 +546,7 @@ describe("folder membership publication", () => {
     expect(state.memberships).toEqual([]);
   });
 
-  it("scopes a Ruth Cloud output to the notebooks its run read, with the lower bar", async () => {
+  it("scopes a Ava Cloud output to the notebooks its run read, with the lower bar", async () => {
     const state = fixture();
     state.addFile("source", [[1, 0]]);
     state.addFolder(folderId, [1, 0]);
@@ -561,7 +561,7 @@ describe("folder membership publication", () => {
     expect(state.files.get(fileId)!.placement).toBe("filed");
   });
 
-  it("files a Ruth Cloud output that read nothing by the library rule", async () => {
+  it("files a Ava Cloud output that read nothing by the library rule", async () => {
     const state = fixture();
     state.addFolder(folderId, [1, 0]);
     state.addFile(fileId, [[0.6, 1]]);
@@ -626,7 +626,7 @@ describe("suggestFoldersTx", () => {
     expect(suggestions[0]!.similarity).toBeLessThan(FILING.library.threshold);
   });
 
-  it("puts the notebooks a Ruth Cloud run read first", async () => {
+  it("puts the notebooks a Ava Cloud run read first", async () => {
     const state = fixture();
     state.addFile("source", [[1, 0]]);
     state.addFolder(folderId, [1, 0]);

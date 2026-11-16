@@ -320,7 +320,7 @@ function needsYouCopy(state: IngestionState, canOpen: boolean) {
       } as const;
     case "paused":
       return {
-        reason: "Paused. Ruth won't read it until you resume.",
+        reason: "Paused. Ava won't read it until you resume.",
         tone: "text-foreground-soft",
         primary: "retry",
         secondary: "remove",

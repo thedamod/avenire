@@ -1,6 +1,6 @@
 # @avenire/widget-kit
 
-Browser-only ES modules that Ruth's HTML widgets import from the widget origin
+Browser-only ES modules that Ava's HTML widgets import from the widget origin
 (`/kits/math.js`, `/kits/iso.js`, `/kits/iso-gl.js`, `/kits/iso.css`). `API.md` is the
 model-facing reference; `pnpm --filter @avenire/widget-kit build` writes the kits and a
 hashed `manifest.json` to `dist/kits/`.

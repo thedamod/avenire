@@ -8,7 +8,7 @@ const steps = [
   },
   {
     title: "Make a notebook per course",
-    copy: "Or leave things unfiled. Ruth can sort them tonight.",
+    copy: "Or leave things unfiled. Ava can sort them tonight.",
   },
   {
     title: "Ask about any of it",
@@ -91,7 +91,7 @@ export function FirstRun({
               ) : (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Ask Ruth"
+                  accessibilityLabel="Ask Ava"
                   hitSlop={10}
                   onPress={onAsk}
                   style={{
@@ -104,7 +104,7 @@ export function FirstRun({
                   }}
                 >
                   <Text variant="meta" color="accent-text" weight="500">
-                    Ask Ruth
+                    Ask Ava
                   </Text>
                 </Pressable>
               )}

@@ -1,15 +1,15 @@
-# Ruth and Ruth Cloud architecture
+# Ava and Ava Cloud architecture
 
-Ruth chat and Ruth Cloud share the server-owned AI SDK agent factory, model registry,
+Ava chat and Ava Cloud share the server-owned AI SDK agent factory, model registry,
 tool adapter, policy and image transport. Daytona is a tool target: it runs shell jobs,
 files, browser/native applications and the desktop recorder. No model key, run token,
 Avenire API credential or agent loop runs inside the box.
 
 ```mermaid
 flowchart LR
-  Chat[Web / desktop / mobile chat] --> Ruth[Ruth chat stream]
-  Scheduler[Task scheduler + fenced leases] --> Cloud[Ruth Cloud checkpoint executor]
-  Ruth --> Factory[Shared AI SDK factory / OpenRouter registry]
+  Chat[Web / desktop / mobile chat] --> Ava[Ava chat stream]
+  Scheduler[Task scheduler + fenced leases] --> Cloud[Ava Cloud checkpoint executor]
+  Ava --> Factory[Shared AI SDK factory / OpenRouter registry]
   Cloud --> Factory
   Factory --> Tools[Tool specs / policy / Effect executors]
   Factory --> Models[OpenRouter model calls on server]

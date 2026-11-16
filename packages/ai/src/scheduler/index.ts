@@ -85,7 +85,7 @@ export const CloudRunsLive = Layer.effect(
           Effect.catchCause((cause) => {
             const error = Cause.squash(cause);
             // SDK error causes can contain request credentials; only emit the sanitized domain reason.
-            return Effect.logError("Ruth Cloud run failed", {
+            return Effect.logError("Ava Cloud run failed", {
               runId: claim.runId,
               reason: error instanceof RuthCloudError ? error.reason : "Cloud executor failed.",
             });
@@ -262,7 +262,7 @@ export const CloudSchedulerLive = Layer.effectDiscard(
     const tick = schedulerTick().pipe(
       Effect.provideContext(services),
       Effect.catchCause((cause) =>
-        Effect.logError("Ruth Cloud scheduler tick failed", prettyWorkerCause(cause)),
+        Effect.logError("Ava Cloud scheduler tick failed", prettyWorkerCause(cause)),
       ),
       serial.withPermits(1),
     );
@@ -273,7 +273,7 @@ export const CloudSchedulerLive = Layer.effectDiscard(
       .pipe(
         Effect.flatMap((rows) => (rows.length ? tick : Effect.void)),
         Effect.catchCause((cause) =>
-          Effect.logWarning("Ruth Cloud queue poll failed", prettyWorkerCause(cause)),
+          Effect.logWarning("Ava Cloud queue poll failed", prettyWorkerCause(cause)),
         ),
       );
     yield* Effect.repeat(tick, Schedule.spaced("1 minute")).pipe(Effect.forkScoped);

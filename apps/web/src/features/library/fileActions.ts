@@ -100,7 +100,7 @@ export function buildFileActions({
     });
   actions.push({
     id: "ask",
-    label: `Ask Ruth about ${single ? "it" : "them"}`,
+    label: `Ask Ava about ${single ? "it" : "them"}`,
     icon: Moon,
     onSelect: h.ask,
     group: "organize",

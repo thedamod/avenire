@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile, symlink } from "node:fs/promises";
+import { realpath, mkdtemp, readFile, rm, stat, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vite-plus/test";
@@ -13,7 +13,7 @@ afterEach(async () => {
   );
 });
 async function temp() {
-  const path = await mkdtemp(join(tmpdir(), "capture-registry-test-"));
+  const path = await realpath(await mkdtemp(join(tmpdir(), "capture-registry-test-")));
   directories.push(path);
   return path;
 }
@@ -100,7 +100,7 @@ it("validates the real target, refuses directories/symlink executables, and dete
 });
 
 it("persists validated browser capture windows for reuse after restart and isolates them by owner", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "capture-registry-download-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "capture-registry-download-")));
   try {
     const path = join(directory, "registry.json");
     const registry = new LocalOriginRegistry(path);

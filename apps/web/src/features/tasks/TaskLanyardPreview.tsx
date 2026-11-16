@@ -129,7 +129,7 @@ export function TaskLanyardPreview(props: PreviewProps) {
       ctx.fillStyle = token("--muted-foreground");
       ctx.font = `34px ${sans}`;
       line(
-        content.instructions.trim() || "Set the brief. Ruth takes the night shift.",
+        content.instructions.trim() || "Set the brief. Ava takes the night shift.",
         60,
         1410,
         900,

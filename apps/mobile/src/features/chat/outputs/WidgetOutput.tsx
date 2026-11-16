@@ -228,11 +228,11 @@ function WidgetFrame({
         }}
       >
         <Text variant="meta" style={{ flex: 1, fontSize: 13, lineHeight: 18 }}>
-          Built by Ruth overnight · runs on your phone
+          Built by Ava overnight · runs on your phone
         </Text>
         <Button
           variant="link"
-          accessibilityLabel={`Ask Ruth about a part of ${title}`}
+          accessibilityLabel={`Ask Ava about a part of ${title}`}
           hitSlop={6}
           onPress={() => onAsk(`Explain the parts of the ${title} figure.`)}
         >

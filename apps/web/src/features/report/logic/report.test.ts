@@ -135,7 +135,7 @@ describe("tabLabel", () => {
 });
 
 describe("startHere", () => {
-  it("finds Ruth's pointer in the summary", () => {
+  it("finds Ava's pointer in the summary", () => {
     expect(
       startHere(
         "Good morning. I made a summary and a quiz. **Start with** the summary, since the quiz builds on it.",
@@ -154,7 +154,7 @@ describe("fileChanges", () => {
         fileId: "note1",
         fileTitle: "Entropy and the second law",
         status,
-        conflict: status === "conflict" ? "Edited since Ruth read it" : null,
+        conflict: status === "conflict" ? "Edited since Ava read it" : null,
         summary: "Add the free-expansion example",
       },
     ] as unknown as PendingApproval[];
@@ -214,7 +214,7 @@ describe("fileChanges", () => {
     });
     expect(changes.rows[0]).toMatchObject({
       status: "conflict",
-      detail: "Edited since Ruth read it",
+      detail: "Edited since Ava read it",
     });
   });
 });

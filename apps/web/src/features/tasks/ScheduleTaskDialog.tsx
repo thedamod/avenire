@@ -154,7 +154,7 @@ function ScheduleForm({
             {task ? "Edit overnight task" : "New overnight task"}
           </h2>
           <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
-            Ruth works on this while you sleep and leaves the results in your morning report.
+            Ava works on this while you sleep and leaves the results in your morning report.
             Nothing in your files changes until you accept it.
           </p>
         </div>
@@ -180,7 +180,7 @@ function ScheduleForm({
           />
         </label>
         <fieldset className="flex min-w-0 flex-col gap-2">
-          <legend className={`${label} mb-2`}>Ruth can read</legend>
+          <legend className={`${label} mb-2`}>Ava can read</legend>
           <TaskSourcesSelect
             folders={activeFolders}
             folderIds={folderIds}
@@ -217,7 +217,7 @@ function ScheduleForm({
           </div>
         </fieldset>
         <div>
-          <p className={`${label} mb-2`}>Ruth can change</p>
+          <p className={`${label} mb-2`}>Ava can change</p>
           <div className="rounded-lg border border-input px-3 py-2 text-center text-[12px] text-foreground-soft">
             Propose changes, I accept
           </div>
@@ -265,7 +265,7 @@ function ScheduleForm({
         </label>
         <label className="flex items-center justify-between gap-4 text-[13.5px]">
           <span>
-            Keep Ruth's workspace
+            Keep Ava's workspace
             <span className="block text-[12.5px] text-muted-foreground">
               Off deletes the sandbox after each run. Your report and files stay.
             </span>

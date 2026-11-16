@@ -142,6 +142,7 @@ it.effect(
       });
       const id = randomUUID();
       const absent = SourceUploads.of({
+        status: () => Effect.die("status must not execute"),
         create: () => Effect.die("create must not execute"),
         complete: () => Effect.die("complete must not execute"),
         prepare: () => Effect.die("prepare must not execute"),
@@ -227,6 +228,7 @@ it.effect(
         getSession: () => Effect.die("Widget-host requests must not authenticate"),
       });
       const absent = SourceUploads.of({
+        status: () => Effect.die("status must not execute"),
         create: () => Effect.die("No domain access"),
         complete: () => Effect.die("complete must not execute"),
         prepare: () => Effect.die("prepare must not execute"),
@@ -657,6 +659,176 @@ it.effect(
                 .where(
                   and(eq(file.userId, owner), eq(file.dedupeKey, `upload:${concurrent.uploadId}`)),
                 ),
+            ),
+          ).toHaveLength(0);
+          const pixels = new Uint8Array(
+            Buffer.from(
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl9sAAAAASUVORK5CYII=",
+              "base64",
+            ),
+          );
+          const screenMetadata = (): CreateSourceUpload => {
+            const captureId = randomUUID();
+            return {
+              ...metadata(),
+              idempotencyKey: captureId,
+              kind: "image",
+              mimeType: "image/png",
+              sizeBytes: pixels.length,
+              sha256: hash(pixels),
+              origin: {
+                _tag: "Screen",
+                captureId,
+                deviceId: "phone",
+                deviceName: "Phone",
+                platform: "android",
+                appPackage: "com.android.chrome",
+                appName: "Chrome",
+                capturedAt: "2026-11-15T00:00:00Z",
+                sha256: hash(pixels),
+                sizeBytes: pixels.length,
+                scope: "visible-screen",
+              },
+            };
+          };
+          const firstScreenInput = screenMetadata();
+          const screenTicket = yield* uploads.create(owner, firstScreenInput);
+          const screenFile = yield* uploads.put(
+            owner,
+            screenTicket.uploadId,
+            new Request("https://app.test", {
+              method: "PUT",
+              headers: { "content-type": "image/png" },
+              body: pixels,
+            }),
+          );
+          expect(screenFile.origin?._tag).toBe("Screen");
+          const receipt = yield* uploads.status(owner, screenTicket.uploadId);
+          expect(receipt.ingestion?.status).toBe("queued");
+          expect(receipt.ingestion).not.toHaveProperty("claimToken");
+          expect(
+            yield* uploads.status(other, screenTicket.uploadId).pipe(Effect.result),
+          ).toMatchObject({ failure: { status: 404 } });
+          expect(
+            yield* uploads.cancel(other, screenTicket.uploadId).pipe(Effect.result),
+          ).toMatchObject({ failure: { status: 404 } });
+          const repeatedScreen = yield* uploads.create(owner, screenMetadata());
+          expect(repeatedScreen.file?.id).toBe(screenFile.id);
+          yield* uploads.cancel(owner, repeatedScreen.uploadId);
+          yield* uploads.cancel(owner, repeatedScreen.uploadId);
+          const [keptScreen] = yield* database.use((db) =>
+            db.select().from(file).where(eq(file.id, screenFile.id)),
+          );
+          expect(keptScreen?.placement).toBe("inbox");
+          expect(new Uint8Array(yield* memory.get(screenFile.storageKey!))).toEqual(pixels);
+          yield* uploads.cancel(owner, screenTicket.uploadId);
+          yield* uploads.cancel(owner, screenTicket.uploadId);
+          const [undoneScreen] = yield* database.use((db) =>
+            db.select().from(file).where(eq(file.id, screenFile.id)),
+          );
+          expect(undoneScreen?.placement).toBe("archived");
+          expect((yield* uploads.status(owner, screenTicket.uploadId)).ticket.status).toBe(
+            "cancelled",
+          );
+          const [cancelledIndex] = yield* database.use((db) =>
+            db.select().from(ingestionJob).where(eq(ingestionJob.fileId, screenFile.id)),
+          );
+          expect(cancelledIndex?.status).toBe("cancelled");
+          // Undo is reversible: the archived original must survive repeated DELETEs.
+          expect(new Uint8Array(yield* memory.get(screenFile.storageKey!))).toEqual(pixels);
+          expect(yield* uploads.create(owner, firstScreenInput).pipe(Effect.result)).toMatchObject({
+            failure: { status: 410 },
+          });
+          const originalAgain = yield* uploads.create(owner, screenMetadata());
+          const originalAgainFile = yield* uploads.put(
+            owner,
+            originalAgain.uploadId,
+            new Request("https://app.test", {
+              method: "PUT",
+              headers: { "content-type": "image/png" },
+              body: pixels,
+            }),
+          );
+          const duplicateAgain = yield* uploads.create(owner, screenMetadata());
+          expect(duplicateAgain.file?.id).toBe(originalAgainFile.id);
+          yield* uploads.cancel(owner, originalAgain.uploadId);
+          const retained = yield* database.use((db) =>
+            db.query.file.findFirst({ where: eq(file.id, originalAgainFile.id) }),
+          );
+          expect(retained?.placement).toBe("inbox");
+          yield* uploads.cancel(owner, duplicateAgain.uploadId);
+          const finalUndo = yield* database.use((db) =>
+            db.query.file.findFirst({ where: eq(file.id, originalAgainFile.id) }),
+          );
+          expect(finalUndo?.placement).toBe("archived");
+          expect(new Uint8Array(yield* memory.get(originalAgainFile.storageKey!))).toEqual(pixels);
+          const html = new TextEncoder().encode(
+            "<!doctype html><html><head><title>Full original</title></head><body>Beyond the first screen: complete chapter.</body></html>",
+          );
+          const originalId = randomUUID();
+          const originalInput: CreateSourceUpload = {
+            idempotencyKey: originalId,
+            title: "Full chapter",
+            kind: "web-page",
+            mimeType: "text/html",
+            sizeBytes: html.length,
+            sha256: hash(html),
+            origin: {
+              _tag: "Web",
+              url: `https://study.test/${originalId}`,
+              title: "Full chapter",
+              browser: "other",
+              capturedAt: "2026-11-15T00:00:00Z",
+              platform: "android",
+              captureId: originalId,
+            },
+          };
+          const originalTicket = yield* uploads.create(owner, originalInput);
+          const fullPage = yield* uploads.put(
+            owner,
+            originalTicket.uploadId,
+            new Request("https://app.test", {
+              method: "PUT",
+              headers: { "content-type": "text/html" },
+              body: html,
+            }),
+          );
+          expect(fullPage.kind).toBe("web-page");
+          expect(new Uint8Array(yield* memory.get(fullPage.storageKey!))).toEqual(html);
+          yield* uploads.cancel(owner, originalTicket.uploadId);
+          expect(
+            (yield* database.use((db) =>
+              db.query.file.findFirst({ where: eq(file.id, fullPage.id) }),
+            ))?.placement,
+          ).toBe("archived");
+          expect(new Uint8Array(yield* memory.get(fullPage.storageKey!))).toEqual(html);
+          const pendingScreen = yield* uploads.create(owner, screenMetadata());
+          const screenStarted = new Promise<void>((resolve) => {
+            beginPut = resolve;
+          });
+          const screenFiber = yield* uploads
+            .put(
+              owner,
+              pendingScreen.uploadId,
+              new Request("https://app.test", {
+                method: "PUT",
+                headers: { "content-type": "image/png" },
+                body: pixels,
+              }),
+            )
+            .pipe(Effect.forkChild);
+          yield* Effect.promise(() => screenStarted);
+          yield* uploads.cancel(owner, pendingScreen.uploadId);
+          releasePut!();
+          expect(yield* Fiber.join(screenFiber).pipe(Effect.result)).toMatchObject({
+            failure: { status: 409 },
+          });
+          const [pendingRow] = yield* database.use((db) =>
+            db.select().from(sourceUpload).where(eq(sourceUpload.id, pendingScreen.uploadId)),
+          );
+          expect(
+            yield* database.use((db) =>
+              db.select().from(file).where(eq(file.id, pendingRow!.fileId)),
             ),
           ).toHaveLength(0);
         }).pipe(Effect.provide(SourceUploadsLive), Effect.provideService(Storage, stored));

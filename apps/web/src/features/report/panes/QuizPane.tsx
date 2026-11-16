@@ -390,12 +390,12 @@ function QuizScore({
       <div className="flex flex-col gap-3 border-l-2 border-ruth py-0.5 pl-3.5">
         <p className="flex items-center gap-2 text-[14px] font-semibold text-ruth-text md:text-[13.5px]">
           <Moon className="size-3.5" />
-          Ruth
+          Ava
         </p>
         <p className="text-[14px] leading-5 text-foreground-soft md:text-[13.5px]">
           {missed.length
-            ? "Ask Ruth to go over what you missed, or try those questions again."
-            : "Nothing missed. Ask Ruth for harder questions on the same material."}
+            ? "Ask Ava to go over what you missed, or try those questions again."
+            : "Nothing missed. Ask Ava for harder questions on the same material."}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button

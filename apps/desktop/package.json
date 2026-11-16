@@ -18,9 +18,12 @@
     "build": "node scripts/build.mjs",
     "dev": "node scripts/build.mjs && electron .",
     "start": "electron .",
-    "dist": "node scripts/build.mjs && electron-builder --publish never",
+    "dist": "node scripts/native-build.mjs && node scripts/build.mjs && electron-builder --publish never",
     "typecheck": "tsc --noEmit",
-    "test": "vp test run --config ../../vite.config.ts --dir . --passWithNoTests"
+    "test": "pnpm -w exec vp test run --config vite.config.ts apps/desktop/src",
+    "native:behavior": "node scripts/native-overlay-behavior.mjs",
+    "native:build": "node scripts/native-build.mjs",
+    "capture:behavior": "pnpm -w exec vp test run --config vite.config.ts apps/desktop/src/capture/pipeline.test.ts apps/desktop/src/capture/source-acquisition.test.ts apps/desktop/src/capture/download-validation.test.ts apps/desktop/src/capture/collectors/linux-mac-collectors.test.ts"
   },
   "dependencies": {
     "@avenire/capture": "workspace:*",

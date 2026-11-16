@@ -52,7 +52,10 @@ export async function validateBrowserDownload(
   const info = await stat(readableLocalPath(path) ?? path);
   if (!info.isFile()) throw new Error("Browser download is not a regular file");
   if (info.size !== download.sizeBytes) throw new Error("Browser download size mismatch");
-  if (info.mtimeMs < window.startedAt || info.mtimeMs > window.endedAt)
+  // Date.now() records a whole-millisecond endpoint; filesystem timestamps may
+  // include a fractional millisecond from that same clock tick. Do not reject
+  // that final tick, but keep rejecting the next millisecond and older files.
+  if (info.mtimeMs < window.startedAt || Math.floor(info.mtimeMs) > window.endedAt)
     throw new Error("Browser download was modified outside capture window");
   // Chrome can report a completed .pdf whose body is actually an HTML error page.
   // Read a prefix only, even for a 256 MiB original, before handing it to the uploader.

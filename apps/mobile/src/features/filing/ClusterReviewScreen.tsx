@@ -209,7 +209,7 @@ export function ClusterReviewScreen({ navigation }: ScreenProps<"ClusterReview">
             Sort {total} unfiled sources
           </Text>
           <Text style={{ paddingTop: 6, fontSize: 14, lineHeight: 20, color: "#A3A3A3" }}>
-            Ruth grouped them overnight. Remove anything that doesn't belong. Nothing moves until
+            Ava grouped them overnight. Remove anything that doesn't belong. Nothing moves until
             you accept.
           </Text>
           {review.error ? (

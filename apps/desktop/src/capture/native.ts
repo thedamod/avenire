@@ -1,14 +1,14 @@
 import { nativeFile } from "./native-file.ts";
 import type { CapturedMedia, CapturedTab, CapturedWindow } from "@avenire/contracts";
-import type { ForegroundApp } from "./research/src/capture/types.ts";
-import { isBrowserApp, BROWSER_HINT } from "./research/src/capture/app-catalog.ts";
+import type { ForegroundApp } from "./support/types.ts";
+import { isBrowserApp, BROWSER_HINT } from "./support/app-catalog.ts";
 import {
   createCaptureContext,
   type CaptureContext,
-} from "./research/electron/collectors/capture-context.ts";
-import { getBackgroundWindows } from "./research/electron/collectors/background-windows.ts";
-import { getBackgroundMedia } from "./research/electron/collectors/background-media.ts";
-import { resolveObsidianOpenNotes } from "./research/electron/collectors/obsidian-note.ts";
+} from "./collectors/capture-context.ts";
+import { getBackgroundWindows } from "./collectors/background-windows.ts";
+import { getBackgroundMedia } from "./collectors/background-media.ts";
+import { resolveObsidianOpenNotes } from "./collectors/obsidian-note.ts";
 import { bounded } from "./timing.ts";
 import { localBasename } from "./local-file.ts";
 

@@ -35,6 +35,7 @@ export const defaultSettings = (timeZone = "UTC"): UserSettings => ({
   fileChanges: "propose",
   sortUnfiledNightly: true,
   captureLoggedInPages: false,
+  shareScreenWithAi: false,
   paywalledPages: "title-abstract",
   notifications: { morningReport: true, needsYou: true, runFailed: true },
 });
@@ -78,6 +79,7 @@ const deviceLabel = (agent: string | null) => {
 export class Settings extends Context.Service<
   Settings,
   {
+    readonly screenSharing: (viewer: SessionUser) => Effect.Effect<boolean, ApiError>;
     readonly get: (
       viewer: SessionUser,
       requestedTimeZone?: string,
@@ -104,7 +106,11 @@ export const SettingsLive = Layer.effect(
       const [row] = yield* database.use((db) =>
         db.select().from(userSettings).where(eq(userSettings.userId, userId)),
       );
-      if (row) return row.preferences;
+      if (row)
+        return {
+          ...row.preferences,
+          shareScreenWithAi: row.preferences.shareScreenWithAi === true,
+        };
       const preferences = defaultSettings(
         Option.isSome(DateTime.zoneMakeNamed(requestedTimeZone)) ? requestedTimeZone : "UTC",
       );
@@ -117,7 +123,10 @@ export const SettingsLive = Layer.effect(
       const [saved] = yield* database.use((db) =>
         db.select().from(userSettings).where(eq(userSettings.userId, userId)),
       );
-      return saved?.preferences ?? preferences;
+      return {
+        ...(saved?.preferences ?? preferences),
+        shareScreenWithAi: saved?.preferences.shareScreenWithAi === true,
+      };
     });
     const savePreferences = (viewer: SessionUser, patch: UserSettingsPatch, complete = false) =>
       Effect.gen(function* () {
@@ -139,6 +148,7 @@ export const SettingsLive = Layer.effect(
           const old = row?.preferences ?? defaultSettings();
           const preferences: UserSettings = {
             ...old,
+            shareScreenWithAi: old.shareScreenWithAi === true,
             ...patch,
             notifications: { ...old.notifications, ...patch.notifications },
           };
@@ -180,6 +190,7 @@ export const SettingsLive = Layer.effect(
       }).pipe(Effect.mapError(toApiError));
 
     return Settings.of({
+      screenSharing: (viewer) => readScreenSharingPreference(database, viewer),
       get: (viewer, requestedTimeZone) =>
         Effect.gen(function* () {
           const preferences = yield* read(viewer.id, requestedTimeZone);
@@ -277,5 +288,31 @@ export const SettingsLive = Layer.effect(
           );
         }).pipe(Effect.mapError(toApiError)),
     });
+  }),
+);
+
+/** Permission reads require only authenticated database access, never AI/cloud credentials. */
+const readScreenSharingPreference = (
+  database: Database["Service"],
+  viewer: Pick<SessionUser, "id">,
+) =>
+  Effect.gen(function* () {
+    const [row] = yield* database.use((db) =>
+      db.select().from(userSettings).where(eq(userSettings.userId, viewer.id)),
+    );
+    return row?.preferences.shareScreenWithAi === true;
+  }).pipe(Effect.mapError(toApiError));
+
+export class ScreenSharing extends Context.Service<
+  ScreenSharing,
+  {
+    readonly enabled: (viewer: Pick<SessionUser, "id">) => Effect.Effect<boolean, ApiError>;
+  }
+>()("avenire/web/ScreenSharing") {}
+export const ScreenSharingLive = Layer.effect(
+  ScreenSharing,
+  Effect.gen(function* () {
+    const database = yield* Database;
+    return ScreenSharing.of({ enabled: (viewer) => readScreenSharingPreference(database, viewer) });
   }),
 );

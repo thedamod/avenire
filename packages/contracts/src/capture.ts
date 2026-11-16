@@ -54,15 +54,37 @@ export const CaptureOrigin = Schema.Union([
     browser: BrowserKind,
     capturedAt: Timestamp,
     position: Schema.optional(CapturePosition),
+    /** Mobile originals retain their durable receipt identity across acquisition/upload. */
+    platform: Schema.optional(Schema.Literal("android")),
+    captureId: Schema.optional(Identifier),
+    deviceId: Schema.optional(Identifier),
+    deviceName: Schema.optional(Schema.String.check(Schema.isMaxLength(255))),
+    note: Schema.optional(Schema.String.check(Schema.isMaxLength(5000))),
+  }),
+  Schema.TaggedStruct("Screen", {
+    captureId: Identifier,
+    deviceId: Identifier,
+    deviceName: Schema.String.check(Schema.isMaxLength(255)),
+    platform: Schema.Literal("android"),
+    appPackage: Identifier,
+    appName: Schema.String.check(Schema.isMaxLength(255)),
+    capturedAt: Timestamp,
+    sha256: Sha256,
+    sizeBytes: NonNegativeInt,
+    url: Schema.optional(Url),
+    note: Schema.optional(Schema.String.check(Schema.isMaxLength(5000))),
+    scope: Schema.Literal("visible-screen"),
+    position: Schema.optional(CapturePosition),
   }),
   Schema.TaggedStruct("LocalFile", {
     deviceId: Identifier,
     deviceName: Schema.String.check(Schema.isMaxLength(255)),
-    platform: Schema.Literals(["darwin", "win32", "linux"]),
+    platform: Schema.Literals(["darwin", "win32", "linux", "android"]),
     /** Original browser page for downloaded local files; device paths still stay local. */
     originUrl: Schema.optional(Url),
     /** Basename only: absolute paths stay in the desktop's local origin registry. */
     fileName: Schema.NonEmptyString.check(Schema.isMaxLength(255)),
+    note: Schema.optional(Schema.String.check(Schema.isMaxLength(5000))),
     appName: Schema.optional(Schema.String.check(Schema.isMaxLength(255))),
     sizeBytes: NonNegativeInt,
     sha256: Sha256,
@@ -203,7 +225,7 @@ export const CaptureSnapshot = Schema.Struct({
   capturedAt: Schema.String,
   /** Hashed, stable per-install device identifier. */
   deviceId: Schema.String,
-  platform: Schema.Literals(["darwin", "win32", "linux"]),
+  platform: Schema.Literals(["darwin", "win32", "linux", "android"]),
   windows: Schema.Array(CapturedWindow),
   tabs: Schema.Array(CapturedTab),
   media: Schema.Array(CapturedMedia),
@@ -329,3 +351,24 @@ export const ExtensionMessage = Schema.Union([
   Schema.TaggedStruct("Pong", { version: Version }),
 ]);
 export type ExtensionMessage = typeof ExtensionMessage.Type;
+
+/** Device-local durable outbox record, shared by native acquisition and Headless JS. Paths never reach server APIs. */
+export const MobileCaptureWork = Schema.Struct({
+  id: Identifier,
+  owner: Identifier,
+  title: Title,
+  kind: Schema.Literals(["image", "pdf", "document", "selection", "web-page", "audio", "video"]),
+  mimeType: Schema.String,
+  sizeBytes: NonNegativeInt,
+  sha256: Sha256,
+  origin: CaptureOrigin,
+  uri: Schema.optional(Schema.String.check(Schema.isMaxLength(8192))),
+  acquisitionUrl: Schema.optional(Url),
+  undo: Schema.Boolean,
+  attempted: Schema.Boolean,
+  ticket: Schema.optional(Identifier),
+  fileId: Schema.optional(FileId),
+  retry: Schema.optional(Schema.Boolean),
+  attempts: Schema.optional(NonNegativeInt),
+});
+export type MobileCaptureWork = typeof MobileCaptureWork.Type;

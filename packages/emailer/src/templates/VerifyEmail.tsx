@@ -18,5 +18,5 @@ export const VerifyEmail = ({ name, url }: Props) => (
     </Text>
   </Layout>
 );
-VerifyEmail.PreviewProps = { name: "Ruth", url: "https://avenire.space/verify" } satisfies Props;
+VerifyEmail.PreviewProps = { name: "Ava", url: "https://avenire.space/verify" } satisfies Props;
 export default VerifyEmail;

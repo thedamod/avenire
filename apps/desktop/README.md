@@ -38,7 +38,7 @@ pnpm dev:desktop
 The default OS title bar is hidden on the setup and app windows. A shared 40px app bar
 uses the existing design tokens and web favicon; native caption buttons preserve window
 controls and Windows snap behavior. The bar follows the app theme, reserves space for
-macOS traffic lights, and leaves the existing Ruth prompt overlay unchanged. App, installer
+macOS traffic lights, and leaves the existing Ava prompt overlay unchanged. App, installer
 and tray icons come from the web's existing branding assets; the build generates a
 1024px PNG and a multiresolution Windows ICO from the web favicon SVG.
 
@@ -63,7 +63,20 @@ and shared Button, Input, Chip and Kbd controls using the same UI tokens and bun
 The brand mesh is a still, so setup does not run an ongoing animation loop.
 
 Global hotkeys register only after Allow. Not now keeps them disabled. Conflicting shortcuts
-can be changed; Ask Ruth offers Alt+Shift+Space when Alt+Space is occupied. The Try it step
+can be changed; Ask Ava offers Alt+Shift+Space when Alt+Space is occupied.
+
+On Linux Wayland, Allow installs a marked, owned shortcut block in the default Hyprland
+`hyprland.lua` or `hyprland.conf`. Setup checks active bindings before writing, saves a backup,
+reloads Hyprland and verifies the installed bindings. Failed application restores the previous
+config; edits made concurrently are preserved and reported for manual recovery. Changing or
+disabling shortcuts updates or removes only the unmodified Avenire block. Config symlinks are
+preserved. The persistent bindings launch the installed app for Capture or Ask Ava, including
+when it is closed. Status checks and startup only inspect the installation; first installation
+and repairs require Allow. Other Wayland compositors, ambiguous/custom config locations and
+unstable AppImage launch paths report unavailable and let onboarding continue without hotkeys.
+Windows, macOS and genuine X11 sessions retain Electron's native shortcut registration.
+
+The Try it step
 stages policy-filtered sources locally and Undo discards them. On completion, the hosted app
 opens for sign-in; study context, source choices, report time, timezone and notification choice
 sync through settings.update before the authenticated capture consumer becomes ready. The
@@ -76,8 +89,17 @@ macOS requests Accessibility and Automation only from explicit buttons. The Syst
 permission check does not retain its returned title. Office can request its own Automation
 grant on the first document capture. These collectors use metadata/file paths rather than
 screen images, so they do not request Screen Recording, camera, microphone or Full Disk Access.
-Linux foreground capture requires an X11 session with `xdotool` and `xprop`; Wayland is
-reported as unavailable. Browser-tab capture and ordinary uploads remain available.
+Linux foreground capture supports Hyprland on Wayland through `hyprctl`, and X11 through
+`xdotool` and `xprop`. Local screen reading on Wayland requires `grim` and a Hyprland monitor inventory; annotations use the
+bundled Qt overlay with XWayland. Genuine X11 sessions reuse Qt's existing X11
+capture path; an inherited Wayland environment variable does not override an explicit
+X11 session. XWayland's presence inside a Wayland session does not establish that it
+can capture native Wayland windows, so screen pixels still use the compositor path.
+The explicit read verifies that a unique, active, unrotated, unmirrored Hyprland output's
+logical bounds agree with Electron/Qt, captures that named output with `grim -o`, and
+rechecks its geometry before delivery. Unsupported compositor inventories, rotated or
+mirrored layouts, and ambiguous scale mappings reject the read rather than guess.
+Browser-tab capture and ordinary uploads remain available.
 
 Google sign-in opens the system browser. `/desktop/authorize` asks the user to confirm
 their account, issues a one-minute single-use token through a server action, and returns it
@@ -126,8 +148,45 @@ macOS production distribution requires signing/notarization credentials supplied
 owner; hardened-runtime and Apple Events entitlements are included. No auto-updater is configured.
 The V8 compile cache is enabled before the main bundle in packaged builds and skipped for
 AppImage's changing mount paths. Hidden startup is temporarily unthrottled until first paint;
-hidden/minimized windows use normal throttling afterward. The Ruth overlay is created on demand.
+hidden/minimized windows use normal throttling afterward. The Ava overlay is created on demand.
 
 Validate OS permissions, first/warm launch, idle CPU/RSS, shortcut ownership, tray behavior,
 provider sign-in, real document upload/indexing, and signed installers on each target OS.
 Unit/build/browser-fixture checks do not establish those native behaviors.
+
+### Screen-read privacy and validation
+
+Full-display `read_screen` requires the current account owner's **Share screen with Ava**
+setting in **Settings → Capture**, off by default. It authorizes entire selected-display
+snapshots, including visible sensitive content; source-saving filters do not protect these
+images. Disabled reads remain discoverable and return an actionable `disabled` result
+without starting Qt or acquiring pixels. Capability discovery and prompt opening do not
+start Qt, inspect native displays or capture. Explicit operator disable still wins.
+
+Electron checks the live authenticated account preference before pixel acquisition and
+again before delivery. Failed lookups, account/session changes and stale prompt callbacks
+fail closed. Active contexts recheck permission every five seconds and close the prompt and
+presentation on revocation or lookup failure; future reads always check immediately.
+Each permitted read selects the monitor under the cursor at the start of that read,
+including subsequent reads in the same chat. Pointer movement during acquisition does
+not change that read's selected display; disconnects or geometry changes reject delivery.
+Automatic sensitive-window masking is [planned](../../docs/TODO.md); current snapshots
+are unmasked. Native capture is initialized only on an explicit permitted read. OS capture permission,
+backend availability and unique display mapping remain required. Screenshots are sent
+only in request context, not canonical chat/library history. Derived chat answers remain.
+
+On Linux Wayland, capture currently requires Hyprland's monitor metadata and `grim`.
+Electron's logical display bounds must map uniquely to an enabled, unrotated,
+unmirrored Hyprland output; ambiguous or changed mappings fail closed. An XWayland
+`DISPLAY` alone cannot identify native Wayland windows.
+
+`pnpm --filter @avenire/desktop test` runs curated behavioral and integration tests
+in a clean checkout, without native deployment artifacts. `native:build` followed by `native:behavior` explicitly
+runs deployment/process integration checks. CI builds the native deployment before
+those checks. Native suspension, monitor retention, crash recovery and renderer
+fallback regressions are included; real multi-monitor rendering still needs a Qt
+build and suitable desktop session.
+Shortcut onboarding tests exercise real temporary Lua/legacy config files and the real IPC
+handlers with a mocked compositor boundary. They cover explicit consent, conflicts, persistence,
+ownership-aware removal and rollback; live compositor reload and cold-launch behavior still
+need verification in a desktop session.

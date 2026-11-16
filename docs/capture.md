@@ -80,7 +80,7 @@ BrowserKind = "chrome" | "edge" | "brave" | "arc" | "vivaldi" | "opera" | "firef
 - `url` is the reopen URL: the query is kept, minus tracking parameters (`utm_*`, `fbclid`, ...)
   and secret-looking parameters (`token`, `sig`, `signature`, `key`, `auth`, `code`,
   `access_token`, `session`, `X-Amz-*`, `X-Goog-*`). `sourceUrl` stays the query-free citation
-  form, and it is the only URL that models and Ruth Cloud see.
+  form, and it is the only URL that models and Ava Cloud see.
 - **Absolute paths never leave the device.** The server stores only `fileName`, `deviceId`,
   `deviceName` ("Saved on Abhiram's MacBook") and the content hash. The desktop keeps a
   main-process **local origin registry**: `fileId → { path, sha256, size, mtimeMs, appName }`,

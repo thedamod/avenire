@@ -22,7 +22,7 @@ export function trayTemplate(state: TrayState): MenuItemConstructorOptions[] {
   return [
     {
       id: "prompt",
-      label: "Ask Ruth…",
+      label: "Ask Ava…",
       enabled: state.setupCompleted,
       ...(state.promptShortcut ? { accelerator: state.promptShortcut } : {}),
       registerAccelerator: false,

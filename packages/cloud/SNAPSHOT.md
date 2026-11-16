@@ -1,6 +1,6 @@
 # Avenire sandbox snapshot
 
-`avenire-sandbox-v7` is the shared image for ephemeral Ruth chat sandboxes and persistent Cloud boxes. Base: `daytonaio/sandbox:0.9.0-slim`, **Debian trixie**, not Ubuntu. Retaining Debian preserves the verified KiCad/X11/Daytona runtime. Snapshot resources are fixed by SDK 0.220.0: **4 vCPU / 8 GB RAM / 10 GB disk**. The image itself does not consume the sandbox's 10 GB allocation. Existing sandboxes must be recreated to receive v7.
+`avenire-sandbox-v7` is the shared image for ephemeral Ava chat sandboxes and persistent Cloud boxes. Base: `daytonaio/sandbox:0.9.0-slim`, **Debian trixie**, not Ubuntu. Retaining Debian preserves the verified KiCad/X11/Daytona runtime. Snapshot resources are fixed by SDK 0.220.0: **4 vCPU / 8 GB RAM / 10 GB disk**. The image itself does not consume the sandbox's 10 GB allocation. Existing sandboxes must be recreated to receive v7.
 
 ## Desktop
 
@@ -150,7 +150,7 @@ Chat sandbox defaults: `CHAT_SANDBOX_LIFETIME_MINUTES=120`, `CHAT_SANDBOX_IDLE_S
 
 The sprint registry model is Fireworks GLM 5.3 Flash. No commits.
 
-The first full visual demo exhausted 80 steps before delivery; an experimental 120-step budget was used for the second run. The owner then clarified that ordinary visuals must be fast: chat uses figure as appearance/behaviour guidance with flexible code, and performs one preview before delivery. Full capture/drive/lines/audit loops and the 30–90 minute production estimate apply only to explicitly requested deep builds/verification. The chat sandbox is back to a 60-minute hard lifetime and 15-minute idle stop (still configurable via CHAT_SANDBOX_LIFETIME_MINUTES and CHAT_SANDBOX_IDLE_STOP_MINUTES); deep builds run as Ruth Cloud tasks. Directory setup retries transport errors twice and prepares the computer workspace once per sandbox. User commands are not automatically retried. The widget frame waits up to 30 seconds for larger pages; the card footer wraps and stacks on narrow widths.
+The first full visual demo exhausted 80 steps before delivery; an experimental 120-step budget was used for the second run. The owner then clarified that ordinary visuals must be fast: chat uses figure as appearance/behaviour guidance with flexible code, and performs one preview before delivery. Full capture/drive/lines/audit loops and the 30–90 minute production estimate apply only to explicitly requested deep builds/verification. The chat sandbox is back to a 60-minute hard lifetime and 15-minute idle stop (still configurable via CHAT_SANDBOX_LIFETIME_MINUTES and CHAT_SANDBOX_IDLE_STOP_MINUTES); deep builds run as Ava Cloud tasks. Directory setup retries transport errors twice and prepares the computer workspace once per sandbox. User commands are not automatically retried. The widget frame waits up to 30 seconds for larger pages; the card footer wraps and stacks on narrow widths.
 
 
 ## Fast interactive explainers

@@ -330,13 +330,13 @@ function QuizSession({
                 <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
                   <Icon name="moon" size={14} color={colors["accent-text"]} />
                   <Text color="accent-text" weight="600">
-                    Ruth suggests
+                    Ava suggests
                   </Text>
                 </View>
                 <Text style={{ fontSize: 15, lineHeight: 22, color: colors.fg }}>
                   {missed.length
-                    ? "Ask Ruth to go over what you missed, or try those questions again."
-                    : "Nothing missed. Ask Ruth for harder questions on the same material."}
+                    ? "Ask Ava to go over what you missed, or try those questions again."
+                    : "Nothing missed. Ask Ava for harder questions on the same material."}
                 </Text>
                 <View
                   style={{
@@ -350,8 +350,8 @@ function QuizSession({
                   <Button
                     accessibilityLabel={
                       missed.length
-                        ? "Go over what I missed with Ruth"
-                        : "Ask Ruth for harder questions"
+                        ? "Go over what I missed with Ava"
+                        : "Ask Ava for harder questions"
                     }
                     hitSlop={6}
                     onPress={ask}

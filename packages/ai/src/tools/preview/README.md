@@ -209,7 +209,7 @@ implementation's allowed edit scope).
 ## Verification and removed path
 
 `preview:check` extracts all four complete HTML examples from widget-kit/API.md, checks the two
-Ruth demo files if present, then checks an injected Step exception and max-slider NaN/overflow.
+Ava demo files if present, then checks an injected Step exception and max-slider NaN/overflow.
 It saves JSON reports, contact-sheet PNGs and timings to `/tmp/avenire-preview-check`, samples
 process-tree RSS/count, and fails if an injected fault lacks its triggering action or any tracked
 process remains. Cold/warm mean successive fresh isolated sessions, not a reused browser.
@@ -217,7 +217,7 @@ RSS is summed resident memory (shared pages can be counted more than once).
 
 Final WSL run (2026-10-13): broken cold 5.205s, broken warm 5.207s, double pendulum
 6.185s, three-body 4.922s, curve fit 3.584s, iso 3.565s. Every call peaked at 15
-processes and 1099–1288 MiB summed RSS, then left zero processes. Both Ruth demo
+processes and 1099–1288 MiB summed RSS, then left zero processes. Both Ava demo
 files were absent and explicitly skipped. Additional live fixtures exercised 11
 form/drag actions at 390px, captured a rejected promise and missing kit request,
 blocked example.com, reported a frozen click (11.7s) and startup freeze (10.7s),

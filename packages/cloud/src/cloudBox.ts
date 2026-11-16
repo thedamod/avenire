@@ -176,7 +176,7 @@ export const CloudBoxesLive: Layer.Layer<CloudBoxes, never, DaytonaClient> = Lay
                 yield* attempt("startCloudBox", () => sandbox.start()).pipe(
                   Effect.catchTag(
                     "CloudError",
-                    unavailable("starting the persistent Ruth Cloud workspace failed"),
+                    unavailable("starting the persistent Ava Cloud workspace failed"),
                   ),
                 );
             } else {
@@ -194,7 +194,7 @@ export const CloudBoxesLive: Layer.Layer<CloudBoxes, never, DaytonaClient> = Lay
               ).pipe(
                 Effect.catchTag(
                   "CloudError",
-                  unavailable("creating the persistent Ruth Cloud workspace failed"),
+                  unavailable("creating the persistent Ava Cloud workspace failed"),
                 ),
               );
             }
@@ -214,13 +214,13 @@ export const CloudBoxesLive: Layer.Layer<CloudBoxes, never, DaytonaClient> = Lay
             ).pipe(
               Effect.catchTag(
                 "CloudError",
-                unavailable("preparing the Ruth Cloud workspace failed"),
+                unavailable("preparing the Ava Cloud workspace failed"),
               ),
             );
             yield* attempt("createCloudInputs", () =>
               sandbox.fs.createFolder(CLOUD_INPUTS, "755"),
             ).pipe(
-              Effect.catchTag("CloudError", unavailable("preparing the Ruth Cloud inputs failed")),
+              Effect.catchTag("CloudError", unavailable("preparing the Ava Cloud inputs failed")),
             );
             return makeBox(sandbox, userId);
           }).pipe(Effect.uninterruptible),

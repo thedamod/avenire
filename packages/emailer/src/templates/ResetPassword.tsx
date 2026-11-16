@@ -19,5 +19,5 @@ export const ResetPassword = ({ name, url }: Props) => (
     </Text>
   </Layout>
 );
-ResetPassword.PreviewProps = { name: "Ruth", url: "https://avenire.space/reset" } satisfies Props;
+ResetPassword.PreviewProps = { name: "Ava", url: "https://avenire.space/reset" } satisfies Props;
 export default ResetPassword;

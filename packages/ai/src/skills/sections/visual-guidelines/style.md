@@ -1,6 +1,6 @@
 ---
 name: style
-description: Shared figure tokens and figure framing for all Ruth widgets, charts and simulations; app UI palette stays separate.
+description: Shared figure tokens and figure framing for all Ava widgets, charts and simulations; app UI palette stays separate.
 ---
 
 # Figure style

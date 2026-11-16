@@ -1,5 +1,6 @@
 import {
   cancelUploadResponse,
+  uploadStatusResponse,
   putUploadResponse,
   completeUploadResponse,
 } from "~/server/sourceUploadHttp";
@@ -13,3 +14,6 @@ export const DELETE = async (request: Request, context: RouteContext) =>
 
 export const POST = async (request: Request, context: RouteContext) =>
   runUploadRoute(completeUploadResponse(request, (await context.params).uploadId));
+
+export const GET = async (request: Request, context: RouteContext) =>
+  runUploadRoute(uploadStatusResponse(request, (await context.params).uploadId));

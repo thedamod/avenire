@@ -33,7 +33,7 @@ export default function WidgetPane({
       </FigureFrame>
       <div className="flex items-start gap-4 text-[13px] leading-[18px]">
         <p className="min-w-0 flex-1 text-muted-foreground">
-          Built by Ruth overnight{createdAt ? ` · ${clockTime(createdAt)}` : ""} · runs on this
+          Built by Ava overnight{createdAt ? ` · ${clockTime(createdAt)}` : ""} · runs on this
           device
         </p>
         <button
@@ -41,7 +41,7 @@ export default function WidgetPane({
           onClick={() => askRuth(`Walk me through the “${title}” figure, part by part.`)}
           className="shrink-0 text-ruth-text transition-colors hover:text-foreground"
         >
-          Ask Ruth about it
+          Ask Ava about it
         </button>
       </div>
     </div>
