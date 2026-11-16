@@ -31,6 +31,7 @@ public final class EssentialKeyService extends AccessibilityService {
     private long receiptCreated;
     private String receiptId="";
     private boolean committing;
+    private final ShareFallback shareFallback=new ShareFallback(this);
     private String assistSession="";
     private String assistNote="";
     private long entrySettlesAt;
@@ -91,6 +92,7 @@ public final class EssentialKeyService extends AccessibilityService {
     }
     private void openAva(String mode) { openAva(mode, true); }
     private void openAva(String mode, boolean withScreen) {
+        shareFallback.cancel();
         if (opening) { pendingMode = mode; return; }
         pendingMode = mode;
         final long id = ++request;
@@ -180,6 +182,13 @@ public final class EssentialKeyService extends AccessibilityService {
         if(!captureAllowed(session)) { android.widget.Toast.makeText(this,"Private or protected screens cannot be captured.",android.widget.Toast.LENGTH_SHORT).show(); return; }
         String owner=CaptureStore.owner(this); if(owner.isEmpty()) { android.widget.Toast.makeText(this,"Sign in to Avenire before capturing.",android.widget.Toast.LENGTH_LONG).show(); return; }
         ScreenSource source=capturedSource; String capturedAt=ScreenSession.capturedAt(this);
+        if(source.url==null && ShareControls.supports(source.packageName)) {
+            // Capture policy and source identity were checked above, before navigating.
+            String app=source.packageName;
+            leaveScreen();
+            shareFallback.start(app);
+            return;
+        }
         if(source.url==null) {
             assistSession=session; assistNote=note==null?"":note;
             try {
@@ -272,6 +281,7 @@ public final class EssentialKeyService extends AccessibilityService {
         if (screen.windowChanged(name, ownOverlay, keyboard)) { Log.i("AvenireCapture","Source window changed package="+name+" class="+event.getClassName()); leaveScreen(); }
     }
     void leaveScreen() {
+        shareFallback.cancel();
         // Invalidate capture callbacks and running headless work before removing the window.
         request++; opening = false; capturePending = false; reset(); screen.close();
         clearSession();

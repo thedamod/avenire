@@ -79,25 +79,39 @@ For native documents, audio and video, select **Ava** as Android's default digit
 assistant, then invoke the shortcut twice over the open file. Ava asks Android for the
 focused app's `AssistContent`: an explicitly granted original `content://` URI or public
 URL. It copies granted bytes before closing the assistant session. It does not inspect
-AssistStructure, scrape document text, automate Share menus, or take over dictation.
+AssistStructure, scrape document text, or take over dictation.
 The app must supply a readable original; a playback identifier or webpage link is not
 an audio/video file. Unsupported players offer **Share → Avenire** instead. Protected
 and excluded apps remain excluded even when an assistant handoff is available.
 
-Google Drive uses the same handoff. PDFs and ordinary uploaded files are copied as
-originals when Drive grants access. For virtual Google Docs/Sheets/Slides documents,
+Google Drive's internal viewer does not provide a readable original through the assistant
+handoff. For Drive, Docs, Sheets and Slides, the second capture press now dismisses Ava
+and tries to open **Send a copy** (including opening accessible More options and
+**Share and export** menus).
+It never clicks Google's collaborator **Share** action. Adobe Reader, Microsoft Word,
+Excel and PowerPoint, and WPS use the same bounded fallback for recognizable **Share**,
+**Share file**, or **Send a copy** controls. The destination list is unchanged: the user
+selects Avenire. No destination, permission, export format or confirmation is selected
+automatically. If another menu or export picker appears, the user completes it.
+
+Only exact English control labels are currently recognized. Navigation is limited to
+three seconds, one overflow click and one export-submenu click. It stops at the first sharing action, app switch,
+system dialog, lock or external overlay. Unknown controls fall back to manual instructions.
+This inspects toolbar/menu control labels; document bodies, forms and passwords remain
+unread. This new navigation requires hardware validation across app versions and locales;
+source compilation and label-policy tests do not establish device support.
+
+The explicit Share receiver copies PDFs and ordinary uploaded files when the source
+grants access. For virtual Google Docs/Sheets/Slides documents,
 Ava requests a provider-advertised Office export, then PDF as a fallback. A Drive webpage
 or sign-in page is never saved as the original document. Providers that do not grant
 an export require **Send a copy → Avenire**. This does not connect or sync an entire
 Google Drive account.
 
-Drive's internal `InternalProjectorActivity` can instead provide only a `projector-id:`
-intent, with no content grant or public URL. Reproduced on the Nothing phone: both
-shortcut invocations reach the assistant, but this response cannot supply original
-bytes. Ava keeps a visible error in the preview directing the user to **Send a copy →
-Avenire**. External PDF-viewer grants working does not establish two-press support for
-Drive's internal viewer. Opaque viewer IDs are never treated as file paths or downloaded
-as documents.
+Before this navigation fallback, Drive's internal `InternalProjectorActivity` was
+reproduced on the Nothing phone returning only a `projector-id:` intent, with no
+content grant or public URL. That assistant response cannot supply original bytes.
+Opaque viewer IDs are never treated as file paths or downloaded as documents.
 
 The Share receiver accepts explicitly granted `content://` streams and applies known
 provider-app exclusions. It accepts individual or multiple files (up to 32); shared
@@ -241,6 +255,10 @@ javac -d /tmp/avenire-key-tests \
   apps/mobile/native/essential-key/src/com/thedamod/avenire/essentialkey/KeyGesture.java \
   apps/mobile/native/essential-key/tests/KeyGestureTest.java
 java -cp /tmp/avenire-key-tests com.thedamod.avenire.essentialkey.KeyGestureTest
+javac -d /tmp/avenire-key-tests \
+  apps/mobile/native/essential-key/src/com/thedamod/avenire/essentialkey/ShareControls.java \
+  apps/mobile/native/essential-key/tests/ShareControlsTest.java
+java -cp /tmp/avenire-key-tests com.thedamod.avenire.essentialkey.ShareControlsTest
 ./apps/mobile/native/essential-key/build-probe.sh
 # Output: /tmp/avenire-essential-key/avenire-key-input.apk
 pnpm exec vp test run apps/mobile/src/features/native-screen/results.test.ts packages/ai/src/tools/native-overlay-policy.test.ts
