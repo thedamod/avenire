@@ -1,0 +1,64 @@
+[
+  {
+    "category": "email",
+    "hosts": [
+      "mail.google.com",
+      "outlook.live.com",
+      "outlook.office.com",
+      "mail.yahoo.com",
+      "proton.me",
+      "fastmail.com",
+      "hey.com"
+    ]
+  },
+  {
+    "category": "banking",
+    "patterns": [
+      "(?:^|[/.])(?:chase|bankofamerica|wellsfargo|citi|citibank|capitalone|barclays|hsbc|revolut|wise|paypal|coinbase|robinhood)(?:[/.]|$)"
+    ]
+  },
+  {
+    "category": "messaging",
+    "hosts": [
+      "web.whatsapp.com",
+      "web.telegram.org",
+      "teams.microsoft.com",
+      "messages.google.com",
+      "messenger.com",
+      "slack.com"
+    ]
+  },
+  {
+    "category": "messaging",
+    "patterns": ["^https?://(?:[^/]+\\.)?discord\\.com/channels(?:[/?#]|$)"]
+  },
+  {
+    "category": "password-manager",
+    "patterns": ["1password|bitwarden|lastpass|dashlane|keepass|roboform|enpass"]
+  },
+  {
+    "category": "checkout",
+    "patterns": ["/(?:checkout|cart)(?:/|$|[?#])", "amazon\\.[^/]+/gp/buy"]
+  },
+  {
+    "category": "social-feed",
+    "patterns": [
+      "(?:twitter\\.com|x\\.com)/home(?:[/?#]|$)|facebook\\.com(?:/?(?:[?#].*)?)$|instagram\\.com(?:/?(?:[?#].*)?)$|tiktok\\.com(?:/?(?:[?#].*)?)$|reddit\\.com(?:/?(?:[?#].*)?)$"
+    ]
+  },
+  {
+    "category": "drm-stream",
+    "hosts": [
+      "netflix.com",
+      "primevideo.com",
+      "disneyplus.com",
+      "hulu.com",
+      "hbomax.com",
+      "crunchyroll.com"
+    ]
+  },
+  {
+    "category": "drm-stream",
+    "patterns": ["spotify\\.com/(?:track|episode)(?:[/?#]|$)"]
+  }
+]

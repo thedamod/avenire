@@ -6,6 +6,7 @@ import type { ImageTransport } from "./images.ts";
 import { toAiSdkTools } from "./ai-sdk.ts";
 import type { AssetStore } from "../outputs/assets.ts";
 import type { AgentContext } from "./core.ts";
+import { nativeOverlaySupport } from "./native-overlay-policy.ts";
 import { sandboxToolRegistry } from "./sandbox-tools.ts";
 import type { RuthKitServices } from "./library.ts";
 import { tool, type ToolSet } from "ai";
@@ -35,7 +36,11 @@ export type RuthToolServices =
 export interface RuthTurn {
   readonly userId: UserId;
   readonly nativeScreenAvailable?: boolean | undefined;
+  readonly nativeAnnotationAvailable?: boolean | undefined;
   readonly nativeScreenCapturedAt?: string | undefined;
+  readonly nativeScreenSize?:
+    | Pick<import("@avenire/contracts").DesktopScreenObservation, "width" | "height">
+    | undefined;
   readonly nativeCursor?: import("@avenire/contracts").DesktopCursorPosition | undefined;
   readonly nativePresentation?:
     | import("@avenire/contracts").DesktopPresentationObservation
@@ -87,6 +92,7 @@ export const createRuthTools = (
     },
     images,
   );
+  const nativeSupport = nativeOverlaySupport(turn);
   const boundTools: ToolSet = {
     ...tools,
     ...(turn.nativeScreenAvailable &&
@@ -94,11 +100,11 @@ export const createRuthTools = (
     turn.page.platform === "desktop"
       ? { read_screen: tool(readScreenSpec) }
       : {}),
-    ...(turn.nativeScreenCapturedAt && turn.nativePresentation &&
-    turn.page.surface === "ephemeral" &&
-    turn.page.platform === "desktop"
+    ...(turn.nativeScreenCapturedAt && nativeSupport.annotate
+      ? { native_annotate: createNativeAnnotationTool(turn.nativeScreenCapturedAt) }
+      : {}),
+    ...(turn.nativeScreenCapturedAt && nativeSupport.desktop
       ? {
-          native_annotate: createNativeAnnotationTool(turn.nativeScreenCapturedAt),
           native_visualize: createNativeVisualizationTool(turn.nativeScreenCapturedAt),
           native_diagram: createNativeDiagramTool(turn.nativeScreenCapturedAt),
           ...(turn.nativeCursor

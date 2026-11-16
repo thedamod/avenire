@@ -11,10 +11,25 @@ export const DesktopOverlayAnnotation = Schema.Struct({
   y: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
   width: Schema.optional(Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),
   height: Schema.optional(Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }))),
+  /** Optional callout top-left, independent of the target anchor. */
+  labelPosition: Schema.optional(
+    Schema.Struct({
+      x: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+      y: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+    }),
+  ),
   text: Schema.optional(Schema.String.check(Schema.isMaxLength(512))),
   color: Schema.optional(Schema.String.check(Schema.isPattern(/^#[0-9a-f]{6}([0-9a-f]{2})?$/i))),
 });
 export type DesktopOverlayAnnotation = typeof DesktopOverlayAnnotation.Type;
+
+/** Shared desktop/mobile presentation result. No drawing code, scripts, URLs or file mutations. */
+export const NativeAnnotationResult = Schema.Struct({
+  requested: Schema.Literal(true),
+  capturedAt: Schema.String.check(Schema.isMaxLength(100)),
+  items: Schema.Array(DesktopOverlayAnnotation).check(Schema.isMaxLength(32)),
+});
+export type NativeAnnotationResult = typeof NativeAnnotationResult.Type;
 
 /** Read-only pointer observation. x/y are normalized to the selected capture bounds. */
 export const DesktopCursorPosition = Schema.Struct({

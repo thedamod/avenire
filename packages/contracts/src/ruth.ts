@@ -77,6 +77,8 @@ export const RuthChatRequest = Schema.Struct({
   screenContext: Schema.optional(DesktopScreenObservation),
   /** This client can fulfill the read_screen tool; no image is attached until requested. */
   nativeScreenAvailable: Schema.optional(Schema.Boolean),
+  /** This mobile client can render native_annotate for its active, explicitly shared capture. */
+  nativeAnnotationAvailable: Schema.optional(Schema.Boolean),
   scope: Schema.optional(ChatScope),
   fast: Schema.optional(Schema.Boolean),
   timeZone: Schema.optional(Schema.String),

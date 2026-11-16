@@ -119,3 +119,17 @@ export const completeUploadResponse = (request: Request, id: string) =>
       };
     }),
   );
+
+export const uploadStatusResponse = (request: Request, id: string) =>
+  uploadResponse(
+    request,
+    Effect.gen(function* () {
+      const uploadId = yield* decodeRequest(SourceUploadId, id);
+      return yield* asHttpError((yield* SourceUploads).status((yield* CurrentUser).id, uploadId));
+    }),
+  ).pipe(
+    Effect.map((response) => {
+      response.headers.set("cache-control", "no-store");
+      return response;
+    }),
+  );

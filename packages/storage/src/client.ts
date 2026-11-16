@@ -1,5 +1,5 @@
 import { DirectSourceUpload, LibraryFile } from "@avenire/contracts";
-import { createFilesClient } from "files-sdk/client";
+import { createFilesClient, type NativeFileRef, type Transport } from "files-sdk/client";
 import * as Schema from "effect/Schema";
 
 export class SourceUploadTransferError extends Error {
@@ -18,9 +18,11 @@ export class SourceUploadTransferError extends Error {
 /** The application owns tickets/publication; files-sdk owns byte transport and progress. */
 export async function uploadSourceTicket(
   endpoint: URL,
-  body: Blob,
+  body: Blob | NativeFileRef,
   options: {
     contentType: string;
+    transport?: Transport;
+    sourceFetch?: typeof fetch;
     appFetch?: (url: string, init: RequestInit) => Promise<Response>;
     signal?: AbortSignal;
     onProgress?: (loaded: number, total: number) => void;
@@ -51,7 +53,23 @@ export async function uploadSourceTicket(
   };
   const client = createFilesClient({
     endpoint: endpoint.href,
+    ...(options.transport
+      ? {
+          transport: async (request) => {
+            const url = destination(request.url);
+            return options.transport!({ ...request, url: url.href });
+          },
+        }
+      : {}),
     fetchImpl: async (input, init = {}) => {
+      const source = typeof body === "object" && "uri" in body ? body.uri : undefined;
+      if (
+        source &&
+        String(input) === source &&
+        options.sourceFetch &&
+        (!init.method || init.method === "GET")
+      )
+        return options.sourceFetch(source, { signal, credentials: "omit", redirect: "error" });
       const url = destination(input instanceof Request ? input.url : String(input));
       const application = url.origin === endpoint.origin;
       let completing = false;

@@ -12,6 +12,7 @@ import {
   StorageKey,
   type LibraryFile,
   type SourceUploadTicket,
+  type SourceUploadStatus,
   type UserId,
 } from "@avenire/contracts";
 import {
@@ -23,13 +24,19 @@ import {
 import { dedupeKeyFor } from "@avenire/capture/url";
 import { isDeepStrictEqual } from "node:util";
 import { captureCitationUrl, normalizeCaptureOrigin, restoreToCorpusTx } from "./captureOrigin.ts";
-import { lockCorpus } from "@avenire/database/corpus";
+import {
+  advanceCorpusRevision,
+  refreshFolderCentroidsTx,
+  lockCorpus,
+} from "@avenire/database/corpus";
 import {
   file,
   fileEvent,
   fileFolder,
   folder,
   sourceUpload,
+  ingestionJob,
+  transcriptCache,
   type SourceUploadRow,
   type FileRow,
 } from "@avenire/database/schema";
@@ -56,6 +63,9 @@ import { fileToContract } from "./library.ts";
 
 export const UPLOAD_TTL_MS = 60 * 60 * 1000;
 export const UPLOAD_LEASE_MS = 15 * 60 * 1000;
+export const mobileOrigin = (origin: CreateSourceUpload["origin"]): boolean =>
+  origin?._tag === "Screen" ||
+  ((origin?._tag === "LocalFile" || origin?._tag === "Web") && origin.platform === "android");
 const reject = (status: number, message: string) => new SourceUploadError({ status, message });
 const failure = (cause: unknown) =>
   cause instanceof SourceUploadError
@@ -134,17 +144,31 @@ export const normalizeUploadMetadata = (input: CreateSourceUpload): CreateSource
     const origin = input.origin;
     if (!Number.isFinite(Date.parse(origin.capturedAt)))
       throw reject(400, "Capture provenance requires a valid timestamp.");
+    if (
+      origin._tag === "Web" &&
+      origin.platform === "android" &&
+      origin.captureId !== input.idempotencyKey
+    )
+      throw reject(400, "Original provenance must match its mobile capture ticket.");
     const urls =
       origin._tag === "Web"
         ? [origin.url, origin.finalUrl, origin.canonicalUrl]
         : // A browser-downloaded file keeps the page it came from for reopening.
-          [origin.originUrl];
+          [origin._tag === "Screen" ? origin.url : origin.originUrl];
     for (const value of urls) {
       if (value === undefined) continue;
       const url = URL.parse(value);
       if (!url || !["http:", "https:"].includes(url.protocol) || url.username || url.password)
         throw reject(400, "Capture provenance must be an HTTP URL without credentials.");
     }
+    if (
+      origin._tag === "Screen" &&
+      (origin.captureId !== input.idempotencyKey ||
+        origin.sha256 !== input.sha256.toLowerCase() ||
+        origin.sizeBytes !== input.sizeBytes ||
+        input.kind !== "image")
+    )
+      throw reject(400, "Screen provenance must match its capture ticket and image bytes.");
     if (
       origin._tag === "LocalFile" &&
       (/[\\/]/.test(origin.fileName) ||
@@ -302,6 +326,10 @@ export class SourceUploads extends Context.Service<
       id: SourceUploadId,
       request: Request,
     ) => Effect.Effect<LibraryFile, SourceUploadError>;
+    readonly status: (
+      userId: UserId,
+      id: SourceUploadId,
+    ) => Effect.Effect<SourceUploadStatus, SourceUploadError>;
     readonly cancel: (userId: UserId, id: SourceUploadId) => Effect.Effect<void, SourceUploadError>;
     readonly cleanup: () => Effect.Effect<void, SourceUploadError>;
   }
@@ -341,7 +369,12 @@ export const SourceUploadsLive = Layer.effect(
     const readFile = (userId: UserId, id: string) =>
       database.use((db) => wireFile(db, userId, id)).pipe(reportFailure);
     // Caller holds lockCorpus: all capture creates/completions share the same user fence.
-    const contentMatch = async (tx: DatabaseTransaction, userId: UserId, sha256: string) => {
+    const contentMatch = async (
+      tx: DatabaseTransaction,
+      userId: UserId,
+      sha256: string,
+      origin?: CreateSourceUpload["origin"],
+    ) => {
       const [match] = await tx
         .select({ file })
         .from(sourceUpload)
@@ -360,6 +393,12 @@ export const SourceUploadsLive = Layer.effect(
             eq(sourceUpload.userId, userId),
             eq(sourceUpload.sha256, sha256),
             eq(sourceUpload.status, "completed"),
+            mobileOrigin(origin)
+              ? sql`${file.placement} <> 'archived' and ${file.archivedAt} is null`
+              : undefined,
+            origin?._tag === "Screen"
+              ? sql`${file.origin}->>'_tag' = 'Screen' and coalesce(${file.origin}->>'note', '') = ${origin.note ?? ""}`
+              : undefined,
           ),
         )
         .limit(1);
@@ -374,6 +413,13 @@ export const SourceUploadsLive = Layer.effect(
       eventId: string,
       jobId: IngestionJobId,
     ) => {
+      if (origin?._tag === "Screen") {
+        await tx
+          .insert(fileEvent)
+          .values({ id: eventId, userId, fileId: found.id, kind: "captured" })
+          .onConflictDoNothing();
+        return found;
+      }
       const [saved] = await tx
         .update(file)
         .set({
@@ -552,7 +598,7 @@ export const SourceUploadsLive = Layer.effect(
             request.signal.aborted
           )
             throw reject(409, "This upload no longer owns its completion lease.");
-          const match = await contentMatch(tx, userId, row.sha256);
+          const match = await contentMatch(tx, userId, row.sha256, row.origin ?? undefined);
           let saved: FileRow;
           const abandoned = [...current.abandonedStorageKeys];
           if (match) {
@@ -562,12 +608,16 @@ export const SourceUploadsLive = Layer.effect(
               match,
               row.origin ?? undefined,
               row.access,
-              eventId,
+              mobileOrigin(row.origin ?? undefined) ? row.id : eventId,
               jobId,
             );
             abandoned.push(key);
           } else {
-            const dedupeKey = row.origin === null ? `upload:${id}` : dedupeKeyFor(row.origin);
+            const dedupeKey =
+              row.origin === null ||
+              (row.origin._tag === "LocalFile" && row.origin.platform === "android")
+                ? `upload:${id}`
+                : dedupeKeyFor(row.origin);
             const [existing] = await tx
               .select()
               .from(file)
@@ -620,7 +670,7 @@ export const SourceUploadsLive = Layer.effect(
               saved = inserted!;
             }
             await tx.insert(fileEvent).values({
-              id: eventId,
+              id: mobileOrigin(row.origin ?? undefined) ? row.id : eventId,
               userId,
               fileId: saved.id,
               kind: existing || row.origin ? "captured" : "uploaded",
@@ -705,7 +755,7 @@ export const SourceUploadsLive = Layer.effect(
               ...ticket(existing),
               file: await wireFile(tx, userId, existing.completedFileId ?? existing.fileId),
             };
-          const match = await contentMatch(tx, userId, metadata.sha256);
+          const match = await contentMatch(tx, userId, metadata.sha256, metadata.origin);
           // An active PUT owns its ticket until completion, which performs this same check.
           if (existing?.status === "uploading") return ticket(existing);
           const [row] = existing
@@ -730,7 +780,7 @@ export const SourceUploadsLive = Layer.effect(
             match,
             metadata.origin,
             metadata.access ?? "open",
-            eventId,
+            mobileOrigin(metadata.origin) ? row!.id : eventId,
             jobId,
           );
           const [completed] = await tx
@@ -815,16 +865,128 @@ export const SourceUploadsLive = Layer.effect(
       }, reportFailure),
       put: (userId, id, request) => put(userId, id, request),
       complete: (userId, id, request) => put(userId, id, request, true),
+      status: Effect.fn("SourceUploads.status")(function* (userId, id) {
+        return yield* database.use(async (db) => {
+          const row = await db.query.sourceUpload.findFirst({
+            where: and(eq(sourceUpload.id, id), eq(sourceUpload.userId, userId)),
+          });
+          if (!row) throw reject(404, "Upload ticket not found.");
+          const saved =
+            row.status === "completed" && row.completedFileId
+              ? await wireFile(db, userId, row.completedFileId)
+              : undefined;
+          const job = saved
+            ? await db.query.ingestionJob.findFirst({
+                where: and(eq(ingestionJob.userId, userId), eq(ingestionJob.fileId, saved.id)),
+              })
+            : undefined;
+          return {
+            ticket: { ...ticket(row), ...(saved ? { file: saved } : {}) },
+            ingestion: job
+              ? {
+                  status: job.status,
+                  attempts: job.attempts,
+                  error: job.error,
+                  coverage: job.coverage,
+                  id: IngestionJobId.make(job.id),
+                  fileId: FileId.make(job.fileId),
+                  createdAt: job.createdAt.toISOString(),
+                  updatedAt: job.updatedAt.toISOString(),
+                }
+              : null,
+          };
+        });
+      }, reportFailure),
       cancel: Effect.fn("SourceUploads.cancel")(function* (userId, id) {
         const row = yield* database.useTransaction(async (tx) => {
+          await lockCorpus(tx, userId);
           const [row] = await tx
             .select()
             .from(sourceUpload)
             .where(and(eq(sourceUpload.id, id), eq(sourceUpload.userId, userId)))
             .for("update");
           if (!row) throw reject(404, "Upload ticket not found.");
-          if (row.status === "completed")
-            throw reject(409, "A completed upload cannot be cancelled.");
+          if (row.status === "cancelled") return row;
+          if (row.status === "completed") {
+            if (!mobileOrigin(row.origin ?? undefined))
+              throw reject(409, "A completed upload cannot be cancelled.");
+            // A deduped capture never owns the existing library row. Undo only its receipt.
+            await tx
+              .delete(fileEvent)
+              .where(and(eq(fileEvent.id, row.id), eq(fileEvent.userId, userId)));
+            const targetId = row.completedFileId ?? row.fileId;
+            const creator =
+              row.completedFileId === row.fileId
+                ? row
+                : await tx.query.sourceUpload.findFirst({
+                    where: and(
+                      eq(sourceUpload.userId, userId),
+                      eq(sourceUpload.fileId, targetId),
+                      eq(sourceUpload.completedFileId, targetId),
+                      eq(sourceUpload.status, "cancelled"),
+                    ),
+                  });
+            // If the original receipt was undone first, its last duplicate owns cleanup.
+            // An active original receipt or an unrelated library item must survive.
+            if (creator && mobileOrigin(creator.origin ?? undefined)) {
+              const [reused] = await tx
+                .select({ id: sourceUpload.id })
+                .from(sourceUpload)
+                .where(
+                  and(
+                    eq(sourceUpload.userId, userId),
+                    eq(sourceUpload.completedFileId, targetId),
+                    eq(sourceUpload.status, "completed"),
+                    sql`${sourceUpload.id} <> ${id}`,
+                  ),
+                )
+                .limit(1);
+              if (!reused) {
+                await tx
+                  .update(file)
+                  .set({
+                    placement: "archived",
+                    archivedAt: sql`coalesce(${file.archivedAt}, now())`,
+                    updatedAt: sql`now()`,
+                  })
+                  .where(
+                    and(
+                      eq(file.id, targetId),
+                      eq(file.userId, userId),
+                      isNull(file.purgeStartedAt),
+                    ),
+                  );
+                await tx
+                  .update(ingestionJob)
+                  .set({
+                    status: "cancelled",
+                    generation: sql`${ingestionJob.generation} + 1`,
+                    claimToken: null,
+                    lockedUntil: null,
+                    updatedAt: sql`now()`,
+                  })
+                  .where(and(eq(ingestionJob.fileId, targetId), eq(ingestionJob.userId, userId)));
+                await tx
+                  .delete(transcriptCache)
+                  .where(
+                    and(eq(transcriptCache.fileId, targetId), eq(transcriptCache.userId, userId)),
+                  );
+                await refreshFolderCentroidsTx(tx, userId);
+                await advanceCorpusRevision(tx, userId);
+              }
+            }
+            const [undone] = await tx
+              .update(sourceUpload)
+              .set({
+                status: "cancelled",
+                claimToken: null,
+                claimExpiresAt: null,
+                updatedAt: sql`now()`,
+              })
+              .where(eq(sourceUpload.id, id))
+              .returning();
+            return undone!;
+          }
           const [updated] = await tx
             .update(sourceUpload)
             .set({

@@ -1,0 +1,292 @@
+package com.thedamod.avenire.essentialkey;
+
+import android.accessibilityservice.AccessibilityService;
+import android.content.Intent;
+import android.graphics.Bitmap;
+import android.hardware.HardwareBuffer;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.util.Log;
+import android.view.Display;
+import android.view.KeyEvent;
+import android.view.accessibility.AccessibilityEvent;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/** One click opens a popover, another requests capture, and hold opens the Ava text dock. */
+public final class EssentialKeyService extends AccessibilityService {
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final KeyGesture gesture = new KeyGesture();
+    private final ExecutorService images = Executors.newSingleThreadExecutor();
+    private volatile long request;
+    private boolean opening;
+    private boolean capturePending;
+    private String pendingMode;
+    private AvaOverlay overlay;
+    private CaptureReceipt receipt;
+    private long receiptCreated;
+    private String receiptId="";
+    private boolean committing;
+    private final ShareFallback shareFallback=new ShareFallback(this);
+    private String assistSession="";
+    private String assistNote="";
+    private long entrySettlesAt;
+
+    private volatile ScreenSource capturedSource;
+    private final OverlayContext screen = new OverlayContext();
+    static volatile EssentialKeyService live;
+    private final Runnable hold = () -> { if (gesture.hold()) openAva("dock"); };
+
+    @Override protected void onServiceConnected() {
+        live = this;
+        CaptureJobs.schedule(this);
+        images.execute(() -> { try { org.json.JSONObject row=CaptureStore.latest(this); if(row!=null && !java.util.Arrays.asList("ready","partial","undone").contains(row.optString("phase"))) showCaptureReceipt(row); } catch(Exception error) { android.util.Log.w("AvenireCapture","Could not restore capture status",error); } });
+        getAccessibilityButtonController().registerAccessibilityButtonCallback(
+            new android.accessibilityservice.AccessibilityButtonController.AccessibilityButtonCallback() {
+                @Override public void onClicked(android.accessibilityservice.AccessibilityButtonController controller) { trigger("toggle", true); }
+            }, handler);
+    }
+    static boolean isNothing() { return "nothing".equalsIgnoreCase(android.os.Build.MANUFACTURER); }
+    static boolean keyEnabled(android.content.Context context) {
+        // Never let a diagnostic APK steal the physical key from the signed app.
+        boolean shadowProbe = context.getPackageName().endsWith(".keyprobe")
+            && context.getPackageManager().getLaunchIntentForPackage("com.thedamod.avenire") != null;
+        return !shadowProbe && isNothing() && context.getSharedPreferences("ava-triggers", 0).getBoolean("essentialKey", true);
+    }
+    void trigger(String mode, boolean withScreen) {
+        if (getSystemService(android.app.KeyguardManager.class).isKeyguardLocked()) return;
+        if ("toggle".equals(mode) && (overlay != null || opening)) requestCapture();
+        else openAva("toggle".equals(mode) ? "popover" : mode, withScreen);
+    }
+    boolean screenAllowed(String session) {
+        ScreenSource source = capturedSource;
+        return ScreenSession.matches(this, session, ScreenSession.capturedAt(this)) && source != null && source.matches(ScreenSource.current(this));
+    }
+    boolean captureAllowed(String session) {
+        ScreenSource source=capturedSource;
+        return ScreenSession.active(this,session,ScreenSession.capturedAt(this)) && source!=null && source.matches(ScreenSource.current(this));
+    }
+    @Override protected boolean onKeyEvent(KeyEvent event) {
+        if (!keyEnabled(this) || event.getScanCode() != 250) return false;
+        if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+            if (gesture.down(event.getDownTime())) handler.postAtTime(hold, event.getDownTime() + KeyGesture.HOLD_MS);
+        } else if (event.getAction() == KeyEvent.ACTION_UP) {
+            handler.removeCallbacks(hold);
+            String action = gesture.up(event.getEventTime(), event.isCanceled());
+            if ("popover".equals(action) && (overlay != null || opening)) requestCapture();
+            else if (action != null) openAva(action);
+        }
+        return true;
+    }
+    private void requestCapture() {
+        if (!captureAllowed(ScreenSession.id(this)) && !opening) {
+            android.widget.Toast.makeText(this, "Screen capture is unavailable or excluded by capture policy.", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (opening) { capturePending = true; return; }
+        if (overlay != null) overlay.requestCapture();
+    }
+    private void openAva(String mode) { openAva(mode, true); }
+    private void openAva(String mode, boolean withScreen) {
+        shareFallback.cancel();
+        if (opening) { pendingMode = mode; return; }
+        pendingMode = mode;
+        final long id = ++request;
+        final String eventId = Long.toString(SystemClock.elapsedRealtimeNanos());
+        if (overlay != null) { overlay.updateMode(mode); return; }
+        ScreenSession.clear(this);
+        if(receipt!=null) receipt.hide();
+        screen.open();
+        opening = true;
+        entrySettlesAt=SystemClock.elapsedRealtime()+1000;
+        capturedSource = withScreen ? ScreenSource.current(this) : null;
+        if (capturedSource == null) { launch(eventId, false); return; }
+        final ScreenSource source = capturedSource;
+        // Screenshot is acquired before adding our overlay window over the original app.
+        try {
+            TakeScreenshotCallback callback = new TakeScreenshotCallback() {
+                @Override public void onSuccess(ScreenshotResult result) {
+                    HardwareBuffer buffer = result.getHardwareBuffer();
+                    if (id != request) { buffer.close(); return; }
+                    images.execute(() -> {
+                        Bitmap hardware = null;
+                        Bitmap copy = null;
+                        Bitmap scaled = null;
+                        boolean ready = false;
+                        try {
+                            hardware = Bitmap.wrapHardwareBuffer(buffer, result.getColorSpace());
+                            if (hardware == null) throw new IOException("No preview bitmap");
+                            copy = hardware.copy(Bitmap.Config.ARGB_8888, false);
+                            if (copy == null) throw new IOException("No preview copy");
+                            try (FileOutputStream original = new FileOutputStream(new File(getCacheDir(), "ava-original-" + eventId + ".png"))) {
+                                if (!copy.compress(Bitmap.CompressFormat.PNG, 100, original)) throw new IOException("Could not preserve screenshot.");
+                            }
+                            float factor = Math.min(1f, 1600f / Math.max(copy.getWidth(), copy.getHeight()));
+                            scaled = Bitmap.createScaledBitmap(copy, Math.max(1, Math.round(copy.getWidth()*factor)), Math.max(1, Math.round(copy.getHeight()*factor)), true);
+                            try (FileOutputStream output = new FileOutputStream(new File(getCacheDir(), "ava-preview-" + eventId + ".png"))) {
+                                ready = scaled.compress(Bitmap.CompressFormat.PNG, 100, output);
+                            }
+                        } catch (IOException | RuntimeException error) {
+                            Log.w("AvenireEssentialKey", "Screen preview unavailable", error);
+                        } finally {
+                            if (scaled != null && scaled != copy) scaled.recycle();
+                            if (copy != null) copy.recycle();
+                            if (hardware != null) hardware.recycle();
+                            buffer.close();
+                        }
+                        final boolean available = ready;
+                        handler.post(() -> {
+                            File original = new File(getCacheDir(), "ava-original-" + eventId + ".png");
+                            File temporary = new File(getCacheDir(), "ava-preview-" + eventId + ".png");
+                            if (id == request) {
+                                boolean permitted = source.matches(ScreenSource.current(EssentialKeyService.this));
+                                boolean saved = available && permitted && original.renameTo(new File(getCacheDir(), "ava-original.png")) && temporary.renameTo(new File(getCacheDir(), "ava-preview.png"));
+                                if (!saved) { temporary.delete(); original.delete(); new File(getCacheDir(), "ava-original.png").delete(); }
+                                launch(eventId, saved);
+                            } else { temporary.delete(); original.delete(); }
+                        });
+                    });
+                }
+                @Override public void onFailure(int code) {
+                    Log.i("AvenireEssentialKey", "Preview unavailable code=" + code);
+                    if (id == request) launch(eventId, false);
+                }
+            };
+            if (android.os.Build.VERSION.SDK_INT >= 34) takeScreenshotOfWindow(source.windowId, getMainExecutor(), callback);
+            else takeScreenshot(Display.DEFAULT_DISPLAY, getMainExecutor(), callback);
+        } catch (SecurityException unavailable) { launch(eventId, false); }
+    }
+    private void launch(String eventId, boolean preview) {
+        if(live!=this) return;
+        opening = false;
+        entrySettlesAt=SystemClock.elapsedRealtime()+500;
+        Log.i("AvenireEssentialKey", "Ava opened mode=" + pendingMode + " preview=" + preview + " eventId=" + eventId);
+        ScreenSession.begin(this, eventId, preview);
+        try {
+            overlay = new AvaOverlay(this, eventId, pendingMode, preview, (keep) -> { overlay = null; screen.close(); if (!keep) ScreenSession.clear(this); });
+            overlay.show();
+        } catch(android.view.WindowManager.BadTokenException | android.view.WindowManager.InvalidDisplayException disconnected) {
+            overlay=null; screen.close(); ScreenSession.clear(this); capturePending=false;
+            Log.w("AvenireCapture","Overlay connection is unavailable",disconnected);
+            android.widget.Toast.makeText(this,"Ava is reconnecting. Try your shortcut again.",android.widget.Toast.LENGTH_SHORT).show(); return;
+        }
+        if (capturePending) overlay.requestCapture();
+        capturePending = false;
+    }
+    void commitCapture(String session,String note) {
+        if(committing) return;
+        if(!captureAllowed(session)) { android.widget.Toast.makeText(this,"Private or protected screens cannot be captured.",android.widget.Toast.LENGTH_SHORT).show(); return; }
+        String owner=CaptureStore.owner(this); if(owner.isEmpty()) { android.widget.Toast.makeText(this,"Sign in to Avenire before capturing.",android.widget.Toast.LENGTH_LONG).show(); return; }
+        ScreenSource source=capturedSource; String capturedAt=ScreenSession.capturedAt(this);
+        if(source.url==null && ShareControls.supports(source.packageName)) {
+            // Capture policy and source identity were checked above, before navigating.
+            String app=source.packageName;
+            leaveScreen();
+            shareFallback.start(app);
+            return;
+        }
+        if(source.url==null) {
+            assistSession=session; assistNote=note==null?"":note;
+            try {
+                if(AvaAssistService.request(session)) { committing=true; return; }
+                assistSession="";
+                android.widget.Toast.makeText(this,"Choose Ava as your default assistant in Capture settings to try direct original capture. Otherwise use Share → Avenire.",android.widget.Toast.LENGTH_LONG).show();
+            } catch(Exception error) { assistSession=""; android.widget.Toast.makeText(this,"Assistant handoff is unavailable. Use Share → Avenire.",android.widget.Toast.LENGTH_LONG).show(); }
+            return;
+        }
+        committing=true;
+        images.execute(() -> {
+            try {
+                org.json.JSONObject origin=new org.json.JSONObject().put("_tag","Screen").put("appPackage",source.packageName).put("appName",source.label).put("capturedAt",capturedAt);
+                if(source.url!=null) origin.put("url",source.url);
+                if(note!=null && !note.trim().isEmpty()) origin.put("note",note.trim().substring(0,Math.min(note.trim().length(),5000)));
+                String title=source.title.replaceAll("[\\p{Cntrl}]"," ").trim(); if(title.isEmpty()) title="Original from "+source.label;
+                org.json.JSONObject row=CaptureStore.stage(this,owner,session,new java.io.FileInputStream(new File(getCacheDir(),"ava-original.png")),title.substring(0,Math.min(title.length(),200)),"image/png","image",origin);
+                handler.post(() -> { committing=false; if(overlay!=null) overlay.dispose(); showCaptureReceipt(row); CaptureJobs.kick(this); });
+            } catch(Exception error) { handler.post(() -> { committing=false; android.widget.Toast.makeText(this,error.getMessage(),android.widget.Toast.LENGTH_LONG).show(); }); }
+        });
+    }
+    String captureNote() { return assistNote; }
+    boolean captureMediaExpected() { return capturedSource!=null && capturedSource.mediaApp; }
+    void assistCaptureFinished(String session,org.json.JSONObject row,String error) {
+        if(!session.equals(assistSession)) return;
+        committing=false; assistSession=""; assistNote="";
+        if(row!=null) { if(overlay!=null) overlay.dispose(); showCaptureReceipt(row); CaptureJobs.kick(this); }
+        else if(error!=null) {
+            if(overlay!=null) overlay.showCaptureError(error);
+            else android.widget.Toast.makeText(this,error,android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+    void showCaptureReceipt(org.json.JSONObject row) {
+        handler.post(() -> {
+            if(live!=this || !row.optString("owner").equals(CaptureStore.owner(this))) return;
+            if(row.optLong("created")<receiptCreated && !row.optString("id").equals(receiptId)) return;
+            receiptCreated=row.optLong("created"); receiptId=row.optString("id");
+            try { if(receipt==null) receipt=new CaptureReceipt(this); receipt.show(row); }
+            catch(android.view.WindowManager.BadTokenException | android.view.WindowManager.InvalidDisplayException disconnected) { receipt=null; Log.w("AvenireCapture","Capture status overlay is reconnecting",disconnected); }
+        });
+    }
+    void clearCaptureReceipt() { if(receipt!=null) receipt.hide(); receiptCreated=0; receiptId=""; }
+    void captureProgress(String id,int loaded,int total) { handler.post(() -> { if(receipt!=null) receipt.status(id,loaded,total); }); }
+    void submit(String session, String question) throws Exception {
+        Class<?> task;
+        try { task = Class.forName("com.thedamod.avenire.essentialkey.AvaTaskService"); }
+        catch (ClassNotFoundException missing) { throw new IllegalStateException("Install the integrated Avenire build to send. Your prompt stays here."); }
+        startService(new Intent(this, task).putExtra("session", session).putExtra("question", question)
+            .putExtra("threadId", getSharedPreferences("ava-screen-session", 0).getString("threadId", "")));
+    }
+    void updateResponse(String session, String text, boolean done, String threadId) {
+        if (!session.equals(ScreenSession.id(this)) || overlay == null || overlay.isClosing()) return;
+        if (!threadId.isEmpty()) getSharedPreferences("ava-screen-session", 0).edit().putString("threadId", threadId).apply();
+        overlay.updateResponse(text, done);
+    }
+    int annotationCount() { return overlay == null ? 0 : overlay.annotationCount(); }
+    void annotate(String session, org.json.JSONObject result) throws Exception {
+        if (!screenAllowed(session) || !ScreenSession.matches(this, session, result.getString("capturedAt"))) throw new IllegalStateException("Screen context changed or expired.");
+        if (overlay != null && overlay.isClosing()) throw new IllegalStateException("Screen explanation is closing.");
+        java.util.List<ScreenAnnotation> items = ScreenAnnotation.parse(result.getJSONArray("items"));
+        if (overlay == null && items.isEmpty()) return;
+        if (overlay == null) {
+            screen.open();
+            overlay = new AvaOverlay(this, session, "dock", true, (keep) -> { overlay = null; screen.close(); if (!keep) ScreenSession.clear(this); });
+            overlay.show();
+        }
+        overlay.setAnnotations(items);
+    }
+    void clearSession() { capturedSource = null; screen.close(); ScreenSession.clear(this); dismissOverlay(); }
+    private void dismissOverlay() { if (overlay != null) overlay.dispose(); }
+    private void reset() { handler.removeCallbacks(hold); gesture.reset(); }
+    // Window metadata only: no accessibility text or descendant nodes are read.
+    @Override public void onAccessibilityEvent(AccessibilityEvent event) {
+        if (overlay == null && !opening) return;
+        if (event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || event.getPackageName() == null) return;
+        String name = event.getPackageName().toString();
+        boolean keyboard = false;
+        android.view.inputmethod.InputMethodManager ime = getSystemService(android.view.inputmethod.InputMethodManager.class);
+        for (android.view.inputmethod.InputMethodInfo input : ime.getEnabledInputMethodList()) {
+            if (name.equals(input.getPackageName())) { keyboard = true; break; }
+        }
+        boolean ownOverlay = name.equals(getPackageName())
+            && !"com.thedamod.avenire.MainActivity".contentEquals(event.getClassName() == null ? "" : event.getClassName());
+        // Browsers emit duplicate window events while returning from an assistant entry.
+        // Keep the frozen preview only when package, window, URL and private-mode policy
+        // still match. A tab/URL/private-mode change still invalidates immediately.
+        ScreenSource source=capturedSource;
+        if(source!=null && (source.url!=null || SystemClock.elapsedRealtime()<entrySettlesAt) && name.equals(source.packageName)
+            && source.matches(ScreenSource.current(this))) return;
+        if (screen.windowChanged(name, ownOverlay, keyboard)) { Log.i("AvenireCapture","Source window changed package="+name+" class="+event.getClassName()); leaveScreen(); }
+    }
+    void leaveScreen() {
+        shareFallback.cancel();
+        // Invalidate capture callbacks and running headless work before removing the window.
+        request++; opening = false; capturePending = false; reset(); screen.close();
+        clearSession();
+    }
+    @Override public void onInterrupt() { leaveScreen(); }
+    @Override public boolean onUnbind(Intent intent) { if(receipt!=null) receipt.hide(); live = null; clearSession(); reset(); request++; opening = false; capturePending = false; return super.onUnbind(intent); }
+    @Override public void onDestroy() { if(receipt!=null) receipt.hide(); live = null; clearSession(); reset(); request++; images.shutdown(); super.onDestroy(); }
+}

@@ -159,3 +159,49 @@ it("reports SDK browser byte progress and waits for the server's verified comple
   await pending;
   expect(finished).toHaveBeenCalledWith(saved);
 });
+
+it.each(["PUT", "POST"] as const)(
+  "uses a native file reference and SDK %s protocol without authenticating file reads",
+  async (method) => {
+    const target =
+      method === "PUT"
+        ? { method, url: "https://bucket.test/source", headers: { "content-type": "image/png" } }
+        : {
+            method,
+            url: "https://bucket.test/source",
+            fields: { key: "source", policy: "signed" },
+          };
+    const sourceFetch = vi.fn().mockResolvedValue(new Response(new Blob(["study"])));
+    const transport = vi.fn().mockResolvedValue({ status: 200, text: "" });
+    const appFetch = vi.fn(async (_url: string, init: RequestInit) =>
+      JSON.parse(String(init.body)).op === "presign"
+        ? Response.json({ uploads: [{ id, key: id, target }] })
+        : Response.json({ files: [{ key: id, size: 5, type: "image/png" }], sourceFile: saved }),
+    );
+    const ref = {
+      uri: "file:///private/capture.png",
+      size: 5,
+      name: "capture.png",
+      type: "image/png",
+    };
+    expect(
+      await uploadSourceTicket(endpoint, ref, {
+        contentType: "image/png",
+        appFetch,
+        sourceFetch,
+        transport,
+      }),
+    ).toEqual(saved);
+    expect(transport).toHaveBeenCalledOnce();
+    expect(transport.mock.calls[0]![0]).toMatchObject({ url: target.url, method });
+    if (method === "PUT")
+      expect(sourceFetch).toHaveBeenCalledWith(
+        ref.uri,
+        expect.objectContaining({ credentials: "omit", redirect: "error" }),
+      );
+    else {
+      expect(sourceFetch).not.toHaveBeenCalled();
+      expect(transport.mock.calls[0]![0].body).toBe(ref);
+    }
+  },
+);

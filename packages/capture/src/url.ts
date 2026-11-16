@@ -28,6 +28,7 @@ export function normalizeUrl(raw: string): string {
 }
 
 export function dedupeKeyFor(origin: CaptureOrigin): string {
+  if (origin._tag === "Screen") return `screen:${origin.captureId}`;
   if (origin._tag === "Web") {
     const url = new URL(normalizeUrl(origin.canonicalUrl ?? origin.finalUrl ?? origin.url));
     // Position identifies a place within a source, rather than another source.

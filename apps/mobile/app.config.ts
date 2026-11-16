@@ -20,6 +20,7 @@ const config: ExpoConfig = {
   backgroundColor: "#0B0B0B",
   plugins: [
     "./plugins/with-http-api.cjs",
+    ["./plugins/with-android-ava.cjs", { enabled: process.env.AVENIRE_ANDROID_AVA !== "0" }],
     "expo-font",
     [
       "expo-splash-screen",

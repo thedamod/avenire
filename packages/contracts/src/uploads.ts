@@ -1,6 +1,7 @@
 /** Device acquisition transfers source bytes; OCR/transcription/indexing stays on the server. */
 import * as Schema from "effect/Schema";
 import { CaptureOrigin, SourceAccess } from "./capture.ts";
+import { IngestionJob } from "./ingestion.ts";
 import { FileKind, LibraryFile } from "./library.ts";
 
 export const MAX_SOURCE_UPLOAD_BYTES = 256 * 1024 * 1024;
@@ -78,3 +79,10 @@ export const SourceUploadAction = Schema.Union([
     ),
   }),
 ]);
+
+/** Owner-scoped upload publication and extraction receipt. */
+export const SourceUploadStatus = Schema.Struct({
+  ticket: SourceUploadTicket,
+  ingestion: Schema.NullOr(IngestionJob),
+});
+export type SourceUploadStatus = typeof SourceUploadStatus.Type;

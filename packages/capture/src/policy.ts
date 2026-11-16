@@ -1,3 +1,4 @@
+import urlPolicy from "./url-policy.json" with { type: "json" };
 import type {
   BlockedCategory,
   CapturePosition,
@@ -23,64 +24,14 @@ const hostRule = (category: BlockedCategory, hosts: readonly string[]): Rule => 
     }
   },
 });
-const urlRules: readonly Rule[] = [
-  hostRule("email", [
-    "mail.google.com",
-    "outlook.live.com",
-    "outlook.office.com",
-    "mail.yahoo.com",
-    "proton.me",
-    "fastmail.com",
-    "hey.com",
-  ]),
-  {
-    category: "banking",
-    test: (value) =>
-      /(?:^|[/.])(?:chase|bankofamerica|wellsfargo|citi|citibank|capitalone|barclays|hsbc|revolut|wise|paypal|coinbase|robinhood)(?:[/.]|$)/i.test(
-        value,
-      ),
-  },
-  hostRule("messaging", [
-    "web.whatsapp.com",
-    "web.telegram.org",
-    "teams.microsoft.com",
-    "messages.google.com",
-    "messenger.com",
-    "slack.com",
-  ]),
-  {
-    category: "messaging",
-    test: (value) => /^https?:\/\/(?:[^/]+\.)?discord\.com\/channels(?:[/?#]|$)/i.test(value),
-  },
-  {
-    category: "password-manager",
-    test: (value) => /1password|bitwarden|lastpass|dashlane|keepass|roboform|enpass/i.test(value),
-  },
-  {
-    category: "checkout",
-    test: (value) =>
-      /\/(?:checkout|cart)(?:\/|$|[?#])/i.test(value) || /amazon\.[^/]+\/gp\/buy/i.test(value),
-  },
-  {
-    category: "social-feed",
-    test: (value) =>
-      /(?:twitter\.com|x\.com)\/home(?:[/?#]|$)|facebook\.com(?:\/?(?:[?#].*)?)$|instagram\.com(?:\/?(?:[?#].*)?)$|tiktok\.com(?:\/?(?:[?#].*)?)$|reddit\.com(?:\/?(?:[?#].*)?)$/i.test(
-        value,
-      ),
-  },
-  hostRule("drm-stream", [
-    "netflix.com",
-    "primevideo.com",
-    "disneyplus.com",
-    "hulu.com",
-    "hbomax.com",
-    "crunchyroll.com",
-  ]),
-  {
-    category: "drm-stream",
-    test: (value) => /spotify\.com\/(?:track|episode)(?:[/?#]|$)/i.test(value),
-  },
-];
+const urlRules: readonly Rule[] = urlPolicy.map((rule) => {
+  if (rule.hosts) return hostRule(rule.category as BlockedCategory, rule.hosts);
+  const patterns = rule.patterns!.map((pattern) => new RegExp(pattern, "i"));
+  return {
+    category: rule.category as BlockedCategory,
+    test: (value: string) => patterns.some((pattern) => pattern.test(value)),
+  };
+});
 // Process names vary across channels, bundles and platforms.
 const canonicalAppName = (value: string) =>
   value

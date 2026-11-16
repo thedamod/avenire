@@ -1,6 +1,7 @@
 /** Declarative local presentation. The server never connects directly to a user's desktop. */
 import {
   ReadScreenResult,
+  NativeAnnotationResult,
   DesktopOverlayAnnotation,
   DesktopNativeScene,
   DesktopNativeDiagram,
@@ -24,6 +25,7 @@ export const nativeAnnotateSpec = {
     "Draw passive annotations over the user's current screen while explaining it. " +
     "Use normalized 0..1 coordinates relative to the attached full-display screenshot. " +
     "Choose a cursor with text to point at and explain a region, a rect highlight, an arrow (width/height point down and right), or a label. Every text annotation appears in a compact readable bubble with a leader. Prefer short labels and restrained warm or neutral colors. " +
+    "Callouts can be far from targets: keep x/y on the target and optionally set labelPosition to the normalized top-left of the text box in free space. The mobile renderer connects it with an arrow and avoids other callouts. Keep names short and separate whole boxes, not just anchors. " +
     "Replace the current annotation set with at most 32 items; an empty array clears it. " +
     "Use short, complete explanatory labels; the client preserves their text as a fallback if rendering fails. If annotations contain only shapes, explain them in chat. Keep annotations small and relevant, and never obscure the material. " +
     "This requests local presentation; it does not click, type, change documents, or verify display. " +
@@ -31,13 +33,7 @@ export const nativeAnnotateSpec = {
   inputSchema: standardObjectSchema(
     Schema.Struct({ items: Schema.Array(DesktopOverlayAnnotation).check(Schema.isMaxLength(32)) }),
   ),
-  outputSchema: standardSchema(
-    Schema.Struct({
-      requested: Schema.Literal(true),
-      capturedAt: Schema.String,
-      items: Schema.Array(DesktopOverlayAnnotation),
-    }),
-  ),
+  outputSchema: standardSchema(NativeAnnotationResult),
 };
 export const nativeVisualizeSpec = {
   description:

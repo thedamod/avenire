@@ -1,4 +1,5 @@
 import {
+  type CaptureOrigin,
   ChunkKind,
   ChunkLocation,
   ExtractionCoverage,
@@ -12,11 +13,12 @@ import type { TranscriptScope } from "./transcript-cache.ts";
  * Bump when any extractor's output changes. Stored documents from older versions
  * are re-extracted on the next ingest; same-version ones are reused.
  */
-export const EXTRACTOR_VERSION = 2;
+export const EXTRACTOR_VERSION = 3;
 
 /** What an extractor needs to know about a source, independent of how it's stored. */
 export interface SourceInput {
   readonly enrichment?: "deferred" | "full";
+  readonly origin?: CaptureOrigin | null;
   readonly kind: FileKind;
   readonly title: string;
   readonly mimeType: string | null;
